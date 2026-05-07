@@ -2,7 +2,7 @@
 
 Cuaderno creativo del chef con asistente IA integrado. App nativa móvil (iOS/Android) con backend serverless.
 
-Stack: pnpm monorepo · Next.js 15 (API) · Expo 55 (mobile) · Postgres (Neon) · Auth.js + Resend · Anthropic API · Puppeteer.
+Stack: pnpm monorepo · Next.js 15 (API) · Expo 55 (mobile) · Postgres (Neon) · Auth.js v5 + Resend · Anthropic SDK · Puppeteer · Vercel Blob.
 
 ## Estructura
 
@@ -14,53 +14,92 @@ packages/shared permissions + zod contracts + utils
 packages/i18n   diccionarios ES / IT / EN
 ```
 
-## Estado: Fase 0 completada
+## Estado: brief v4 completo
 
-Todo lo necesario para que la app arranque está commiteado. La Fase 0 entrega:
+Las 5 fases del plan están implementadas y commiteadas:
 
-- Monorepo pnpm con 5 paquetes typados (typecheck verde en los 5).
-- Esquema Prisma con la migración inicial pre-generada (`packages/db/prisma/migrations/`) y seed que replica el restaurante demo del prototipo.
-- Permissions, invite-code y zod API contracts probados (58 tests pasando).
-- API Next 15 con Auth.js v5 + Resend EmailProvider montado y un `/api/health` que responde 200 en local.
-- App Expo 55 con tab bar (5 tabs), header con marca + avatar, ProfileSheet completo y datos mock visibles en Casa.
+- **Fase 0 — Esqueleto:** monorepo, schema Prisma, seed, tab bar, ProfileSheet, tema, login mock.
+- **Fase 1 — Auth real:** magic link por Resend, JWT firmado con `jose`, 4 pantallas de onboarding, `/api/me`, `/api/restaurant`.
+- **Fase 2 — Núcleo:** Inicio con captura offline (AsyncStorage), Recetas con CRUD + estados, Asistente con Anthropic streaming (SSE) + prompt caching ephemeral.
+- **Fase 3 — Composición:** Menús con CRUD, AddToMenuSheet, exportación PDF server-side con 3 plantillas (elegant/rustic/minimal).
+- **Fase 4 — Equipo:** Casa con código copy/share/regen, StaffMemberSheet con cambio de rol y eliminación, `usePermissions` hook centralizado.
+- **Fase 5 — Pulido:** NetworkError component, fotos de perfil/restaurante via Vercel Blob, i18n trilingüe completo.
 
-## Configuración inicial (lo que necesita el operador)
+Verificación automatizada: 5 paquetes typecheck verde, 58 tests pasando, `/api/health` 200, `/api/mobile/auth/request` envía correo real.
 
-1. **Postgres en Neon.** Crear un proyecto, una rama `main`, copiar el `DATABASE_URL` (con `?sslmode=require`).
-2. **Resend.** Crear una cuenta y un dominio; copiar `RESEND_API_KEY` y configurar `RESEND_FROM`.
-3. **Anthropic.** API key con créditos. Solo se usa a partir de Fase 2.
-4. **Apple Developer + EAS.** Necesarios para el build dev en TestFlight (Fase 0.10 / Fase 5).
-5. Crear `.env.local` en la raíz copiando `.env.example` y rellenando los valores reales.
+## Configuración
+
+Crea `.env.local` (raíz del repo) y `apps/api/.env.local` con los mismos valores:
+
+```
+DATABASE_URL=postgresql://...neon.tech/...
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=<openssl rand -base64 32>
+AUTH_SECRET=<mismo que NEXTAUTH_SECRET>
+RESEND_API_KEY=re_...
+RESEND_FROM=Atelier <onboarding@resend.dev>
+ANTHROPIC_API_KEY=sk-ant-...
+BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...    # opcional, fotos
+EXPO_PUBLIC_API_URL=http://localhost:3000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+Setup inicial:
+
+1. **Postgres en Neon.** Crear proyecto + DB; copiar `DATABASE_URL` con `?sslmode=require`.
+2. **Resend.** Cuenta + API key con permiso "Sending access". Sandbox `onboarding@resend.dev` solo envía a tu propio email; añade dominio propio para el resto.
+3. **Anthropic.** API key con créditos.
+4. **Vercel Blob (opcional).** Token `BLOB_READ_WRITE_TOKEN` solo si quieres habilitar fotos de perfil/restaurante.
+5. **Apple Developer + EAS.** Necesarios para el build TestFlight.
 
 ## Arranque local
 
 ```bash
-pnpm install                     # instala todo el monorepo
-pnpm db:generate                 # genera el cliente Prisma
-pnpm --filter @atelier/db exec prisma migrate deploy   # aplica migración inicial
-pnpm db:seed                     # carga el restaurante demo
-
-pnpm dev:api                     # arranca http://localhost:3000
-pnpm dev:mobile                  # arranca Metro y muestra QR para Expo Go / dev client
+pnpm install
+pnpm db:generate
+pnpm --filter @atelier/db exec prisma migrate deploy
+pnpm db:seed                   # carga restaurante demo Ristorante Marche
+pnpm dev:api                   # http://localhost:3000
+pnpm dev:mobile                # Metro + QR para Expo Go
 ```
 
-Verificación rápida:
-
-- `curl http://localhost:3000/api/health` debe devolver `{"status":"ok",…}`.
-- `pnpm db:studio` abre Prisma Studio con el restaurante demo y los 4 usuarios.
-- En Expo Go o dev client, la app entra en `(auth)/login`, escribir cualquier email + tap deja al usuario en Inicio (los demás tabs renderizan placeholders).
+Verificación:
+- `curl http://localhost:3000/api/health` → `{"status":"ok",…}`
+- `pnpm db:studio` → muestra Ristorante Marche, 4 usuarios, 8 recetas, 3 menús
+- En iPhone con Expo Go: escanear QR de Metro, escribir email, recibir magic link, click → app loguea, llega a Inicio con datos reales
 
 ## Tests y typecheck
 
 ```bash
-pnpm -r typecheck                # 5 paquetes, todos verdes
-pnpm -r test                     # 58 tests entre @atelier/shared y @atelier/i18n
+pnpm -r typecheck              # 5 paquetes
+pnpm -r test                   # 58 tests entre @atelier/shared y @atelier/i18n
 ```
 
-## Plan de implementación
+## API endpoints
 
-`C:\Users\Utente\.claude\plans\atelier-culinaire-harmonic-bear.md` — fases 1 a 5 ya escritas.
+| Método | Path | Descripción |
+|--------|------|-------------|
+| GET | /api/health | health check |
+| POST | /api/mobile/auth/request | envía magic link |
+| POST | /api/mobile/auth/verify | valida token y devuelve JWT |
+| GET/PATCH | /api/me | usuario actual |
+| GET | /api/restaurant | restaurante + staff |
+| POST | /api/restaurant | crear restaurante |
+| POST | /api/restaurant/join | unirse con código |
+| POST | /api/restaurant/invite | regenerar código (admin) |
+| PATCH/DELETE | /api/restaurant/staff/[userId] | gestión de roles (admin) |
+| POST | /api/me/photo · /api/restaurant/photo | upload fotos via Vercel Blob |
+| GET/POST | /api/ideas + PATCH/DELETE /api/ideas/[id] | bloc de ideas |
+| GET/POST | /api/recipes + GET/PATCH/DELETE /api/recipes/[id] | recetas con estados |
+| GET/POST | /api/conversations + GET/POST /api/conversations/[id]/messages (SSE) | chat con IA |
+| GET/POST | /api/menus + GET/PATCH /api/menus/[id] | menús |
+| POST/PATCH/DELETE | /api/menus/[id]/items[/itemId] | platos |
+| GET | /api/menus/[id]/pdf?style= | exportar PDF |
 
-## Prototipo (histórico)
+## Plan de implementación (histórico)
 
-`project/` contiene el prototipo HTML/CSS/JS hecho con Claude Design del que partió la app. No se ejecuta en producción; se conserva como referencia visual y de copy.
+`C:\Users\Utente\.claude\plans\atelier-culinaire-harmonic-bear.md` — el plan original con las 5 fases.
+
+## Prototipo
+
+`project/` contiene el prototipo HTML/CSS/JS del que partió la app. Conservado como referencia visual y de copy.
