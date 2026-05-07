@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Atelier",
+    "slug": "atelier",
+    "scheme": "atelier",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#f9f7f2"
+    },
+    "ios": {
+      "bundleIdentifier": "com.atelier.app",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.atelier.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#f9f7f2"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Atelier accede a tu galería para que cambies tu foto de perfil."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
