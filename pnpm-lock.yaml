@@ -32,6 +32,9 @@ importers:
       '@vercel/blob':
         specifier: ^2.3.0
         version: 2.3.3
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
       next:
         specifier: ^15.3.9
         version: 15.5.16(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -5813,7 +5816,9 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
+      - bufferutil
       - supports-color
+      - utf-8-validate
 
   '@react-native/normalize-colors@0.83.6': {}
 
