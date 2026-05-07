@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useSession } from "@/src/hooks/useSession";
+import { ToastHost } from "@/src/components/Toast";
 import { colors } from "@/src/theme";
 
 function AuthGate({ children }: { children: React.ReactNode }) {
@@ -39,6 +40,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
         </Stack>
       </AuthGate>
+      <ToastHost />
     </SafeAreaProvider>
   );
 }
