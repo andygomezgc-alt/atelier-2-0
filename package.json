@@ -1,0 +1,26 @@
+{
+  "name": "atelier",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Atelier Culinaire — cuaderno creativo del chef con asistente IA",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev:api": "pnpm --filter api dev",
+    "dev:mobile": "pnpm --filter mobile start",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "db:generate": "pnpm --filter @atelier/db exec prisma generate",
+    "db:migrate": "pnpm --filter @atelier/db exec prisma migrate dev",
+    "db:seed": "pnpm --filter @atelier/db db:seed",
+    "db:studio": "pnpm --filter @atelier/db exec prisma studio"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

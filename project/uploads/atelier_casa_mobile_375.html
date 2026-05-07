@@ -1,0 +1,453 @@
+<style>
+.ate-wrap {
+  background: var(--color-background-secondary);
+  border-radius: var(--border-radius-lg);
+  padding: 32px 16px 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.ate-phone {
+  width: 375px;
+  background: #f9f7f2;
+  border: 5px solid #1a1d1d;
+  border-radius: 44px;
+  overflow: hidden;
+  position: relative;
+  box-sizing: content-box;
+}
+.ate-screen { position: relative; background: #f9f7f2; }
+.ate-status {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-size: 13px;
+  color: #2a2520;
+  font-weight: 500;
+}
+.ate-status-right { display: flex; gap: 6px; align-items: center; }
+.ate-status-right i { font-size: 13px; color: #2a2520; }
+.ate-header {
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  border-bottom: 0.5px solid #e0d8c8;
+}
+.ate-mark {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  font-style: italic;
+  font-size: 22px;
+  color: #1a3a3a;
+  font-weight: 400;
+  letter-spacing: 0.005em;
+}
+.ate-mark .glyph { color: #c47e4f; font-size: 26px; margin-right: 1px; }
+.ate-avatar {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: #1a3a3a;
+  color: #f9f7f2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-style: italic;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1.5px solid #c47e4f;
+  letter-spacing: 0.02em;
+}
+.ate-content { padding: 22px 18px 110px; }
+.ate-content > * {
+  animation: ateUp 0.55s ease-out both;
+}
+.ate-content > *:nth-child(1) { animation-delay: 0.05s; }
+.ate-content > *:nth-child(2) { animation-delay: 0.18s; }
+.ate-content > *:nth-child(3) { animation-delay: 0.32s; }
+@keyframes ateUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.casa-resto { padding-bottom: 22px; border-bottom: 0.5px solid #e0d8c8; }
+.casa-resto-row { display: flex; align-items: flex-start; gap: 14px; }
+.casa-resto-photo {
+  width: 58px; height: 58px;
+  border-radius: 50%;
+  background: #fffaf2;
+  border: 0.5px solid #d4c9b4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-style: italic;
+  font-size: 28px;
+  color: #c47e4f;
+  flex-shrink: 0;
+  font-weight: 400;
+}
+.casa-resto-meta { flex: 1; min-width: 0; }
+.eyebrow {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: #8b7a6f;
+  font-weight: 400;
+}
+.casa-resto-name {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-style: italic;
+  font-size: 26px;
+  color: #2a2520;
+  line-height: 1.1;
+  margin-top: 2px;
+  font-weight: 400;
+}
+.casa-resto-line {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-size: 14px;
+  color: #4a4036;
+  line-height: 1.45;
+  margin-top: 8px;
+}
+.casa-invite {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  background: #fffaf2;
+  border: 0.5px solid #e0d8c8;
+  border-radius: 7px;
+  margin-top: 14px;
+}
+.casa-invite-code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  color: #2a2520;
+  flex: 1;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+.casa-invite-actions { display: flex; gap: 12px; }
+.casa-invite-actions i { font-size: 16px; color: #1a3a3a; }
+.casa-section { margin-top: 28px; }
+.section-eyebrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 14px;
+}
+.section-count {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+  color: #c47e4f;
+  font-weight: 400;
+}
+.menu-card {
+  display: block;
+  padding: 14px 16px;
+  background: #fffaf2;
+  border: 0.5px solid #e0d8c8;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  text-align: left;
+  width: 100%;
+}
+.menu-card-eyebrow {
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: #c47e4f;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+.menu-card-title {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-style: italic;
+  font-size: 19px;
+  color: #2a2520;
+  line-height: 1.2;
+  margin-bottom: 6px;
+  font-weight: 400;
+}
+.menu-card-meta {
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 12px;
+  color: #8b7a6f;
+  font-weight: 400;
+}
+.casa-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 11px 0;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 13px;
+  color: #c47e4f;
+  font-weight: 500;
+  width: 100%;
+  background: transparent;
+  border: 0.5px dashed #c47e4f;
+  border-radius: 7px;
+  letter-spacing: 0.02em;
+}
+.casa-action i { font-size: 14px; }
+.staff-row {
+  display: flex;
+  align-items: center;
+  padding: 13px 4px;
+  border-bottom: 0.5px solid #ede6d6;
+  gap: 13px;
+}
+.staff-row:last-of-type { border-bottom: none; }
+.staff-avatar {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  background: #fffaf2;
+  border: 0.5px solid #d4c9b4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+  color: #4a4036;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+.staff-avatar.r-admin { border-color: #c47e4f; color: #c47e4f; }
+.staff-avatar.r-chef { border-color: #1a3a3a; color: #1a3a3a; }
+.staff-meta { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.staff-name {
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 14px;
+  color: #2a2520;
+  font-weight: 500;
+}
+.staff-role {
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: #8b7a6f;
+  margin-top: 3px;
+  font-weight: 400;
+}
+.staff-chevron { font-size: 18px; color: #b4b2a9; }
+.ate-tabbar {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  background: #fffaf2;
+  border-top: 0.5px solid #e0d8c8;
+  display: flex;
+  height: 82px;
+  padding: 8px 6px 26px;
+}
+.ate-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 8px;
+  color: #8b7a6f;
+  position: relative;
+  background: transparent;
+  border: none;
+}
+.ate-tab i { font-size: 21px; }
+.ate-tab-label {
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  font-weight: 400;
+}
+.ate-tab.active { color: #c47e4f; }
+.ate-tab.active .ate-tab-label { font-weight: 500; }
+.ate-tab.active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 38%;
+  right: 38%;
+  height: 2px;
+  background: #c47e4f;
+  border-radius: 0 0 2px 2px;
+}
+.home-bar {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 134px;
+  height: 5px;
+  background: #2a2520;
+  border-radius: 3px;
+  opacity: 0.85;
+}
+.ate-caption {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin-top: 16px;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+</style>
+
+<h2 class="sr-only" style="position:absolute;left:-9999px;">Mockup móvil de la pantalla Casa de Atelier Culinaire en un teléfono iOS, mostrando la cabecera del restaurante Ristorante Marche con código de invitación, tres menús activos y cuatro miembros del staff.</h2>
+
+<div class="ate-wrap">
+  <div class="ate-phone">
+    <div class="ate-screen">
+
+      <div class="ate-status">
+        <span>9:41</span>
+        <span class="ate-status-right">
+          <i class="ti ti-signal-4g" aria-hidden="true"></i>
+          <i class="ti ti-wifi" aria-hidden="true"></i>
+          <i class="ti ti-battery-3" aria-hidden="true"></i>
+        </span>
+      </div>
+
+      <div class="ate-header">
+        <div class="ate-mark"><span class="glyph">A</span>telier</div>
+        <div class="ate-avatar" aria-label="Andrea Conti, admin">AC</div>
+      </div>
+
+      <div class="ate-content">
+
+        <div class="casa-resto">
+          <div class="casa-resto-row">
+            <div class="casa-resto-photo">M</div>
+            <div class="casa-resto-meta">
+              <div class="eyebrow">La casa</div>
+              <div class="casa-resto-name">Ristorante Marche</div>
+              <div class="casa-resto-line">Cocina mediterránea de raíz, técnica francesa, mano japonesa.</div>
+            </div>
+          </div>
+          <div class="casa-invite" role="group" aria-label="Código de invitación">
+            <span class="eyebrow" style="flex-shrink:0;">Código</span>
+            <span class="casa-invite-code">MARCHE-A7K2</span>
+            <span class="casa-invite-actions">
+              <i class="ti ti-copy" aria-hidden="true"></i>
+              <i class="ti ti-refresh" aria-hidden="true"></i>
+            </span>
+          </div>
+        </div>
+
+        <div class="casa-section">
+          <div class="section-eyebrow">
+            <span class="eyebrow">Menús activos</span>
+            <span class="section-count">3</span>
+          </div>
+
+          <button class="menu-card">
+            <div class="menu-card-eyebrow">Otoño 2026</div>
+            <div class="menu-card-title">Menú degustación</div>
+            <div class="menu-card-meta">8 platos · actualizado hace 2 días</div>
+          </button>
+
+          <button class="menu-card">
+            <div class="menu-card-eyebrow">Carta</div>
+            <div class="menu-card-title">Cocina del Adriático</div>
+            <div class="menu-card-meta">12 platos · actualizado hace 6 días</div>
+          </button>
+
+          <button class="menu-card">
+            <div class="menu-card-eyebrow">Servicio del día</div>
+            <div class="menu-card-title">Menú de mediodía</div>
+            <div class="menu-card-meta">5 platos · actualizado hoy</div>
+          </button>
+
+          <button class="casa-action">
+            <i class="ti ti-plus" aria-hidden="true"></i>
+            <span>Crear menú</span>
+          </button>
+        </div>
+
+        <div class="casa-section">
+          <div class="section-eyebrow">
+            <span class="eyebrow">Staff</span>
+            <span class="section-count">4</span>
+          </div>
+
+          <div class="staff-row">
+            <div class="staff-avatar r-admin">AC</div>
+            <div class="staff-meta">
+              <span class="staff-name">Andrea Conti</span>
+              <span class="staff-role">Admin</span>
+            </div>
+            <i class="ti ti-chevron-right staff-chevron" aria-hidden="true"></i>
+          </div>
+
+          <div class="staff-row">
+            <div class="staff-avatar r-chef">MR</div>
+            <div class="staff-meta">
+              <span class="staff-name">Marco Rossi</span>
+              <span class="staff-role">Chef ejecutivo</span>
+            </div>
+            <i class="ti ti-chevron-right staff-chevron" aria-hidden="true"></i>
+          </div>
+
+          <div class="staff-row">
+            <div class="staff-avatar">LB</div>
+            <div class="staff-meta">
+              <span class="staff-name">Luca Bianchi</span>
+              <span class="staff-role">Sous-chef</span>
+            </div>
+            <i class="ti ti-chevron-right staff-chevron" aria-hidden="true"></i>
+          </div>
+
+          <div class="staff-row">
+            <div class="staff-avatar">SM</div>
+            <div class="staff-meta">
+              <span class="staff-name">Sofia Marchetti</span>
+              <span class="staff-role">Lector</span>
+            </div>
+            <i class="ti ti-chevron-right staff-chevron" aria-hidden="true"></i>
+          </div>
+
+          <button class="casa-action">
+            <i class="ti ti-user-plus" aria-hidden="true"></i>
+            <span>Invitar miembro</span>
+          </button>
+        </div>
+
+      </div>
+
+      <div class="ate-tabbar">
+        <button class="ate-tab">
+          <i class="ti ti-pencil" aria-hidden="true"></i>
+          <span class="ate-tab-label">Inicio</span>
+        </button>
+        <button class="ate-tab">
+          <i class="ti ti-message-2" aria-hidden="true"></i>
+          <span class="ate-tab-label">Asistente</span>
+        </button>
+        <button class="ate-tab">
+          <i class="ti ti-book-2" aria-hidden="true"></i>
+          <span class="ate-tab-label">Recetas</span>
+        </button>
+        <button class="ate-tab">
+          <i class="ti ti-clipboard-list" aria-hidden="true"></i>
+          <span class="ate-tab-label">Menús</span>
+        </button>
+        <button class="ate-tab active">
+          <i class="ti ti-home" aria-hidden="true"></i>
+          <span class="ate-tab-label">Casa</span>
+        </button>
+      </div>
+
+      <div class="home-bar"></div>
+    </div>
+  </div>
+
+  <p class="ate-caption">Atelier Culinaire · Casa · 375 px</p>
+</div>

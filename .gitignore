@@ -1,0 +1,39 @@
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+*.log
+*.tsbuildinfo
+
+.DS_Store
+Thumbs.db
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# prisma
+packages/db/generated/
+*.db
+*.db-journal
+
+# editor
+.vscode/
+.idea/
+*.swp
+
+# expo
+apps/mobile/.expo/
+apps/mobile/web-build/
+apps/mobile/ios/
+apps/mobile/android/
+apps/mobile/.expo-shared/
+
+# vercel
+.vercel
+
+# tests
+coverage/
