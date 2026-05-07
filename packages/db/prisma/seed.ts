@@ -257,6 +257,7 @@ async function main() {
       restaurantId: restaurant.id,
       name: "Menú degustación",
       season: "Otoño 2026",
+      presentationStyle: MenuStyle.elegant,
     },
   });
   await prisma.menuItem.createMany({
@@ -267,7 +268,6 @@ async function main() {
         customDesc: "Gamba de Dénia, dashi tibio, oliva arbequina",
         price: 2800,
         order: 0,
-        presentationStyle: MenuStyle.elegant,
       },
       {
         menuFolderId: m1.id,
@@ -275,7 +275,6 @@ async function main() {
         customDesc: "Carnaroli, manteca de cacao, bottarga di Cabras",
         price: 2400,
         order: 1,
-        presentationStyle: MenuStyle.elegant,
       },
       {
         menuFolderId: m1.id,
@@ -284,7 +283,6 @@ async function main() {
         customDesc: "Cold brew de Etiopía, glaseado al pase",
         price: 3600,
         order: 2,
-        presentationStyle: MenuStyle.elegant,
       },
       {
         menuFolderId: m1.id,
@@ -292,7 +290,6 @@ async function main() {
         customDesc: "Costra de tomillo y romero, jugo reducido",
         price: 3200,
         order: 3,
-        presentationStyle: MenuStyle.elegant,
       },
     ],
   });
@@ -302,6 +299,7 @@ async function main() {
       restaurantId: restaurant.id,
       name: "Cocina del Adriático",
       season: "Carta",
+      presentationStyle: MenuStyle.rustic,
     },
   });
   await prisma.menuItem.createMany({
@@ -312,7 +310,6 @@ async function main() {
         customDesc: "Pescados de roca, tomate confit, pan de pueblo",
         price: 2200,
         order: 0,
-        presentationStyle: MenuStyle.rustic,
       },
       {
         menuFolderId: m2.id,
@@ -320,7 +317,6 @@ async function main() {
         customDesc: "Carne de ternera, parmigiano 24 meses",
         price: 900,
         order: 1,
-        presentationStyle: MenuStyle.rustic,
       },
     ],
   });
@@ -330,6 +326,7 @@ async function main() {
       restaurantId: restaurant.id,
       name: "Menú de mediodía",
       season: "Servicio del día",
+      presentationStyle: MenuStyle.minimal,
     },
   });
   await prisma.menuItem.create({
@@ -339,7 +336,6 @@ async function main() {
       customDesc: "Según mercado",
       price: 1400,
       order: 0,
-      presentationStyle: MenuStyle.minimal,
     },
   });
 

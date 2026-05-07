@@ -192,6 +192,7 @@ export type PatchRecipeRequest = z.infer<typeof PatchRecipeRequestSchema>;
 export type RecipeListItem = z.infer<typeof RecipeListItemSchema>;
 export type RecipeDetail = z.infer<typeof RecipeDetailSchema>;
 export type CreateMenuRequest = z.infer<typeof CreateMenuRequestSchema>;
+export type PatchMenuRequest = z.infer<typeof PatchMenuRequestSchema>;
 export type MenuListItem = z.infer<typeof MenuListItemSchema>;
 export type MenuDish = z.infer<typeof MenuDishSchema>;
 export type MenuDetail = z.infer<typeof MenuDetailSchema>;

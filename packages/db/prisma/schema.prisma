@@ -156,13 +156,14 @@ model Recipe {
 }
 
 model MenuFolder {
-  id           String     @id @default(cuid())
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  name         String
-  season       String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id                String     @id @default(cuid())
+  restaurantId      String
+  restaurant        Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name              String
+  season            String?
+  presentationStyle MenuStyle  @default(elegant)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
   items MenuItem[]
 
@@ -170,16 +171,15 @@ model MenuFolder {
 }
 
 model MenuItem {
-  id                String     @id @default(cuid())
-  menuFolderId      String
-  menuFolder        MenuFolder @relation(fields: [menuFolderId], references: [id], onDelete: Cascade)
-  recipeId          String
-  recipe            Recipe     @relation(fields: [recipeId], references: [id])
-  customName        String?
-  customDesc        String?    @db.Text
-  price             Int
-  order             Int
-  presentationStyle MenuStyle  @default(elegant)
+  id           String     @id @default(cuid())
+  menuFolderId String
+  menuFolder   MenuFolder @relation(fields: [menuFolderId], references: [id], onDelete: Cascade)
+  recipeId     String
+  recipe       Recipe     @relation(fields: [recipeId], references: [id])
+  customName   String?
+  customDesc   String?    @db.Text
+  price        Int
+  order        Int
 
   @@index([menuFolderId, order])
 }
