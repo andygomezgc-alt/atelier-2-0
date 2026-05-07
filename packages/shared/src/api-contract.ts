@@ -27,6 +27,7 @@ export const MeResponseSchema = z.object({
   languagePref: LanguageSchema,
   defaultModel: ModelSchema,
   restaurantId: z.string().nullable(),
+  restaurantName: z.string().nullable(),
 });
 
 export const PatchMeRequestSchema = z.object({
