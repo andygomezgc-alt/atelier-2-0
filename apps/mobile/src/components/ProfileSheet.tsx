@@ -1,19 +1,8 @@
-// Bottom sheet rendered from any screen via the avatar in the header.
-// Phase-0 surface: rol, restaurante, idioma, modelo, cerrar sesión.
-// Wired to the Phase-0 mock state; Phase 1 swaps the mutators for
-// real /api/me PATCH calls.
-
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useI18n } from "@/src/hooks/useI18n";
-import { useSession } from "@/src/hooks/useSession";
-import {
-  getMockRestaurant,
-  setMockModel,
-  setMockRole,
-  useMockUser,
-  type MockUser,
-} from "@/src/state/mockUser";
+import { useAuth } from "@/src/hooks/useAuth";
+import { patchMe } from "@/src/api/auth";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import type { Language } from "@atelier/i18n";
 import type { Role } from "@atelier/shared";
@@ -23,10 +12,11 @@ type Props = { open: boolean; onClose: () => void };
 const LANGS: ReadonlyArray<Language> = ["es", "it", "en"];
 
 export function ProfileSheet({ open, onClose }: Props) {
-  const user = useMockUser();
-  const restaurant = getMockRestaurant();
+  const { state, signOut, refreshMe } = useAuth();
   const { t, lang, setLang } = useI18n();
-  const { signOut } = useSession();
+
+  const user =
+    state.status === "signed-in" || state.status === "needs-restaurant" ? state.user : null;
 
   const roleLabel: Record<Role, string> = {
     admin: t("role_admin"),
@@ -35,54 +25,75 @@ export function ProfileSheet({ open, onClose }: Props) {
     viewer: t("role_viewer"),
   };
 
+  async function handleLangChange(l: Language) {
+    setLang(l);
+    await patchMe({ languagePref: l }).catch(() => null);
+  }
+
+  async function handleModelChange(model: "sonnet" | "opus") {
+    await patchMe({ defaultModel: model }).catch(() => null);
+    await refreshMe();
+  }
+
   return (
     <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} />
       <View style={styles.sheet}>
         <View style={styles.handle} />
         <ScrollView contentContainerStyle={styles.content}>
-          <ProfileHero user={user} />
+          {user ? (
+            <>
+              <View style={styles.hero}>
+                <View style={styles.heroPhoto}>
+                  <Text style={styles.heroPhotoText}>
+                    {user.name
+                      .split(" ")
+                      .map((w) => w[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase()}
+                  </Text>
+                </View>
+                <Text style={styles.heroName}>{user.name}</Text>
+                <Text style={styles.heroEmail}>{user.email}</Text>
+                {user.bio ? <Text style={styles.heroBio}>"{user.bio}"</Text> : null}
+              </View>
 
-          <Row label={t("profile_role")} value={roleLabel[user.role]} />
-          <Row label={t("profile_restaurant")} value={restaurant.name} />
+              <Row label={t("profile_role")} value={roleLabel[user.role]} />
+              {user.restaurantName ? (
+                <Row label={t("profile_restaurant")} value={user.restaurantName} />
+              ) : null}
 
-          <Section label={t("profile_language")}>
-            <View style={styles.pills}>
-              {LANGS.map((l) => (
-                <Pressable
-                  key={l}
-                  style={[styles.pill, lang === l && styles.pillActive]}
-                  onPress={() => setLang(l)}
-                >
-                  <Text style={[styles.pillText, lang === l && styles.pillTextActive]}>{l}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </Section>
+              <Section label={t("profile_language")}>
+                <View style={styles.pills}>
+                  {LANGS.map((l) => (
+                    <Pressable
+                      key={l}
+                      style={[styles.pill, lang === l && styles.pillActive]}
+                      onPress={() => handleLangChange(l)}
+                    >
+                      <Text style={[styles.pillText, lang === l && styles.pillTextActive]}>
+                        {l}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </Section>
 
-          <Section label={t("profile_model")}>
-            <ModelOption
-              label="Sonnet 4.6 — rápido y robusto"
-              active={user.defaultModel === "sonnet"}
-              onPress={() => setMockModel("sonnet")}
-            />
-            <ModelOption
-              label="Opus 4.7 — máxima profundidad"
-              active={user.defaultModel === "opus"}
-              onPress={() => setMockModel("opus")}
-            />
-          </Section>
-
-          <Section label="Ver como (prototipo)">
-            {(["admin", "chef_executive", "sous_chef", "viewer"] as const).map((r) => (
-              <ModelOption
-                key={r}
-                label={roleLabel[r]}
-                active={user.role === r}
-                onPress={() => setMockRole(r)}
-              />
-            ))}
-          </Section>
+              <Section label={t("profile_model")}>
+                <ModelOption
+                  label="Sonnet 4.6 — rápido y robusto"
+                  active={user.defaultModel === "sonnet"}
+                  onPress={() => handleModelChange("sonnet")}
+                />
+                <ModelOption
+                  label="Opus 4.7 — máxima profundidad"
+                  active={user.defaultModel === "opus"}
+                  onPress={() => handleModelChange("opus")}
+                />
+              </Section>
+            </>
+          ) : null}
 
           <Pressable
             style={styles.dangerRow}
@@ -97,19 +108,6 @@ export function ProfileSheet({ open, onClose }: Props) {
         </ScrollView>
       </View>
     </Modal>
-  );
-}
-
-function ProfileHero({ user }: { user: MockUser }) {
-  return (
-    <View style={styles.hero}>
-      <View style={styles.heroPhoto}>
-        <Text style={styles.heroPhotoText}>{user.initials}</Text>
-      </View>
-      <Text style={styles.heroName}>{user.name}</Text>
-      <Text style={styles.heroEmail}>{user.email}</Text>
-      <Text style={styles.heroBio}>"{user.bio}"</Text>
-    </View>
   );
 }
 

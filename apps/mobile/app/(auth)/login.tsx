@@ -1,20 +1,32 @@
-// Phase 0 placeholder: lets the operator land inside the app to validate
-// the navigation skeleton. Phase 1 swaps this for a real Auth.js magic
-// link round-trip against apps/api.
-
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useSession } from "@/src/hooks/useSession";
+import { useAuth } from "@/src/hooks/useAuth";
 import { useI18n } from "@/src/hooks/useI18n";
+import { showToast } from "@/src/components/Toast";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 export default function LoginScreen() {
-  const { signIn } = useSession();
+  const { sendMagicLink } = useAuth();
   const { t } = useI18n();
   const [email, setEmail] = useState("");
+  const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const valid = email.includes("@");
+  const valid = email.includes("@") && email.includes(".");
+
+  async function handleSend() {
+    if (!valid || loading) return;
+    setLoading(true);
+    try {
+      await sendMagicLink(email.toLowerCase().trim());
+      setSent(true);
+    } catch {
+      showToast(t("error_network"));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.root}>
@@ -24,24 +36,38 @@ export default function LoginScreen() {
         </Text>
         <Text style={styles.tag}>{t("onboard_tag")}</Text>
 
-        <TextInput
-          style={styles.input}
-          placeholder={t("onboard_email_placeholder")}
-          placeholderTextColor={colors.mute}
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-
-        <Pressable
-          style={[styles.button, !valid && styles.buttonDisabled]}
-          disabled={!valid}
-          onPress={() => signIn(email)}
-        >
-          <Text style={styles.buttonLabel}>{t("onboard_btn_magic_link")}</Text>
-        </Pressable>
+        {sent ? (
+          <View style={styles.sentBox}>
+            <Text style={styles.sentTitle}>{t("onboard_check_email")}</Text>
+            <Text style={styles.sentSub}>{t("onboard_magic_sent")}</Text>
+            <Pressable onPress={() => setSent(false)}>
+              <Text style={styles.retry}>{t("onboard_retry")}</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <>
+            <TextInput
+              style={styles.input}
+              placeholder={t("onboard_email_placeholder")}
+              placeholderTextColor={colors.mute}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              onSubmitEditing={handleSend}
+            />
+            <Pressable
+              style={[styles.button, (!valid || loading) && styles.buttonDisabled]}
+              disabled={!valid || loading}
+              onPress={handleSend}
+            >
+              <Text style={styles.buttonLabel}>
+                {loading ? t("onboard_sending") : t("onboard_btn_magic_link")}
+              </Text>
+            </Pressable>
+          </>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -49,11 +75,7 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
-  center: {
-    flex: 1,
-    paddingHorizontal: spacing.xxl,
-    justifyContent: "center",
-  },
+  center: { flex: 1, paddingHorizontal: spacing.xxl, justifyContent: "center" },
   mark: {
     fontFamily: fonts.serif,
     fontStyle: "italic",
@@ -96,5 +118,26 @@ const styles = StyleSheet.create({
     color: colors.paper,
     fontWeight: "600",
     letterSpacing: 0.4,
+  },
+  sentBox: { alignItems: "center", gap: spacing.md },
+  sentTitle: {
+    fontFamily: fonts.serif,
+    fontStyle: "italic",
+    fontSize: fontSizes.serifLg,
+    color: colors.ink,
+    textAlign: "center",
+  },
+  sentSub: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.mute,
+    textAlign: "center",
+    lineHeight: fontSizes.bodySm * 1.5,
+  },
+  retry: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.terracota,
+    marginTop: spacing.sm,
   },
 });

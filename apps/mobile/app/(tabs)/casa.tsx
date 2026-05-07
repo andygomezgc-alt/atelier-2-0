@@ -1,35 +1,64 @@
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Screen } from "@/src/components/Screen";
 import { useI18n } from "@/src/hooks/useI18n";
-import { useMockUser, getMockRestaurant, getMockStaff } from "@/src/state/mockUser";
+import { useAuth } from "@/src/hooks/useAuth";
+import { useRestaurant } from "@/src/hooks/useRestaurant";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import type { Role } from "@atelier/shared";
 
 export default function CasaScreen() {
   const { t } = useI18n();
-  const user = useMockUser();
-  const restaurant = getMockRestaurant();
-  const staff = getMockStaff();
-  const showInviteCode = can(user.role, "view_invite_code");
+  const { state } = useAuth();
+  const { rs } = useRestaurant();
 
-  const roleLabel = {
+  const user =
+    state.status === "signed-in" || state.status === "needs-restaurant" ? state.user : null;
+  const showInviteCode = user ? can(user.role, "view_invite_code") : false;
+
+  const roleLabel: Record<Role, string> = {
     admin: t("role_admin"),
     chef_executive: t("role_chef_executive"),
     sous_chef: t("role_sous_chef"),
     viewer: t("role_viewer"),
-  } as const;
+  };
+
+  if (rs.status === "loading") {
+    return (
+      <Screen>
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.terracota} />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (rs.status === "error") {
+    return (
+      <Screen>
+        <View style={styles.center}>
+          <Text style={styles.errorText}>{rs.message}</Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  const restaurant = rs.data;
+  const restaurantInitial = restaurant.name[0]?.toUpperCase() ?? "R";
 
   return (
     <Screen>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.heroRow}>
           <View style={styles.heroPhoto}>
-            <Text style={styles.heroPhotoText}>{restaurant.initial}</Text>
+            <Text style={styles.heroPhotoText}>{restaurantInitial}</Text>
           </View>
           <View style={styles.heroMeta}>
             <Text style={styles.eyebrow}>{t("eyebrow_casa")}</Text>
             <Text style={styles.restaurantName}>{restaurant.name}</Text>
-            <Text style={styles.identity}>{restaurant.identityLine}</Text>
+            {restaurant.identityLine ? (
+              <Text style={styles.identity}>{restaurant.identityLine}</Text>
+            ) : null}
           </View>
         </View>
 
@@ -43,25 +72,33 @@ export default function CasaScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHead}>
             <Text style={styles.eyebrow}>{t("eyebrow_staff")}</Text>
-            <Text style={styles.count}>{staff.length}</Text>
+            <Text style={styles.count}>{restaurant.staff.length}</Text>
           </View>
-          {staff.map((s) => (
-            <View key={s.id} style={styles.staffRow}>
-              <View
-                style={[
-                  styles.staffAvatar,
-                  s.role === "admin" && styles.staffAvatarAdmin,
-                  s.role === "chef_executive" && styles.staffAvatarChef,
-                ]}
-              >
-                <Text style={styles.staffAvatarText}>{s.initials}</Text>
+          {restaurant.staff.map((s) => {
+            const si = s.name
+              .split(" ")
+              .map((w) => w[0] ?? "")
+              .join("")
+              .slice(0, 2)
+              .toUpperCase();
+            return (
+              <View key={s.id} style={styles.staffRow}>
+                <View
+                  style={[
+                    styles.staffAvatar,
+                    s.role === "admin" && styles.staffAvatarAdmin,
+                    s.role === "chef_executive" && styles.staffAvatarChef,
+                  ]}
+                >
+                  <Text style={styles.staffAvatarText}>{si}</Text>
+                </View>
+                <View style={styles.staffMeta}>
+                  <Text style={styles.staffName}>{s.name}</Text>
+                  <Text style={styles.staffRole}>{roleLabel[s.role]}</Text>
+                </View>
               </View>
-              <View style={styles.staffMeta}>
-                <Text style={styles.staffName}>{s.name}</Text>
-                <Text style={styles.staffRole}>{roleLabel[s.role]}</Text>
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       </ScrollView>
     </Screen>
@@ -75,6 +112,8 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
     gap: spacing.xl,
   },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  errorText: { fontFamily: fonts.sans, fontSize: fontSizes.bodySm, color: colors.mute },
   heroRow: { flexDirection: "row", gap: spacing.lg, alignItems: "center" },
   heroPhoto: {
     width: 56,
@@ -134,11 +173,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  count: {
-    fontFamily: fonts.sans,
-    fontSize: fontSizes.bodySm,
-    color: colors.mute,
-  },
+  count: { fontFamily: fonts.sans, fontSize: fontSizes.bodySm, color: colors.mute },
   staffRow: {
     flexDirection: "row",
     alignItems: "center",

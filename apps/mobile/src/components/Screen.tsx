@@ -8,7 +8,7 @@ import { StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Header } from "./Header";
 import { ProfileSheet } from "./ProfileSheet";
-import { useMockUser } from "@/src/state/mockUser";
+import { useAuth } from "@/src/hooks/useAuth";
 import { colors } from "@/src/theme";
 
 type Props = {
@@ -19,9 +19,23 @@ type Props = {
   children: React.ReactNode;
 };
 
+function initials(name: string): string {
+  return name
+    .split(" ")
+    .map((w) => w[0] ?? "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
 export function Screen({ title, back, onBack, right, children }: Props) {
-  const user = useMockUser();
+  const { state } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
+
+  const userInitials =
+    state.status === "signed-in" || state.status === "needs-restaurant"
+      ? initials(state.user.name)
+      : "?";
 
   return (
     <SafeAreaView edges={["top"]} style={styles.root}>
@@ -30,7 +44,7 @@ export function Screen({ title, back, onBack, right, children }: Props) {
         back={back}
         onBack={onBack}
         right={right}
-        initials={user.initials}
+        initials={userInitials}
         onAvatar={() => setProfileOpen(true)}
       />
       <View style={styles.body}>{children}</View>
