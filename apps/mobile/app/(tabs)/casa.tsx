@@ -1,8 +1,22 @@
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import { Screen } from "@/src/components/Screen";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
-import { useRestaurant } from "@/src/hooks/useRestaurant";
+import { useRestaurant, type StaffMember } from "@/src/hooks/useRestaurant";
+import { StaffMemberSheet } from "@/src/components/StaffMemberSheet";
+import { showToast } from "@/src/components/Toast";
+import { apiFetch } from "@/src/api/client";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import type { Role } from "@atelier/shared";
@@ -10,11 +24,13 @@ import type { Role } from "@atelier/shared";
 export default function CasaScreen() {
   const { t } = useI18n();
   const { state } = useAuth();
-  const { rs } = useRestaurant();
+  const { rs, reload } = useRestaurant();
+  const [selectedMember, setSelectedMember] = useState<StaffMember | null>(null);
 
   const user =
     state.status === "signed-in" || state.status === "needs-restaurant" ? state.user : null;
   const showInviteCode = user ? can(user.role, "view_invite_code") : false;
+  const canManage = user ? can(user.role, "manage_members") : false;
 
   const roleLabel: Record<Role, string> = {
     admin: t("role_admin"),
@@ -22,6 +38,33 @@ export default function CasaScreen() {
     sous_chef: t("role_sous_chef"),
     viewer: t("role_viewer"),
   };
+
+  const handleCopyCode = useCallback(async () => {
+    if (rs.status !== "ok") return;
+    await Clipboard.setStringAsync(rs.data.inviteCode);
+    showToast(t("toast_copiado"));
+  }, [rs, t]);
+
+  async function handleRegen() {
+    try {
+      await apiFetch("/api/restaurant/invite", { method: "POST" });
+      reload();
+      showToast(t("toast_regenerado"));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    }
+  }
+
+  async function handleShare() {
+    if (rs.status !== "ok") return;
+    try {
+      await Share.share({
+        message: `Únete a ${rs.data.name} en Atelier con el código ${rs.data.inviteCode}.`,
+      });
+    } catch {
+      // user cancelled
+    }
+  }
 
   if (rs.status === "loading") {
     return (
@@ -64,8 +107,21 @@ export default function CasaScreen() {
 
         {showInviteCode ? (
           <View style={styles.inviteRow}>
-            <Text style={styles.eyebrow}>{t("eyebrow_codigo")}</Text>
-            <Text style={styles.inviteCode}>{restaurant.inviteCode}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.eyebrow}>{t("eyebrow_codigo")}</Text>
+              <Text style={styles.inviteCode}>{restaurant.inviteCode}</Text>
+            </View>
+            <Pressable hitSlop={8} onPress={handleCopyCode} style={styles.iconBtn}>
+              <Ionicons name="copy-outline" size={18} color={colors.terracota} />
+            </Pressable>
+            <Pressable hitSlop={8} onPress={handleShare} style={styles.iconBtn}>
+              <Ionicons name="share-outline" size={18} color={colors.terracota} />
+            </Pressable>
+            {canManage ? (
+              <Pressable hitSlop={8} onPress={handleRegen} style={styles.iconBtn}>
+                <Ionicons name="refresh-outline" size={18} color={colors.terracota} />
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
 
@@ -82,7 +138,12 @@ export default function CasaScreen() {
               .slice(0, 2)
               .toUpperCase();
             return (
-              <View key={s.id} style={styles.staffRow}>
+              <Pressable
+                key={s.id}
+                style={styles.staffRow}
+                onPress={() => canManage && setSelectedMember(s)}
+                disabled={!canManage}
+              >
                 <View
                   style={[
                     styles.staffAvatar,
@@ -96,11 +157,24 @@ export default function CasaScreen() {
                   <Text style={styles.staffName}>{s.name}</Text>
                   <Text style={styles.staffRole}>{roleLabel[s.role]}</Text>
                 </View>
-              </View>
+                {canManage ? (
+                  <Ionicons name="chevron-forward" size={16} color={colors.mute} />
+                ) : null}
+              </Pressable>
             );
           })}
         </View>
       </ScrollView>
+
+      <StaffMemberSheet
+        open={!!selectedMember}
+        member={selectedMember}
+        onClose={() => setSelectedMember(null)}
+        onChanged={() => {
+          reload();
+          showToast(t("toast_edit_mode"));
+        }}
+      />
     </Screen>
   );
 }
@@ -153,7 +227,7 @@ const styles = StyleSheet.create({
   inviteRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: spacing.sm,
     backgroundColor: colors.paperSoft,
     borderRadius: radii.md,
     paddingHorizontal: spacing.md,
@@ -166,7 +240,9 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.body,
     color: colors.terracota,
     letterSpacing: 1.5,
+    marginTop: 2,
   },
+  iconBtn: { padding: 4 },
   section: { gap: spacing.sm },
   sectionHead: {
     flexDirection: "row",
