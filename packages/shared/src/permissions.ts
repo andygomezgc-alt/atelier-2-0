@@ -7,6 +7,7 @@ export type Permission =
   | "approve_recipe"
   | "create_menu"
   | "edit_menu"
+  | "delete_menu"
   | "view_staff_recipe"
   | "export_pdf"
   | "view_invite_code"
@@ -21,6 +22,7 @@ const MATRIX: Record<Permission, ReadonlyArray<Role>> = {
   approve_recipe: ["admin", "chef_executive"],
   create_menu: ["admin", "chef_executive", "sous_chef"],
   edit_menu: ["admin", "chef_executive", "sous_chef"],
+  delete_menu: ["admin", "chef_executive"],
   view_staff_recipe: ["admin", "chef_executive", "sous_chef"],
   export_pdf: ["admin", "chef_executive", "sous_chef", "viewer"],
   view_invite_code: ["admin"],

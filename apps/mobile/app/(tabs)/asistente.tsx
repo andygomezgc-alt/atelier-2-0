@@ -13,11 +13,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Empty } from "@/src/components/Empty";
+import { NetworkError } from "@/src/components/NetworkError";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import {
   createConversation,
   streamMessage,
+  StreamTimeoutError,
   type ChatMessage,
 } from "@/src/api/conversations";
 import { createRecipe } from "@/src/api/recipes";
@@ -46,6 +48,7 @@ export default function AsistenteScreen() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [streamBuf, setStreamBuf] = useState("");
+  const [streamError, setStreamError] = useState<{ content: string; model: ModelKey } | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -68,25 +71,15 @@ export default function AsistenteScreen() {
     return conv.id;
   }, [conversationId, ideaId, model]);
 
-  async function handleSend() {
-    const text = input.trim();
-    if (!text || streaming) return;
-    setInput("");
-
-    const userMsg: ChatMessage = {
-      id: `local-${Date.now()}`,
-      role: "user",
-      content: text,
-      createdAt: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
+  async function runStream(text: string, modelToUse: ModelKey) {
     setStreaming(true);
     setStreamBuf("");
+    setStreamError(null);
 
     try {
       const convId = await ensureConversation();
       let acc = "";
-      const full = await streamMessage(convId, text, model, (delta) => {
+      const full = await streamMessage(convId, text, modelToUse, (delta) => {
         acc += delta;
         setStreamBuf(acc);
       });
@@ -100,11 +93,35 @@ export default function AsistenteScreen() {
         },
       ]);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      if (err instanceof StreamTimeoutError) {
+        setStreamError({ content: text, model: modelToUse });
+      } else {
+        showToast(err instanceof Error ? err.message : t("error_network"));
+      }
     } finally {
       setStreaming(false);
       setStreamBuf("");
     }
+  }
+
+  async function handleSend() {
+    const text = input.trim();
+    if (!text || streaming) return;
+    setInput("");
+
+    const userMsg: ChatMessage = {
+      id: `local-${Date.now()}`,
+      role: "user",
+      content: text,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    await runStream(text, model);
+  }
+
+  async function retryStream() {
+    if (!streamError || streaming) return;
+    await runStream(streamError.content, streamError.model);
   }
 
   async function saveAsRecipe() {
@@ -131,7 +148,7 @@ export default function AsistenteScreen() {
   }
 
   const showSaveButton =
-    !streaming && messages.some((m) => m.role === "assistant") && conversationId;
+    !streaming && !streamError && messages.some((m) => m.role === "assistant") && conversationId;
 
   return (
     <Screen title={t("header_asistente")}>
@@ -200,6 +217,12 @@ export default function AsistenteScreen() {
             </View>
           ) : null}
         </ScrollView>
+
+        {streamError ? (
+          <View style={styles.errorBanner}>
+            <NetworkError onRetry={retryStream} />
+          </View>
+        ) : null}
 
         {showSaveButton ? (
           <Pressable style={styles.saveAction} onPress={saveAsRecipe}>
@@ -304,6 +327,11 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.body,
     color: colors.ink,
     lineHeight: fontSizes.body * 1.5,
+  },
+  errorBanner: {
+    height: 200,
+    borderTopWidth: 0.5,
+    borderTopColor: colors.edge,
   },
   saveAction: {
     flexDirection: "row",

@@ -4,6 +4,8 @@ const prisma = new PrismaClient();
 
 const RESTAURANT_NAME = "Ristorante Marche";
 const INVITE_CODE = "MARCHE-A7K2";
+const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "andrea@ristorantemarche.it";
+const ADMIN_NAME = process.env.SEED_ADMIN_NAME ?? "Andrea Conti";
 
 async function main() {
   console.log("Seeding Ristorante Marche…");
@@ -34,11 +36,11 @@ async function main() {
 
   // Users ────────────────────────────────────────────────────────────
   const andrea = await prisma.user.upsert({
-    where: { email: "andrea@ristorantemarche.it" },
+    where: { email: ADMIN_EMAIL },
     update: { restaurantId: restaurant.id, role: Role.admin },
     create: {
-      email: "andrea@ristorantemarche.it",
-      name: "Andrea Conti",
+      email: ADMIN_EMAIL,
+      name: ADMIN_NAME,
       bio: "Cocina mediterránea de raíz, técnica francesa.",
       role: Role.admin,
       languagePref: "es",

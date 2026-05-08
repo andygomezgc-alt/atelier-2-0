@@ -4,6 +4,15 @@ import { TOKEN_KEY } from "./client";
 
 const BASE = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 
+const STREAM_INACTIVITY_MS = 35_000;
+
+export class StreamTimeoutError extends Error {
+  constructor() {
+    super("stream_timeout");
+    this.name = "StreamTimeoutError";
+  }
+}
+
 export type ConversationSummary = {
   id: string;
   modelUsed: string;
@@ -38,55 +47,76 @@ export async function streamMessage(
   onDelta: (delta: string) => void,
 ): Promise<string> {
   const token = await SecureStore.getItemAsync(TOKEN_KEY);
-  const res = await fetch(`${BASE}/api/conversations/${conversationId}/messages`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ content, model }),
-  });
+  const abort = new AbortController();
+  let timedOut = false;
+  let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+  const resetInactivityTimer = () => {
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+    inactivityTimer = setTimeout(() => {
+      timedOut = true;
+      abort.abort();
+    }, STREAM_INACTIVITY_MS);
+  };
 
-  if (!res.ok || !res.body) {
-    throw new Error(`HTTP ${res.status}`);
-  }
+  try {
+    resetInactivityTimer();
+    const res = await fetch(`${BASE}/api/conversations/${conversationId}/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ content, model }),
+      signal: abort.signal,
+    });
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  let full = "";
+    if (!res.ok || !res.body) {
+      throw new Error(`HTTP ${res.status}`);
+    }
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let full = "";
 
-    let idx = buf.indexOf("\n\n");
-    while (idx !== -1) {
-      const chunk = buf.slice(0, idx);
-      buf = buf.slice(idx + 2);
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      resetInactivityTimer();
+      buf += decoder.decode(value, { stream: true });
 
-      const line = chunk.split("\n").find((l) => l.startsWith("data: "));
-      if (line) {
-        try {
-          const json = JSON.parse(line.slice(6));
-          if (json.type === "delta" && typeof json.text === "string") {
-            full += json.text;
-            onDelta(json.text);
-          } else if (json.type === "error") {
-            throw new Error(json.message ?? "stream error");
-          }
-        } catch (e) {
-          if (e instanceof Error && e.message !== "stream error") {
-            // ignore JSON parse errors for non-data lines
-          } else {
-            throw e;
+      let idx = buf.indexOf("\n\n");
+      while (idx !== -1) {
+        const chunk = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+
+        const line = chunk.split("\n").find((l) => l.startsWith("data: "));
+        if (line) {
+          try {
+            const json = JSON.parse(line.slice(6));
+            if (json.type === "delta" && typeof json.text === "string") {
+              full += json.text;
+              onDelta(json.text);
+            } else if (json.type === "error") {
+              throw new Error(json.message ?? "stream error");
+            }
+          } catch (e) {
+            if (e instanceof Error && e.message !== "stream error") {
+              // ignore JSON parse errors for non-data lines
+            } else {
+              throw e;
+            }
           }
         }
+        idx = buf.indexOf("\n\n");
       }
-      idx = buf.indexOf("\n\n");
     }
-  }
 
-  return full;
+    return full;
+  } catch (err) {
+    if (timedOut) throw new StreamTimeoutError();
+    throw err;
+  } finally {
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+  }
 }

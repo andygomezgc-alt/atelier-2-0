@@ -7,7 +7,31 @@ export const dynamic = "force-dynamic";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM = process.env.RESEND_FROM ?? "Atelier <noreply@atelier.app>";
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+
+// In-memory rate limit. Per-instance only (Vercel may run multiple lambdas);
+// good enough to slow casual abuse. For distributed limits use Upstash/Redis.
+const EMAIL_WINDOW_MS = 60_000;
+const IP_WINDOW_MS = 15 * 60_000;
+const IP_MAX = 5;
+const lastByEmail = new Map<string, number>();
+const ipHits = new Map<string, number[]>();
+
+function rateLimited(email: string, ip: string): { ok: true } | { ok: false; retryAfter: number } {
+  const now = Date.now();
+  const lastEmail = lastByEmail.get(email);
+  if (lastEmail && now - lastEmail < EMAIL_WINDOW_MS) {
+    return { ok: false, retryAfter: Math.ceil((EMAIL_WINDOW_MS - (now - lastEmail)) / 1000) };
+  }
+  const hits = (ipHits.get(ip) ?? []).filter((t) => now - t < IP_WINDOW_MS);
+  if (hits.length >= IP_MAX) {
+    const oldest = hits[0] ?? now;
+    return { ok: false, retryAfter: Math.ceil((IP_WINDOW_MS - (now - oldest)) / 1000) };
+  }
+  hits.push(now);
+  ipHits.set(ip, hits);
+  lastByEmail.set(email, now);
+  return { ok: true };
+}
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -15,6 +39,18 @@ export async function POST(req: NextRequest) {
 
   if (!email || !email.includes("@")) {
     return NextResponse.json({ error: "Email inválido" }, { status: 400 });
+  }
+
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    "unknown";
+  const limit = rateLimited(email, ip);
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: "Demasiadas solicitudes. Intenta más tarde." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+    );
   }
 
   const token = randomBytes(32).toString("hex");
@@ -28,7 +64,6 @@ export async function POST(req: NextRequest) {
   });
 
   const deepLink = `atelier://auth?token=${token}&email=${encodeURIComponent(email)}`;
-  const webFallback = `${APP_URL}/api/mobile/auth/verify?token=${token}&email=${encodeURIComponent(email)}`;
 
   await resend.emails.send({
     from: FROM,
@@ -40,7 +75,8 @@ export async function POST(req: NextRequest) {
         <p style="color:#8b7a6f;margin-bottom:32px">Tu cuaderno creativo</p>
         <p>Toca el botón para entrar. El enlace expira en <strong>15 minutos</strong>.</p>
         <a href="${deepLink}" style="display:inline-block;background:#c47e4f;color:#f9f7f2;text-decoration:none;padding:14px 28px;border-radius:10px;font-family:system-ui,sans-serif;font-weight:600;margin:24px 0">Abrir Atelier</a>
-        <p style="font-size:13px;color:#8b7a6f">Si el botón no funciona, <a href="${webFallback}" style="color:#c47e4f">abre este enlace</a>.</p>
+        <p style="font-size:13px;color:#8b7a6f;margin-top:32px">Si la app no se abrió al tocar el botón, copia este código y pégalo en la pantalla de login:</p>
+        <p style="font-family:'SF Mono',Menlo,monospace;font-size:12px;background:#fff;border:1px solid #e8e2d8;border-radius:8px;padding:12px;word-break:break-all;color:#2a2520">${token}</p>
       </div>
     `,
   });

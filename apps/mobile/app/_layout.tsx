@@ -13,12 +13,13 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (state.status === "loading") return;
-    const inAuthGroup = segments[0] === "(auth)";
-    const inTabs = segments[0] === "(tabs)";
+    const sub = segments as readonly string[];
+    const inAuthGroup = sub[0] === "(auth)";
+    const inTabs = sub[0] === "(tabs)";
 
     if (state.status === "signed-out" && !inAuthGroup) {
       router.replace("/(auth)/login");
-    } else if (state.status === "needs-restaurant" && segments[1] !== "choose-flow" && segments[1] !== "create-restaurant" && segments[1] !== "join-with-code") {
+    } else if (state.status === "needs-restaurant" && sub[1] !== "choose-flow" && sub[1] !== "create-restaurant" && sub[1] !== "join-with-code") {
       router.replace("/(auth)/choose-flow");
     } else if (state.status === "signed-in" && inAuthGroup) {
       router.replace("/(tabs)/inicio");

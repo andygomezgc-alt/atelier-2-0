@@ -77,3 +77,19 @@ export async function PATCH(
   if (!menu) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(serialize(menu));
 }
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const ctx = await requireAuth(req, "delete_menu");
+  if (isNextResponse(ctx)) return ctx;
+  const { id } = await params;
+
+  const existing = await prisma.menuFolder.findUnique({ where: { id } });
+  if (!existing || existing.restaurantId !== ctx.restaurantId)
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  await prisma.menuFolder.delete({ where: { id } });
+  return new NextResponse(null, { status: 204 });
+}
