@@ -47,7 +47,7 @@ export function ConfirmSheet({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(20,17,15,0.5)" },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(20,17,15,0.5)" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl },
   dialog: {
     backgroundColor: colors.paper,
