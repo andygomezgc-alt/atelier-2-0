@@ -25,7 +25,13 @@ Las 5 fases del plan están implementadas y commiteadas:
 - **Fase 4 — Equipo:** Casa con código copy/share/regen, StaffMemberSheet con cambio de rol y eliminación, `usePermissions` hook centralizado.
 - **Fase 5 — Pulido:** NetworkError component, fotos de perfil/restaurante via Vercel Blob, i18n trilingüe completo.
 
-Verificación automatizada: 5 paquetes typecheck verde, 58 tests pasando, `/api/health` 200, `/api/mobile/auth/request` envía correo real.
+Verificación automatizada: 5 paquetes typecheck verde, 62 tests pasando, `/api/health` 200, `/api/mobile/auth/request` envía correo real.
+
+**Producción (piloto)**
+- API: <https://atelier-2-0-mu.vercel.app> (Vercel, región `fra1`)
+- DB: Neon Postgres (proyecto `atelier-prod`, región Frankfurt)
+- Storage: Vercel Blob (`atelier-photos`)
+- Mobile: Expo Go con `--tunnel` desde el portátil del autor (ver "Operación piloto" abajo)
 
 ## Configuración
 
@@ -72,8 +78,61 @@ Verificación:
 
 ```bash
 pnpm -r typecheck              # 5 paquetes
-pnpm -r test                   # 58 tests entre @atelier/shared y @atelier/i18n
+pnpm -r test                   # 62 tests entre @atelier/shared y @atelier/i18n
 ```
+
+## Operación piloto (Expo Go + tunnel)
+
+Durante la fase piloto (Andy solo, luego 4-6 chefs), la app móvil corre en **Expo Go**
+contra el backend de Vercel. El bundle JS se sirve desde el portátil del autor via
+**tunnel de Expo** (basado en ngrok), por lo que el portátil tiene que estar
+**encendido** y con internet mientras alguien use la app desde el móvil. Las llamadas
+a la API van directas a Vercel (no pasan por el tunnel), así que los datos viajan en
+HTTPS sin saltos extra.
+
+### Arrancar el tunnel cada mañana
+
+1. Abrir terminal en la raíz del repo:
+   ```
+   C:\Users\Utente\Desktop\atelier-2-0
+   ```
+2. Ejecutar:
+   ```bash
+   pnpm dev:mobile:tunnel
+   ```
+3. Esperar ~20 s. Cuando el tunnel está listo verás en la consola:
+   ```
+   Tunnel ready.
+   › Metro waiting on exp://xxxxxx-andy.anonymous.atelier.exp.direct:80
+   › Scan the QR code above with Expo Go (Android) or the Camera app (iOS)
+   ```
+4. **Si en lugar de "Tunnel ready" ves "Install @expo/ngrok globally?"**, responder `y` y darle 1-2 min a la primera instalación. Próximas veces ya no preguntará.
+5. Escanear el QR con Expo Go (Android) o con la cámara nativa (iOS) y la app abre.
+
+### Confirmación visual
+
+- Línea `Logs for your project will appear below.` significa que el tunnel está
+  vivo y escuchando.
+- Si el tunnel se cae verás `Tunnel connection has been closed` o `ECONNRESET`.
+- Para parar: `Ctrl+C` en la consola.
+
+### Si el tunnel se cae mientras estás en cocina
+
+- La app que ya tenías abierta en el iPhone **sigue funcionando** para llamadas a la
+  API (van directo a Vercel, no dependen del tunnel).
+- Lo que se rompe es **recargar el bundle**: si cerrás la app y la reabrís, Expo Go
+  no podrá descargar el JS y verás la pantalla roja de Expo Go ("Could not connect
+  to development server"). Solución: reiniciar el tunnel desde el portátil.
+- Las llamadas a la API tienen **timeout de 30 s**: si Vercel o tu red móvil cuelgan
+  más de 30 s, la app lanza `NetworkError` y el componente `<NetworkError />` con
+  botón "Reintentar" aparece donde el flujo lo soporta (asistente IA por ahora).
+
+### Path a EAS Build (sin dependencia del portátil)
+
+Cuando termine la semana de uso solo y sirva para invitar a chefs piloto, hay que
+pasar a un build standalone con **EAS Build** (Apple Developer Account requerido,
+$99/año). Esto elimina Expo Go y el tunnel: la app se instala como `.ipa` real en el
+iPhone via TestFlight o Internal Distribution. Documento de ejecución pendiente.
 
 ## API endpoints
 
