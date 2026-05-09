@@ -2,36 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { PatchMenuRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
+import { logger } from "@/lib/logger";
+import { projectMenuDetail, menuDetailInclude } from "@/lib/projections";
 
 export const dynamic = "force-dynamic";
 
 async function loadFullMenu(menuId: string) {
   return prisma.menuFolder.findUnique({
     where: { id: menuId },
-    include: {
-      items: {
-        orderBy: { order: "asc" },
-        include: { recipe: { select: { title: true } } },
-      },
-    },
+    include: menuDetailInclude,
   });
-}
-
-function serialize(menu: NonNullable<Awaited<ReturnType<typeof loadFullMenu>>>) {
-  return {
-    id: menu.id,
-    name: menu.name,
-    season: menu.season,
-    presentationStyle: menu.presentationStyle,
-    items: menu.items.map((it) => ({
-      id: it.id,
-      recipeId: it.recipeId,
-      name: it.customName ?? it.recipe?.title ?? "",
-      description: it.customDesc ?? "",
-      price: it.price,
-      order: it.order,
-    })),
-  };
 }
 
 export async function GET(
@@ -48,7 +28,7 @@ export async function GET(
   if (!menu || menu.restaurantId !== ctx.restaurantId)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json(serialize(menu));
+  return NextResponse.json(projectMenuDetail(menu));
 }
 
 export async function PATCH(
@@ -75,7 +55,7 @@ export async function PATCH(
 
   const menu = await loadFullMenu(id);
   if (!menu) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(serialize(menu));
+  return NextResponse.json(projectMenuDetail(menu));
 }
 
 export async function DELETE(
@@ -91,5 +71,6 @@ export async function DELETE(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.menuFolder.delete({ where: { id } });
+  logger.info("menu_deleted", { menuId: id, userId: ctx.userId });
   return new NextResponse(null, { status: 204 });
 }

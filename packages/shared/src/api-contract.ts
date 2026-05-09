@@ -10,29 +10,29 @@ export const LanguageSchema = z.enum(["es", "it", "en"]);
 export const ModelSchema = z.enum(["sonnet", "opus"]);
 
 export const RecipeContentSchema = z.object({
-  ingredients: z.array(z.string()).default([]),
-  method: z.array(z.string()).default([]),
-  notes: z.string().default(""),
+  ingredients: z.array(z.string().max(500)).max(50).default([]),
+  method: z.array(z.string().max(500)).max(50).default([]),
+  notes: z.string().max(5000).default(""),
 });
 
 // ─────────── /api/me ───────────
 
 export const MeResponseSchema = z.object({
-  id: z.string(),
-  email: z.string().email(),
-  name: z.string(),
-  photoUrl: z.string().nullable(),
-  bio: z.string().nullable(),
+  id: z.string().max(100),
+  email: z.string().email().max(254),
+  name: z.string().max(100),
+  photoUrl: z.string().max(2048).nullable(),
+  bio: z.string().max(1000).nullable(),
   role: RoleSchema,
   languagePref: LanguageSchema,
   defaultModel: ModelSchema,
-  restaurantId: z.string().nullable(),
-  restaurantName: z.string().nullable(),
+  restaurantId: z.string().max(100).nullable(),
+  restaurantName: z.string().max(100).nullable(),
 });
 
 export const PatchMeRequestSchema = z.object({
-  name: z.string().min(1).max(80).optional(),
-  bio: z.string().max(140).optional(),
+  name: z.string().min(1).max(100).optional(),
+  bio: z.string().max(1000).optional(),
   languagePref: LanguageSchema.optional(),
   defaultModel: ModelSchema.optional(),
 });
@@ -40,8 +40,8 @@ export const PatchMeRequestSchema = z.object({
 // ─────────── /api/restaurant ───────────
 
 export const CreateRestaurantRequestSchema = z.object({
-  name: z.string().min(1).max(80),
-  identityLine: z.string().max(140).optional(),
+  name: z.string().min(1).max(100),
+  identityLine: z.string().max(500).optional(),
 });
 
 export const JoinRestaurantRequestSchema = z.object({
@@ -49,19 +49,19 @@ export const JoinRestaurantRequestSchema = z.object({
 });
 
 export const RestaurantResponseSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  identityLine: z.string().nullable(),
-  photoUrl: z.string().nullable(),
-  inviteCode: z.string(),
+  id: z.string().max(100),
+  name: z.string().max(100),
+  identityLine: z.string().max(500).nullable(),
+  photoUrl: z.string().max(2048).nullable(),
+  inviteCode: z.string().max(20),
   staff: z.array(
     z.object({
-      id: z.string(),
-      name: z.string(),
-      photoUrl: z.string().nullable(),
+      id: z.string().max(100),
+      name: z.string().max(100),
+      photoUrl: z.string().max(2048).nullable(),
       role: RoleSchema,
     }),
-  ),
+  ).max(100),
 });
 
 export const PatchStaffMemberRequestSchema = z.object({
@@ -75,17 +75,17 @@ export const CreateIdeaRequestSchema = z.object({
 });
 
 export const IdeaResponseSchema = z.object({
-  id: z.string(),
-  text: z.string(),
+  id: z.string().max(100),
+  text: z.string().max(2000),
   status: IdeaStatusSchema,
-  createdAt: z.string(),
-  authorName: z.string(),
+  createdAt: z.string().max(50),
+  authorName: z.string().max(100),
 });
 
 // ─────────── /api/conversations ───────────
 
 export const CreateConversationRequestSchema = z.object({
-  ideaId: z.string().nullable().optional(),
+  ideaId: z.string().max(100).nullable().optional(),
   modelUsed: ModelSchema,
 });
 
@@ -110,20 +110,20 @@ export const PatchRecipeRequestSchema = z.object({
 });
 
 export const RecipeListItemSchema = z.object({
-  id: z.string(),
-  title: z.string(),
+  id: z.string().max(100),
+  title: z.string().max(200),
   state: RecipeStateSchema,
   priority: z.boolean(),
-  version: z.number().int(),
-  authorName: z.string(),
-  updatedAt: z.string(),
+  version: z.number().int().nonnegative().max(100000),
+  authorName: z.string().max(100),
+  updatedAt: z.string().max(50),
 });
 
 export const RecipeDetailSchema = RecipeListItemSchema.extend({
   contentJson: RecipeContentSchema,
-  approvedByName: z.string().nullable(),
-  approvedAt: z.string().nullable(),
-  sourceConversationId: z.string().nullable(),
+  approvedByName: z.string().max(100).nullable(),
+  approvedAt: z.string().max(50).nullable(),
+  sourceConversationId: z.string().max(100).nullable(),
 });
 
 // ─────────── /api/menus ───────────
@@ -140,43 +140,43 @@ export const PatchMenuRequestSchema = z.object({
 });
 
 export const MenuListItemSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  season: z.string().nullable(),
-  itemCount: z.number().int(),
-  updatedAt: z.string(),
+  id: z.string().max(100),
+  name: z.string().max(120),
+  season: z.string().max(60).nullable(),
+  itemCount: z.number().int().nonnegative().max(10000),
+  updatedAt: z.string().max(50),
 });
 
 export const MenuDishSchema = z.object({
-  id: z.string(),
-  recipeId: z.string(),
-  name: z.string(),
-  description: z.string(),
-  price: z.number().int().nonnegative(), // céntimos
-  order: z.number().int().nonnegative(),
+  id: z.string().max(100),
+  recipeId: z.string().max(100),
+  name: z.string().max(200),
+  description: z.string().max(1000),
+  price: z.number().int().nonnegative().max(1_000_000), // céntimos (max 10k €)
+  order: z.number().int().nonnegative().max(10000),
 });
 
 export const MenuDetailSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  season: z.string().nullable(),
+  id: z.string().max(100),
+  name: z.string().max(120),
+  season: z.string().max(60).nullable(),
   presentationStyle: MenuStyleSchema,
-  items: z.array(MenuDishSchema),
+  items: z.array(MenuDishSchema).max(500),
 });
 
 export const AddMenuItemRequestSchema = z.object({
-  recipeId: z.string(),
+  recipeId: z.string().max(100),
   customName: z.string().max(200).optional(),
-  customDesc: z.string().max(400).optional(),
-  price: z.number().int().nonnegative(),
+  customDesc: z.string().max(1000).optional(),
+  price: z.number().int().nonnegative().max(1_000_000),
   presentationStyle: MenuStyleSchema.optional(),
 });
 
 export const PatchMenuItemRequestSchema = z.object({
   customName: z.string().max(200).nullable().optional(),
-  customDesc: z.string().max(400).nullable().optional(),
-  price: z.number().int().nonnegative().optional(),
-  order: z.number().int().nonnegative().optional(),
+  customDesc: z.string().max(1000).nullable().optional(),
+  price: z.number().int().nonnegative().max(1_000_000).optional(),
+  order: z.number().int().nonnegative().max(10000).optional(),
   presentationStyle: MenuStyleSchema.optional(),
 });
 

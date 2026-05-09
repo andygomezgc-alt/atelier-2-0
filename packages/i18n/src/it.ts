@@ -138,4 +138,7 @@ export const it: EsDict = {
   error_invalid_link: "Link non valido. Richiedi un nuovo link.",
   error_network: "Errore di rete. Riprova.",
   btn_back: "Indietro",
+  add_to_menu_season_placeholder: "Autunno 2026",
+  casa_share_message: "Unisciti a {restaurantName} su Atelier con il codice {code}.",
+  assistant_untitled_recipe: "Ricetta senza titolo",
 };

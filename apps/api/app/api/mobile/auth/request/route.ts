@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { Resend } from "resend";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
+
+// Hash tokens at rest so a DB leak does not expose usable magic links.
+// Email still carries the plaintext token; verify route hashes before lookup.
+const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM = process.env.RESEND_FROM ?? "Atelier <noreply@atelier.app>";
@@ -54,22 +59,27 @@ export async function POST(req: NextRequest) {
   }
 
   const token = randomBytes(32).toString("hex");
+  const tokenHash = hashToken(token);
   const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 min
 
-  // Auth.js stores verification tokens by identifier (email)
+  // Auth.js stores verification tokens by identifier (email).
+  // We persist sha256(token) instead of the plaintext to limit blast radius
+  // of a DB leak. Pre-deploy tokens still in flight (TTL 15min) will fail
+  // verification and users must request a new magic link.
   await prisma.verificationToken.upsert({
-    where: { identifier_token: { identifier: email, token } },
-    update: { token, expires },
-    create: { identifier: email, token, expires },
+    where: { identifier_token: { identifier: email, token: tokenHash } },
+    update: { token: tokenHash, expires },
+    create: { identifier: email, token: tokenHash, expires },
   });
 
   const deepLink = `atelier://auth?token=${token}&email=${encodeURIComponent(email)}`;
 
-  await resend.emails.send({
-    from: FROM,
-    to: email,
-    subject: "Tu enlace mágico — Atelier",
-    html: `
+  try {
+    await resend.emails.send({
+      from: FROM,
+      to: email,
+      subject: "Tu enlace mágico — Atelier",
+      html: `
       <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#f9f7f2;color:#2a2520">
         <h1 style="font-style:italic;color:#1a3a3a;margin-bottom:8px">Atelier</h1>
         <p style="color:#8b7a6f;margin-bottom:32px">Tu cuaderno creativo</p>
@@ -79,7 +89,15 @@ export async function POST(req: NextRequest) {
         <p style="font-family:'SF Mono',Menlo,monospace;font-size:12px;background:#fff;border:1px solid #e8e2d8;border-radius:8px;padding:12px;word-break:break-all;color:#2a2520">${token}</p>
       </div>
     `,
-  });
+    });
+  } catch (err) {
+    logger.error("magic_link_email_failed", {
+      err: err instanceof Error ? err.message : String(err),
+      email,
+    });
+    return NextResponse.json({ error: "No se pudo enviar el correo" }, { status: 502 });
+  }
 
+  logger.info("magic_link_sent", { email });
   return NextResponse.json({ ok: true });
 }

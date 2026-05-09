@@ -137,4 +137,7 @@ export const en: EsDict = {
   error_invalid_link: "Invalid link. Please request a new one.",
   error_network: "Network error. Please try again.",
   btn_back: "Back",
+  add_to_menu_season_placeholder: "Autumn 2026",
+  casa_share_message: "Join {restaurantName} on Atelier with the code {code}.",
+  assistant_untitled_recipe: "Untitled recipe",
 };

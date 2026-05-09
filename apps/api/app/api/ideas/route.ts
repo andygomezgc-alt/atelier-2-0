@@ -1,60 +1,41 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
-import { CreateIdeaRequestSchema } from "@atelier/shared";
-import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
+import { CreateIdeaRequestSchema, type CreateIdeaRequest } from "@atelier/shared";
+import { withAuth } from "@/lib/with-auth";
+import { logger } from "@/lib/logger";
+import { projectIdea, ideaInclude } from "@/lib/projections";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
-  const ctx = await requireAuth(req);
-  if (isNextResponse(ctx)) return ctx;
-  if (!ctx.restaurantId)
-    return NextResponse.json({ error: "Not in a restaurant" }, { status: 403 });
-
+export const GET = withAuth({}, async (ctx) => {
   const ideas = await prisma.idea.findMany({
     where: { restaurantId: ctx.restaurantId },
     orderBy: { createdAt: "desc" },
-    include: { author: { select: { name: true, email: true } } },
+    include: ideaInclude,
     take: 100,
   });
 
-  return NextResponse.json(
-    ideas.map((i) => ({
-      id: i.id,
-      text: i.text,
-      status: i.status,
-      createdAt: i.createdAt.toISOString(),
-      authorName: i.author?.name ?? i.author?.email ?? "—",
-    })),
-  );
-}
+  return NextResponse.json(ideas.map(projectIdea));
+});
 
-export async function POST(req: NextRequest) {
-  const ctx = await requireAuth(req, "capture_idea");
-  if (isNextResponse(ctx)) return ctx;
+export const POST = withAuth(
+  { permission: "capture_idea", body: CreateIdeaRequestSchema },
+  async (ctx, body: CreateIdeaRequest) => {
+    const idea = await prisma.idea.create({
+      data: {
+        text: body.text,
+        restaurantId: ctx.restaurantId,
+        authorId: ctx.userId,
+      },
+      include: ideaInclude,
+    });
 
-  const body = await req.json();
-  const parse = CreateIdeaRequestSchema.safeParse(body);
-  if (!parse.success)
-    return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
-
-  const idea = await prisma.idea.create({
-    data: {
-      text: parse.data.text,
+    logger.info("idea_created", {
+      ideaId: idea.id,
       restaurantId: ctx.restaurantId,
-      authorId: ctx.userId,
-    },
-    include: { author: { select: { name: true, email: true } } },
-  });
+      userId: ctx.userId,
+    });
 
-  return NextResponse.json(
-    {
-      id: idea.id,
-      text: idea.text,
-      status: idea.status,
-      createdAt: idea.createdAt.toISOString(),
-      authorName: idea.author?.name ?? idea.author?.email ?? "—",
-    },
-    { status: 201 },
-  );
-}
+    return NextResponse.json(projectIdea(idea), { status: 201 });
+  },
+);

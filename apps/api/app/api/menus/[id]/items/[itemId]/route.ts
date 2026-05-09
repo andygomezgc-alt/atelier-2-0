@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { PatchMenuItemRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -84,5 +85,6 @@ export async function DELETE(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.menuItem.delete({ where: { id: itemId } });
+  logger.info("menu_item_removed", { menuId, itemId, userId: ctx.userId });
   return NextResponse.json({ ok: true });
 }

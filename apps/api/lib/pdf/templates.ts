@@ -15,6 +15,14 @@ type RenderInput = {
   dishes: Dish[];
 };
 
+type Theme = {
+  css: string;
+  frame?: (inner: string) => string;
+  header: (restaurantName: string, menuName: string, seasonHtml: string) => string;
+  dish: (d: Dish, priceHtml: string) => string;
+  footer?: string;
+};
+
 const PRICE = (cents: number) => `${(cents / 100).toFixed(0)} €`;
 
 const ESCAPE: Record<string, string> = {
@@ -35,8 +43,20 @@ const SHARED_HEAD = `
 </style>
 `;
 
-export function renderElegant({ restaurantName, menuName, season, dishes }: RenderInput): string {
-  return `<!doctype html><html><head>${SHARED_HEAD}<style>
+function renderMenu(input: RenderInput, theme: Theme): string {
+  const { restaurantName, menuName, season, dishes } = input;
+  const seasonHtml = season ? `<div class="season">${escape(season)}</div>` : "";
+  const header = theme.header(restaurantName, menuName, seasonHtml);
+  const dishesHtml = dishes.map((d) => theme.dish(d, PRICE(d.price))).join("");
+  const inner = header + dishesHtml + (theme.footer ?? "");
+  const body = theme.frame ? theme.frame(inner) : inner;
+  return `<!doctype html><html><head>${SHARED_HEAD}${theme.css}</head><body>
+    ${body}
+  </body></html>`;
+}
+
+const THEME_ELEGANT: Theme = {
+  css: `<style>
     body { font-family: 'Iowan Old Style', 'Hoefler Text', 'Times New Roman', serif; color: #2a2520; background: #f9f7f2; }
     .brand { text-align: center; font-style: italic; font-size: 12pt; letter-spacing: 0.5em; color: #8b7a6f; margin-bottom: 4mm; }
     h1 { text-align: center; font-style: italic; font-weight: 400; font-size: 32pt; letter-spacing: 0.04em; color: #1a3a3a; margin: 0 0 2mm; }
@@ -48,29 +68,26 @@ export function renderElegant({ restaurantName, menuName, season, dishes }: Rend
     .dish-desc { font-size: 10pt; color: #4a423b; line-height: 1.5; margin: 0; }
     .dish-price { font-style: italic; font-size: 14pt; color: #c47e4f; flex-shrink: 0; }
     .footer { margin-top: 18mm; text-align: center; font-style: italic; font-size: 9pt; color: #b1a394; letter-spacing: 0.4em; }
-  </style></head><body>
-    <div class="brand">${escape(restaurantName.toUpperCase())}</div>
+  </style>`,
+  header: (restaurantName, menuName, seasonHtml) => `<div class="brand">${escape(restaurantName.toUpperCase())}</div>
     <h1>${escape(menuName)}</h1>
-    ${season ? `<div class="season">${escape(season)}</div>` : ""}
+    ${seasonHtml}
     <div class="rule"></div>
-    ${dishes
-      .map(
-        (d) => `
+    `,
+  dish: (d, price) => `
       <div class="dish">
         <div class="dish-text">
           <div class="dish-name">${escape(d.name)}</div>
           ${d.description ? `<div class="dish-desc">${escape(d.description)}</div>` : ""}
         </div>
-        <div class="dish-price">${PRICE(d.price)}</div>
+        <div class="dish-price">${price}</div>
       </div>`,
-      )
-      .join("")}
-    <div class="footer">— ATELIER —</div>
-  </body></html>`;
-}
+  footer: `
+    <div class="footer">— ATELIER —</div>`,
+};
 
-export function renderRustic({ restaurantName, menuName, season, dishes }: RenderInput): string {
-  return `<!doctype html><html><head>${SHARED_HEAD}<style>
+const THEME_RUSTIC: Theme = {
+  css: `<style>
     body { font-family: 'Iowan Old Style', 'Hoefler Text', Georgia, serif; color: #2a2520; background: #f5f0e6; }
     .frame { border: 1.5pt double #c47e4f; padding: 14mm 12mm; }
     .brand { text-align: center; font-size: 10pt; letter-spacing: 0.6em; color: #4a423b; margin-bottom: 6mm; text-transform: uppercase; }
@@ -83,29 +100,27 @@ export function renderRustic({ restaurantName, menuName, season, dishes }: Rende
     .dish-desc { font-size: 10pt; color: #4a423b; line-height: 1.6; margin: 0 0 2mm; }
     .dish-price { font-size: 11pt; color: #c47e4f; font-weight: 600; }
     .footer { margin-top: 12mm; text-align: center; font-size: 8.5pt; color: #8b7a6f; }
-  </style></head><body>
-    <div class="frame">
+  </style>`,
+  frame: (inner) => `<div class="frame">${inner}</div>`,
+  header: (restaurantName, menuName, seasonHtml) => `
       <div class="brand">${escape(restaurantName)}</div>
       <h1>${escape(menuName)}</h1>
       <div class="underline"></div>
-      ${season ? `<div class="season">${escape(season)}</div>` : ""}
-      ${dishes
-        .map(
-          (d) => `
+      ${seasonHtml}
+      `,
+  dish: (d, price) => `
         <div class="dish">
           <div class="dish-name">${escape(d.name)}</div>
           ${d.description ? `<div class="dish-desc">${escape(d.description)}</div>` : ""}
-          <div class="dish-price">${PRICE(d.price)}</div>
+          <div class="dish-price">${price}</div>
         </div>`,
-        )
-        .join("")}
+  footer: `
       <div class="footer">— Atelier —</div>
-    </div>
-  </body></html>`;
-}
+    `,
+};
 
-export function renderMinimal({ restaurantName, menuName, season, dishes }: RenderInput): string {
-  return `<!doctype html><html><head>${SHARED_HEAD}<style>
+const THEME_MINIMAL: Theme = {
+  css: `<style>
     body { font-family: -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #2a2520; background: #ffffff; font-size: 10.5pt; }
     .head { margin-bottom: 18mm; }
     .restaurant { font-size: 9pt; letter-spacing: 0.4em; color: #8b7a6f; text-transform: uppercase; margin-bottom: 6mm; }
@@ -118,29 +133,30 @@ export function renderMinimal({ restaurantName, menuName, season, dishes }: Rend
     .dish-desc { font-size: 9.5pt; color: #6e5e54; line-height: 1.5; margin: 0; }
     .dish-price { font-variant-numeric: tabular-nums; color: #c47e4f; font-weight: 500; }
     .rule { height: 0.4pt; background: #e0d8c8; margin: 6mm 0 8mm; }
-  </style></head><body>
-    <div class="head">
+  </style>`,
+  header: (restaurantName, menuName, seasonHtml) => `<div class="head">
       <div class="restaurant">${escape(restaurantName)}</div>
       <h1>${escape(menuName)}</h1>
-      ${season ? `<div class="season">${escape(season)}</div>` : ""}
+      ${seasonHtml}
     </div>
     <div class="rule"></div>
     <div class="dishes">
-      ${dishes
-        .map(
-          (d) => `
+      `,
+  dish: (d, price) => `
         <div class="dish">
           <div class="dish-text">
             <div class="dish-name">${escape(d.name)}</div>
             ${d.description ? `<div class="dish-desc">${escape(d.description)}</div>` : ""}
           </div>
-          <div class="dish-price">${PRICE(d.price)}</div>
+          <div class="dish-price">${price}</div>
         </div>`,
-        )
-        .join("")}
-    </div>
-  </body></html>`;
-}
+  footer: `
+    </div>`,
+};
+
+export const renderElegant = (input: RenderInput) => renderMenu(input, THEME_ELEGANT);
+export const renderRustic = (input: RenderInput) => renderMenu(input, THEME_RUSTIC);
+export const renderMinimal = (input: RenderInput) => renderMenu(input, THEME_MINIMAL);
 
 export const TEMPLATES = {
   elegant: renderElegant,

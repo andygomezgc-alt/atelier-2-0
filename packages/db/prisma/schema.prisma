@@ -49,6 +49,7 @@ model Restaurant {
   conversations Conversation[]
   recipes       Recipe[]
   menuFolders   MenuFolder[]
+  auditLogs     AuditLog[]
 }
 
 model User {
@@ -60,9 +61,10 @@ model User {
   role         Role    @default(viewer)
   languagePref String  @default("es")
   defaultModel String  @default("sonnet")
+  tokenVersion Int     @default(0)
 
   restaurantId String?
-  restaurant   Restaurant? @relation(fields: [restaurantId], references: [id])
+  restaurant   Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -76,6 +78,8 @@ model User {
   accounts Account[]
   sessions Session[]
 
+  auditLogs AuditLog[] @relation("AuditLogActor")
+
   @@index([restaurantId])
 }
 
@@ -84,7 +88,7 @@ model Idea {
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   authorId     String
-  author       User       @relation(fields: [authorId], references: [id])
+  author       User       @relation(fields: [authorId], references: [id], onDelete: Restrict)
   text         String     @db.Text
   status       IdeaStatus @default(open)
   createdAt    DateTime   @default(now())
@@ -99,9 +103,9 @@ model Conversation {
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   authorId     String
-  author       User       @relation(fields: [authorId], references: [id])
+  author       User       @relation(fields: [authorId], references: [id], onDelete: Restrict)
   ideaId       String?
-  idea         Idea?      @relation(fields: [ideaId], references: [id])
+  idea         Idea?      @relation(fields: [ideaId], references: [id], onDelete: SetNull)
   modelUsed    String
   createdAt    DateTime   @default(now())
 
@@ -109,6 +113,7 @@ model Conversation {
   recipes  Recipe[]
 
   @@index([restaurantId, createdAt])
+  @@index([authorId, createdAt])
 }
 
 model Message {
@@ -132,7 +137,7 @@ model Recipe {
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   authorId     String
-  author       User       @relation("RecipeAuthor", fields: [authorId], references: [id])
+  author       User       @relation("RecipeAuthor", fields: [authorId], references: [id], onDelete: Restrict)
 
   title       String
   version     Int    @default(1)
@@ -142,11 +147,13 @@ model Recipe {
   priority Boolean     @default(false)
 
   sourceConversationId String?
-  sourceConversation   Conversation? @relation(fields: [sourceConversationId], references: [id])
+  sourceConversation   Conversation? @relation(fields: [sourceConversationId], references: [id], onDelete: SetNull)
 
   approvedById String?
-  approvedBy   User?     @relation("RecipeApprovedBy", fields: [approvedById], references: [id])
+  approvedBy   User?     @relation("RecipeApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   approvedAt   DateTime?
+
+  deletedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -155,6 +162,8 @@ model Recipe {
 
   @@index([restaurantId, state])
   @@index([restaurantId, priority])
+  @@index([restaurantId, title])
+  @@index([restaurantId, deletedAt])
 }
 
 model MenuFolder {
@@ -170,6 +179,7 @@ model MenuFolder {
   items MenuItem[]
 
   @@index([restaurantId])
+  @@index([restaurantId, updatedAt])
 }
 
 model MenuItem {
@@ -177,7 +187,7 @@ model MenuItem {
   menuFolderId String
   menuFolder   MenuFolder @relation(fields: [menuFolderId], references: [id], onDelete: Cascade)
   recipeId     String
-  recipe       Recipe     @relation(fields: [recipeId], references: [id])
+  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Restrict)
   customName   String?
   customDesc   String?    @db.Text
   price        Int
@@ -223,4 +233,20 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model AuditLog {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  actorId      String?
+  actor        User?      @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action       String     // e.g. "staff_role_changed", "staff_removed", "invite_regenerated"
+  targetType   String?    // e.g. "User"
+  targetId     String?
+  payload      Json?
+  createdAt    DateTime   @default(now())
+
+  @@index([restaurantId, createdAt])
+  @@index([actorId, createdAt])
 }

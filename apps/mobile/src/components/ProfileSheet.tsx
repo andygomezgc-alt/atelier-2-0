@@ -1,8 +1,9 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import { patchMe } from "@/src/api/auth";
+import { BottomSheet } from "./BottomSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import type { Language } from "@atelier/i18n";
 import type { Role } from "@atelier/shared";
@@ -36,11 +37,8 @@ export function ProfileSheet({ open, onClose }: Props) {
   }
 
   return (
-    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={styles.sheet}>
-        <View style={styles.handle} />
-        <ScrollView contentContainerStyle={styles.content}>
+    <BottomSheet open={open} onClose={onClose}>
+      <ScrollView contentContainerStyle={styles.content}>
           {user ? (
             <>
               <View style={styles.hero}>
@@ -106,8 +104,7 @@ export function ProfileSheet({ open, onClose }: Props) {
             <Ionicons name="log-out-outline" size={18} color={colors.danger} />
           </Pressable>
         </ScrollView>
-      </View>
-    </Modal>
+    </BottomSheet>
   );
 }
 
@@ -149,23 +146,6 @@ function ModelOption({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(20,17,15,0.4)" },
-  sheet: {
-    backgroundColor: colors.paperSoft,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "85%",
-    paddingBottom: spacing.xl,
-  },
-  handle: {
-    alignSelf: "center",
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.edge,
-    marginTop: 10,
-    marginBottom: spacing.sm,
-  },
   content: { padding: spacing.xl, gap: spacing.lg },
   hero: { alignItems: "center", paddingVertical: spacing.md, gap: 4 },
   heroPhoto: {

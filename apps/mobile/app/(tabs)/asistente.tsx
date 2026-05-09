@@ -131,7 +131,7 @@ export default function AsistenteScreen() {
     const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
     if (!lastAssistant) return;
 
-    const title = (lastUser?.content ?? "Receta sin título").slice(0, 80);
+    const title = (lastUser?.content ?? t("assistant_untitled_recipe")).slice(0, 80);
     const notes = lastAssistant.content.slice(0, 800);
 
     try {

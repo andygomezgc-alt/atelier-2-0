@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -25,5 +26,6 @@ export async function DELETE(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   await prisma.conversation.delete({ where: { id } });
+  logger.info("conversation_deleted", { conversationId: id, userId: ctx.userId });
   return new NextResponse(null, { status: 204 });
 }

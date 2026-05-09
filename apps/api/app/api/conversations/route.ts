@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { CreateConversationRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -53,5 +54,12 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  logger.info("conversation_created", {
+    conversationId: conv.id,
+    restaurantId: ctx.restaurantId,
+    userId: ctx.userId,
+    modelUsed: parse.data.modelUsed,
+    ideaId: parse.data.ideaId ?? null,
+  });
   return NextResponse.json({ id: conv.id }, { status: 201 });
 }

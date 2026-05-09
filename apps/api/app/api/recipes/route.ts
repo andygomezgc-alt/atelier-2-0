@@ -1,23 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
-import { CreateRecipeRequestSchema } from "@atelier/shared";
-import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
+import { CreateRecipeRequestSchema, type CreateRecipeRequest } from "@atelier/shared";
+import { withAuth } from "@/lib/with-auth";
+import { logger } from "@/lib/logger";
+import { projectRecipeListItem, recipeListInclude } from "@/lib/projections";
 import type { Prisma } from "@atelier/db";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
-  const ctx = await requireAuth(req);
-  if (isNextResponse(ctx)) return ctx;
-  if (!ctx.restaurantId)
-    return NextResponse.json({ error: "Not in a restaurant" }, { status: 403 });
-
+export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
   const { searchParams } = new URL(req.url);
   const state = searchParams.get("state") as "draft" | "in_test" | "approved" | null;
   const priorityParam = searchParams.get("priority");
   const q = searchParams.get("q");
 
-  const where: Prisma.RecipeWhereInput = { restaurantId: ctx.restaurantId };
+  const where: Prisma.RecipeWhereInput = { restaurantId: ctx.restaurantId, deletedAt: null };
   if (state) where.state = state;
   if (priorityParam === "true") where.priority = true;
   if (q) where.title = { contains: q, mode: "insensitive" };
@@ -25,56 +22,36 @@ export async function GET(req: NextRequest) {
   const recipes = await prisma.recipe.findMany({
     where,
     orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
-    include: { author: { select: { name: true, email: true } } },
+    include: recipeListInclude,
     take: 200,
   });
 
-  return NextResponse.json(
-    recipes.map((r) => ({
-      id: r.id,
-      title: r.title,
-      state: r.state,
-      priority: r.priority,
-      version: r.version,
-      authorName: r.author?.name ?? r.author?.email ?? "—",
-      updatedAt: r.updatedAt.toISOString(),
-    })),
-  );
-}
+  return NextResponse.json(recipes.map(projectRecipeListItem));
+});
 
-export async function POST(req: NextRequest) {
-  const ctx = await requireAuth(req, "edit_recipe");
-  if (isNextResponse(ctx)) return ctx;
+export const POST = withAuth(
+  { permission: "edit_recipe", body: CreateRecipeRequestSchema },
+  async (ctx, body: CreateRecipeRequest) => {
+    const recipe = await prisma.recipe.create({
+      data: {
+        title: body.title,
+        contentJson: body.contentJson,
+        restaurantId: ctx.restaurantId,
+        authorId: ctx.userId,
+        sourceConversationId: body.sourceConversationId ?? null,
+        state: "draft",
+        priority: false,
+        version: 1,
+      },
+      include: recipeListInclude,
+    });
 
-  const body = await req.json();
-  const parse = CreateRecipeRequestSchema.safeParse(body);
-  if (!parse.success)
-    return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
-
-  const recipe = await prisma.recipe.create({
-    data: {
-      title: parse.data.title,
-      contentJson: parse.data.contentJson,
+    logger.info("recipe_created", {
+      recipeId: recipe.id,
       restaurantId: ctx.restaurantId,
-      authorId: ctx.userId,
-      sourceConversationId: parse.data.sourceConversationId ?? null,
-      state: "draft",
-      priority: false,
-      version: 1,
-    },
-    include: { author: { select: { name: true, email: true } } },
-  });
+      userId: ctx.userId,
+    });
 
-  return NextResponse.json(
-    {
-      id: recipe.id,
-      title: recipe.title,
-      state: recipe.state,
-      priority: recipe.priority,
-      version: recipe.version,
-      authorName: recipe.author?.name ?? recipe.author?.email ?? "—",
-      updatedAt: recipe.updatedAt.toISOString(),
-    },
-    { status: 201 },
-  );
-}
+    return NextResponse.json(projectRecipeListItem(recipe), { status: 201 });
+  },
+);

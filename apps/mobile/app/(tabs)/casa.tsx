@@ -59,7 +59,10 @@ export default function CasaScreen() {
     if (rs.status !== "ok") return;
     try {
       await Share.share({
-        message: `Únete a ${rs.data.name} en Atelier con el código ${rs.data.inviteCode}.`,
+        message: t("casa_share_message", {
+          restaurantName: rs.data.name,
+          code: rs.data.inviteCode,
+        }),
       });
     } catch {
       // user cancelled

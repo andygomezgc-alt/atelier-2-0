@@ -1,8 +1,11 @@
 import { NextRequest } from "next/server";
+import Anthropic, { APIUserAbortError } from "@anthropic-ai/sdk";
 import { prisma } from "@atelier/db";
 import { PostMessageRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
-import { buildSystemBlocks, streamMessage, type Msg } from "@/lib/anthropic";
+import { buildSystemBlocks, MODEL_IDS, type Msg } from "@/lib/anthropic";
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
 
 export const dynamic = "force-dynamic";
 
@@ -74,7 +77,7 @@ export async function POST(
       select: { name: true, identityLine: true },
     }),
     prisma.recipe.findMany({
-      where: { restaurantId: ctx.restaurantId },
+      where: { restaurantId: ctx.restaurantId, deletedAt: null },
       orderBy: { updatedAt: "desc" },
       take: 8,
       select: { title: true, state: true },
@@ -98,7 +101,8 @@ export async function POST(
 
   const start = Date.now();
 
-  // SSE stream
+  // SSE stream — wire client AbortSignal so closing the connection cancels the
+  // Anthropic upstream call (avoids burning tokens after the client disconnects).
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
@@ -106,9 +110,19 @@ export async function POST(
       let inputTokens: number | undefined;
       let outputTokens: number | undefined;
       let cachedTokens: number | undefined;
+      let aborted = false;
+      let errored = false;
 
       try {
-        const anthroStream = streamMessage({ model, system, messages });
+        const anthroStream = anthropic.messages.stream(
+          {
+            model: MODEL_IDS[model],
+            max_tokens: 2048,
+            system,
+            messages,
+          },
+          { signal: req.signal },
+        );
 
         for await (const event of anthroStream) {
           if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
@@ -137,11 +151,24 @@ export async function POST(
           ),
         );
       } catch (err) {
-        const message = err instanceof Error ? err.message : "stream error";
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", message })}\n\n`));
+        if (err instanceof APIUserAbortError || req.signal.aborted) {
+          aborted = true;
+        } else {
+          errored = true;
+          const message = err instanceof Error ? err.message : "stream error";
+          // Best-effort: client may already be gone if this was an abort path.
+          try {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: "error", message })}\n\n`),
+            );
+          } catch {}
+        }
       } finally {
-        // Persist final assistant message + telemetry.
-        if (assistantText) {
+        // Persistence policy: only persist the assistant turn on a clean completion.
+        // On abort/error we skip persistence rather than storing partial text — the
+        // Message schema has no "partial"/"error" flag and adding one requires a
+        // Prisma migration (out of scope for this fix). The client can retry.
+        if (assistantText && !aborted && !errored) {
           await prisma.message.create({
             data: {
               conversationId,
@@ -163,9 +190,13 @@ export async function POST(
             output_tokens: outputTokens,
             cached_tokens: cachedTokens,
             latency_ms: Date.now() - start,
+            aborted,
+            partial_chars: aborted || errored ? assistantText.length : undefined,
           }),
         );
-        controller.close();
+        try {
+          controller.close();
+        } catch {}
       }
     },
   });

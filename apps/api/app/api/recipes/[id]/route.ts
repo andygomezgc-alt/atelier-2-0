@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { PatchRecipeRequestSchema, can } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
+import { logger } from "@/lib/logger";
+import { projectRecipeDetail, recipeDetailInclude } from "@/lib/projections";
 import type { Prisma } from "@atelier/db";
 
 export const dynamic = "force-dynamic";
@@ -18,28 +20,13 @@ export async function GET(
 
   const recipe = await prisma.recipe.findUnique({
     where: { id },
-    include: {
-      author: { select: { name: true, email: true } },
-      approvedBy: { select: { name: true, email: true } },
-    },
+    include: recipeDetailInclude,
   });
 
-  if (!recipe || recipe.restaurantId !== ctx.restaurantId)
+  if (!recipe || recipe.restaurantId !== ctx.restaurantId || recipe.deletedAt !== null)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json({
-    id: recipe.id,
-    title: recipe.title,
-    state: recipe.state,
-    priority: recipe.priority,
-    version: recipe.version,
-    contentJson: recipe.contentJson,
-    authorName: recipe.author?.name ?? recipe.author?.email ?? "—",
-    approvedByName: recipe.approvedBy?.name ?? recipe.approvedBy?.email ?? null,
-    approvedAt: recipe.approvedAt?.toISOString() ?? null,
-    sourceConversationId: recipe.sourceConversationId,
-    updatedAt: recipe.updatedAt.toISOString(),
-  });
+  return NextResponse.json(projectRecipeDetail(recipe));
 }
 
 export async function PATCH(
@@ -58,7 +45,7 @@ export async function PATCH(
     return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
 
   const existing = await prisma.recipe.findUnique({ where: { id } });
-  if (!existing || existing.restaurantId !== ctx.restaurantId)
+  if (!existing || existing.restaurantId !== ctx.restaurantId || existing.deletedAt !== null)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Permission gating per state transition
@@ -87,25 +74,18 @@ export async function PATCH(
   const updated = await prisma.recipe.update({
     where: { id },
     data,
-    include: {
-      author: { select: { name: true, email: true } },
-      approvedBy: { select: { name: true, email: true } },
-    },
+    include: recipeDetailInclude,
   });
 
-  return NextResponse.json({
-    id: updated.id,
-    title: updated.title,
-    state: updated.state,
-    priority: updated.priority,
-    version: updated.version,
-    contentJson: updated.contentJson,
-    authorName: updated.author?.name ?? updated.author?.email ?? "—",
-    approvedByName: updated.approvedBy?.name ?? updated.approvedBy?.email ?? null,
-    approvedAt: updated.approvedAt?.toISOString() ?? null,
-    sourceConversationId: updated.sourceConversationId,
-    updatedAt: updated.updatedAt.toISOString(),
-  });
+  if (parse.data.state) {
+    logger.info("recipe_state_changed", {
+      recipeId: id,
+      state: parse.data.state,
+      userId: ctx.userId,
+    });
+  }
+
+  return NextResponse.json(projectRecipeDetail(updated));
 }
 
 export async function DELETE(
@@ -117,9 +97,10 @@ export async function DELETE(
   const { id } = await params;
 
   const existing = await prisma.recipe.findUnique({ where: { id } });
-  if (!existing || existing.restaurantId !== ctx.restaurantId)
+  if (!existing || existing.restaurantId !== ctx.restaurantId || existing.deletedAt !== null)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await prisma.recipe.delete({ where: { id } });
+  await prisma.recipe.update({ where: { id }, data: { deletedAt: new Date() } });
+  logger.info("recipe_deleted", { recipeId: id, userId: ctx.userId });
   return NextResponse.json({ ok: true });
 }
