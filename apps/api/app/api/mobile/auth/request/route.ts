@@ -10,7 +10,13 @@ export const dynamic = "force-dynamic";
 // Email still carries the plaintext token; verify route hashes before lookup.
 const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy: instantiate at request time to avoid `Missing API key` during Next.js
+// "Collecting page data" build phase when RESEND_API_KEY isn't injected.
+let _resend: Resend | null = null;
+function getResend(): Resend {
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
+  return _resend;
+}
 const FROM = process.env.RESEND_FROM ?? "Atelier <noreply@atelier.app>";
 
 // In-memory rate limit. Per-instance only (Vercel may run multiple lambdas);
@@ -75,7 +81,7 @@ export async function POST(req: NextRequest) {
   const deepLink = `atelier://auth?token=${token}&email=${encodeURIComponent(email)}`;
 
   try {
-    await resend.emails.send({
+    await getResend().emails.send({
       from: FROM,
       to: email,
       subject: "Tu enlace mágico — Atelier",
