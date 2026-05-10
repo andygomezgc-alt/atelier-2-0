@@ -210,11 +210,11 @@ export default function AsistenteScreen() {
       >
         {ideaText ? (
           <View style={styles.pinChip}>
-            <Ionicons name="pricetag" size={12} color={colors.terracota} />
-            <Text style={styles.pinLabel}>{t("chat_idea_anclada")}</Text>
-            <Text style={styles.pinText} numberOfLines={1}>
-              {ideaText}
-            </Text>
+            <Ionicons name="pricetag" size={12} color={colors.terracota} style={styles.pinIcon} />
+            <View style={styles.pinTextWrap}>
+              <Text style={styles.pinLabel}>{t("chat_idea_anclada")}</Text>
+              <Text style={styles.pinText}>{ideaText}</Text>
+            </View>
           </View>
         ) : null}
 
@@ -308,14 +308,21 @@ export default function AsistenteScreen() {
 const styles = StyleSheet.create({
   pinChip: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
+    alignItems: "flex-start",
+    gap: spacing.sm,
     backgroundColor: colors.terracotaSoft,
     paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    paddingVertical: spacing.sm,
     marginHorizontal: spacing.xl,
     marginTop: spacing.md,
-    borderRadius: radii.pill,
+    borderRadius: radii.md,
+  },
+  pinIcon: {
+    marginTop: 2,
+  },
+  pinTextWrap: {
+    flex: 1,
+    flexShrink: 1,
   },
   pinLabel: {
     fontFamily: fonts.sans,
@@ -324,13 +331,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 1.2,
+    marginBottom: 2,
   },
   pinText: {
-    flex: 1,
     fontFamily: fonts.serif,
     fontStyle: "italic",
     fontSize: fontSizes.bodySm,
     color: colors.ink,
+    lineHeight: fontSizes.bodySm * 1.4,
   },
   modelRow: {
     flexDirection: "row",
