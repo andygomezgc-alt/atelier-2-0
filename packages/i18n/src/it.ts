@@ -41,6 +41,10 @@ export const it: EsDict = {
   confirm_delete: "Elimina",
   confirm_delete_recipe_title: "Eliminare la ricetta?",
   confirm_delete_recipe_body: "Questa azione non si può annullare.",
+  confirm_delete_idea_title: "Eliminare questa idea?",
+  confirm_delete_idea_body: "Questa azione non si può annullare.",
+  confirm_delete_idea_body_with_chat:
+    "Questa idea ha {count} conversazione(i) collegata(e). Le conversazioni saranno mantenute ma perderanno il collegamento con l'idea.",
   recetas_filter_all: "Tutte",
   recetas_filter_priority: "Prioritarie",
   recetas_filter_draft: "Bozza",

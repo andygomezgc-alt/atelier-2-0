@@ -6,6 +6,7 @@ export type Idea = {
   status: "open" | "in_chat" | "archived";
   createdAt: string;
   authorName: string;
+  conversationsCount: number;
 };
 
 export const listIdeas = () => apiFetch<Idea[]>("/api/ideas");

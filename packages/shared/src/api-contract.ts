@@ -80,6 +80,7 @@ export const IdeaResponseSchema = z.object({
   status: IdeaStatusSchema,
   createdAt: z.string().max(50),
   authorName: z.string().max(100),
+  conversationsCount: z.number().int().nonnegative().default(0),
 });
 
 // ─────────── /api/conversations ───────────

@@ -45,6 +45,7 @@ export const menuDetailInclude = {
 
 export const ideaInclude = {
   author: { select: { name: true, email: true } },
+  _count: { select: { conversations: true } },
 } as const;
 
 export const restaurantInclude = {
@@ -180,6 +181,7 @@ type IdeaRow = {
   status: string;
   createdAt: Date;
   author: { name: string | null; email: string | null } | null;
+  _count?: { conversations: number };
 };
 
 export function projectIdea(i: IdeaRow): IdeaResponse {
@@ -189,6 +191,7 @@ export function projectIdea(i: IdeaRow): IdeaResponse {
     status: i.status as IdeaResponse["status"],
     createdAt: i.createdAt.toISOString(),
     authorName: i.author?.name ?? i.author?.email ?? "—",
+    conversationsCount: i._count?.conversations ?? 0,
   };
 }
 

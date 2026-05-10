@@ -40,6 +40,10 @@ export const en: EsDict = {
   confirm_delete: "Delete",
   confirm_delete_recipe_title: "Delete recipe?",
   confirm_delete_recipe_body: "This action cannot be undone.",
+  confirm_delete_idea_title: "Delete this idea?",
+  confirm_delete_idea_body: "This action cannot be undone.",
+  confirm_delete_idea_body_with_chat:
+    "This idea has {count} linked conversation(s). The conversations will be kept but their link to the idea will be removed.",
   recetas_filter_all: "All",
   recetas_filter_priority: "Priority",
   recetas_filter_draft: "Draft",

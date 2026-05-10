@@ -41,6 +41,10 @@ export const es = {
   confirm_delete: "Eliminar",
   confirm_delete_recipe_title: "¿Eliminar receta?",
   confirm_delete_recipe_body: "Esta acción no se puede deshacer.",
+  confirm_delete_idea_title: "¿Eliminar esta idea?",
+  confirm_delete_idea_body: "Esta acción no se puede deshacer.",
+  confirm_delete_idea_body_with_chat:
+    "Esta idea tiene {count} conversación(es) asociada(s). Se conservarán las conversaciones pero perderán el vínculo con la idea.",
   recetas_filter_all: "Todas",
   recetas_filter_priority: "Prioritarias",
   recetas_filter_draft: "Borrador",

@@ -10,14 +10,16 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Eyebrow } from "@/src/components/Eyebrow";
 import { Empty } from "@/src/components/Empty";
+import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import { useOfflineQueueSize, enqueueIdea, flushQueue } from "@/src/hooks/useOfflineQueue";
-import { listIdeas, createIdea, patchIdea, type Idea } from "@/src/api/ideas";
+import { listIdeas, createIdea, patchIdea, deleteIdea, type Idea } from "@/src/api/ideas";
 import { showToast } from "@/src/components/Toast";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
@@ -31,6 +33,7 @@ export default function InicioScreen() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Idea | null>(null);
 
   const userName =
     state.status === "signed-in" || state.status === "needs-restaurant"
@@ -70,6 +73,18 @@ export default function InicioScreen() {
       void refreshQueue();
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!pendingDelete) return;
+    const id = pendingDelete.id;
+    setPendingDelete(null);
+    try {
+      await deleteIdea(id);
+      setIdeas((prev) => prev.filter((i) => i.id !== id));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
     }
   }
 
@@ -132,22 +147,47 @@ export default function InicioScreen() {
             ) : (
               <View style={styles.list}>
                 {ideas.map((idea) => (
-                  <Pressable
-                    key={idea.id}
-                    style={styles.ideaCard}
-                    onPress={() => takeToAssistant(idea)}
-                  >
-                    <Text style={styles.ideaText}>{idea.text}</Text>
-                    <Text style={styles.ideaMeta}>
-                      {idea.authorName} · {t("inicio_idea_action")}
-                    </Text>
-                  </Pressable>
+                  <View key={idea.id} style={styles.ideaCard}>
+                    <Pressable
+                      style={styles.ideaBody}
+                      onPress={() => takeToAssistant(idea)}
+                    >
+                      <Text style={styles.ideaText}>{idea.text}</Text>
+                      <Text style={styles.ideaMeta}>
+                        {idea.authorName} · {t("inicio_idea_action")}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      hitSlop={10}
+                      onPress={() => setPendingDelete(idea)}
+                      style={styles.ideaDeleteBtn}
+                      accessibilityLabel={t("confirm_delete")}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={colors.mute} />
+                    </Pressable>
+                  </View>
                 ))}
               </View>
             )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <ConfirmSheet
+        open={!!pendingDelete}
+        title={t("confirm_delete_idea_title")}
+        body={
+          pendingDelete && pendingDelete.conversationsCount > 0
+            ? t("confirm_delete_idea_body_with_chat", {
+                count: pendingDelete.conversationsCount,
+              })
+            : t("confirm_delete_idea_body")
+        }
+        confirmLabel={t("confirm_delete")}
+        cancelLabel={t("confirm_cancel")}
+        destructive
+        onConfirm={handleDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </Screen>
   );
 }
@@ -200,12 +240,17 @@ const styles = StyleSheet.create({
   },
   list: { marginTop: spacing.sm, gap: spacing.sm },
   ideaCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.sm,
     backgroundColor: colors.paperSoft,
     borderWidth: 0.5,
     borderColor: colors.edge,
     borderRadius: radii.md,
     padding: spacing.md,
   },
+  ideaBody: { flex: 1 },
+  ideaDeleteBtn: { paddingTop: 2, paddingLeft: spacing.xs },
   ideaText: {
     fontFamily: fonts.serif,
     fontStyle: "italic",
