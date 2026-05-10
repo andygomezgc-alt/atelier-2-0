@@ -51,6 +51,7 @@ export default function AsistenteScreen() {
   const [streamError, setStreamError] = useState<{ content: string; model: ModelKey } | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Reset state when navigating with a new idea.
   const initialized = useRef(false);
@@ -59,6 +60,13 @@ export default function AsistenteScreen() {
     initialized.current = true;
     setModel(userModel);
   }, [userModel]);
+
+  // Cancel any in-flight stream when the screen unmounts.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
@@ -76,13 +84,23 @@ export default function AsistenteScreen() {
     setStreamBuf("");
     setStreamError(null);
 
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
     try {
       const convId = await ensureConversation();
       let acc = "";
-      const full = await streamMessage(convId, text, modelToUse, (delta) => {
-        acc += delta;
-        setStreamBuf(acc);
-      });
+      const full = await streamMessage(
+        convId,
+        text,
+        modelToUse,
+        (delta) => {
+          acc += delta;
+          setStreamBuf(acc);
+        },
+        ac.signal,
+      );
       setMessages((prev) => [
         ...prev,
         {
@@ -93,12 +111,15 @@ export default function AsistenteScreen() {
         },
       ]);
     } catch (err) {
+      // User-initiated cancel — silent.
+      if (err instanceof Error && err.name === "AbortError") return;
       if (err instanceof StreamTimeoutError) {
         setStreamError({ content: text, model: modelToUse });
       } else {
         showToast(err instanceof Error ? err.message : t("error_network"));
       }
     } finally {
+      if (abortRef.current === ac) abortRef.current = null;
       setStreaming(false);
       setStreamBuf("");
     }
