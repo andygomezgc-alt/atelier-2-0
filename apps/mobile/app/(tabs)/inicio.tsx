@@ -178,9 +178,11 @@ export default function InicioScreen() {
         body={
           pendingDelete && pendingDelete.conversationsCount > 0
             ? t("confirm_delete_idea_body_with_chat", {
-                count: pendingDelete.conversationsCount,
+                name: pendingDelete.text,
               })
-            : t("confirm_delete_idea_body")
+            : t("confirm_delete_idea_body", {
+                name: pendingDelete?.text ?? "",
+              })
         }
         confirmLabel={t("confirm_delete")}
         cancelLabel={t("confirm_cancel")}
