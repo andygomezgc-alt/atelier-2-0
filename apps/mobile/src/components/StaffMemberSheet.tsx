@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useI18n } from "@/src/hooks/useI18n";
 import { apiFetch } from "@/src/api/client";
 import { showToast } from "./Toast";
 import { ConfirmSheet } from "./ConfirmSheet";
 import { Button } from "./Button";
+import { BottomSheet } from "./BottomSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import type { Role } from "@atelier/shared";
 
@@ -73,10 +74,7 @@ export function StaffMemberSheet({ open, member, onClose, onChanged }: Props) {
 
   return (
     <>
-      <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
+      <BottomSheet open={open} onClose={onClose}>
           <ScrollView contentContainerStyle={styles.content}>
             <View style={styles.hero}>
               <View style={styles.avatar}>
@@ -116,8 +114,7 @@ export function StaffMemberSheet({ open, member, onClose, onChanged }: Props) {
               style={styles.removeBtn}
             />
           </ScrollView>
-        </View>
-      </Modal>
+      </BottomSheet>
 
       <ConfirmSheet
         open={confirmDelete}
@@ -134,23 +131,6 @@ export function StaffMemberSheet({ open, member, onClose, onChanged }: Props) {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(20,17,15,0.4)" },
-  sheet: {
-    backgroundColor: colors.paperSoft,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "75%",
-    paddingBottom: spacing.xl,
-  },
-  handle: {
-    alignSelf: "center",
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.edge,
-    marginTop: 10,
-    marginBottom: spacing.sm,
-  },
   content: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, gap: spacing.lg },
   hero: { alignItems: "center", gap: spacing.sm },
   avatar: {

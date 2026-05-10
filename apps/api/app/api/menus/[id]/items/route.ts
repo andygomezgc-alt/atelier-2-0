@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { AddMenuItemRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const recipe = await prisma.recipe.findUnique({ where: { id: parse.data.recipeId } });
-  if (!recipe || recipe.restaurantId !== ctx.restaurantId)
+  if (!recipe || recipe.restaurantId !== ctx.restaurantId || recipe.deletedAt !== null)
     return NextResponse.json({ error: "Recipe not in restaurant" }, { status: 404 });
 
   const last = await prisma.menuItem.findFirst({
@@ -33,7 +34,7 @@ export async function POST(
   });
   const nextOrder = (last?.order ?? -1) + 1;
 
-  await prisma.menuItem.create({
+  const created = await prisma.menuItem.create({
     data: {
       menuFolderId: menuId,
       recipeId: parse.data.recipeId,
@@ -42,6 +43,12 @@ export async function POST(
       price: parse.data.price,
       order: nextOrder,
     },
+  });
+  logger.info("menu_item_added", {
+    menuId,
+    itemId: created.id,
+    recipeId: parse.data.recipeId,
+    userId: ctx.userId,
   });
 
   if (parse.data.presentationStyle) {

@@ -28,6 +28,16 @@ export async function renderHtmlToPdf(html: string): Promise<Buffer> {
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
+    await page.setRequestInterception(true);
+    page.on("request", (req) => {
+      const url = req.url();
+      // Allow only data: URIs and the about:blank initial page
+      if (url.startsWith("data:") || url === "about:blank") {
+        req.continue();
+      } else {
+        req.abort();
+      }
+    });
     await page.setContent(html, { waitUntil: "networkidle0" });
     const pdf = await page.pdf({
       format: "A4",

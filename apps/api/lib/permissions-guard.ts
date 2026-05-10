@@ -12,27 +12,46 @@ export type AuthedContext = {
 };
 
 function getSecret() {
-  const secret = process.env.NEXTAUTH_SECRET;
-  if (!secret) throw new Error("NEXTAUTH_SECRET is not set");
+  const secret = process.env.MOBILE_JWT_SECRET ?? process.env.NEXTAUTH_SECRET;
+  if (!secret) throw new Error("MOBILE_JWT_SECRET or NEXTAUTH_SECRET is not set");
   return new TextEncoder().encode(secret);
 }
 
-async function userIdFromBearer(req: NextRequest): Promise<string | null> {
+async function bearerClaims(
+  req: NextRequest,
+): Promise<{ userId: string; tv: number | null } | null> {
   const auth = req.headers.get("Authorization");
   if (!auth?.startsWith("Bearer ")) return null;
   try {
-    const { payload } = await jwtVerify(auth.slice(7), getSecret());
-    return (payload.sub as string) ?? null;
+    const { payload } = await jwtVerify(auth.slice(7), getSecret(), {
+      issuer: "atelier-mobile",
+      audience: "atelier-api",
+    });
+    const userId = (payload.sub as string) ?? null;
+    if (!userId) return null;
+    const tv = typeof payload.tv === "number" ? payload.tv : null;
+    return { userId, tv };
   } catch {
     return null;
   }
+}
+
+function unauthorizedRevoked() {
+  return NextResponse.json(
+    { error: "Token revoked" },
+    {
+      status: 401,
+      headers: { "WWW-Authenticate": 'Bearer error="invalid_token"' },
+    },
+  );
 }
 
 export async function requireAuth(
   req: NextRequest,
   permission?: Permission,
 ): Promise<AuthedContext | NextResponse> {
-  let userId: string | null = await userIdFromBearer(req);
+  const bearer = await bearerClaims(req);
+  let userId: string | null = bearer?.userId ?? null;
 
   if (!userId) {
     const session = await auth();
@@ -45,11 +64,16 @@ export async function requireAuth(
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, role: true, restaurantId: true },
+    select: { id: true, role: true, restaurantId: true, tokenVersion: true },
   });
 
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 401 });
+  }
+
+  // For Bearer-authenticated requests, enforce tokenVersion match.
+  if (bearer && bearer.tv !== null && user.tokenVersion !== bearer.tv) {
+    return unauthorizedRevoked();
   }
 
   if (permission && !user.restaurantId) {

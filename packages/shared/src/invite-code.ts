@@ -1,13 +1,28 @@
 // Mirrors project/app.jsx:301 generateCode().
-// Format: <SLUG_OF_RESTAURANT_NAME>-<4_RANDOM_ALNUM>
-// Example: "MARCHE-A7K2" for "Ristorante Marche".
+// Format: <SLUG_OF_RESTAURANT_NAME>-<6_RANDOM_ALNUM>
+// Example: "MARCHE-A7K2X9" for "Ristorante Marche".
 
-const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+import { randomBytes } from "node:crypto";
 
-function randomChar(): string {
-  const idx = Math.floor(Math.random() * ALPHABET.length);
-  // ALPHABET is a 36-char constant, so the indexed access is always defined.
-  return ALPHABET.charAt(idx);
+// Unambiguous alphabet: no 0/O, no 1/I/L. 31 chars → 31^6 ≈ 887M combos.
+const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const SUFFIX_LEN = 6;
+
+// Rejection sampling: largest multiple of ALPHABET.length that fits in a byte (256).
+const REJECT_THRESHOLD = 256 - (256 % ALPHABET.length);
+
+function randomSuffix(): string {
+  let out = "";
+  while (out.length < SUFFIX_LEN) {
+    const buf = randomBytes(SUFFIX_LEN * 2);
+    for (let i = 0; i < buf.length && out.length < SUFFIX_LEN; i++) {
+      const b = buf[i]!;
+      if (b < REJECT_THRESHOLD) {
+        out += ALPHABET.charAt(b % ALPHABET.length);
+      }
+    }
+  }
+  return out;
 }
 
 export function generateInviteCode(restaurantName: string | null | undefined): string {
@@ -19,6 +34,5 @@ export function generateInviteCode(restaurantName: string | null | undefined): s
 
   const slug = normalized.slice(0, 6) || "ATELIER";
 
-  const suffix = Array.from({ length: 4 }, randomChar).join("");
-  return `${slug}-${suffix}`;
+  return `${slug}-${randomSuffix()}`;
 }

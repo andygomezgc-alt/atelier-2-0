@@ -1,10 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
-import { CreateRestaurantRequestSchema, generateInviteCode } from "@atelier/shared";
+import { CreateRestaurantRequestSchema } from "@atelier/shared";
+import { generateInviteCode } from "@atelier/shared/invite-code";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { auth } from "@/lib/auth";
+import { projectRestaurant, restaurantInclude } from "@/lib/projections";
 
 export const dynamic = "force-dynamic";
+
+// TODO: dedupe with restaurant/join/route.ts if a 3rd usage appears.
+function validateOrigin(req: NextRequest): NextResponse | null {
+  // Skip for Bearer auth (mobile) — no same-origin Origin header expected.
+  if (req.headers.get("authorization")?.startsWith("Bearer ")) return null;
+
+  const fetchSite = req.headers.get("sec-fetch-site");
+  if (fetchSite && fetchSite !== "same-origin") {
+    return NextResponse.json({ error: "CSRF: invalid origin" }, { status: 403 });
+  }
+
+  const origin = req.headers.get("origin");
+  if (origin && origin !== process.env.NEXTAUTH_URL) {
+    return NextResponse.json({ error: "CSRF: invalid origin" }, { status: 403 });
+  }
+  return null;
+}
 
 export async function GET(req: NextRequest) {
   const ctx = await requireAuth(req);
@@ -16,32 +35,18 @@ export async function GET(req: NextRequest) {
 
   const restaurant = await prisma.restaurant.findUnique({
     where: { id: ctx.restaurantId },
-    include: {
-      users: {
-        select: { id: true, name: true, email: true, photoUrl: true, role: true },
-        orderBy: { createdAt: "asc" },
-      },
-    },
+    include: restaurantInclude,
   });
 
   if (!restaurant) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json({
-    id: restaurant.id,
-    name: restaurant.name,
-    identityLine: restaurant.identityLine,
-    photoUrl: restaurant.photoUrl,
-    inviteCode: restaurant.inviteCode,
-    staff: restaurant.users.map((u) => ({
-      id: u.id,
-      name: u.name ?? u.email ?? "",
-      photoUrl: u.photoUrl,
-      role: u.role ?? "viewer",
-    })),
-  });
+  return NextResponse.json(projectRestaurant(restaurant));
 }
 
 export async function POST(req: NextRequest) {
+  const csrf = validateOrigin(req);
+  if (csrf) return csrf;
+
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

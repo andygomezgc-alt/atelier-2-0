@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { PatchStaffMemberRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
+import { audit } from "@/lib/audit-log";
 
 export const dynamic = "force-dynamic";
 
@@ -24,10 +25,22 @@ export async function PATCH(
   if (!parse.success)
     return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
 
+  const oldRole = target.role;
+  const newRole = parse.data.role;
+
   const updated = await prisma.user.update({
     where: { id: userId },
-    data: { role: parse.data.role },
+    data: { role: newRole },
     select: { id: true, role: true },
+  });
+
+  await audit({
+    restaurantId: ctx.restaurantId,
+    actorId: ctx.userId,
+    action: "staff_role_changed",
+    targetType: "User",
+    targetId: userId,
+    payload: { from: oldRole, to: newRole },
   });
 
   return NextResponse.json({ id: updated.id, role: updated.role });
@@ -50,6 +63,15 @@ export async function DELETE(
   await prisma.user.update({
     where: { id: userId },
     data: { restaurantId: null },
+  });
+
+  await audit({
+    restaurantId: ctx.restaurantId,
+    actorId: ctx.userId,
+    action: "staff_removed",
+    targetType: "User",
+    targetId: userId,
+    payload: { previousRole: target.role },
   });
 
   return NextResponse.json({ ok: true });

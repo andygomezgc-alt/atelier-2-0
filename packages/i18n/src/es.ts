@@ -138,6 +138,9 @@ export const es = {
   error_invalid_link: "Enlace no válido. Pide un nuevo enlace.",
   error_network: "Error de red. Inténtalo de nuevo.",
   btn_back: "Volver",
+  add_to_menu_season_placeholder: "Otoño 2026",
+  casa_share_message: "Únete a {restaurantName} en Atelier con el código {code}.",
+  assistant_untitled_recipe: "Receta sin título",
 } as const;
 
 // Each translation maps a key to a string. Values are not pinned as

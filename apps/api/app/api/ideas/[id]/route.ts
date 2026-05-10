@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { z } from "zod";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -43,5 +44,6 @@ export async function DELETE(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.idea.delete({ where: { id } });
+  logger.info("idea_deleted", { ideaId: id, userId: ctx.userId });
   return NextResponse.json({ ok: true });
 }

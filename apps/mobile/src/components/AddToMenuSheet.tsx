@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +13,7 @@ import { useI18n } from "@/src/hooks/useI18n";
 import { listMenus, createMenu, addMenuItem, type Menu } from "@/src/api/menus";
 import { showToast } from "./Toast";
 import { Button } from "./Button";
+import { BottomSheet } from "./BottomSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 type Props = {
@@ -73,10 +73,7 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
   }
 
   return (
-    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={styles.sheet}>
-        <View style={styles.handle} />
+    <BottomSheet open={open} onClose={onClose}>
         <Text style={styles.title}>{t("btn_add_to_menu")}</Text>
 
         {showCreate ? (
@@ -92,7 +89,7 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
             <TextInput
               value={newSeason}
               onChangeText={setNewSeason}
-              placeholder="Otoño 2026"
+              placeholder={t("add_to_menu_season_placeholder")}
               placeholderTextColor={colors.mute}
               style={styles.input}
               maxLength={60}
@@ -133,29 +130,11 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
             )}
           </ScrollView>
         )}
-      </View>
-    </Modal>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(20,17,15,0.4)" },
-  sheet: {
-    backgroundColor: colors.paperSoft,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "75%",
-    paddingBottom: spacing.xl,
-  },
-  handle: {
-    alignSelf: "center",
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.edge,
-    marginTop: 10,
-    marginBottom: spacing.sm,
-  },
   title: {
     fontFamily: fonts.serif,
     fontStyle: "italic",

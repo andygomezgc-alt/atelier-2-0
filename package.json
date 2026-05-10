@@ -15,13 +15,18 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint",
     "db:generate": "pnpm --filter @atelier/db exec prisma generate",
     "db:migrate": "pnpm --filter @atelier/db exec prisma migrate dev",
+    "db:migrate:deploy": "pnpm --filter @atelier/db exec prisma migrate deploy",
     "db:seed": "pnpm --filter @atelier/db db:seed",
     "db:studio": "pnpm --filter @atelier/db exec prisma studio"
   },
   "devDependencies": {
     "typescript": "^5.7.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "^8.5.10"
+    }
   }
 }

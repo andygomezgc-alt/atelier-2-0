@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { uploadPhoto, validatePhoto, ALLOWED_PHOTO_MIMES, MAX_PHOTO_BYTES } from "@/lib/blob";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -31,12 +32,15 @@ export async function POST(req: NextRequest) {
   }
   const url = await uploadPhoto(buffer, `users/${ctx.userId}`, contentType);
 
-  if (!url)
+  if (!url) {
+    logger.error("photo_upload_misconfigured", { userId: ctx.userId });
     return NextResponse.json(
       { error: "Blob storage not configured (BLOB_READ_WRITE_TOKEN missing)" },
       { status: 500 },
     );
+  }
 
   await prisma.user.update({ where: { id: ctx.userId }, data: { photoUrl: url } });
+  logger.info("photo_updated", { userId: ctx.userId });
   return NextResponse.json({ photoUrl: url });
 }
