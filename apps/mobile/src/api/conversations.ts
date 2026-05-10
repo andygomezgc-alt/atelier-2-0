@@ -37,6 +37,21 @@ export const createConversation = (body: { ideaId?: string | null; modelUsed: "s
 export const listMessages = (conversationId: string) =>
   apiFetch<ChatMessage[]>(`/api/conversations/${conversationId}/messages`);
 
+export type IdeaConversation = {
+  id: string;
+  modelUsed: string;
+  createdAt: string;
+  messages: ChatMessage[];
+};
+
+/**
+ * Get-or-create the (single) conversation tied to an idea, including all
+ * messages. Each idea has exactly one conversation; calling this multiple
+ * times always returns the same conversation with its full history.
+ */
+export const getConversationByIdea = (ideaId: string) =>
+  apiFetch<IdeaConversation>(`/api/ideas/${ideaId}/conversation`);
+
 /**
  * Parses a single SSE `data:` payload string. Returns a typed event or `null`
  * if the payload is non-JSON (e.g. heartbeats). Exported for unit testing —

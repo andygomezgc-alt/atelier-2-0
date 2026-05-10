@@ -18,6 +18,7 @@ import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import {
   createConversation,
+  getConversationByIdea,
   streamMessage,
   StreamTimeoutError,
   type ChatMessage,
@@ -53,7 +54,7 @@ export default function AsistenteScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Reset state when navigating with a new idea.
+  // Initialize the model preference once.
   const initialized = useRef(false);
   useEffect(() => {
     if (initialized.current) return;
@@ -67,6 +68,35 @@ export default function AsistenteScreen() {
       abortRef.current?.abort();
     };
   }, []);
+
+  // Reset chat state and load the conversation when the idea changes.
+  // Each idea owns a single conversation: opening idea A then idea B must
+  // never show A's messages under B.
+  useEffect(() => {
+    // Always reset state on idea change (including ideaId becoming undefined).
+    setConversationId(null);
+    setMessages([]);
+    setStreamBuf("");
+    setStreamError(null);
+
+    if (!ideaId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const conv = await getConversationByIdea(ideaId);
+        if (cancelled) return;
+        setConversationId(conv.id);
+        setMessages(conv.messages);
+      } catch (err) {
+        if (cancelled) return;
+        showToast(err instanceof Error ? err.message : t("error_network"));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ideaId, t]);
 
   useEffect(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);

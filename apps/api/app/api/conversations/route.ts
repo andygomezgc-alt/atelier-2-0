@@ -38,6 +38,25 @@ export async function POST(req: NextRequest) {
   if (!parse.success)
     return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
 
+  // 1:1 between Idea and Conversation: if the idea already has a conversation
+  // for this restaurant, return it instead of attempting to create a duplicate
+  // (which would fail with P2002 on the unique ideaId index).
+  if (parse.data.ideaId) {
+    // IDOR guard: idea must belong to the caller's restaurant.
+    const idea = await prisma.idea.findUnique({
+      where: { id: parse.data.ideaId },
+      select: { id: true, restaurantId: true },
+    });
+    if (!idea || idea.restaurantId !== ctx.restaurantId)
+      return NextResponse.json({ error: "Idea not found" }, { status: 404 });
+
+    const existing = await prisma.conversation.findUnique({
+      where: { ideaId: parse.data.ideaId },
+      select: { id: true },
+    });
+    if (existing) return NextResponse.json({ id: existing.id }, { status: 200 });
+  }
+
   const conv = await prisma.conversation.create({
     data: {
       restaurantId: ctx.restaurantId,
