@@ -92,7 +92,7 @@ model Idea {
   status       IdeaStatus @default(open)
   createdAt    DateTime   @default(now())
 
-  conversations Conversation[]
+  conversation Conversation?
 
   @@index([restaurantId, createdAt])
 }
@@ -103,8 +103,8 @@ model Conversation {
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   authorId     String
   author       User       @relation(fields: [authorId], references: [id], onDelete: Restrict)
-  ideaId       String?
-  idea         Idea?      @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+  ideaId       String?    @unique
+  idea         Idea?      @relation(fields: [ideaId], references: [id], onDelete: Cascade)
   modelUsed    String
   createdAt    DateTime   @default(now())
 
