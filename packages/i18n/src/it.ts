@@ -65,6 +65,7 @@ export const it: EsDict = {
   view_client_btn: "Vista cliente",
   view_client_eyebrow: "Vista cliente",
   dish_custom_name_clear: "Usa il titolo della ricetta",
+  section_empty_hint: "Ancora nessun piatto",
   recetas_filter_all: "Tutte",
   recetas_filter_priority: "Prioritarie",
   recetas_filter_draft: "Bozza",

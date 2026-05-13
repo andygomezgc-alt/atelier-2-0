@@ -704,6 +704,9 @@ export default function MenuDetailScreen() {
                   />
                   {isCollapsed ? null : (
                     <>
+                      {items.length === 0 ? (
+                        <Text style={styles.sectionEmptyHint}>{t("section_empty_hint")}</Text>
+                      ) : null}
                       {items.map((d, i) => (
                         <DishCard
                           key={d.id}
@@ -1041,6 +1044,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: spacing.xs,
     paddingTop: 2,
+  },
+  sectionEmptyHint: {
+    fontFamily: fonts.serif,
+    fontStyle: "italic",
+    fontSize: fontSizes.bodySm,
+    color: colors.mute,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
   },
   customNameBadge: {
     flexDirection: "row",

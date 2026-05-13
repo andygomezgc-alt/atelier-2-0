@@ -4,7 +4,8 @@ import { prisma } from "@atelier/db";
 import { PostMessageRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { buildSystemBlocks, MODEL_IDS, type Msg } from "@/lib/anthropic";
-import { streamBYOK, type BYOKProvider } from "@/lib/byok-providers";
+import { streamBYOK } from "@/lib/byok-providers";
+import { loadUserBYOK } from "@/lib/byok-user";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
 
@@ -71,9 +72,9 @@ export async function POST(
     },
   });
 
-  // Build context: recent recipes + pinned idea. Also fetch BYOK config so we
-  // can route to the user's own provider when configured.
-  const [restaurant, recentRecipes, history, userBYOK] = await Promise.all([
+  // Build context: recent recipes + pinned idea. loadUserBYOK descifra la
+  // clave si está cifrada y self-heals la legacy plaintext en background.
+  const [restaurant, recentRecipes, history, byok] = await Promise.all([
     prisma.restaurant.findUnique({
       where: { id: ctx.restaurantId },
       select: { name: true, identityLine: true },
@@ -89,10 +90,7 @@ export async function POST(
       orderBy: { createdAt: "asc" },
       select: { role: true, content: true },
     }),
-    prisma.user.findUnique({
-      where: { id: ctx.userId },
-      select: { customProvider: true, customApiKey: true, customModel: true },
-    }),
+    loadUserBYOK(ctx.userId),
   ]);
 
   if (!restaurant)
@@ -106,17 +104,6 @@ export async function POST(
   const storedModel =
     conv.modelUsed === "opus" || conv.modelUsed === "haiku" ? conv.modelUsed : "sonnet";
   const model = parse.data.model ?? storedModel;
-
-  // BYOK: if the user configured a custom provider + key + model, use it.
-  // Falls back to the server's Anthropic key otherwise.
-  const byok =
-    userBYOK?.customProvider && userBYOK.customApiKey && userBYOK.customModel
-      ? {
-          provider: userBYOK.customProvider as BYOKProvider,
-          apiKey: userBYOK.customApiKey,
-          model: userBYOK.customModel,
-        }
-      : null;
   const flatSystem = system.map((b) => b.text).join("\n\n");
 
   const start = Date.now();

@@ -16,6 +16,7 @@ import {
   DOCX_MIME,
   type ExtractorBYOK,
 } from "@/lib/recipe-extraction";
+import { loadUserBYOK } from "@/lib/byok-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -50,19 +51,9 @@ export async function POST(req: NextRequest) {
 
   const buffer = new Uint8Array(await file.arrayBuffer());
 
-  const user = await prisma.user.findUnique({
-    where: { id: ctx.userId },
-    select: { customProvider: true, customApiKey: true, customModel: true },
-  });
-
-  const byok: ExtractorBYOK =
-    user?.customProvider && user.customApiKey && user.customModel
-      ? {
-          provider: user.customProvider as "anthropic" | "openai" | "google",
-          apiKey: user.customApiKey,
-          model: user.customModel,
-        }
-      : null;
+  // loadUserBYOK descifra la clave (formato `v1:...`) y self-heala las
+  // entradas legacy plaintext que pudieran quedar de antes de la encripción.
+  const byok: ExtractorBYOK = await loadUserBYOK(ctx.userId);
 
   const start = Date.now();
   try {
