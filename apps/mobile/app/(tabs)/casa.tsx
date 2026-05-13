@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
+import { useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
@@ -23,6 +24,7 @@ import type { Role } from "@atelier/shared";
 
 export default function CasaScreen() {
   const { t } = useI18n();
+  const router = useRouter();
   const { state } = useAuth();
   const { rs, reload } = useRestaurant();
   const [selectedMember, setSelectedMember] = useState<StaffMember | null>(null);
@@ -31,6 +33,7 @@ export default function CasaScreen() {
     state.status === "signed-in" || state.status === "needs-restaurant" ? state.user : null;
   const showInviteCode = user ? can(user.role, "view_invite_code") : false;
   const canManage = user ? can(user.role, "manage_members") : false;
+  const canBanco = user ? can(user.role, "manage_products") : false;
 
   const roleLabel: Record<Role, string> = {
     admin: t("role_admin"),
@@ -126,6 +129,22 @@ export default function CasaScreen() {
               </Pressable>
             ) : null}
           </View>
+        ) : null}
+
+        {canBanco ? (
+          <Pressable
+            style={styles.bancoEntry}
+            onPress={() => router.push("/productos/index")}
+          >
+            <View style={styles.bancoIcon}>
+              <Ionicons name="archive-outline" size={20} color={colors.terracota} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bancoTitle}>{t("casa_banco_entry_title")}</Text>
+              <Text style={styles.bancoSub}>{t("casa_banco_entry_sub")}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.mute} />
+          </Pressable>
         ) : null}
 
         <View style={styles.section}>
@@ -282,4 +301,34 @@ const styles = StyleSheet.create({
   staffMeta: { flex: 1, gap: 2 },
   staffName: { fontFamily: fonts.sans, fontSize: fontSizes.body, color: colors.ink },
   staffRole: { fontFamily: fonts.sans, fontSize: fontSizes.bodySm, color: colors.mute },
+  bancoEntry: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.paperSoft,
+    borderRadius: radii.md,
+    borderWidth: 0.5,
+    borderColor: colors.edge,
+    padding: spacing.md,
+  },
+  bancoIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.md,
+    backgroundColor: colors.terracotaSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bancoTitle: {
+    fontFamily: fonts.serif,
+    fontStyle: "italic",
+    fontSize: fontSizes.body,
+    color: colors.ink,
+  },
+  bancoSub: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.mute,
+    marginTop: 2,
+  },
 });

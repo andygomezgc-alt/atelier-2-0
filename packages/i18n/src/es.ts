@@ -202,6 +202,95 @@ export const es = {
   export_preview_dishes: "{count} platos",
   export_preview_download: "Descargar PDF",
   export_preview_hint: "Modificá nombres, descripciones o precios desde la carta antes de descargar.",
+
+  // ─── Banco de Productos (Fase 1) ───
+  header_productos: "Banco de productos",
+  casa_banco_entry_title: "Banco de productos",
+  casa_banco_entry_sub: "Anagrafica · costos · mermas",
+
+  empty_productos_title: "Banco vacío",
+  empty_productos_sub: "Cargá tu primer producto desde aquí.",
+  empty_productos_filter: "Sin productos en este filtro.",
+  producto_search_placeholder: "Buscar producto…",
+  btn_crear_producto: "Crear producto",
+  btn_archivar: "Archivar",
+  btn_desarchivar: "Reactivar",
+
+  producto_form_title_nuevo: "Nuevo producto",
+  producto_form_title_edit: "Modificar producto",
+  producto_form_name_label: "Nombre",
+  producto_form_name_placeholder: "Trufa negra",
+  producto_form_category_label: "Categoría",
+  producto_form_pezzatura_label: "Pezzatura",
+  producto_form_pezzatura_placeholder: "Pezzo grande, fresca, etc.",
+  producto_form_unidad_label: "Unidad de compra",
+  producto_form_precio_label: "Precio de compra (€)",
+  producto_form_precio_placeholder: "Por unidad de compra",
+  producto_form_merma_label: "Merma (%)",
+  producto_form_proveedor_label: "Proveedor",
+  producto_form_proveedor_placeholder: "Opcional",
+  producto_form_notas_label: "Notas",
+  producto_form_notas_placeholder: "Notas internas opcionales",
+  producto_form_aliases_label: "Aliases",
+  producto_form_aliases_placeholder: "tartufo, truffe (coma)",
+
+  filter_productos_all: "Todos",
+  filter_productos_criticos: "Críticos",
+  filter_productos_pendientes_precio: "Sin precio",
+  filter_productos_merma_sugerida: "Merma sugerida",
+  filter_productos_archivados: "Archivados",
+
+  category_pescado: "Pescado",
+  category_carne: "Carne",
+  category_verdura: "Verdura",
+  category_fruta: "Fruta",
+  category_lacteo: "Lácteo",
+  category_panaderia: "Panadería",
+  category_seco: "Seco",
+  category_especia: "Especia",
+  category_hierba: "Hierba",
+  category_vinagre_aceite: "Vinagre/Aceite",
+  category_otro: "Otro",
+
+  unit_kg: "kg",
+  unit_g: "g",
+  unit_l: "l",
+  unit_ml: "ml",
+  unit_unidad: "unidad",
+  unit_caja: "caja",
+
+  criticality_alta: "Alta",
+  criticality_media: "Media",
+  criticality_baja: "Baja",
+
+  merma_origen_sugerida: "Sugerida",
+  merma_origen_confirmada: "Confirmada",
+  merma_origen_medida: "Medida",
+
+  estado_producto_activo: "Activo",
+  estado_producto_borrador: "Borrador",
+  estado_producto_archivado: "Archivado",
+
+  producto_real_cost_label: "Costo real",
+  producto_real_cost_explainer: "Precio ajustado por merma",
+  producto_price_old_indicator: "Precio de hace {days} días",
+  producto_used_in_recipes_label: "En recetas",
+  producto_no_recipes_yet: "Todavía no se usa en ninguna receta.",
+  producto_price_history_label: "Histórico de precios",
+  producto_yield_tests_label: "Pruebas de rendimiento",
+  producto_no_price_history: "Sin cambios de precio aún.",
+  producto_no_yield_tests: "Sin pruebas de rendimiento aún.",
+
+  confirm_archive_producto_title: "¿Archivar producto?",
+  confirm_archive_producto_body:
+    "Las recetas que lo usen quedarán marcadas como «necesitan revisión». Podés reactivarlo después.",
+  confirm_delete_producto_in_use_title: "Producto en uso",
+  confirm_delete_producto_in_use_body:
+    "Este producto aparece en {count} recetas. ¿Querés archivarlo igual?",
+
+  toast_producto_saved: "Producto guardado",
+  toast_producto_archived: "Producto archivado",
+  toast_producto_unarchived: "Producto reactivado",
 } as const;
 
 // Each translation maps a key to a string. Values are not pinned as
