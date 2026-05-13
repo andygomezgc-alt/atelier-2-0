@@ -52,3 +52,57 @@ export type RestaurantWithStaff = {
     role: import("@atelier/db").Role;
   }>;
 };
+
+// ─────────── Banco de Productos ───────────
+//
+// Estos unions mirror los enums de Prisma. Las defino acá para que
+// `@atelier/shared` no dependa del cliente Prisma regenerado (la regen
+// se corre después de aplicar la migración de la Fase 0).
+
+export type ProductCategory =
+  | "pescado"
+  | "carne"
+  | "verdura"
+  | "fruta"
+  | "lacteo"
+  | "panaderia"
+  | "seco"
+  | "especia"
+  | "hierba"
+  | "vinagre_aceite"
+  | "otro";
+
+export type ProductUnit = "kg" | "g" | "l" | "ml" | "unidad" | "caja";
+
+export type ProductState = "activo" | "borrador" | "archivado";
+
+export type MermaOrigin = "sugerida" | "confirmada" | "medida";
+
+export type Criticality = "alta" | "media" | "baja";
+
+// Fila en la lista del banco. realCost es calculado en el backend
+// (precioCompra / (1 - mermaPct/100)) para que el cliente no tenga que
+// re-implementar la fórmula.
+export type ProductListItem = {
+  id: string;
+  name: string;
+  category: ProductCategory;
+  pezzatura: string | null;
+  unidadCompra: ProductUnit;
+  precioCompra: number; // centavos
+  realCost: number;     // centavos, computed
+  mermaPct: number;     // 0-100 (con decimales)
+  mermaOrigen: MermaOrigin;
+  criticality: Criticality;
+  estado: ProductState;
+  precioActualizadoAt: string; // ISO
+};
+
+export type ProductDetail = ProductListItem & {
+  proveedor: string | null;
+  notas: string | null;
+  aliases: string[];
+  criticalityManual: boolean;
+  createdAt: string;
+  updatedAt: string;
+};

@@ -17,6 +17,7 @@ const EXPECTED: Record<Permission, ReadonlyArray<typeof ALL_ROLES[number]>> = {
   manage_members: ["admin"],
   change_role: ["admin"],
   edit_restaurant: ["admin"],
+  manage_products: ["admin", "chef_executive", "sous_chef"],
 };
 
 describe("permissions matrix (brief sec. 5)", () => {

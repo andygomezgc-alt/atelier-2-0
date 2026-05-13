@@ -269,6 +269,90 @@ export const ReorderItemsRequestSchema = z.object({
 // ClientOverridesSchema y PatchClientOverridesRequestSchema están definidos
 // más arriba (antes de MenuDetailSchema, que los referencia).
 
+// ─────────── /api/products (Banco de Productos) ───────────
+
+export const ProductCategorySchema = z.enum([
+  "pescado",
+  "carne",
+  "verdura",
+  "fruta",
+  "lacteo",
+  "panaderia",
+  "seco",
+  "especia",
+  "hierba",
+  "vinagre_aceite",
+  "otro",
+]);
+
+export const ProductUnitSchema = z.enum(["kg", "g", "l", "ml", "unidad", "caja"]);
+export const ProductStateSchema = z.enum(["activo", "borrador", "archivado"]);
+export const MermaOrigenSchema = z.enum(["sugerida", "confirmada", "medida"]);
+export const CriticalitySchema = z.enum(["alta", "media", "baja"]);
+
+// Precios siempre en centavos enteros (mismo patrón que MenuItem.price).
+// Mermas como número decimal 0-100 (con .nonnegative + .max(100) en runtime).
+const mermaPctSchema = z.number().min(0).max(100);
+const precioSchema = z.number().int().min(0);
+
+export const CreateProductRequestSchema = z.object({
+  name: z.string().min(1).max(200),
+  category: ProductCategorySchema,
+  pezzatura: z.string().max(100).nullable().optional(),
+  unidadCompra: ProductUnitSchema,
+  precioCompra: precioSchema,
+  mermaPct: mermaPctSchema.optional(),
+  mermaOrigen: MermaOrigenSchema.optional(),
+  proveedor: z.string().max(200).nullable().optional(),
+  notas: z.string().max(2000).nullable().optional(),
+  estado: ProductStateSchema.optional(),
+  aliases: z.array(z.string().min(1).max(200)).max(20).optional(),
+  // Si no viene, el server la calcula con defaultCriticality(category, name).
+  criticality: CriticalitySchema.optional(),
+});
+
+export const PatchProductRequestSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  category: ProductCategorySchema.optional(),
+  pezzatura: z.string().max(100).nullable().optional(),
+  unidadCompra: ProductUnitSchema.optional(),
+  precioCompra: precioSchema.optional(),
+  mermaPct: mermaPctSchema.optional(),
+  mermaOrigen: MermaOrigenSchema.optional(),
+  proveedor: z.string().max(200).nullable().optional(),
+  notas: z.string().max(2000).nullable().optional(),
+  estado: ProductStateSchema.optional(),
+  aliases: z.array(z.string().min(1).max(200)).max(20).optional(),
+  criticality: CriticalitySchema.optional(),
+  // Si el chef setea criticality manualmente, marcamos true para que el job
+  // semanal de recalc no la pise. El server hace el toggle automáticamente.
+  criticalityManual: z.boolean().optional(),
+});
+
+export const ProductListItemSchema = z.object({
+  id: z.string().max(100),
+  name: z.string().max(200),
+  category: ProductCategorySchema,
+  pezzatura: z.string().max(100).nullable(),
+  unidadCompra: ProductUnitSchema,
+  precioCompra: precioSchema,
+  realCost: precioSchema, // computed: precioCompra / (1 - mermaPct/100)
+  mermaPct: mermaPctSchema,
+  mermaOrigen: MermaOrigenSchema,
+  criticality: CriticalitySchema,
+  estado: ProductStateSchema,
+  precioActualizadoAt: z.string(), // ISO
+});
+
+export const ProductDetailSchema = ProductListItemSchema.extend({
+  proveedor: z.string().max(200).nullable(),
+  notas: z.string().max(2000).nullable(),
+  aliases: z.array(z.string()),
+  criticalityManual: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
 // ─────────── Inferred types (use these in handlers) ───────────
 
 export type MeResponse = z.infer<typeof MeResponseSchema>;
@@ -297,3 +381,5 @@ export type ClientOverrides = z.infer<typeof ClientOverridesSchema>;
 export type PatchClientOverridesRequest = z.infer<typeof PatchClientOverridesRequestSchema>;
 export type PostMessageRequest = z.infer<typeof PostMessageRequestSchema>;
 export type CreateConversationRequest = z.infer<typeof CreateConversationRequestSchema>;
+export type CreateProductRequest = z.infer<typeof CreateProductRequestSchema>;
+export type PatchProductRequest = z.infer<typeof PatchProductRequestSchema>;

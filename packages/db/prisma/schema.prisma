@@ -33,6 +33,53 @@ enum IdeaStatus {
   archived
 }
 
+// ─────────── Banco de Productos ───────────
+
+enum ProductCategory {
+  pescado
+  carne
+  verdura
+  fruta
+  lacteo
+  panaderia
+  seco
+  especia
+  hierba
+  vinagre_aceite
+  otro
+}
+
+enum ProductUnit {
+  kg
+  g
+  l
+  ml
+  unidad
+  caja
+}
+
+enum ProductState {
+  activo
+  borrador
+  archivado
+}
+
+// Cómo se determinó la merma de un producto:
+//  - sugerida: cargada por defecto al crear (tabla de defaults o LLM)
+//  - confirmada: editada/validada manualmente por el chef
+//  - medida:    derivada de una prueba de rendimiento (YieldTest); prioritaria
+enum MermaOrigin {
+  sugerida
+  confirmada
+  medida
+}
+
+enum Criticality {
+  alta
+  media
+  baja
+}
+
 model Restaurant {
   id              String   @id @default(cuid())
   name            String
@@ -49,6 +96,8 @@ model Restaurant {
   recipes       Recipe[]
   menuFolders   MenuFolder[]
   auditLogs     AuditLog[]
+  products      Product[]
+  yieldTests    YieldTest[]
 }
 
 model User {
@@ -85,6 +134,9 @@ model User {
   sessions Session[]
 
   auditLogs AuditLog[] @relation("AuditLogActor")
+
+  yieldTests           YieldTest[]           @relation("YieldTestAuthor")
+  productPriceHistory  ProductPriceHistory[] @relation("PriceHistoryAuthor")
 
   @@index([restaurantId])
 }
@@ -149,6 +201,12 @@ model Recipe {
   version     Int    @default(1)
   contentJson Json
 
+  // Banco de Productos — campos cost/yield. Opcionales; las recetas legacy
+  // sin productos enlazados muestran costo total cuando los ingredients pasen
+  // por la migración de Fase 5. portions default 1 para no romper UIs viejas.
+  portions  Int?
+  salePrice Int? // centavos
+
   state    RecipeState @default(draft)
   priority Boolean     @default(false)
 
@@ -164,7 +222,8 @@ model Recipe {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  menuItems MenuItem[]
+  menuItems         MenuItem[]
+  recipeIngredients RecipeIngredient[]
 
   @@index([restaurantId, state])
   @@index([restaurantId, priority])
@@ -288,4 +347,119 @@ model AuditLog {
 
   @@index([restaurantId, createdAt])
   @@index([actorId, createdAt])
+}
+
+// ─────────── Banco de Productos ───────────
+
+// Anagrafica de productos del restaurante. Cada producto se cobra una vez,
+// se actualiza su precio y merma, y aparece enlazado en las recetas.
+//
+// Costo real = precioCompra / (1 - mermaPct/100) — calculado en read time,
+// NUNCA persistido para evitar inconsistencias si alguien actualiza el
+// precio o la merma sin recalcular.
+model Product {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  name      String
+  category  ProductCategory
+  pezzatura String?
+
+  unidadCompra ProductUnit
+  precioCompra Int // centavos / cents
+
+  mermaPct    Decimal     @default(0) @db.Decimal(5, 2)
+  mermaOrigen MermaOrigin @default(sugerida)
+
+  proveedor           String?
+  precioActualizadoAt DateTime @default(now())
+  notas               String?  @db.Text
+  estado              ProductState @default(activo)
+
+  // Aliases para matching: nombres alternativos que apuntan al mismo producto.
+  // Ej. "trufa negra" puede tener aliases ["trufa", "tartufo nero", "truffe"].
+  aliases String[] @default([])
+
+  // criticality es auto-asignada por categoría + excepciones; criticalityManual
+  // = true cuando el chef la sobrescribió y no querés que el job semanal la pise.
+  criticality       Criticality
+  criticalityManual Boolean     @default(false)
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  recipeIngredients RecipeIngredient[]
+  yieldTests        YieldTest[]
+  priceHistory      ProductPriceHistory[]
+
+  @@index([restaurantId, estado])
+  @@index([restaurantId, criticality])
+  @@index([restaurantId, deletedAt])
+  @@index([restaurantId, name])
+}
+
+// Línea de ingrediente dentro de una receta. rawText siempre se preserva
+// (audit trail del texto original que entró por chef, asistente o upload).
+// productId opcional para casos donde todavía no se enlazó al banco (legacy
+// o match dudoso aún sin confirmar).
+model RecipeIngredient {
+  id        String   @id @default(cuid())
+  recipeId  String
+  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  position  Int
+
+  rawText          String   @db.Text
+  qty              Decimal? @db.Decimal(10, 3)
+  unit             String?
+  pezzatura        String?
+  // Permite que una receta use una merma distinta a la default del producto
+  // (ej. "este corte va con merma especial"). Null = usar la del Product.
+  mermaOverridePct Decimal? @db.Decimal(5, 2)
+
+  @@index([recipeId, position])
+  @@index([productId])
+}
+
+// Prueba de rendimiento. El chef carga peso bruto + peso útil y el sistema
+// calcula la merma. Histórico para ver evolución (ej. una variedad de pescado
+// rinde distinto en distintas estaciones).
+model YieldTest {
+  id           String     @id @default(cuid())
+  productId    String
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  authorId     String
+  author       User       @relation("YieldTestAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  pesoBrutoG        Decimal @db.Decimal(10, 3)
+  pesoUtilG         Decimal @db.Decimal(10, 3)
+  mermaCalculadaPct Decimal @db.Decimal(5, 2)
+  notas             String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([productId, createdAt])
+}
+
+// Cada vez que el precio de un producto cambia se inserta una fila acá.
+// La fuente de verdad del precio "actual" sigue siendo Product.precioCompra
+// — esto es historial para ver evolución temporal.
+model ProductPriceHistory {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    User?    @relation("PriceHistoryAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  precio       Int // centavos
+  unidadCompra ProductUnit
+
+  createdAt DateTime @default(now())
+
+  @@index([productId, createdAt])
 }

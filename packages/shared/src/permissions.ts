@@ -13,7 +13,8 @@ export type Permission =
   | "view_invite_code"
   | "manage_members"
   | "change_role"
-  | "edit_restaurant";
+  | "edit_restaurant"
+  | "manage_products";
 
 const MATRIX: Record<Permission, ReadonlyArray<Role>> = {
   capture_idea: ["admin", "chef_executive", "sous_chef"],
@@ -29,6 +30,10 @@ const MATRIX: Record<Permission, ReadonlyArray<Role>> = {
   manage_members: ["admin"],
   change_role: ["admin"],
   edit_restaurant: ["admin"],
+  // Banco de Productos: mismo set que edit_recipe — quien cocina maneja
+  // su inventario. Viewers no tocan productos pero los ven indirectamente
+  // via recetas.
+  manage_products: ["admin", "chef_executive", "sous_chef"],
 };
 
 export function can(role: Role, permission: Permission): boolean {
