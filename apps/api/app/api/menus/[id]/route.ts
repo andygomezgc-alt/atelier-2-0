@@ -44,14 +44,15 @@ export async function PATCH(
   if (!parse.success)
     return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
 
-  const existing = await prisma.menuFolder.findUnique({ where: { id } });
-  if (!existing || existing.restaurantId !== ctx.restaurantId)
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  await prisma.menuFolder.update({
-    where: { id },
+  // updateMany con where compuesto (id + restaurantId) reemplaza el
+  // findUnique-de-auth + update separados. Si nada matchea, count=0 = 404.
+  // Mantiene IDOR-safety (no se puede tocar un menú de otro restaurante).
+  const result = await prisma.menuFolder.updateMany({
+    where: { id, restaurantId: ctx.restaurantId },
     data: parse.data,
   });
+  if (result.count === 0)
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const menu = await loadFullMenu(id);
   if (!menu) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -66,11 +67,13 @@ export async function DELETE(
   if (isNextResponse(ctx)) return ctx;
   const { id } = await params;
 
-  const existing = await prisma.menuFolder.findUnique({ where: { id } });
-  if (!existing || existing.restaurantId !== ctx.restaurantId)
+  // deleteMany con where compuesto: una sola query en lugar de findUnique+delete.
+  const result = await prisma.menuFolder.deleteMany({
+    where: { id, restaurantId: ctx.restaurantId },
+  });
+  if (result.count === 0)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await prisma.menuFolder.delete({ where: { id } });
   logger.info("menu_deleted", { menuId: id, userId: ctx.userId });
   return new NextResponse(null, { status: 204 });
 }

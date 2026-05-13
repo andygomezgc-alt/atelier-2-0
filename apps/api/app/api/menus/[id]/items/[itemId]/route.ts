@@ -35,13 +35,14 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { presentationStyle, ...itemData } = parse.data;
-  await prisma.menuItem.update({ where: { id: itemId }, data: itemData });
-  if (presentationStyle) {
-    await prisma.menuFolder.update({
-      where: { id: menuId },
-      data: { presentationStyle },
-    });
-  }
+  // Las dos updates tocan tablas distintas (MenuItem vs MenuFolder) — sin
+  // conflicto, paralelizar ahorra ~30ms.
+  await Promise.all([
+    prisma.menuItem.update({ where: { id: itemId }, data: itemData }),
+    presentationStyle
+      ? prisma.menuFolder.update({ where: { id: menuId }, data: { presentationStyle } })
+      : Promise.resolve(null),
+  ]);
 
   const menu = await loadFullMenu(menuId);
   if (!menu) return NextResponse.json({ error: "Not found" }, { status: 404 });

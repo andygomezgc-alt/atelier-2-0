@@ -20,21 +20,25 @@ export async function POST(
   if (!parse.success)
     return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
 
-  const menu = await prisma.menuFolder.findUnique({ where: { id: menuId } });
+  // Las 3 lecturas iniciales son independientes — paralelizamos para ahorrar
+  // ~2 round-trips contra Neon (~60ms en local típico).
+  const [menu, recipe, last] = await Promise.all([
+    prisma.menuFolder.findUnique({ where: { id: menuId } }),
+    prisma.recipe.findUnique({ where: { id: parse.data.recipeId } }),
+    // Per-section order: el nuevo plato queda al final de SU sección, no al
+    // final global del menú. Esto es lo que el usuario espera visualmente.
+    prisma.menuItem.findFirst({
+      where: { menuFolderId: menuId, sectionId: parse.data.sectionId ?? null },
+      orderBy: { order: "desc" },
+      select: { order: true },
+    }),
+  ]);
+
   if (!menu || menu.restaurantId !== ctx.restaurantId)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const recipe = await prisma.recipe.findUnique({ where: { id: parse.data.recipeId } });
   if (!recipe || recipe.restaurantId !== ctx.restaurantId || recipe.deletedAt !== null)
     return NextResponse.json({ error: "Recipe not in restaurant" }, { status: 404 });
 
-  // Per-section order: el nuevo plato queda al final de SU sección, no al
-  // final global del menú. Esto es lo que el usuario espera visualmente.
-  const last = await prisma.menuItem.findFirst({
-    where: { menuFolderId: menuId, sectionId: parse.data.sectionId ?? null },
-    orderBy: { order: "desc" },
-    select: { order: true },
-  });
   const nextOrder = (last?.order ?? -1) + 1;
 
   const created = await prisma.menuItem.create({

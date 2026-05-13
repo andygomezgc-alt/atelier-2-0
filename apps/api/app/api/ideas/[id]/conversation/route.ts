@@ -26,18 +26,21 @@ export async function GET(
 
   const { id: ideaId } = await params;
 
-  const idea = await prisma.idea.findUnique({
-    where: { id: ideaId },
-    select: { id: true, restaurantId: true },
-  });
+  // idea (para auth) y user (para defaultModel) son independientes.
+  // Paralelizar ahorra un round-trip cuando la conversación todavía no existe.
+  const [idea, me] = await Promise.all([
+    prisma.idea.findUnique({
+      where: { id: ideaId },
+      select: { id: true, restaurantId: true },
+    }),
+    prisma.user.findUnique({
+      where: { id: ctx.userId },
+      select: { defaultModel: true },
+    }),
+  ]);
   if (!idea || idea.restaurantId !== ctx.restaurantId)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Default model for newly-created conversations: caller's preference.
-  const me = await prisma.user.findUnique({
-    where: { id: ctx.userId },
-    select: { defaultModel: true },
-  });
   const defaultModel = me?.defaultModel ?? "sonnet";
 
   // Get-or-create. Race-safe via the unique index on Conversation.ideaId:
