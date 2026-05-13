@@ -122,7 +122,6 @@ export function ExportPreviewSheet({
   // los canonical (MenuItem.customName, etc), por eso jamás ve estos cambios.
   const restaurantNameDisp = overrides.restaurantName ?? canonicalRestaurantName;
   const menuNameDisp = overrides.menuName ?? menu.name;
-  const subtitleDisp = overrides.subtitle ?? (menu.season ?? "");
 
   async function saveOverrides(next: ClientOverrides) {
     try {
@@ -150,8 +149,6 @@ export function ExportPreviewSheet({
 
   const onSaveMenuName = (v: string) =>
     void saveOverrides(withTop(overrides, "menuName", v, menu.name));
-  const onSaveSubtitle = (v: string) =>
-    void saveOverrides(withTop(overrides, "subtitle", v, menu.season ?? ""));
 
   const onSaveSectionName = (sectionId: string, canonicalName: string, v: string) =>
     void saveOverrides(
@@ -231,15 +228,6 @@ export function ExportPreviewSheet({
           placeholder={t("recetas_form_title_placeholder")}
           multiline
           maxLength={120}
-        />
-
-        <DebouncedTextInput
-          value={subtitleDisp}
-          onSave={onSaveSubtitle}
-          style={styles.menuSeason}
-          editable={canEdit}
-          placeholder={t("add_to_menu_season_placeholder")}
-          maxLength={60}
         />
 
         {sectionsSorted.map((sec) => {
@@ -387,12 +375,6 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.serifXl,
     color: colors.ink,
     lineHeight: fontSizes.serifXl * 1.15,
-  },
-  menuSeason: {
-    fontFamily: fonts.sans,
-    fontSize: fontSizes.bodySm,
-    color: colors.mute,
-    letterSpacing: 0.5,
     marginBottom: spacing.md,
   },
   sectionBlock: { gap: spacing.xs, marginTop: spacing.md },

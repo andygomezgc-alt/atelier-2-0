@@ -23,10 +23,10 @@ import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 type FilterId = "in_progress" | "priority" | "approved" | "all";
 
 const FILTERS: ReadonlyArray<{ id: FilterId; labelKey: "recetas_filter_in_progress" | "recetas_filter_priority" | "recetas_filter_approved" | "recetas_filter_all" }> = [
+  { id: "all", labelKey: "recetas_filter_all" },
   { id: "in_progress", labelKey: "recetas_filter_in_progress" },
   { id: "priority", labelKey: "recetas_filter_priority" },
   { id: "approved", labelKey: "recetas_filter_approved" },
-  { id: "all", labelKey: "recetas_filter_all" },
 ];
 
 function buildFilters(filter: FilterId, q: string): ListFilters {
@@ -47,7 +47,7 @@ export default function RecetasScreen() {
   const { state: authState } = useAuth();
   const router = useRouter();
 
-  const [filter, setFilter] = useState<FilterId>("in_progress");
+  const [filter, setFilter] = useState<FilterId>("all");
   const [q, setQ] = useState("");
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [loading, setLoading] = useState(true);

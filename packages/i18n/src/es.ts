@@ -66,6 +66,8 @@ export const es = {
   view_client_eyebrow: "Vista cliente",
   dish_custom_name_clear: "Usar título de la receta",
   section_empty_hint: "Sin platos aún",
+  empty_menu_hint: "Tu carta está vacía. Empezá agregando una sección o un plato.",
+  add_to_menu_section_step: "¿En qué sección?",
   recetas_filter_all: "Todas",
   recetas_filter_priority: "Prioritarias",
   recetas_filter_draft: "Borrador",

@@ -685,7 +685,27 @@ export default function MenuDetailScreen() {
         </View>
 
         {noContent ? (
-          <Text style={styles.emptyText}>—</Text>
+          <View style={styles.emptyMenuState}>
+            <Text style={styles.emptyMenuHint}>{t("empty_menu_hint")}</Text>
+            {canEdit ? (
+              <View style={styles.emptyMenuActions}>
+                <Pressable
+                  style={styles.addSectionBtn}
+                  onPress={() => setAddSectionOpen(true)}
+                >
+                  <Ionicons name="add" size={14} color={colors.terracota} />
+                  <Text style={styles.addSectionLabel}>{t("section_add")}</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.addSectionBtn}
+                  onPress={() => setBankPickerForUnsectioned(true)}
+                >
+                  <Ionicons name="add-circle-outline" size={14} color={colors.terracota} />
+                  <Text style={styles.addSectionLabel}>{t("recipe_bank_cta")}</Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
         ) : (
           <>
             {partition.sections.map(({ section, items }) => {
@@ -968,6 +988,26 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.body,
     color: colors.mute,
     marginTop: spacing.sm,
+  },
+  emptyMenuState: {
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: spacing.lg,
+  },
+  emptyMenuHint: {
+    fontFamily: fonts.serif,
+    fontStyle: "italic",
+    fontSize: fontSizes.body,
+    color: colors.mute,
+    textAlign: "center",
+    lineHeight: fontSizes.body * 1.4,
+    paddingHorizontal: spacing.lg,
+  },
+  emptyMenuActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    flexWrap: "wrap",
+    justifyContent: "center",
   },
   sectionBlock: { gap: spacing.xs, marginTop: spacing.md },
   sectionHeader: {

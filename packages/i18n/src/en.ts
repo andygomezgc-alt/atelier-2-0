@@ -65,6 +65,8 @@ export const en: EsDict = {
   view_client_eyebrow: "Client view",
   dish_custom_name_clear: "Use recipe title",
   section_empty_hint: "No dishes yet",
+  empty_menu_hint: "Your menu is empty. Start by adding a section or a dish.",
+  add_to_menu_section_step: "Which section?",
   recetas_filter_all: "All",
   recetas_filter_priority: "Priority",
   recetas_filter_draft: "Draft",

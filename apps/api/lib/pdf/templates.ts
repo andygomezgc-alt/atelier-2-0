@@ -79,7 +79,6 @@ function renderMenu(input: RenderInput, theme: Theme): string {
 const THEME_ELEGANT: Theme = {
   css: `<style>
     body { font-family: 'Iowan Old Style', 'Hoefler Text', 'Times New Roman', serif; color: #2a2520; background: #f9f7f2; }
-    .brand { text-align: center; font-style: italic; font-size: 12pt; letter-spacing: 0.5em; color: #8b7a6f; margin-bottom: 4mm; }
     h1 { text-align: center; font-style: italic; font-weight: 400; font-size: 32pt; letter-spacing: 0.04em; color: #1a3a3a; margin: 0 0 2mm; }
     .season { text-align: center; font-style: italic; font-size: 11pt; color: #8b7a6f; margin-bottom: 16mm; }
     .rule { width: 24mm; height: 0.5pt; background: #c47e4f; margin: 0 auto 16mm; }
@@ -89,10 +88,10 @@ const THEME_ELEGANT: Theme = {
     .dish-name { font-style: italic; font-size: 14pt; color: #1a3a3a; margin: 0 0 1.5mm; }
     .dish-desc { font-size: 10pt; color: #4a423b; line-height: 1.5; margin: 0; }
     .dish-price { font-style: italic; font-size: 14pt; color: #c47e4f; flex-shrink: 0; }
-    .footer { margin-top: 18mm; text-align: center; font-style: italic; font-size: 9pt; color: #b1a394; letter-spacing: 0.4em; }
   </style>`,
-  header: (restaurantName, menuName, seasonHtml) => `<div class="brand">${escape(restaurantName.toUpperCase())}</div>
-    <h1>${escape(menuName)}</h1>
+  // Header sin nombre del restaurante ni footer "Atelier" (pedido del chef:
+  // PDF debe ser solo el nombre del menú + secciones + platos).
+  header: (_restaurantName, menuName, seasonHtml) => `<h1>${escape(menuName)}</h1>
     ${seasonHtml}
     <div class="rule"></div>
     `,
@@ -105,15 +104,12 @@ const THEME_ELEGANT: Theme = {
         </div>
         <div class="dish-price">${price}</div>
       </div>`,
-  footer: `
-    <div class="footer">— ATELIER —</div>`,
 };
 
 const THEME_RUSTIC: Theme = {
   css: `<style>
     body { font-family: 'Iowan Old Style', 'Hoefler Text', Georgia, serif; color: #2a2520; background: #f5f0e6; }
     .frame { border: 1.5pt double #c47e4f; padding: 14mm 12mm; }
-    .brand { text-align: center; font-size: 10pt; letter-spacing: 0.6em; color: #4a423b; margin-bottom: 6mm; text-transform: uppercase; }
     h1 { text-align: center; font-style: italic; font-weight: 400; font-size: 26pt; color: #2a2520; margin: 0; }
     .underline { width: 36mm; height: 1pt; background: #c47e4f; margin: 4mm auto 4mm; }
     .season { text-align: center; font-size: 10pt; color: #6e5e54; margin-bottom: 14mm; font-variant: small-caps; letter-spacing: 0.2em; }
@@ -123,11 +119,10 @@ const THEME_RUSTIC: Theme = {
     .dish-name { font-style: italic; font-size: 13pt; color: #2a2520; margin: 0 0 1.5mm; }
     .dish-desc { font-size: 10pt; color: #4a423b; line-height: 1.6; margin: 0 0 2mm; }
     .dish-price { font-size: 11pt; color: #c47e4f; font-weight: 600; }
-    .footer { margin-top: 12mm; text-align: center; font-size: 8.5pt; color: #8b7a6f; }
   </style>`,
   frame: (inner) => `<div class="frame">${inner}</div>`,
-  header: (restaurantName, menuName, seasonHtml) => `
-      <div class="brand">${escape(restaurantName)}</div>
+  // Sin restaurant name ni footer "Atelier".
+  header: (_restaurantName, menuName, seasonHtml) => `
       <h1>${escape(menuName)}</h1>
       <div class="underline"></div>
       ${seasonHtml}
@@ -139,16 +134,12 @@ const THEME_RUSTIC: Theme = {
           ${d.description ? `<div class="dish-desc">${escape(d.description)}</div>` : ""}
           <div class="dish-price">${price}</div>
         </div>`,
-  footer: `
-      <div class="footer">— Atelier —</div>
-    `,
 };
 
 const THEME_MINIMAL: Theme = {
   css: `<style>
     body { font-family: -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #2a2520; background: #ffffff; font-size: 10.5pt; }
     .head { margin-bottom: 18mm; }
-    .restaurant { font-size: 9pt; letter-spacing: 0.4em; color: #8b7a6f; text-transform: uppercase; margin-bottom: 6mm; }
     h1 { font-weight: 300; font-size: 24pt; letter-spacing: -0.01em; color: #1a3a3a; margin: 0 0 2mm; }
     .season { font-size: 10pt; color: #8b7a6f; }
     .sect-h { font-size: 9pt; letter-spacing: 0.35em; color: #1a3a3a; text-transform: uppercase; font-weight: 500; margin: 12mm 0 4mm; }
@@ -159,8 +150,8 @@ const THEME_MINIMAL: Theme = {
     .dish-price { font-variant-numeric: tabular-nums; color: #c47e4f; font-weight: 500; }
     .rule { height: 0.4pt; background: #e0d8c8; margin: 6mm 0 4mm; }
   </style>`,
-  header: (restaurantName, menuName, seasonHtml) => `<div class="head">
-      <div class="restaurant">${escape(restaurantName)}</div>
+  // Sin restaurant name.
+  header: (_restaurantName, menuName, seasonHtml) => `<div class="head">
       <h1>${escape(menuName)}</h1>
       ${seasonHtml}
     </div>
