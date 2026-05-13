@@ -64,9 +64,8 @@ export async function extractRecipeFromFile(
 
   // Safety cap: keep prompts predictable in size. ~30k chars ≈ 8k tokens.
   const truncated = text.length > 30_000 ? text.slice(0, 30_000) : text;
-  const fullPrompt = PROMPT + truncated;
 
-  const raw = await callForExtraction(fullPrompt, byok);
+  const raw = await callForExtraction(PROMPT, truncated, byok);
   const parsed = ExtractedRecipeSchema.safeParse(parseJsonLoose(raw));
   if (!parsed.success) {
     throw new Error(
@@ -101,26 +100,44 @@ function parseJsonLoose(raw: string): unknown {
   return JSON.parse(s);
 }
 
+// `instructions` es el prefix estable (cacheable). `fileText` cambia por
+// upload. max_tokens=2048 es holgado: el output es JSON de ~200-400 tokens
+// incluso con recetas grandes (50 ingredientes + 50 pasos).
 async function callForExtraction(
-  prompt: string,
+  instructions: string,
+  fileText: string,
   byok: ExtractorBYOK,
 ): Promise<string> {
+  const MAX_OUTPUT_TOKENS = 2048;
+
   if (byok?.provider === "anthropic") {
     const client = new Anthropic({ apiKey: byok.apiKey });
     const msg = await client.messages.create({
       model: byok.model,
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
+      max_tokens: MAX_OUTPUT_TOKENS,
+      messages: [
+        {
+          role: "user",
+          content: [
+            // Prefix estable: Anthropic cachea ~5 min y descontamos costo
+            // del prefix en uploads sucesivos del mismo chef.
+            { type: "text", text: instructions, cache_control: { type: "ephemeral" } },
+            { type: "text", text: fileText },
+          ],
+        },
+      ],
     });
     return firstTextBlock(msg);
   }
 
   if (byok?.provider === "openai") {
+    // OpenAI hace prompt caching automático para prompts >1024 tokens, sin
+    // API explícita. Concatenamos y dejamos que el server cachee solo.
     const client = new OpenAI({ apiKey: byok.apiKey });
     const completion = await client.chat.completions.create({
       model: byok.model,
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
+      max_tokens: MAX_OUTPUT_TOKENS,
+      messages: [{ role: "user", content: instructions + fileText }],
       response_format: { type: "json_object" },
     });
     const content = completion.choices[0]?.message?.content;
@@ -129,6 +146,8 @@ async function callForExtraction(
   }
 
   if (byok?.provider === "google") {
+    // Gemini caching es una API aparte (CachedContent). No vale la pena
+    // por upload — el ahorro se cobra solo a partir de N hits del mismo cache.
     const client = new GoogleGenAI({ apiKey: byok.apiKey });
     const model = byok.model
       .trim()
@@ -138,9 +157,9 @@ async function callForExtraction(
       .toLowerCase();
     const result = await client.models.generateContent({
       model,
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents: [{ role: "user", parts: [{ text: instructions + fileText }] }],
       config: {
-        maxOutputTokens: 4096,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
         responseMimeType: "application/json",
       },
     });
@@ -155,8 +174,16 @@ async function callForExtraction(
   const client = new Anthropic({ apiKey });
   const msg = await client.messages.create({
     model: "claude-haiku-4-5",
-    max_tokens: 4096,
-    messages: [{ role: "user", content: prompt }],
+    max_tokens: MAX_OUTPUT_TOKENS,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: instructions, cache_control: { type: "ephemeral" } },
+          { type: "text", text: fileText },
+        ],
+      },
+    ],
   });
   return firstTextBlock(msg);
 }
