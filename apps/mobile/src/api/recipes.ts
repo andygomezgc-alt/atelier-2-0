@@ -1,4 +1,5 @@
 import { apiFetch, TOKEN_KEY, ApiError, NetworkError } from "./client";
+import { cached, invalidate } from "./cache";
 import * as SecureStore from "@/src/lib/secure-storage";
 import type {
   RecipeListItem,
@@ -16,28 +17,45 @@ export type ListFilters = {
   q?: string;
 };
 
+const RECIPES_TTL_MS = 30_000;
+
 export function listRecipes(filters: ListFilters = {}): Promise<Recipe[]> {
   const qs = new URLSearchParams();
   if (filters.state) qs.set("state", filters.state);
   if (filters.priority) qs.set("priority", "true");
   if (filters.q) qs.set("q", filters.q);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return apiFetch<Recipe[]>(`/api/recipes${suffix}`);
+  // Cuando hay búsqueda libre (q) no cacheamos: cada keystroke genera una key
+  // distinta y el caché crecería sin reuso real.
+  if (filters.q) {
+    return apiFetch<Recipe[]>(`/api/recipes${suffix}`);
+  }
+  return cached(`recipes:list:${suffix}`, () => apiFetch<Recipe[]>(`/api/recipes${suffix}`), RECIPES_TTL_MS);
 }
 
-export const getRecipe = (id: string) => apiFetch<RecipeFull>(`/api/recipes/${id}`);
+export const getRecipe = (id: string) =>
+  cached(`recipes:detail:${id}`, () => apiFetch<RecipeFull>(`/api/recipes/${id}`), RECIPES_TTL_MS);
 
-export const createRecipe = (data: CreateRecipeRequest) =>
-  apiFetch<Recipe>("/api/recipes", { method: "POST", body: JSON.stringify(data) });
+export const createRecipe = async (data: CreateRecipeRequest) => {
+  const result = await apiFetch<Recipe>("/api/recipes", { method: "POST", body: JSON.stringify(data) });
+  invalidate("recipes:");
+  return result;
+};
 
-export const patchRecipe = (id: string, data: PatchRecipeRequest) =>
-  apiFetch<RecipeFull>(`/api/recipes/${id}`, {
+export const patchRecipe = async (id: string, data: PatchRecipeRequest) => {
+  const result = await apiFetch<RecipeFull>(`/api/recipes/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  invalidate("recipes:");
+  return result;
+};
 
-export const deleteRecipe = (id: string) =>
-  apiFetch<{ ok: boolean }>(`/api/recipes/${id}`, { method: "DELETE" });
+export const deleteRecipe = async (id: string) => {
+  const result = await apiFetch<{ ok: boolean }>(`/api/recipes/${id}`, { method: "DELETE" });
+  invalidate("recipes:");
+  return result;
+};
 
 export type ExtractedRecipeResponse = {
   title: string;

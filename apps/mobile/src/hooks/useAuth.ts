@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import * as SecureStore from "@/src/lib/secure-storage";
 import { TOKEN_KEY } from "@/src/api/client";
 import { devLogin, fetchMe, requestMagicLink, type MeUser } from "@/src/api/auth";
+import { clearAll as clearApiCache } from "@/src/api/cache";
 
 export type AuthState =
   | { status: "loading" }
@@ -137,6 +138,8 @@ export function useAuth() {
 
   const signOut = useCallback(async (): Promise<void> => {
     await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => null);
+    // Si otro usuario logea en el mismo device, no debe ver datos del anterior.
+    clearApiCache();
     setState({ status: "signed-out" });
   }, []);
 
