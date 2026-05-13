@@ -134,6 +134,7 @@ export default function RecetasScreen() {
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.tabsRow}
+        style={styles.tabsScroll}
       >
         {FILTERS.map((f) => (
           <Pressable
@@ -148,7 +149,7 @@ export default function RecetasScreen() {
         ))}
       </ScrollView>
 
-      <ScrollView contentContainerStyle={styles.listContent}>
+      <ScrollView contentContainerStyle={styles.listContent} style={styles.listScroll}>
         {loading ? (
           <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
         ) : recipes.length === 0 ? (
@@ -280,11 +281,18 @@ const styles = StyleSheet.create({
     color: colors.ink,
     paddingVertical: spacing.sm,
   },
+  // El ScrollView horizontal en sí mismo no debe expandirse verticalmente —
+  // sin esto, RN le da `flex: 1` implícito en algunos layouts y los items
+  // adentro (que defaultean a alignItems: stretch en cross-axis vertical) se
+  // estiran a 400+ px de alto. flexGrow/Shrink: 0 + alignItems en el content
+  // mantienen los pills a la altura natural del texto + padding.
+  tabsScroll: { flexGrow: 0, flexShrink: 0 },
   tabsRow: {
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
     gap: spacing.xs,
     flexDirection: "row",
+    alignItems: "center",
   },
   tab: {
     paddingHorizontal: spacing.md,
@@ -297,6 +305,9 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: colors.terracota, borderColor: colors.terracota },
   tabLabel: { fontFamily: fonts.sans, fontSize: fontSizes.bodySm, color: colors.inkSoft },
   tabLabelActive: { color: colors.paper, fontWeight: "600" },
+  // El ScrollView de la lista sí toma el espacio restante (con flex: 1) para
+  // que pueda hacer scroll y no se mezcle con los tabs.
+  listScroll: { flex: 1 },
   listContent: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xxl, gap: spacing.sm },
   recipeCard: {
     flexDirection: "row",
