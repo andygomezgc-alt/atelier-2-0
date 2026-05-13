@@ -1,4 +1,4 @@
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "@/src/lib/secure-storage";
 
 export const TOKEN_KEY = "atelier.access_token.v1";
 const BASE = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
@@ -58,6 +58,9 @@ export async function apiFetch<T>(
     }
     throw new ApiError(res.status, message);
   }
+
+  // 204 No Content (e.g. menu DELETE) has no body to parse.
+  if (res.status === 204) return null as T;
 
   return res.json() as Promise<T>;
 }

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
-import { CreateRestaurantRequestSchema } from "@atelier/shared";
+import { CreateRestaurantRequestSchema, PatchRestaurantRequestSchema } from "@atelier/shared";
 import { generateInviteCode } from "@atelier/shared/invite-code";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
-import { auth } from "@/lib/auth";
 import { projectRestaurant, restaurantInclude } from "@/lib/projections";
 
 export const dynamic = "force-dynamic";
@@ -47,18 +46,10 @@ export async function POST(req: NextRequest) {
   const csrf = validateOrigin(req);
   if (csrf) return csrf;
 
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const ctx = await requireAuth(req);
+  if (isNextResponse(ctx)) return ctx;
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { id: true, restaurantId: true },
-  });
-
-  if (!user) return NextResponse.json({ error: "User not found" }, { status: 401 });
-  if (user.restaurantId) {
+  if (ctx.restaurantId) {
     return NextResponse.json({ error: "Already in a restaurant" }, { status: 409 });
   }
 
@@ -79,7 +70,7 @@ export async function POST(req: NextRequest) {
   });
 
   await prisma.user.update({
-    where: { id: user.id },
+    where: { id: ctx.userId },
     data: { restaurantId: restaurant.id, role: "admin" },
   });
 
@@ -87,4 +78,38 @@ export async function POST(req: NextRequest) {
     { id: restaurant.id, name: restaurant.name, inviteCode: restaurant.inviteCode },
     { status: 201 },
   );
+}
+
+// Admin-only: rename the restaurant (used from the export preview so the chef
+// can tweak how the restaurant is branded on a printed menu) or update its
+// identity line. NOT a per-menu override — this is the canonical name.
+export async function PATCH(req: NextRequest) {
+  const csrf = validateOrigin(req);
+  if (csrf) return csrf;
+
+  const ctx = await requireAuth(req, "edit_restaurant");
+  if (isNextResponse(ctx)) return ctx;
+  if (!ctx.restaurantId)
+    return NextResponse.json({ error: "Not in a restaurant" }, { status: 404 });
+
+  const body = await req.json();
+  const parse = PatchRestaurantRequestSchema.safeParse(body);
+  if (!parse.success)
+    return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
+
+  const data: { name?: string; identityLine?: string | null } = {};
+  if (parse.data.name !== undefined) data.name = parse.data.name;
+  if (parse.data.identityLine !== undefined) data.identityLine = parse.data.identityLine;
+
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+  }
+
+  const restaurant = await prisma.restaurant.update({
+    where: { id: ctx.restaurantId },
+    data,
+    include: restaurantInclude,
+  });
+
+  return NextResponse.json(projectRestaurant(restaurant));
 }

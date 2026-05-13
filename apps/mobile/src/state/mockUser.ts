@@ -11,7 +11,7 @@ export type MockUser = {
   email: string;
   bio: string;
   role: Role;
-  defaultModel: "sonnet" | "opus";
+  defaultModel: "haiku" | "sonnet" | "opus";
 };
 
 export type MockRestaurant = {
@@ -61,7 +61,7 @@ export function setMockRole(role: Role) {
   notify();
 }
 
-export function setMockModel(model: "sonnet" | "opus") {
+export function setMockModel(model: "haiku" | "sonnet" | "opus") {
   user = { ...user, defaultModel: model };
   notify();
 }

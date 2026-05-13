@@ -34,7 +34,7 @@ export type Me = {
   bio: string | null;
   role: import("@atelier/db").Role;
   languagePref: "es" | "it" | "en";
-  defaultModel: "sonnet" | "opus";
+  defaultModel: "haiku" | "sonnet" | "opus";
   restaurantId: string | null;
 };
 

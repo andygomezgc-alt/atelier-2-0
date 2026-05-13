@@ -1,25 +1,67 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+// Compositor de menús (vista staff).
+//
+// Optimizaciones (auditoría):
+//  - DishCard y SectionHeader son componentes memo'd a nivel módulo: cada
+//    keystroke en un input solo re-renderea su propia tarjeta, no toda la
+//    lista. Esto saca el lag de #9.
+//  - DebouncedTextInput hace save tras pausa + flush en unmount: si el chef
+//    navega atrás antes de hacer blur, igual se persiste su último cambio
+//    (#2).
+//  - useMemo para sortedSections / bySection: las particiones se calculan
+//    solo cuando cambian items/sections (#12).
+//  - reorderMenuItems (transaccional) reemplaza el Promise.all (#4).
+//  - sanitizeFilename mantiene acentos en el archivo PDF (#3).
+//
+// Bug #1: ahora cada DishCard tiene inputs editables para name y desc del
+// plato (staff-only); pegan a MenuItem.customName/customDesc, que es lo
+// canónico para cocina. La vista cliente sigue independiente vía overrides.
+
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  LayoutAnimation,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
+  UIManager,
   View,
 } from "react-native";
+
+// Android opt-in para LayoutAnimation. iOS by default.
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "@/src/lib/secure-storage";
 import { Screen } from "@/src/components/Screen";
 import { Eyebrow } from "@/src/components/Eyebrow";
 import { Button } from "@/src/components/Button";
+import { DebouncedTextInput } from "@/src/components/DebouncedTextInput";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
-import { getMenu, patchMenu, patchMenuItem, deleteMenuItem, type MenuFull } from "@/src/api/menus";
+import {
+  getMenu,
+  patchMenu,
+  patchMenuItem,
+  deleteMenuItem,
+  addMenuItem,
+  reorderMenuItems,
+  createSection,
+  patchSection,
+  deleteSection,
+  type MenuFull,
+} from "@/src/api/menus";
 import { showToast } from "@/src/components/Toast";
+import { ExportPreviewSheet } from "@/src/components/ExportPreviewSheet";
+import { ConfirmSheet } from "@/src/components/ConfirmSheet";
+import { SectionPickerSheet } from "@/src/components/SectionPickerSheet";
+import { SectionPresetSheet } from "@/src/components/SectionPresetSheet";
+import { RecipeBankPickerSheet } from "@/src/components/RecipeBankPickerSheet";
 import { TOKEN_KEY } from "@/src/api/client";
 import { can, type MenuStyle } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
@@ -36,6 +78,236 @@ function formatPrice(cents: number): string {
   return (cents / 100).toFixed(0);
 }
 
+function centsFromInput(raw: string): number {
+  const cleaned = raw.replace(/[^0-9.,]/g, "").replace(",", ".");
+  const n = parseFloat(cleaned || "0");
+  return Math.max(0, Math.round(n * 100));
+}
+
+/**
+ * Limpia solo los caracteres ilegales en filesystems mainstream
+ * (Windows/macOS/Linux). Preserva acentos, ñ, espacios, etc. — el resultado
+ * es legible cuando el chef comparte el PDF desde mobile.
+ */
+function sanitizeFilename(name: string): string {
+  const cleaned = name.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim();
+  return cleaned || "menu";
+}
+
+type MenuItem = MenuFull["items"][number];
+type MenuSection = MenuFull["sections"][number];
+
+// ───────────────────────── SectionHeader ─────────────────────────
+
+type SectionHeaderProps = {
+  section: MenuSection;
+  count: number;
+  isCollapsed: boolean;
+  canEdit: boolean;
+  placeholder: string;
+  onToggle: (id: string) => void;
+  onSaveName: (id: string, value: string) => void;
+  onDelete: (id: string, name: string) => void;
+};
+
+const SectionHeader = memo(function SectionHeader({
+  section,
+  count,
+  isCollapsed,
+  canEdit,
+  placeholder,
+  onToggle,
+  onSaveName,
+  onDelete,
+}: SectionHeaderProps) {
+  const handleSave = useCallback(
+    (v: string) => onSaveName(section.id, v),
+    [onSaveName, section.id],
+  );
+  return (
+    <View style={styles.sectionHeader}>
+      <Pressable
+        onPress={() => onToggle(section.id)}
+        hitSlop={6}
+        style={styles.collapseToggle}
+      >
+        <Ionicons
+          name={isCollapsed ? "chevron-forward" : "chevron-down"}
+          size={14}
+          color={colors.terracota}
+        />
+      </Pressable>
+      <DebouncedTextInput
+        value={section.name}
+        onSave={handleSave}
+        editable={canEdit}
+        placeholder={placeholder}
+        style={styles.sectionNameInput}
+        maxLength={120}
+      />
+      <Text style={styles.sectionCount}>{count}</Text>
+      {canEdit ? (
+        <Pressable hitSlop={10} onPress={() => onDelete(section.id, section.name)}>
+          <Ionicons name="trash-outline" size={16} color={colors.mute} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+});
+
+// ───────────────────────── DishCard ─────────────────────────
+
+type DishCardProps = {
+  dish: MenuItem;
+  sectionLabel: string;
+  canEdit: boolean;
+  canViewStaffRecipe: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+  namePlaceholder: string;
+  descPlaceholder: string;
+  viewRecipeLabel: string;
+  clearCustomNameLabel: string;
+  onSaveName: (itemId: string, value: string) => void;
+  onSaveDesc: (itemId: string, value: string) => void;
+  onSavePrice: (itemId: string, value: string) => void;
+  onClearCustomName: (itemId: string) => void;
+  onOpenSectionPicker: (itemId: string) => void;
+  onReorder: (itemId: string, dir: "up" | "down") => void;
+  onDelete: (itemId: string) => void;
+  onViewRecipe: (recipeId: string) => void;
+};
+
+const DishCard = memo(function DishCard({
+  dish,
+  sectionLabel,
+  canEdit,
+  canViewStaffRecipe,
+  isFirst,
+  isLast,
+  namePlaceholder,
+  descPlaceholder,
+  viewRecipeLabel,
+  clearCustomNameLabel,
+  onSaveName,
+  onSaveDesc,
+  onSavePrice,
+  onClearCustomName,
+  onOpenSectionPicker,
+  onReorder,
+  onDelete,
+  onViewRecipe,
+}: DishCardProps) {
+  const handleSaveName = useCallback((v: string) => onSaveName(dish.id, v), [onSaveName, dish.id]);
+  const handleSaveDesc = useCallback((v: string) => onSaveDesc(dish.id, v), [onSaveDesc, dish.id]);
+  const handleSavePrice = useCallback((v: string) => onSavePrice(dish.id, v), [onSavePrice, dish.id]);
+  // Custom name "drift" indicator: si está set, mostramos un toggle que lo
+  // limpia y vuelve al título canónico de la receta. Cubre el caso donde el
+  // chef renombró la receta original pero el menú quedó pegado al viejo nombre.
+  const hasCustomName = !!dish.customName && dish.customName.trim() !== "";
+  return (
+    <View style={styles.dishCard}>
+      <View style={styles.dishTopRow}>
+        {canEdit ? (
+          <View style={styles.reorderBox}>
+            <Pressable
+              hitSlop={6}
+              disabled={isFirst}
+              onPress={() => onReorder(dish.id, "up")}
+            >
+              <Ionicons
+                name="chevron-up"
+                size={14}
+                color={isFirst ? colors.edge : colors.mute}
+              />
+            </Pressable>
+            <Pressable
+              hitSlop={6}
+              disabled={isLast}
+              onPress={() => onReorder(dish.id, "down")}
+            >
+              <Ionicons
+                name="chevron-down"
+                size={14}
+                color={isLast ? colors.edge : colors.mute}
+              />
+            </Pressable>
+          </View>
+        ) : null}
+        <View style={{ flex: 1 }}>
+          <DebouncedTextInput
+            value={dish.name}
+            onSave={handleSaveName}
+            editable={canEdit}
+            placeholder={namePlaceholder}
+            style={styles.dishName}
+            multiline
+            maxLength={200}
+          />
+          {canEdit && hasCustomName ? (
+            <Pressable
+              style={styles.customNameBadge}
+              hitSlop={6}
+              onPress={() => onClearCustomName(dish.id)}
+              accessibilityLabel={clearCustomNameLabel}
+            >
+              <Ionicons name="close-circle-outline" size={11} color={colors.terracota} />
+              <Text style={styles.customNameBadgeLabel}>{clearCustomNameLabel}</Text>
+            </Pressable>
+          ) : null}
+          <DebouncedTextInput
+            value={dish.description}
+            onSave={handleSaveDesc}
+            editable={canEdit}
+            placeholder={descPlaceholder}
+            style={styles.dishDesc}
+            multiline
+            maxLength={1000}
+          />
+        </View>
+
+        <View style={styles.priceBox}>
+          <DebouncedTextInput
+            value={formatPrice(dish.price)}
+            onSave={handleSavePrice}
+            editable={canEdit}
+            keyboardType="numeric"
+            style={styles.priceInput}
+            maxLength={10}
+          />
+          <Text style={styles.priceUnit}>€</Text>
+        </View>
+      </View>
+
+      <View style={styles.dishActions}>
+        <View style={styles.dishActionsLeft}>
+          {canEdit ? (
+            <Pressable
+              style={styles.sectionChip}
+              onPress={() => onOpenSectionPicker(dish.id)}
+            >
+              <Ionicons name="folder-outline" size={12} color={colors.terracota} />
+              <Text style={styles.sectionChipLabel}>{sectionLabel}</Text>
+            </Pressable>
+          ) : null}
+          {canViewStaffRecipe ? (
+            <Pressable onPress={() => onViewRecipe(dish.recipeId)}>
+              <Text style={styles.linkLabel}>{viewRecipeLabel}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        {canEdit ? (
+          <Pressable hitSlop={10} onPress={() => onDelete(dish.id)}>
+            <Ionicons name="trash-outline" size={16} color={colors.mute} />
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+});
+
+// ───────────────────────── Pantalla ─────────────────────────
+
 export default function MenuDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t } = useI18n();
@@ -45,7 +317,14 @@ export default function MenuDetailScreen() {
   const [menu, setMenu] = useState<MenuFull | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const debounce = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [pendingDeleteSection, setPendingDeleteSection] = useState<{ id: string; name: string } | null>(null);
+  const [deletingSection, setDeletingSection] = useState(false);
+  const [sectionPickerForItem, setSectionPickerForItem] = useState<string | null>(null);
+  const [addSectionOpen, setAddSectionOpen] = useState(false);
+  const [bankPickerForSection, setBankPickerForSection] = useState<string | null>(null);
+  const [bankPickerForUnsectioned, setBankPickerForUnsectioned] = useState(false);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const role =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -53,6 +332,7 @@ export default function MenuDetailScreen() {
       : "viewer";
   const canEdit = can(role, "edit_menu");
   const canExport = can(role, "export_pdf");
+  const canViewStaffRecipe = can(role, "view_staff_recipe");
 
   const reload = useCallback(async () => {
     if (!id) return;
@@ -70,52 +350,258 @@ export default function MenuDetailScreen() {
     void reload();
   }, [reload]);
 
-  async function handleStyleChange(style: MenuStyle) {
-    if (!menu) return;
-    setMenu({ ...menu, presentationStyle: style });
-    try {
-      await patchMenu(menu.id, { presentationStyle: style });
-    } catch {
-      showToast(t("error_network"));
-    }
-  }
+  // ───────── Handlers (stable refs para que los memo'd hijos no re-rendereen) ─────────
 
-  function handlePriceChange(itemId: string, value: string) {
-    if (!menu) return;
-    const cents = Math.max(0, Math.round(parseFloat(value || "0") * 100));
-    setMenu({
-      ...menu,
-      items: menu.items.map((it) => (it.id === itemId ? { ...it, price: cents } : it)),
-    });
+  const handleStyleChange = useCallback(
+    async (style: MenuStyle) => {
+      setMenu((m) => (m ? { ...m, presentationStyle: style } : m));
+      try {
+        const current = await getMenu(id);
+        await patchMenu(current.id, { presentationStyle: style });
+      } catch {
+        showToast(t("error_network"));
+        void reload();
+      }
+    },
+    [id, t, reload],
+  );
 
-    if (debounce.current[itemId]) clearTimeout(debounce.current[itemId]);
-    debounce.current[itemId] = setTimeout(async () => {
+  const handleSaveItemName = useCallback(
+    async (itemId: string, value: string) => {
+      if (!menu) return;
+      // Optimistic update — el customName puede ser null si queda vacío,
+      // entonces el fallback a recipe.title vuelve a actuar.
+      const cleaned = value.trim();
+      setMenu((m) =>
+        m
+          ? { ...m, items: m.items.map((it) => (it.id === itemId ? { ...it, name: cleaned || it.name } : it)) }
+          : m,
+      );
+      try {
+        await patchMenuItem(menu.id, itemId, { customName: cleaned || null });
+      } catch {
+        showToast(t("error_network"));
+        void reload();
+      }
+    },
+    [menu, t, reload],
+  );
+
+  const handleSaveItemDesc = useCallback(
+    async (itemId: string, value: string) => {
+      if (!menu) return;
+      const cleaned = value.trim();
+      setMenu((m) =>
+        m
+          ? { ...m, items: m.items.map((it) => (it.id === itemId ? { ...it, description: cleaned } : it)) }
+          : m,
+      );
+      try {
+        await patchMenuItem(menu.id, itemId, { customDesc: cleaned || null });
+      } catch {
+        showToast(t("error_network"));
+        void reload();
+      }
+    },
+    [menu, t, reload],
+  );
+
+  const handleSaveItemPrice = useCallback(
+    async (itemId: string, value: string) => {
+      if (!menu) return;
+      const cents = centsFromInput(value);
+      setMenu((m) =>
+        m
+          ? { ...m, items: m.items.map((it) => (it.id === itemId ? { ...it, price: cents } : it)) }
+          : m,
+      );
       try {
         await patchMenuItem(menu.id, itemId, { price: cents });
       } catch {
         showToast(t("error_network"));
+        void reload();
       }
-    }, 500);
-  }
+    },
+    [menu, t, reload],
+  );
 
-  async function handleDeleteItem(itemId: string) {
-    if (!menu) return;
-    setMenu({ ...menu, items: menu.items.filter((it) => it.id !== itemId) });
+  const handleDeleteItem = useCallback(
+    async (itemId: string) => {
+      if (!menu) return;
+      setMenu((m) => (m ? { ...m, items: m.items.filter((it) => it.id !== itemId) } : m));
+      try {
+        await deleteMenuItem(menu.id, itemId);
+      } catch {
+        showToast(t("error_network"));
+        void reload();
+      }
+    },
+    [menu, t, reload],
+  );
+
+  const handleClearCustomName = useCallback(
+    async (itemId: string) => {
+      if (!menu) return;
+      try {
+        const updated = await patchMenuItem(menu.id, itemId, { customName: null });
+        setMenu(updated);
+      } catch {
+        showToast(t("error_network"));
+        void reload();
+      }
+    },
+    [menu, t, reload],
+  );
+
+  const handleAddSection = useCallback(
+    async (name: string) => {
+      if (!menu) return;
+      try {
+        const updated = await createSection(menu.id, { name });
+        setMenu(updated);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : t("error_network"));
+      }
+    },
+    [menu, t],
+  );
+
+  const handleSaveSectionName = useCallback(
+    async (sectionId: string, name: string) => {
+      if (!menu) return;
+      const cleaned = name.trim();
+      if (!cleaned) return;
+      try {
+        const updated = await patchSection(menu.id, sectionId, { name: cleaned });
+        setMenu(updated);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : t("error_network"));
+      }
+    },
+    [menu, t],
+  );
+
+  // Bug #6: el modal queda abierto hasta que el delete confirma. Si falla,
+  // mostramos toast y dejamos al usuario reintentar o cancelar.
+  const handleConfirmDeleteSection = useCallback(async () => {
+    if (!menu || !pendingDeleteSection || deletingSection) return;
+    setDeletingSection(true);
     try {
-      await deleteMenuItem(menu.id, itemId);
-    } catch {
-      showToast(t("error_network"));
-      void reload();
+      const updated = await deleteSection(menu.id, pendingDeleteSection.id);
+      setMenu(updated);
+      setPendingDeleteSection(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setDeletingSection(false);
     }
-  }
+  }, [menu, pendingDeleteSection, deletingSection, t]);
 
-  async function exportPdf() {
+  const handleOpenDeleteSection = useCallback((sectionId: string, name: string) => {
+    setPendingDeleteSection({ id: sectionId, name });
+  }, []);
+
+  const handleAddDishFromBank = useCallback(
+    async (sectionId: string | null, recipeId: string) => {
+      if (!menu) return;
+      try {
+        const updated = await addMenuItem(menu.id, {
+          recipeId,
+          sectionId,
+          price: 2800, // 28 € default; el chef edita inline después
+        });
+        setMenu(updated);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : t("error_network"));
+      }
+    },
+    [menu, t],
+  );
+
+  // Bug #4: ahora un solo POST transaccional. El server hace $transaction.
+  const handleReorderItem = useCallback(
+    async (itemId: string, direction: "up" | "down") => {
+      if (!menu) return;
+      const item = menu.items.find((it) => it.id === itemId);
+      if (!item) return;
+      const siblings = menu.items
+        .filter((it) => (it.sectionId ?? null) === (item.sectionId ?? null))
+        .sort((a, b) => a.order - b.order);
+      const idx = siblings.findIndex((it) => it.id === itemId);
+      const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+      const target = siblings[swapIdx];
+      if (!target) return;
+      // Optimistic UI primero
+      setMenu((m) =>
+        m
+          ? {
+              ...m,
+              items: m.items.map((it) =>
+                it.id === item.id
+                  ? { ...it, order: target.order }
+                  : it.id === target.id
+                    ? { ...it, order: item.order }
+                    : it,
+              ),
+            }
+          : m,
+      );
+      try {
+        const updated = await reorderMenuItems(menu.id, item.id, target.id);
+        setMenu(updated);
+      } catch {
+        showToast(t("error_network"));
+        void reload();
+      }
+    },
+    [menu, t, reload],
+  );
+
+  const handleMoveItem = useCallback(
+    async (itemId: string, sectionId: string | null) => {
+      if (!menu) return;
+      setMenu((m) =>
+        m
+          ? { ...m, items: m.items.map((it) => (it.id === itemId ? { ...it, sectionId } : it)) }
+          : m,
+      );
+      try {
+        const updated = await patchMenuItem(menu.id, itemId, { sectionId });
+        setMenu(updated);
+      } catch {
+        showToast(t("error_network"));
+        void reload();
+      }
+    },
+    [menu, t, reload],
+  );
+
+  const handleOpenSectionPickerForItem = useCallback((itemId: string) => {
+    setSectionPickerForItem(itemId);
+  }, []);
+
+  const handleOpenBankForSection = useCallback((sectionId: string) => {
+    setBankPickerForSection(sectionId);
+  }, []);
+
+  const toggleSection = useCallback((sectionId: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCollapsed((prev) => ({ ...prev, [sectionId]: !prev[sectionId] }));
+  }, []);
+
+  const handleViewRecipe = useCallback(
+    (recipeId: string) => router.push({ pathname: "/recetas/[id]", params: { id: recipeId } }),
+    [router],
+  );
+
+  // Bug #3: filename preserva acentos / ñ.
+  const exportPdf = useCallback(async () => {
     if (!menu || exporting) return;
     setExporting(true);
     try {
       const token = await SecureStore.getItemAsync(TOKEN_KEY);
       const url = `${API}/api/menus/${menu.id}/pdf?style=${menu.presentationStyle}`;
-      const fileUri = `${FileSystem.cacheDirectory}${menu.name.replace(/[^\w]/g, "_")}.pdf`;
+      const fileUri = `${FileSystem.cacheDirectory}${encodeURIComponent(sanitizeFilename(menu.name))}.pdf`;
       const dl = await FileSystem.downloadAsync(url, fileUri, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
@@ -129,7 +615,29 @@ export default function MenuDetailScreen() {
     } finally {
       setExporting(false);
     }
-  }
+  }, [menu, exporting, t]);
+
+  // ───────── Memoizados ─────────
+
+  const partition = useMemo(() => {
+    if (!menu) return { sections: [], unsectioned: [] as MenuItem[] };
+    const sortedSections = [...(menu.sections ?? [])].sort((a, b) => a.order - b.order);
+    const bySection = new Map<string | null, MenuItem[]>();
+    for (const it of menu.items) {
+      const key = it.sectionId ?? null;
+      const list = bySection.get(key) ?? [];
+      list.push(it);
+      bySection.set(key, list);
+    }
+    const sectionsWithItems = sortedSections.map((sec) => ({
+      section: sec,
+      items: (bySection.get(sec.id) ?? []).sort((a, b) => a.order - b.order),
+    }));
+    const unsectioned = (bySection.get(null) ?? []).sort((a, b) => a.order - b.order);
+    return { sections: sectionsWithItems, unsectioned };
+  }, [menu]);
+
+  // ───────── Render ─────────
 
   if (loading || !menu) {
     return (
@@ -139,9 +647,15 @@ export default function MenuDetailScreen() {
     );
   }
 
+  const noContent = menu.items.length === 0 && partition.sections.length === 0;
+
   return (
     <Screen title={menu.name} back onBack={() => router.back()}>
       <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.staffBanner}>
+          <Ionicons name="construct-outline" size={12} color={colors.teal} />
+          <Text style={styles.staffBannerLabel}>{t("view_staff_label")}</Text>
+        </View>
         {menu.season ? <Text style={styles.season}>{menu.season}</Text> : null}
 
         <View>
@@ -154,8 +668,8 @@ export default function MenuDetailScreen() {
                   styles.styleChip,
                   menu.presentationStyle === s.id && styles.styleChipActive,
                 ]}
-                onPress={() => canEdit && handleStyleChange(s.id)}
-                disabled={!canEdit}
+                onPress={() => canEdit && void handleStyleChange(s.id)}
+                disabled={!canEdit || menu.presentationStyle === s.id}
               >
                 <Text
                   style={[
@@ -170,60 +684,179 @@ export default function MenuDetailScreen() {
           </View>
         </View>
 
-        <View>
-          <Eyebrow>{t("section_dishes")}</Eyebrow>
-          {menu.items.length === 0 ? (
-            <Text style={styles.emptyText}>—</Text>
-          ) : (
-            menu.items.map((dish) => (
-              <View key={dish.id} style={styles.dishCard}>
-                <View style={styles.dishTopRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.dishName}>{dish.name}</Text>
-                    {dish.description ? (
-                      <Text style={styles.dishDesc}>{dish.description}</Text>
-                    ) : null}
-                  </View>
-
-                  <View style={styles.priceBox}>
-                    <TextInput
-                      value={formatPrice(dish.price)}
-                      onChangeText={(v) => handlePriceChange(dish.id, v)}
-                      keyboardType="numeric"
-                      style={styles.priceInput}
-                      editable={canEdit}
-                    />
-                    <Text style={styles.priceUnit}>€</Text>
-                  </View>
+        {noContent ? (
+          <Text style={styles.emptyText}>—</Text>
+        ) : (
+          <>
+            {partition.sections.map(({ section, items }) => {
+              const isCollapsed = !!collapsed[section.id];
+              return (
+                <View key={section.id} style={styles.sectionBlock}>
+                  <SectionHeader
+                    section={section}
+                    count={items.length}
+                    isCollapsed={isCollapsed}
+                    canEdit={canEdit}
+                    placeholder={t("section_name_placeholder")}
+                    onToggle={toggleSection}
+                    onSaveName={handleSaveSectionName}
+                    onDelete={handleOpenDeleteSection}
+                  />
+                  {isCollapsed ? null : (
+                    <>
+                      {items.map((d, i) => (
+                        <DishCard
+                          key={d.id}
+                          dish={d}
+                          sectionLabel={section.name}
+                          canEdit={canEdit}
+                          canViewStaffRecipe={canViewStaffRecipe}
+                          isFirst={i === 0}
+                          isLast={i === items.length - 1}
+                          namePlaceholder={t("recetas_form_title_placeholder")}
+                          descPlaceholder={t("recetas_form_notes_placeholder")}
+                          viewRecipeLabel={t("dish_view_recipe")}
+                          clearCustomNameLabel={t("dish_custom_name_clear")}
+                          onSaveName={handleSaveItemName}
+                          onSaveDesc={handleSaveItemDesc}
+                          onSavePrice={handleSaveItemPrice}
+                          onClearCustomName={handleClearCustomName}
+                          onOpenSectionPicker={handleOpenSectionPickerForItem}
+                          onReorder={handleReorderItem}
+                          onDelete={handleDeleteItem}
+                          onViewRecipe={handleViewRecipe}
+                        />
+                      ))}
+                      {canEdit ? (
+                        <Pressable
+                          style={styles.addDishBtn}
+                          onPress={() => handleOpenBankForSection(section.id)}
+                        >
+                          <Ionicons name="add-circle-outline" size={14} color={colors.terracota} />
+                          <Text style={styles.addDishLabel}>{t("recipe_bank_cta")}</Text>
+                        </Pressable>
+                      ) : null}
+                    </>
+                  )}
                 </View>
+              );
+            })}
 
-                <View style={styles.dishActions}>
-                  {can(role, "view_staff_recipe") ? (
-                    <Pressable
-                      onPress={() => router.push({ pathname: "/recetas/[id]", params: { id: dish.recipeId } })}
-                    >
-                      <Text style={styles.linkLabel}>{t("dish_view_recipe")}</Text>
-                    </Pressable>
-                  ) : null}
-                  {canEdit ? (
-                    <Pressable hitSlop={10} onPress={() => handleDeleteItem(dish.id)}>
-                      <Ionicons name="trash-outline" size={16} color={colors.mute} />
-                    </Pressable>
-                  ) : null}
-                </View>
+            {partition.unsectioned.length > 0 ? (
+              <View style={styles.sectionBlock}>
+                <Text style={styles.sectionNameMute}>{t("section_unassigned")}</Text>
+                {partition.unsectioned.map((d, i) => (
+                  <DishCard
+                    key={d.id}
+                    dish={d}
+                    sectionLabel={t("section_unassigned")}
+                    canEdit={canEdit}
+                    canViewStaffRecipe={canViewStaffRecipe}
+                    isFirst={i === 0}
+                    isLast={i === partition.unsectioned.length - 1}
+                    namePlaceholder={t("recetas_form_title_placeholder")}
+                    descPlaceholder={t("recetas_form_notes_placeholder")}
+                    viewRecipeLabel={t("dish_view_recipe")}
+                    clearCustomNameLabel={t("dish_custom_name_clear")}
+                    onSaveName={handleSaveItemName}
+                    onSaveDesc={handleSaveItemDesc}
+                    onSavePrice={handleSaveItemPrice}
+                    onClearCustomName={handleClearCustomName}
+                    onOpenSectionPicker={handleOpenSectionPickerForItem}
+                    onReorder={handleReorderItem}
+                    onDelete={handleDeleteItem}
+                    onViewRecipe={handleViewRecipe}
+                  />
+                ))}
+                {canEdit ? (
+                  <Pressable
+                    style={styles.addDishBtn}
+                    onPress={() => setBankPickerForUnsectioned(true)}
+                  >
+                    <Ionicons name="add-circle-outline" size={14} color={colors.terracota} />
+                    <Text style={styles.addDishLabel}>{t("recipe_bank_cta")}</Text>
+                  </Pressable>
+                ) : null}
               </View>
-            ))
-          )}
-        </View>
+            ) : null}
+
+            {canEdit ? (
+              <Pressable style={styles.addSectionBtn} onPress={() => setAddSectionOpen(true)}>
+                <Ionicons name="add" size={14} color={colors.terracota} />
+                <Text style={styles.addSectionLabel}>{t("section_add")}</Text>
+              </Pressable>
+            ) : null}
+          </>
+        )}
 
         {canExport ? (
           <Button
-            label={exporting ? "…" : t("btn_export_pdf")}
-            onPress={exportPdf}
-            disabled={exporting}
+            label={t("view_client_btn")}
+            iconLeft="eye-outline"
+            onPress={() => setPreviewOpen(true)}
+            disabled={exporting || menu.items.length === 0}
           />
         ) : null}
       </ScrollView>
+
+      <ExportPreviewSheet
+        open={previewOpen}
+        menu={menu}
+        exporting={exporting}
+        canEdit={canEdit}
+        onClose={() => setPreviewOpen(false)}
+        onChanged={reload}
+        onDownload={async () => {
+          await exportPdf();
+          setPreviewOpen(false);
+        }}
+      />
+
+      <SectionPickerSheet
+        open={sectionPickerForItem !== null}
+        sections={menu.sections}
+        currentSectionId={
+          menu.items.find((it) => it.id === sectionPickerForItem)?.sectionId ?? null
+        }
+        onClose={() => setSectionPickerForItem(null)}
+        onPick={(sectionId) => {
+          if (sectionPickerForItem) void handleMoveItem(sectionPickerForItem, sectionId);
+        }}
+      />
+
+      <SectionPresetSheet
+        open={addSectionOpen}
+        onClose={() => setAddSectionOpen(false)}
+        onPick={handleAddSection}
+      />
+
+      <RecipeBankPickerSheet
+        open={bankPickerForSection !== null || bankPickerForUnsectioned}
+        alreadyOnMenu={menu.items.map((it) => it.recipeId)}
+        onClose={() => {
+          setBankPickerForSection(null);
+          setBankPickerForUnsectioned(false);
+        }}
+        onPick={(recipeId) => {
+          const targetSectionId = bankPickerForUnsectioned ? null : bankPickerForSection;
+          void handleAddDishFromBank(targetSectionId, recipeId);
+        }}
+      />
+
+      <ConfirmSheet
+        open={!!pendingDeleteSection}
+        title={t("confirm_delete_section_title")}
+        body={t("confirm_delete_section_body", {
+          name: pendingDeleteSection?.name ?? "",
+        })}
+        confirmLabel={deletingSection ? "…" : t("confirm_delete")}
+        cancelLabel={t("confirm_cancel")}
+        destructive
+        onConfirm={handleConfirmDeleteSection}
+        onCancel={() => {
+          if (!deletingSection) setPendingDeleteSection(null);
+        }}
+      />
     </Screen>
   );
 }
@@ -235,6 +868,24 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.bodySm,
     color: colors.mute,
     letterSpacing: 0.5,
+  },
+  staffBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    alignSelf: "flex-start",
+    backgroundColor: colors.tealSoft,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+  },
+  staffBannerLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.eyebrow,
+    color: colors.teal,
+    textTransform: "uppercase",
+    letterSpacing: 1.4,
+    fontWeight: "600",
   },
   styleRow: { flexDirection: "row", gap: spacing.xs, marginTop: spacing.sm },
   styleChip: {
@@ -263,6 +914,8 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     fontSize: fontSizes.body,
     color: colors.ink,
+    padding: 0,
+    margin: 0,
   },
   dishDesc: {
     fontFamily: fonts.sans,
@@ -270,6 +923,7 @@ const styles = StyleSheet.create({
     color: colors.mute,
     marginTop: 2,
     lineHeight: fontSizes.bodySm * 1.5,
+    padding: 0,
   },
   priceBox: { flexDirection: "row", alignItems: "center", gap: 2 },
   priceInput: {
@@ -311,5 +965,135 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.body,
     color: colors.mute,
     marginTop: spacing.sm,
+  },
+  sectionBlock: { gap: spacing.xs, marginTop: spacing.md },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    borderBottomWidth: 0.5,
+    borderBottomColor: colors.edge,
+    paddingBottom: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  sectionNameInput: {
+    flex: 1,
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.eyebrow,
+    color: colors.terracota,
+    textTransform: "uppercase",
+    letterSpacing: 1.4,
+    fontWeight: "600",
+    padding: 0,
+  },
+  sectionNameMute: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.eyebrow,
+    color: colors.mute,
+    textTransform: "uppercase",
+    letterSpacing: 1.4,
+    fontWeight: "600",
+    borderBottomWidth: 0.5,
+    borderBottomColor: colors.edge,
+    paddingBottom: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  dishActionsLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flexWrap: "wrap",
+  },
+  sectionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.paperWarm,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderWidth: 0.5,
+    borderColor: colors.edgeSoft,
+  },
+  sectionChipLabel: {
+    fontFamily: fonts.sans,
+    fontSize: 10.5,
+    color: colors.terracota,
+    fontWeight: "600",
+    letterSpacing: 0.4,
+  },
+  collapseToggle: {
+    width: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sectionCount: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.mute,
+    minWidth: 18,
+    textAlign: "right",
+    letterSpacing: 0.4,
+  },
+  reorderBox: {
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.xs,
+    paddingTop: 2,
+  },
+  customNameBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 4,
+    backgroundColor: colors.terracotaSoft,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radii.pill,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  customNameBadgeLabel: {
+    fontFamily: fonts.sans,
+    fontSize: 10,
+    color: colors.terracota,
+    fontWeight: "600",
+    letterSpacing: 0.4,
+  },
+  addDishBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    alignSelf: "flex-start",
+    paddingVertical: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  addDishLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.terracota,
+    fontWeight: "600",
+    letterSpacing: 0.4,
+  },
+  addSectionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.terracota,
+    borderRadius: radii.pill,
+  },
+  addSectionLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.terracota,
+    fontWeight: "600",
+    letterSpacing: 0.8,
   },
 });

@@ -2,7 +2,7 @@
 // for now we keep the language in module state so the ProfileSheet can flip
 // it and force a re-render via the registered listeners.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { t as translate, type Language, type TranslationKey } from "@atelier/i18n";
 
 let currentLang: Language = "es";
@@ -23,10 +23,15 @@ export function useI18n() {
     };
   }, []);
 
-  return {
-    lang,
-    setLang,
-    t: (key: TranslationKey, vars?: Record<string, string | number>) =>
+  // Memoize `t` so consumers can safely put it in useEffect deps.
+  // Without this, `t` is a fresh closure every render and any effect that
+  // lists `t` as a dep re-runs on every render — which, for one-shot
+  // effects like magic-link verify, causes the operation to fire twice.
+  const t = useCallback(
+    (key: TranslationKey, vars?: Record<string, string | number>) =>
       translate(key, lang, vars),
-  };
+    [lang],
+  );
+
+  return { lang, setLang, t };
 }

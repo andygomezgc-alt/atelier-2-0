@@ -62,6 +62,13 @@ model User {
   defaultModel String  @default("sonnet")
   tokenVersion Int     @default(0)
 
+  // Bring-your-own-key (BYOK). When all three are set, the chat route uses
+  // the user's provider/model/key instead of the server's Anthropic key.
+  // TODO: encrypt customApiKey at rest before exposing to non-dev workspaces.
+  customProvider String?
+  customApiKey   String?
+  customModel    String?
+
   restaurantId String?
   restaurant   Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
 
@@ -175,24 +182,54 @@ model MenuFolder {
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 
-  items MenuItem[]
+  items          MenuItem[]
+  sections       MenuSection[]
+  clientOverride MenuClientOverride?
 
   @@index([restaurantId])
   @@index([restaurantId, updatedAt])
 }
 
-model MenuItem {
+// Capa de overrides "solo para PDF cliente" — el compositor (staff) jamás
+// los muestra. JSON con nombres editables de restaurante, menú, subtítulo,
+// secciones e items. Si un campo está ausente, el PDF cliente usa el valor
+// canónico del MenuItem / MenuFolder / Restaurant.
+model MenuClientOverride {
+  id           String     @id @default(cuid())
+  menuFolderId String     @unique
+  menuFolder   MenuFolder @relation(fields: [menuFolderId], references: [id], onDelete: Cascade)
+  overrides    Json       @default("{}")
+  updatedAt    DateTime   @updatedAt
+}
+
+model MenuSection {
   id           String     @id @default(cuid())
   menuFolderId String
   menuFolder   MenuFolder @relation(fields: [menuFolderId], references: [id], onDelete: Cascade)
+  name         String
+  order        Int
+  createdAt    DateTime   @default(now())
+
+  items MenuItem[]
+
+  @@index([menuFolderId, order])
+}
+
+model MenuItem {
+  id           String       @id @default(cuid())
+  menuFolderId String
+  menuFolder   MenuFolder   @relation(fields: [menuFolderId], references: [id], onDelete: Cascade)
+  sectionId    String?
+  section      MenuSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   recipeId     String
-  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Restrict)
+  recipe       Recipe       @relation(fields: [recipeId], references: [id], onDelete: Restrict)
   customName   String?
-  customDesc   String?    @db.Text
+  customDesc   String?      @db.Text
   price        Int
   order        Int
 
   @@index([menuFolderId, order])
+  @@index([sectionId, order])
 }
 
 // ─────────── Auth.js (NextAuth) tables ───────────

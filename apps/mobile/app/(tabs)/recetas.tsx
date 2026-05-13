@@ -58,6 +58,7 @@ export default function RecetasScreen() {
       ? authState.user.role
       : "viewer";
   const canDelete = can(role, "approve_recipe");
+  const canCreate = can(role, "edit_recipe");
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -98,6 +99,24 @@ export default function RecetasScreen() {
 
   return (
     <Screen title={t("header_recetas")}>
+      {canCreate ? (
+        <View style={styles.createRow}>
+          <Pressable
+            style={styles.createBtn}
+            onPress={() => router.push("/recetas/nueva")}
+          >
+            <Ionicons name="add" size={16} color={colors.paper} />
+            <Text style={styles.createLabel}>{t("btn_crear_receta")}</Text>
+          </Pressable>
+          <Pressable
+            style={styles.uploadBtn}
+            onPress={() => router.push("/recetas/cargar")}
+          >
+            <Ionicons name="cloud-upload-outline" size={16} color={colors.terracota} />
+            <Text style={styles.uploadLabel}>{t("btn_cargar_receta")}</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <View style={styles.searchRow}>
         <Ionicons name="search" size={16} color={colors.mute} />
         <TextInput
@@ -207,6 +226,46 @@ function StateChip({
 }
 
 const styles = StyleSheet.create({
+  createRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+  },
+  createBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.terracota,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 4,
+  },
+  createLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.paper,
+    fontWeight: "600",
+    letterSpacing: 0.8,
+  },
+  uploadBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.paperSoft,
+    borderRadius: radii.pill,
+    borderWidth: 0.5,
+    borderColor: colors.terracota,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 4,
+  },
+  uploadLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.terracota,
+    fontWeight: "600",
+    letterSpacing: 0.8,
+  },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",

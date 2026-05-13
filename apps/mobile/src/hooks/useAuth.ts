@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "@/src/lib/secure-storage";
 import { TOKEN_KEY } from "@/src/api/client";
-import { fetchMe, requestMagicLink, type MeUser } from "@/src/api/auth";
+import { devLogin, fetchMe, requestMagicLink, type MeUser } from "@/src/api/auth";
 
 export type AuthState =
   | { status: "loading" }
@@ -33,6 +33,31 @@ export function getAuthState(): AuthState {
 }
 
 async function bootstrap() {
+  // DEV: if the dev-auth env var is set, skip every login flow and sign in
+  // with a fixed test user that auto-gets a Dev Kitchen restaurant. We do this
+  // BEFORE checking any stored token so stale sessions from previous magic-link
+  // attempts (e.g. a user that never finished onboarding) don't pin you to the
+  // choose-flow screen. Backend 404s the endpoint outside dev.
+  const devEmail = process.env.EXPO_PUBLIC_DEV_AUTH_EMAIL;
+  if (devEmail) {
+    try {
+      const { accessToken, user } = await devLogin(devEmail);
+      // Best-effort persistence — if SecureStore throws on this platform, the
+      // in-memory state still advances so the UI doesn't get stuck on login.
+      // Next cold start will just dev-login again.
+      await SecureStore.setItemAsync(TOKEN_KEY, accessToken).catch(() => null);
+      console.log("[dev-auth] signed in as", user.email, "restaurant:", user.restaurantName);
+      setState(
+        user.restaurantId
+          ? { status: "signed-in", user }
+          : { status: "needs-restaurant", user },
+      );
+      return;
+    } catch (err) {
+      console.warn("[dev-auth] failed, falling back:", err);
+    }
+  }
+
   const token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
   if (!token) {
     setState({ status: "signed-out" });
@@ -97,10 +122,23 @@ export function useAuth() {
     }
   }, []);
 
+  // Local-only merge into the signed-in user — útil tras un PATCH que ya
+  // devuelve el shape canónico (ej. rename del restaurante). Evita el GET
+  // a /api/me extra que dispararía `refreshMe`.
+  const patchLocalUser = useCallback((updates: Partial<MeUser>): void => {
+    if (_state.status !== "signed-in" && _state.status !== "needs-restaurant") return;
+    const next = { ..._state.user, ...updates };
+    setState(
+      next.restaurantId
+        ? { status: "signed-in", user: next }
+        : { status: "needs-restaurant", user: next },
+    );
+  }, []);
+
   const signOut = useCallback(async (): Promise<void> => {
     await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => null);
     setState({ status: "signed-out" });
   }, []);
 
-  return { state, sendMagicLink, signInWithToken, refreshMe, signOut };
+  return { state, sendMagicLink, signInWithToken, refreshMe, patchLocalUser, signOut };
 }

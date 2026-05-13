@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,6 +17,7 @@ import { useAuth } from "@/src/hooks/useAuth";
 import { getRecipe, patchRecipe, type RecipeFull } from "@/src/api/recipes";
 import { showToast } from "@/src/components/Toast";
 import { AddToMenuSheet } from "@/src/components/AddToMenuSheet";
+import { setRecipeDraft } from "@/src/lib/recipe-draft";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
@@ -86,6 +88,16 @@ export default function RecipeDetailScreen() {
     }
   }
 
+  function openEditor() {
+    if (!recipe) return;
+    setRecipeDraft({
+      title: recipe.title,
+      contentJson: recipe.contentJson,
+      editId: recipe.id,
+    });
+    router.push("/recetas/nueva");
+  }
+
   if (loading || !recipe) {
     return (
       <Screen title={t("header_receta")} back onBack={() => router.back()}>
@@ -95,6 +107,11 @@ export default function RecipeDetailScreen() {
   }
 
   const content = recipe.contentJson;
+  const canEdit = can(role, "edit_recipe");
+  // Approved recipes are admin-only to modify — the team has signed off and
+  // editing the content requires a stricter sign-off than edit_recipe.
+  const canModify =
+    recipe.state === "approved" ? role === "admin" : canEdit;
 
   return (
     <Screen title={t("header_receta")} back onBack={() => router.back()}>
@@ -111,6 +128,28 @@ export default function RecipeDetailScreen() {
             {recipe.authorName} · v{recipe.version}
           </Text>
         </View>
+
+        {recipe.state === "approved" ? (
+          <View style={styles.menusSection}>
+            <Eyebrow>{t("recipe_in_menus")}</Eyebrow>
+            {recipe.menus.length === 0 ? (
+              <Text style={styles.menuEmpty}>{t("recipe_in_no_menus")}</Text>
+            ) : (
+              <View style={styles.menuChips}>
+                {recipe.menus.map((m) => (
+                  <Pressable
+                    key={m.id}
+                    style={styles.menuChip}
+                    onPress={() => router.push({ pathname: "/menus/[id]", params: { id: m.id } })}
+                  >
+                    <Ionicons name="restaurant-outline" size={12} color={colors.terracota} />
+                    <Text style={styles.menuChipLabel}>{m.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </View>
+        ) : null}
 
         {content.ingredients.length > 0 ? (
           <View style={styles.section}>
@@ -142,6 +181,14 @@ export default function RecipeDetailScreen() {
         ) : null}
 
         <View style={styles.actions}>
+          {canModify ? (
+            <Button
+              label={t("btn_modificar")}
+              iconLeft="pencil"
+              variant="secondary"
+              onPress={openEditor}
+            />
+          ) : null}
           {recipe.state === "draft" && can(role, "advance_to_test") ? (
             <Button label={t("btn_advance_to_test")} onPress={advanceToTest} />
           ) : null}
@@ -155,7 +202,7 @@ export default function RecipeDetailScreen() {
               onPress={() => setAddToMenuOpen(true)}
             />
           ) : null}
-          {can(role, "edit_recipe") ? (
+          {canEdit ? (
             <Button
               label={recipe.priority ? t("btn_priority_off") : t("btn_priority_on")}
               variant="ghost"
@@ -231,4 +278,34 @@ const styles = StyleSheet.create({
     lineHeight: fontSizes.body * 1.5,
   },
   actions: { gap: spacing.sm },
+  menusSection: { gap: spacing.xs },
+  menuEmpty: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.mute,
+    fontStyle: "italic",
+  },
+  menuChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  menuChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.paperWarm,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 4,
+    borderWidth: 0.5,
+    borderColor: colors.edgeSoft,
+  },
+  menuChipLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.terracota,
+    fontWeight: "600",
+  },
 });

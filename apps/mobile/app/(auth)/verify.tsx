@@ -1,7 +1,7 @@
 // Handles the deep link atelier://auth?token=TOKEN&email=EMAIL that
 // arrives when the user taps the magic link in their email client.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -17,18 +17,27 @@ export default function VerifyScreen() {
   const { t } = useI18n();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  // Guard against re-running the effect after a successful verify. `t` from
+  // useI18n is a fresh function reference on every render, so dropping it (or
+  // any other unstable dep) from the array isn't enough — once signInWithToken
+  // updates auth state, this screen re-renders before unmounting and a naive
+  // effect would call verifyMagicLink a second time with the now-consumed token.
+  const inFlight = useRef(false);
 
   useEffect(() => {
+    if (inFlight.current) return;
     if (!token || !email) {
       setError(t("error_invalid_link"));
       return;
     }
+    inFlight.current = true;
 
     verifyMagicLink(token, email)
       .then(({ accessToken, user }) => {
         signInWithToken(accessToken, user);
       })
       .catch((err: Error) => {
+        inFlight.current = false;
         showToast(err.message ?? t("error_network"));
         setError(err.message);
         setTimeout(() => router.replace("/(auth)/login"), 2000);

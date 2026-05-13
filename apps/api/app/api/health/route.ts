@@ -5,7 +5,11 @@ import { logger } from "@/lib/logger";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TIMEOUT_MS = 300;
+// Neon serverless cierra conexiones idle: una primera query tras un período
+// inactivo necesita reabrir la conexión (~500-1500ms típicamente). 300ms es
+// muy agresivo y dispara falsos 503. 3s deja margen sin esconder problemas
+// reales.
+const TIMEOUT_MS = 3000;
 
 type CheckResult = {
   ok: boolean;

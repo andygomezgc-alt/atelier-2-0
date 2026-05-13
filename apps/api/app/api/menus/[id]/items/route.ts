@@ -3,6 +3,7 @@ import { prisma } from "@atelier/db";
 import { AddMenuItemRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
+import { projectMenuDetail, menuDetailInclude } from "@/lib/projections";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +28,10 @@ export async function POST(
   if (!recipe || recipe.restaurantId !== ctx.restaurantId || recipe.deletedAt !== null)
     return NextResponse.json({ error: "Recipe not in restaurant" }, { status: 404 });
 
+  // Per-section order: el nuevo plato queda al final de SU sección, no al
+  // final global del menú. Esto es lo que el usuario espera visualmente.
   const last = await prisma.menuItem.findFirst({
-    where: { menuFolderId: menuId },
+    where: { menuFolderId: menuId, sectionId: parse.data.sectionId ?? null },
     orderBy: { order: "desc" },
     select: { order: true },
   });
@@ -38,6 +41,7 @@ export async function POST(
     data: {
       menuFolderId: menuId,
       recipeId: parse.data.recipeId,
+      sectionId: parse.data.sectionId ?? null,
       customName: parse.data.customName ?? null,
       customDesc: parse.data.customDesc ?? null,
       price: parse.data.price,
@@ -60,27 +64,9 @@ export async function POST(
 
   const full = await prisma.menuFolder.findUnique({
     where: { id: menuId },
-    include: {
-      items: {
-        orderBy: { order: "asc" },
-        include: { recipe: { select: { title: true } } },
-      },
-    },
+    include: menuDetailInclude,
   });
   if (!full) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json({
-    id: full.id,
-    name: full.name,
-    season: full.season,
-    presentationStyle: full.presentationStyle,
-    items: full.items.map((it) => ({
-      id: it.id,
-      recipeId: it.recipeId,
-      name: it.customName ?? it.recipe?.title ?? "",
-      description: it.customDesc ?? "",
-      price: it.price,
-      order: it.order,
-    })),
-  });
+  return NextResponse.json(projectMenuDetail(full));
 }

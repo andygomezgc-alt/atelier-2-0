@@ -1,0 +1,168 @@
+// Extracts a structured recipe (title + ingredients/method/notes) from a PDF
+// or DOCX upload. Steps:
+//  1. Parse the file to plain text (unpdf for PDF, mammoth for DOCX).
+//  2. Ask an LLM to coerce that text into our RecipeContent shape.
+//  3. Validate the LLM response with Zod so the caller can trust it.
+//
+// BYOK-aware: if the user has a custom provider configured, we route through
+// it. Otherwise we use the server's Anthropic key + Haiku 4.5 (fast/cheap; the
+// task is structured extraction, not deep reasoning).
+//
+// TODO v2: add Google Drive OAuth flow so the user can pick files directly
+// from Drive without going through the device file picker.
+
+import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
+import { extractText, getDocumentProxy } from "unpdf";
+import mammoth from "mammoth";
+import { z } from "zod";
+
+export const PDF_MIME = "application/pdf";
+export const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+export type ExtractorBYOK = {
+  provider: "anthropic" | "openai" | "google";
+  apiKey: string;
+  model: string;
+} | null;
+
+const ExtractedRecipeSchema = z.object({
+  title: z.string().min(1).max(200),
+  ingredients: z.array(z.string().min(1).max(500)).max(50),
+  method: z.array(z.string().min(1).max(500)).max(50),
+  notes: z.string().max(5000).optional().default(""),
+});
+
+export type ExtractedRecipe = z.infer<typeof ExtractedRecipeSchema>;
+
+const PROMPT = `Extraé esta receta del texto siguiente. Devolvé SOLO un objeto JSON con esta forma exacta:
+{
+  "title": "Nombre claro de la receta",
+  "ingredients": ["Ingrediente 1 con cantidad", "Ingrediente 2 con cantidad"],
+  "method": ["Paso 1...", "Paso 2..."],
+  "notes": "Notas, tips o técnica opcional. Si no hay, devolvé string vacía."
+}
+
+Reglas:
+- Si la receta no tiene título visible, inventá uno descriptivo basado en los ingredientes principales.
+- Cada ingrediente como string separado en \`ingredients\`, en el orden del original.
+- Cada paso del método como string separado en \`method\`, en orden.
+- No incluyas markdown, no expliques, no agregues texto fuera del JSON.
+
+TEXTO:
+`;
+
+export async function extractRecipeFromFile(
+  buffer: Uint8Array,
+  mimeType: string,
+  byok: ExtractorBYOK,
+): Promise<ExtractedRecipe> {
+  const text = await fileToText(buffer, mimeType);
+  if (!text.trim()) throw new Error("El archivo no contiene texto legible");
+
+  // Safety cap: keep prompts predictable in size. ~30k chars ≈ 8k tokens.
+  const truncated = text.length > 30_000 ? text.slice(0, 30_000) : text;
+  const fullPrompt = PROMPT + truncated;
+
+  const raw = await callForExtraction(fullPrompt, byok);
+  const parsed = ExtractedRecipeSchema.safeParse(parseJsonLoose(raw));
+  if (!parsed.success) {
+    throw new Error(
+      `No se pudo interpretar la receta del archivo: ${parsed.error.issues
+        .map((i) => i.message)
+        .join(", ")}`,
+    );
+  }
+  return parsed.data;
+}
+
+async function fileToText(buffer: Uint8Array, mimeType: string): Promise<string> {
+  if (mimeType === PDF_MIME) {
+    const doc = await getDocumentProxy(buffer);
+    const out = await extractText(doc, { mergePages: true });
+    return Array.isArray(out.text) ? out.text.join("\n") : out.text;
+  }
+  if (mimeType === DOCX_MIME) {
+    const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) });
+    return result.value;
+  }
+  throw new Error(`Tipo de archivo no soportado: ${mimeType}`);
+}
+
+// Strip optional ```json fences before JSON.parse. LLMs add them despite the
+// "no markdown" instruction.
+function parseJsonLoose(raw: string): unknown {
+  let s = raw.trim();
+  if (s.startsWith("```")) {
+    s = s.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+  }
+  return JSON.parse(s);
+}
+
+async function callForExtraction(
+  prompt: string,
+  byok: ExtractorBYOK,
+): Promise<string> {
+  if (byok?.provider === "anthropic") {
+    const client = new Anthropic({ apiKey: byok.apiKey });
+    const msg = await client.messages.create({
+      model: byok.model,
+      max_tokens: 4096,
+      messages: [{ role: "user", content: prompt }],
+    });
+    return firstTextBlock(msg);
+  }
+
+  if (byok?.provider === "openai") {
+    const client = new OpenAI({ apiKey: byok.apiKey });
+    const completion = await client.chat.completions.create({
+      model: byok.model,
+      max_tokens: 4096,
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+    });
+    const content = completion.choices[0]?.message?.content;
+    if (!content) throw new Error("OpenAI no devolvió contenido");
+    return content;
+  }
+
+  if (byok?.provider === "google") {
+    const client = new GoogleGenAI({ apiKey: byok.apiKey });
+    const model = byok.model
+      .trim()
+      .replace(/^models\//, "")
+      .replace(/^google\//, "")
+      .replace(/\s+/g, "-")
+      .toLowerCase();
+    const result = await client.models.generateContent({
+      model,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        maxOutputTokens: 4096,
+        responseMimeType: "application/json",
+      },
+    });
+    const text = result.text;
+    if (!text) throw new Error("Google no devolvió contenido");
+    return text;
+  }
+
+  // Default path: server's Anthropic key, Haiku 4.5 (cheap + fast).
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY no configurada en el servidor");
+  const client = new Anthropic({ apiKey });
+  const msg = await client.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 4096,
+    messages: [{ role: "user", content: prompt }],
+  });
+  return firstTextBlock(msg);
+}
+
+function firstTextBlock(msg: Anthropic.Message): string {
+  const block = msg.content.find((b) => b.type === "text");
+  if (!block || block.type !== "text") throw new Error("Sin respuesta de texto");
+  return block.text;
+}

@@ -31,6 +31,7 @@ export default function CreateRestaurantScreen() {
       await refreshMe();
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
       setLoading(false);
     }
   }

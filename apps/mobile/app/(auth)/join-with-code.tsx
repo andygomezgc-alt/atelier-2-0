@@ -31,6 +31,7 @@ export default function JoinWithCodeScreen() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t("error_network");
       showToast(msg);
+    } finally {
       setLoading(false);
     }
   }

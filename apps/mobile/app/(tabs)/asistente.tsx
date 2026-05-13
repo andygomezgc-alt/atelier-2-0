@@ -14,11 +14,13 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Empty } from "@/src/components/Empty";
 import { NetworkError } from "@/src/components/NetworkError";
+import { PreviousChatsSheet } from "@/src/components/PreviousChatsSheet";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import {
   createConversation,
   getConversationByIdea,
+  listMessages,
   streamMessage,
   StreamTimeoutError,
   type ChatMessage,
@@ -27,16 +29,23 @@ import { createRecipe } from "@/src/api/recipes";
 import { showToast } from "@/src/components/Toast";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
-type ModelKey = "sonnet" | "opus";
+type ModelKey = "haiku" | "sonnet" | "opus";
 
 export default function AsistenteScreen() {
   const { t } = useI18n();
   const { state: authState } = useAuth();
   const router = useRouter();
-  const params = useLocalSearchParams<{ ideaId?: string; ideaText?: string }>();
+  const params = useLocalSearchParams<{
+    ideaId?: string;
+    ideaText?: string;
+    conversationId?: string;
+  }>();
 
   const ideaId = params.ideaId;
   const ideaText = params.ideaText;
+  const conversationIdParam = params.conversationId;
+
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const userModel: ModelKey =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -69,34 +78,54 @@ export default function AsistenteScreen() {
     };
   }, []);
 
-  // Reset chat state and load the conversation when the idea changes.
-  // Each idea owns a single conversation: opening idea A then idea B must
-  // never show A's messages under B.
+  // Reset chat state and load the right conversation when params change.
+  // Two entry points:
+  //   - ideaId: idea → single conversation (get-or-create).
+  //   - conversationId: jumping to a past chat from the history sheet.
+  // No params: fresh standalone conversation.
   useEffect(() => {
-    // Always reset state on idea change (including ideaId becoming undefined).
     setConversationId(null);
     setMessages([]);
     setStreamBuf("");
     setStreamError(null);
 
-    if (!ideaId) return;
-
     let cancelled = false;
-    (async () => {
-      try {
-        const conv = await getConversationByIdea(ideaId);
-        if (cancelled) return;
-        setConversationId(conv.id);
-        setMessages(conv.messages);
-      } catch (err) {
-        if (cancelled) return;
-        showToast(err instanceof Error ? err.message : t("error_network"));
-      }
-    })();
+
+    if (conversationIdParam) {
+      (async () => {
+        try {
+          const msgs = await listMessages(conversationIdParam);
+          if (cancelled) return;
+          setConversationId(conversationIdParam);
+          setMessages(msgs);
+        } catch (err) {
+          if (cancelled) return;
+          showToast(err instanceof Error ? err.message : t("error_network"));
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (ideaId) {
+      (async () => {
+        try {
+          const conv = await getConversationByIdea(ideaId);
+          if (cancelled) return;
+          setConversationId(conv.id);
+          setMessages(conv.messages);
+        } catch (err) {
+          if (cancelled) return;
+          showToast(err instanceof Error ? err.message : t("error_network"));
+        }
+      })();
+    }
+
     return () => {
       cancelled = true;
     };
-  }, [ideaId, t]);
+  }, [ideaId, conversationIdParam, t]);
 
   useEffect(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
@@ -201,8 +230,33 @@ export default function AsistenteScreen() {
   const showSaveButton =
     !streaming && !streamError && messages.some((m) => m.role === "assistant") && conversationId;
 
+  const historyButton = (
+    <Pressable
+      hitSlop={10}
+      onPress={() => setHistoryOpen(true)}
+      accessibilityLabel={t("asistente_history")}
+    >
+      <Ionicons name="time-outline" size={22} color={colors.ink} />
+    </Pressable>
+  );
+
   return (
-    <Screen title={t("header_asistente")}>
+    <Screen title={t("header_asistente")} right={historyButton}>
+      <PreviousChatsSheet
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onPick={(conv) => {
+          // Replace the screen with the picked conversation. Clear ideaId
+          // so the conversationId path takes over in the load effect.
+          router.replace({
+            pathname: "/(tabs)/asistente",
+            params: {
+              conversationId: conv.id,
+              ...(conv.ideaText ? { ideaText: conv.ideaText } : {}),
+            },
+          });
+        }}
+      />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -219,6 +273,14 @@ export default function AsistenteScreen() {
         ) : null}
 
         <View style={styles.modelRow}>
+          <Pressable
+            style={[styles.modelChip, model === "haiku" && styles.modelChipActive]}
+            onPress={() => setModel("haiku")}
+          >
+            <Text style={[styles.modelLabel, model === "haiku" && styles.modelLabelActive]}>
+              Haiku 4.5
+            </Text>
+          </Pressable>
           <Pressable
             style={[styles.modelChip, model === "sonnet" && styles.modelChipActive]}
             onPress={() => setModel("sonnet")}

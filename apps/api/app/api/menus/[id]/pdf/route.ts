@@ -4,6 +4,7 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { TEMPLATES } from "@/lib/pdf/templates";
 import { renderHtmlToPdf } from "@/lib/pdf/render";
 import { logger } from "@/lib/logger";
+import type { ClientOverrides } from "@atelier/shared";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -25,10 +26,12 @@ export async function GET(
     where: { id },
     include: {
       restaurant: { select: { name: true } },
+      sections: { orderBy: { order: "asc" }, select: { id: true, name: true } },
       items: {
         orderBy: { order: "asc" },
         include: { recipe: { select: { title: true } } },
       },
+      clientOverride: { select: { overrides: true } },
     },
   });
 
@@ -38,15 +41,34 @@ export async function GET(
   const style = (styleParam ?? menu.presentationStyle) as keyof typeof TEMPLATES;
   const renderer = TEMPLATES[style] ?? TEMPLATES.elegant;
 
+  // Cliente overrides: JSON validado por Zod arriba; acá lo tratamos como
+  // partial deep. Cada campo: override > canonical-staff > fallback.
+  const ov = (menu.clientOverride?.overrides ?? {}) as ClientOverrides;
+
+  const dishesBySection = new Map<string | null, Array<{ name: string; description: string; price: number }>>();
+  for (const it of menu.items) {
+    const sectionKey = it.sectionId ?? null;
+    const list = dishesBySection.get(sectionKey) ?? [];
+    list.push({
+      name: ov.items?.[it.id]?.name ?? it.customName ?? it.recipe?.title ?? "",
+      description: ov.items?.[it.id]?.description ?? it.customDesc ?? "",
+      price: ov.items?.[it.id]?.price ?? it.price,
+    });
+    dishesBySection.set(sectionKey, list);
+  }
+
+  const sections = menu.sections.map((s) => ({
+    name: ov.sections?.[s.id]?.name ?? s.name,
+    dishes: dishesBySection.get(s.id) ?? [],
+  }));
+  const unsectioned = dishesBySection.get(null) ?? [];
+
   const html = renderer({
-    restaurantName: menu.restaurant?.name ?? "",
-    menuName: menu.name,
-    season: menu.season,
-    dishes: menu.items.map((it) => ({
-      name: it.customName ?? it.recipe?.title ?? "",
-      description: it.customDesc ?? "",
-      price: it.price,
-    })),
+    restaurantName: ov.restaurantName ?? menu.restaurant?.name ?? "",
+    menuName: ov.menuName ?? menu.name,
+    season: ov.subtitle ?? menu.season,
+    sections,
+    unsectioned,
   });
 
   let pdf: Buffer;

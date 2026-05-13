@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "@/src/lib/secure-storage";
 import { TOKEN_KEY } from "./client";
 import EventSource from "react-native-sse";
 
@@ -28,11 +28,14 @@ export type ChatMessage = {
   createdAt: string;
 };
 
-export const createConversation = (body: { ideaId?: string | null; modelUsed: "sonnet" | "opus" }) =>
+export const createConversation = (body: { ideaId?: string | null; modelUsed: "haiku" | "sonnet" | "opus" }) =>
   apiFetch<{ id: string }>("/api/conversations", {
     method: "POST",
     body: JSON.stringify(body),
   });
+
+export const listConversations = () =>
+  apiFetch<ConversationSummary[]>("/api/conversations");
 
 export const listMessages = (conversationId: string) =>
   apiFetch<ChatMessage[]>(`/api/conversations/${conversationId}/messages`);
@@ -90,7 +93,7 @@ export function parseSseEvent(data: string): SseEvent | null {
 export async function streamMessage(
   conversationId: string,
   content: string,
-  model: "sonnet" | "opus",
+  model: "haiku" | "sonnet" | "opus",
   onDelta: (delta: string) => void,
   signal?: AbortSignal,
 ): Promise<string> {

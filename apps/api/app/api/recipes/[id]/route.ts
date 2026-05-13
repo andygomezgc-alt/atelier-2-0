@@ -56,6 +56,21 @@ export async function PATCH(
   if ((parse.data.title || parse.data.contentJson) && !can(ctx.role, "edit_recipe"))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  // Editing content of an approved recipe is admin-only: the team has signed
+  // off on this version, so changes need a stricter sign-off than the normal
+  // edit_recipe permission. State transitions (priority, etc.) still go
+  // through the per-action checks above.
+  if (
+    existing.state === "approved" &&
+    (parse.data.title !== undefined || parse.data.contentJson !== undefined) &&
+    ctx.role !== "admin"
+  ) {
+    return NextResponse.json(
+      { error: "Solo el admin puede modificar recetas aprobadas" },
+      { status: 403 },
+    );
+  }
+
   const data: Prisma.RecipeUpdateInput = {};
   if (parse.data.title !== undefined) data.title = parse.data.title;
   if (parse.data.contentJson !== undefined) data.contentJson = parse.data.contentJson;

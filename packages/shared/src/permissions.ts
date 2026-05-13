@@ -22,7 +22,7 @@ const MATRIX: Record<Permission, ReadonlyArray<Role>> = {
   approve_recipe: ["admin", "chef_executive"],
   create_menu: ["admin", "chef_executive", "sous_chef"],
   edit_menu: ["admin", "chef_executive", "sous_chef"],
-  delete_menu: ["admin", "chef_executive"],
+  delete_menu: ["admin"],
   view_staff_recipe: ["admin", "chef_executive", "sous_chef"],
   export_pdf: ["admin", "chef_executive", "sous_chef", "viewer"],
   view_invite_code: ["admin"],

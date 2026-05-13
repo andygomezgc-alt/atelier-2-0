@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -34,6 +35,9 @@ export default function InicioScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Idea | null>(null);
+  const [editing, setEditing] = useState<Idea | null>(null);
+  const [editText, setEditText] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const userName =
     state.status === "signed-in" || state.status === "needs-restaurant"
@@ -90,7 +94,7 @@ export default function InicioScreen() {
 
   async function takeToAssistant(idea: Idea) {
     try {
-      await patchIdea(idea.id, "in_chat");
+      await patchIdea(idea.id, { status: "in_chat" });
     } catch {
       // non-blocking
     }
@@ -98,6 +102,33 @@ export default function InicioScreen() {
       pathname: "/(tabs)/asistente",
       params: { ideaId: idea.id, ideaText: idea.text },
     });
+  }
+
+  function openEdit(idea: Idea) {
+    setEditing(idea);
+    setEditText(idea.text);
+  }
+
+  async function handleSaveEdit() {
+    if (!editing || savingEdit) return;
+    const trimmed = editText.trim();
+    if (!trimmed) return;
+    if (trimmed === editing.text) {
+      setEditing(null);
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const updated = await patchIdea(editing.id, { text: trimmed });
+      setIdeas((prev) =>
+        prev.map((i) => (i.id === editing.id ? { ...i, text: updated.text } : i)),
+      );
+      setEditing(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   return (
@@ -159,8 +190,16 @@ export default function InicioScreen() {
                     </Pressable>
                     <Pressable
                       hitSlop={10}
+                      onPress={() => openEdit(idea)}
+                      style={styles.ideaIconBtn}
+                      accessibilityLabel={t("inicio_idea_edit_action")}
+                    >
+                      <Ionicons name="pencil-outline" size={18} color={colors.mute} />
+                    </Pressable>
+                    <Pressable
+                      hitSlop={10}
                       onPress={() => setPendingDelete(idea)}
-                      style={styles.ideaDeleteBtn}
+                      style={styles.ideaIconBtn}
                       accessibilityLabel={t("confirm_delete")}
                     >
                       <Ionicons name="trash-outline" size={18} color={colors.mute} />
@@ -172,6 +211,52 @@ export default function InicioScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <Modal
+        visible={!!editing}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setEditing(null)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{t("inicio_idea_edit_title")}</Text>
+            <TextInput
+              value={editText}
+              onChangeText={setEditText}
+              multiline
+              autoFocus
+              placeholder={t("inicio_placeholder")}
+              placeholderTextColor={colors.mute}
+              style={styles.modalInput}
+            />
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setEditing(null)}
+                style={[styles.modalBtn, styles.modalBtnGhost]}
+                disabled={savingEdit}
+              >
+                <Text style={styles.modalBtnGhostLabel}>{t("confirm_cancel")}</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleSaveEdit}
+                disabled={!editText.trim() || savingEdit}
+                style={[
+                  styles.modalBtn,
+                  styles.modalBtnPrimary,
+                  (!editText.trim() || savingEdit) && styles.saveBtnDisabled,
+                ]}
+              >
+                <Text style={styles.saveLabel}>
+                  {savingEdit ? "…" : t("btn_save")}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
       <ConfirmSheet
         open={!!pendingDelete}
         title={t("confirm_delete_idea_title")}
@@ -252,7 +337,55 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   ideaBody: { flex: 1 },
-  ideaDeleteBtn: { paddingTop: 2, paddingLeft: spacing.xs },
+  ideaIconBtn: { paddingTop: 2, paddingLeft: spacing.xs },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+  },
+  modalCard: {
+    backgroundColor: colors.paper,
+    borderRadius: radii.md,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  modalTitle: {
+    fontFamily: fonts.serif,
+    fontSize: fontSizes.serifMd ?? fontSizes.body,
+    color: colors.ink,
+  },
+  modalInput: {
+    fontFamily: fonts.serif,
+    fontStyle: "italic",
+    fontSize: fontSizes.body,
+    color: colors.ink,
+    minHeight: 100,
+    textAlignVertical: "top",
+    borderWidth: 0.5,
+    borderColor: colors.edge,
+    borderRadius: radii.sm ?? radii.md,
+    padding: spacing.sm,
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: spacing.sm,
+  },
+  modalBtn: {
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs + 2,
+  },
+  modalBtnGhost: { backgroundColor: "transparent" },
+  modalBtnPrimary: { backgroundColor: colors.terracota },
+  modalBtnGhostLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.mute,
+    fontWeight: "600",
+    letterSpacing: 1.4,
+  },
   ideaText: {
     fontFamily: fonts.serif,
     fontStyle: "italic",

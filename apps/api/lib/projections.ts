@@ -6,6 +6,7 @@ import type {
   MenuDetail,
   IdeaResponse,
   RestaurantResponse,
+  ClientOverrides,
 } from "@atelier/shared";
 
 // ─────────── Includes (re-use in Prisma queries) ───────────
@@ -21,6 +22,9 @@ export const meSelect = {
   defaultModel: true,
   restaurantId: true,
   restaurant: { select: { name: true } },
+  customProvider: true,
+  customModel: true,
+  customApiKey: true,
 } as const;
 
 export const recipeListInclude = {
@@ -30,6 +34,10 @@ export const recipeListInclude = {
 export const recipeDetailInclude = {
   author: { select: { name: true, email: true } },
   approvedBy: { select: { name: true, email: true } },
+  // For the "in which menus is this recipe?" badge on the recipe detail.
+  menuItems: {
+    include: { menuFolder: { select: { id: true, name: true } } },
+  },
 } as const;
 
 export const menuListInclude = {
@@ -41,11 +49,19 @@ export const menuDetailInclude = {
     orderBy: { order: "asc" },
     include: { recipe: { select: { title: true } } },
   },
+  sections: {
+    orderBy: { order: "asc" },
+    select: { id: true, name: true, order: true },
+  },
+  clientOverride: { select: { overrides: true } },
 } as const;
 
 export const ideaInclude = {
   author: { select: { name: true, email: true } },
-  _count: { select: { conversations: true } },
+  // Idea ↔ Conversation is a 1:1 optional relation, so Prisma does not
+  // generate `_count` for it. Fetch the relation id and derive the count
+  // in projectIdea (0 or 1).
+  conversation: { select: { id: true } },
 } as const;
 
 export const restaurantInclude = {
@@ -68,6 +84,9 @@ type MeUser = {
   defaultModel: string | null;
   restaurantId: string | null;
   restaurant: { name: string } | null;
+  customProvider: string | null;
+  customModel: string | null;
+  customApiKey: string | null;
 };
 
 export function projectMe(user: MeUser): MeResponse {
@@ -82,6 +101,10 @@ export function projectMe(user: MeUser): MeResponse {
     defaultModel: (user.defaultModel ?? "sonnet") as MeResponse["defaultModel"],
     restaurantId: user.restaurantId,
     restaurantName: user.restaurant?.name ?? null,
+    customProvider: user.customProvider as MeResponse["customProvider"] ?? null,
+    customModel: user.customModel,
+    // Never return the raw key; just whether one is configured.
+    customApiKeySet: !!(user.customApiKey && user.customApiKey.length > 0),
   };
 }
 
@@ -112,15 +135,27 @@ type RecipeDetailRow = RecipeListRow & {
   approvedAt: Date | null;
   sourceConversationId: string | null;
   approvedBy: { name: string | null; email: string | null } | null;
+  menuItems: Array<{ menuFolder: { id: string; name: string } | null }>;
 };
 
 export function projectRecipeDetail(r: RecipeDetailRow): RecipeDetail {
+  // A recipe can appear in the same menu twice via different MenuItem rows
+  // (e.g. as a starter and a side); show each menu once.
+  const seen = new Set<string>();
+  const menus: Array<{ id: string; name: string }> = [];
+  for (const mi of r.menuItems ?? []) {
+    if (!mi.menuFolder) continue;
+    if (seen.has(mi.menuFolder.id)) continue;
+    seen.add(mi.menuFolder.id);
+    menus.push({ id: mi.menuFolder.id, name: mi.menuFolder.name });
+  }
   return {
     ...projectRecipeListItem(r),
     contentJson: r.contentJson as RecipeDetail["contentJson"],
     approvedByName: r.approvedBy?.name ?? r.approvedBy?.email ?? null,
     approvedAt: r.approvedAt?.toISOString() ?? null,
     sourceConversationId: r.sourceConversationId,
+    menus,
   };
 }
 
@@ -150,28 +185,50 @@ type MenuDetailRow = {
   items: Array<{
     id: string;
     recipeId: string;
+    sectionId: string | null;
     customName: string | null;
     customDesc: string | null;
     price: number;
     order: number;
     recipe: { title: string } | null;
   }>;
+  sections: Array<{
+    id: string;
+    name: string;
+    order: number;
+  }>;
+  // 1:1 nullable — null si nunca se editó la vista cliente.
+  clientOverride: { overrides: unknown } | null;
 };
 
 export function projectMenuDetail(m: MenuDetailRow): MenuDetail {
+  // The JSON column is typed as `unknown` here; the Zod schema enforces the
+  // real shape at the consumer side (mobile + PDF render). We just narrow to
+  // `ClientOverrides | null` for the projection.
+  const rawOverrides = m.clientOverride?.overrides;
+  const clientOverrides =
+    rawOverrides && typeof rawOverrides === "object" && !Array.isArray(rawOverrides)
+      ? (rawOverrides as ClientOverrides)
+      : null;
   return {
     id: m.id,
     name: m.name,
     season: m.season,
     presentationStyle: m.presentationStyle as MenuDetail["presentationStyle"],
+    sections: m.sections.map((s) => ({ id: s.id, name: s.name, order: s.order })),
     items: m.items.map((it) => ({
       id: it.id,
       recipeId: it.recipeId,
+      sectionId: it.sectionId,
       name: it.customName ?? it.recipe?.title ?? "",
       description: it.customDesc ?? "",
       price: it.price,
       order: it.order,
+      // Exponer el flag permite que el compositor staff sepa cuándo el
+      // nombre está pisado y muestre el toggle para revertir.
+      customName: it.customName,
     })),
+    clientOverrides,
   };
 }
 
@@ -181,7 +238,7 @@ type IdeaRow = {
   status: string;
   createdAt: Date;
   author: { name: string | null; email: string | null } | null;
-  _count?: { conversations: number };
+  conversation?: { id: string } | null;
 };
 
 export function projectIdea(i: IdeaRow): IdeaResponse {
@@ -191,7 +248,7 @@ export function projectIdea(i: IdeaRow): IdeaResponse {
     status: i.status as IdeaResponse["status"],
     createdAt: i.createdAt.toISOString(),
     authorName: i.author?.name ?? i.author?.email ?? "—",
-    conversationsCount: i._count?.conversations ?? 0,
+    conversationsCount: i.conversation ? 1 : 0,
   };
 }
 

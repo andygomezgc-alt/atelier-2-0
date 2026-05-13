@@ -14,8 +14,9 @@ function loadSystemPrompt(): string {
 }
 
 export const MODEL_IDS = {
-  sonnet: "claude-sonnet-4-5",
-  opus: "claude-opus-4-5",
+  haiku: "claude-haiku-4-5",
+  sonnet: "claude-sonnet-4-6",
+  opus: "claude-opus-4-7",
 } as const;
 
 type ModelKey = keyof typeof MODEL_IDS;

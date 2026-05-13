@@ -7,7 +7,8 @@ export const RecipeStateSchema = z.enum(["draft", "in_test", "approved"]);
 export const MenuStyleSchema = z.enum(["elegant", "rustic", "minimal"]);
 export const IdeaStatusSchema = z.enum(["open", "in_chat", "archived"]);
 export const LanguageSchema = z.enum(["es", "it", "en"]);
-export const ModelSchema = z.enum(["sonnet", "opus"]);
+export const ModelSchema = z.enum(["haiku", "sonnet", "opus"]);
+export const CustomProviderSchema = z.enum(["anthropic", "openai", "google"]);
 
 export const RecipeContentSchema = z.object({
   ingredients: z.array(z.string().max(500)).max(50).default([]),
@@ -28,6 +29,10 @@ export const MeResponseSchema = z.object({
   defaultModel: ModelSchema,
   restaurantId: z.string().max(100).nullable(),
   restaurantName: z.string().max(100).nullable(),
+  customProvider: CustomProviderSchema.nullable(),
+  customModel: z.string().max(120).nullable(),
+  // Whether a BYOK key is stored — we never return the key itself.
+  customApiKeySet: z.boolean(),
 });
 
 export const PatchMeRequestSchema = z.object({
@@ -35,6 +40,10 @@ export const PatchMeRequestSchema = z.object({
   bio: z.string().max(1000).optional(),
   languagePref: LanguageSchema.optional(),
   defaultModel: ModelSchema.optional(),
+  // BYOK config. Pass empty string to clear a value.
+  customProvider: CustomProviderSchema.nullable().optional(),
+  customModel: z.string().max(120).nullable().optional(),
+  customApiKey: z.string().max(500).nullable().optional(),
 });
 
 // ─────────── /api/restaurant ───────────
@@ -46,6 +55,11 @@ export const CreateRestaurantRequestSchema = z.object({
 
 export const JoinRestaurantRequestSchema = z.object({
   code: z.string().min(4).max(20),
+});
+
+export const PatchRestaurantRequestSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  identityLine: z.string().max(500).nullable().optional(),
 });
 
 export const RestaurantResponseSchema = z.object({
@@ -73,6 +87,15 @@ export const PatchStaffMemberRequestSchema = z.object({
 export const CreateIdeaRequestSchema = z.object({
   text: z.string().min(1).max(2000),
 });
+
+export const PatchIdeaRequestSchema = z
+  .object({
+    text: z.string().min(1).max(2000).optional(),
+    status: IdeaStatusSchema.optional(),
+  })
+  .refine((d) => d.text !== undefined || d.status !== undefined, {
+    message: "At least one of text or status is required",
+  });
 
 export const IdeaResponseSchema = z.object({
   id: z.string().max(100),
@@ -125,6 +148,10 @@ export const RecipeDetailSchema = RecipeListItemSchema.extend({
   approvedByName: z.string().max(100).nullable(),
   approvedAt: z.string().max(50).nullable(),
   sourceConversationId: z.string().max(100).nullable(),
+  menus: z
+    .array(z.object({ id: z.string().max(100), name: z.string().max(120) }))
+    .max(50)
+    .default([]),
 });
 
 // ─────────── /api/menus ───────────
@@ -151,22 +178,72 @@ export const MenuListItemSchema = z.object({
 export const MenuDishSchema = z.object({
   id: z.string().max(100),
   recipeId: z.string().max(100),
+  // sectionId is nullable: items existed before sections were introduced and
+  // a deleted section sets its items to null instead of removing them.
+  sectionId: z.string().max(100).nullable(),
   name: z.string().max(200),
   description: z.string().max(1000),
   price: z.number().int().nonnegative().max(1_000_000), // céntimos (max 10k €)
   order: z.number().int().nonnegative().max(10000),
+  // null cuando el plato muestra el título canónico de la receta. Si está
+  // set, el compositor staff muestra un indicador "✕ override interno" para
+  // que el chef sepa que el nombre está desacoplado de la receta original.
+  customName: z.string().max(200).nullable(),
 });
+
+export const MenuSectionSchema = z.object({
+  id: z.string().max(100),
+  name: z.string().min(1).max(120),
+  order: z.number().int().nonnegative().max(10000),
+});
+
+export const CreateMenuSectionRequestSchema = z.object({
+  name: z.string().min(1).max(120),
+});
+
+export const PatchMenuSectionRequestSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  order: z.number().int().nonnegative().max(10000).optional(),
+});
+
+// ─────────── Client overrides (Mejora 3) ───────────
+// Definidos antes de MenuDetailSchema porque éste los referencia.
+
+const ClientItemOverrideSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  description: z.string().max(1000).optional(),
+  price: z.number().int().nonnegative().max(1_000_000).optional(),
+});
+
+const ClientSectionOverrideSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+});
+
+export const ClientOverridesSchema = z.object({
+  restaurantName: z.string().min(1).max(100).optional(),
+  menuName: z.string().min(1).max(120).optional(),
+  subtitle: z.string().max(60).optional(),
+  sections: z.record(z.string().max(100), ClientSectionOverrideSchema).optional(),
+  items: z.record(z.string().max(100), ClientItemOverrideSchema).optional(),
+});
+
+export const PatchClientOverridesRequestSchema = ClientOverridesSchema;
 
 export const MenuDetailSchema = z.object({
   id: z.string().max(100),
   name: z.string().max(120),
   season: z.string().max(60).nullable(),
   presentationStyle: MenuStyleSchema,
+  sections: z.array(MenuSectionSchema).max(50).default([]),
   items: z.array(MenuDishSchema).max(500),
+  // Null cuando el menú nunca se editó desde "Vista cliente" — el PDF cliente
+  // entonces es idéntico al estado staff (fallback completo).
+  clientOverrides: ClientOverridesSchema.nullable().default(null),
 });
 
 export const AddMenuItemRequestSchema = z.object({
   recipeId: z.string().max(100),
+  sectionId: z.string().max(100).nullable().optional(),
   customName: z.string().max(200).optional(),
   customDesc: z.string().max(1000).optional(),
   price: z.number().int().nonnegative().max(1_000_000),
@@ -174,6 +251,7 @@ export const AddMenuItemRequestSchema = z.object({
 });
 
 export const PatchMenuItemRequestSchema = z.object({
+  sectionId: z.string().max(100).nullable().optional(),
   customName: z.string().max(200).nullable().optional(),
   customDesc: z.string().max(1000).nullable().optional(),
   price: z.number().int().nonnegative().max(1_000_000).optional(),
@@ -181,12 +259,24 @@ export const PatchMenuItemRequestSchema = z.object({
   presentationStyle: MenuStyleSchema.optional(),
 });
 
+// Reorder atómico (transacción) — swap del `order` entre dos items para
+// evitar el race del Promise.all en cliente.
+export const ReorderItemsRequestSchema = z.object({
+  itemAId: z.string().max(100),
+  itemBId: z.string().max(100),
+});
+
+// ClientOverridesSchema y PatchClientOverridesRequestSchema están definidos
+// más arriba (antes de MenuDetailSchema, que los referencia).
+
 // ─────────── Inferred types (use these in handlers) ───────────
 
 export type MeResponse = z.infer<typeof MeResponseSchema>;
 export type CreateRestaurantRequest = z.infer<typeof CreateRestaurantRequestSchema>;
+export type PatchRestaurantRequest = z.infer<typeof PatchRestaurantRequestSchema>;
 export type RestaurantResponse = z.infer<typeof RestaurantResponseSchema>;
 export type CreateIdeaRequest = z.infer<typeof CreateIdeaRequestSchema>;
+export type PatchIdeaRequest = z.infer<typeof PatchIdeaRequestSchema>;
 export type IdeaResponse = z.infer<typeof IdeaResponseSchema>;
 export type CreateRecipeRequest = z.infer<typeof CreateRecipeRequestSchema>;
 export type PatchRecipeRequest = z.infer<typeof PatchRecipeRequestSchema>;
@@ -196,8 +286,14 @@ export type CreateMenuRequest = z.infer<typeof CreateMenuRequestSchema>;
 export type PatchMenuRequest = z.infer<typeof PatchMenuRequestSchema>;
 export type MenuListItem = z.infer<typeof MenuListItemSchema>;
 export type MenuDish = z.infer<typeof MenuDishSchema>;
+export type MenuSection = z.infer<typeof MenuSectionSchema>;
+export type CreateMenuSectionRequest = z.infer<typeof CreateMenuSectionRequestSchema>;
+export type PatchMenuSectionRequest = z.infer<typeof PatchMenuSectionRequestSchema>;
 export type MenuDetail = z.infer<typeof MenuDetailSchema>;
 export type AddMenuItemRequest = z.infer<typeof AddMenuItemRequestSchema>;
 export type PatchMenuItemRequest = z.infer<typeof PatchMenuItemRequestSchema>;
+export type ReorderItemsRequest = z.infer<typeof ReorderItemsRequestSchema>;
+export type ClientOverrides = z.infer<typeof ClientOverridesSchema>;
+export type PatchClientOverridesRequest = z.infer<typeof PatchClientOverridesRequestSchema>;
 export type PostMessageRequest = z.infer<typeof PostMessageRequestSchema>;
 export type CreateConversationRequest = z.infer<typeof CreateConversationRequestSchema>;

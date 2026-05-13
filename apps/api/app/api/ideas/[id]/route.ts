@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
-import { z } from "zod";
+import { PatchIdeaRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
-
-const PatchSchema = z.object({
-  status: z.enum(["open", "in_chat", "archived"]).optional(),
-});
 
 export async function PATCH(
   req: NextRequest,
@@ -19,7 +15,7 @@ export async function PATCH(
   const { id } = await params;
 
   const body = await req.json();
-  const parse = PatchSchema.safeParse(body);
+  const parse = PatchIdeaRequestSchema.safeParse(body);
   if (!parse.success)
     return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
 
@@ -27,8 +23,12 @@ export async function PATCH(
   if (!existing || existing.restaurantId !== ctx.restaurantId)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const updated = await prisma.idea.update({ where: { id }, data: parse.data });
-  return NextResponse.json({ id: updated.id, status: updated.status });
+  const data: { text?: string; status?: "open" | "in_chat" | "archived" } = {};
+  if (parse.data.text !== undefined) data.text = parse.data.text;
+  if (parse.data.status !== undefined) data.status = parse.data.status;
+
+  const updated = await prisma.idea.update({ where: { id }, data });
+  return NextResponse.json({ id: updated.id, text: updated.text, status: updated.status });
 }
 
 export async function DELETE(

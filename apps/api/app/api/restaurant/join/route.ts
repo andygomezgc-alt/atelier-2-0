@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { JoinRestaurantRequestSchema } from "@atelier/shared";
-import { auth } from "@/lib/auth";
+import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -27,13 +27,11 @@ export async function POST(req: NextRequest) {
   const csrf = validateOrigin(req);
   if (csrf) return csrf;
 
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const ctx = await requireAuth(req);
+  if (isNextResponse(ctx)) return ctx;
 
   // Brute-force protection: 10 attempts per 10 min per authenticated user.
-  const rl = rateLimit(`join:${session.user.id}`, { max: 10, windowMs: 10 * 60 * 1000 });
+  const rl = rateLimit(`join:${ctx.userId}`, { max: 10, windowMs: 10 * 60 * 1000 });
   if (!rl.ok) {
     return NextResponse.json(
       { error: "Demasiados intentos. Espera unos minutos antes de volver a intentarlo." },
@@ -41,13 +39,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { id: true, restaurantId: true },
-  });
-
-  if (!user) return NextResponse.json({ error: "User not found" }, { status: 401 });
-  if (user.restaurantId) {
+  if (ctx.restaurantId) {
     return NextResponse.json({ error: "Already in a restaurant" }, { status: 409 });
   }
 
@@ -70,7 +62,7 @@ export async function POST(req: NextRequest) {
   }
 
   await prisma.user.update({
-    where: { id: user.id },
+    where: { id: ctx.userId },
     data: { restaurantId: restaurant.id, role: "viewer" },
   });
 

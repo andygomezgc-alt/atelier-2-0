@@ -4,6 +4,7 @@ import { prisma } from "@atelier/db";
 import { PostMessageRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { buildSystemBlocks, MODEL_IDS, type Msg } from "@/lib/anthropic";
+import { streamBYOK, type BYOKProvider } from "@/lib/byok-providers";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
 
@@ -70,8 +71,9 @@ export async function POST(
     },
   });
 
-  // Build context: recent recipes + pinned idea.
-  const [restaurant, recentRecipes, history] = await Promise.all([
+  // Build context: recent recipes + pinned idea. Also fetch BYOK config so we
+  // can route to the user's own provider when configured.
+  const [restaurant, recentRecipes, history, userBYOK] = await Promise.all([
     prisma.restaurant.findUnique({
       where: { id: ctx.restaurantId },
       select: { name: true, identityLine: true },
@@ -87,6 +89,10 @@ export async function POST(
       orderBy: { createdAt: "asc" },
       select: { role: true, content: true },
     }),
+    prisma.user.findUnique({
+      where: { id: ctx.userId },
+      select: { customProvider: true, customApiKey: true, customModel: true },
+    }),
   ]);
 
   if (!restaurant)
@@ -97,7 +103,21 @@ export async function POST(
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
   const system = buildSystemBlocks(restaurant, recentRecipes, conv.idea?.text ?? null);
-  const model = parse.data.model ?? (conv.modelUsed === "opus" ? "opus" : "sonnet");
+  const storedModel =
+    conv.modelUsed === "opus" || conv.modelUsed === "haiku" ? conv.modelUsed : "sonnet";
+  const model = parse.data.model ?? storedModel;
+
+  // BYOK: if the user configured a custom provider + key + model, use it.
+  // Falls back to the server's Anthropic key otherwise.
+  const byok =
+    userBYOK?.customProvider && userBYOK.customApiKey && userBYOK.customModel
+      ? {
+          provider: userBYOK.customProvider as BYOKProvider,
+          apiKey: userBYOK.customApiKey,
+          model: userBYOK.customModel,
+        }
+      : null;
+  const flatSystem = system.map((b) => b.text).join("\n\n");
 
   const start = Date.now();
 
@@ -114,31 +134,64 @@ export async function POST(
       let errored = false;
 
       try {
-        const anthroStream = anthropic.messages.stream(
-          {
-            model: MODEL_IDS[model],
-            max_tokens: 2048,
-            system,
+        if (byok) {
+          // User's own provider + key.
+          for await (const ev of streamBYOK({
+            provider: byok.provider,
+            apiKey: byok.apiKey,
+            model: byok.model,
+            system: flatSystem,
             messages,
-          },
-          { signal: req.signal },
-        );
-
-        for await (const event of anthroStream) {
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            assistantText += event.delta.text;
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "delta", text: event.delta.text })}\n\n`,
-              ),
-            );
+            signal: req.signal,
+            maxTokens: 2048,
+          })) {
+            if (ev.type === "delta") {
+              assistantText += ev.text;
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ type: "delta", text: ev.text })}\n\n`),
+              );
+            } else {
+              inputTokens = ev.inputTokens;
+              outputTokens = ev.outputTokens;
+              cachedTokens = 0;
+            }
           }
-        }
+        } else {
+          // Server's Anthropic key (default).
+          const anthroStream = anthropic.messages.stream(
+            {
+              model: MODEL_IDS[model],
+              max_tokens: 2048,
+              system,
+              messages,
+              // Sonnet 4.6 defaults to effort=high; force low for chat workloads
+              // to match Sonnet 4.5 cost/latency profile. Opus uses its default
+              // (high) so "máxima profundidad" stays meaningful. Haiku 4.5 does
+              // not support effort and would 400 if set.
+              ...(model === "sonnet" && {
+                thinking: { type: "disabled" as const },
+                output_config: { effort: "low" as const },
+              }),
+            },
+            { signal: req.signal },
+          );
 
-        const final = await anthroStream.finalMessage();
-        inputTokens = final.usage.input_tokens;
-        outputTokens = final.usage.output_tokens;
-        cachedTokens = final.usage.cache_read_input_tokens ?? 0;
+          for await (const event of anthroStream) {
+            if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+              assistantText += event.delta.text;
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: "delta", text: event.delta.text })}\n\n`,
+                ),
+              );
+            }
+          }
+
+          const final = await anthroStream.finalMessage();
+          inputTokens = final.usage.input_tokens;
+          outputTokens = final.usage.output_tokens;
+          cachedTokens = final.usage.cache_read_input_tokens ?? 0;
+        }
 
         controller.enqueue(
           encoder.encode(
@@ -155,7 +208,20 @@ export async function POST(
           aborted = true;
         } else {
           errored = true;
-          const message = err instanceof Error ? err.message : "stream error";
+          const rawMessage = err instanceof Error ? err.message : "stream error";
+          // Provider errors arrive as deeply-nested JSON strings. Try to peel
+          // one or two layers so the toast on mobile shows something readable
+          // instead of "{\"error\":{\"message\":\"{\\n  \\\"error\\\":...".
+          const message = extractFriendlyError(rawMessage);
+          console.error(
+            JSON.stringify({
+              evt: "anthropic_stream_error",
+              model,
+              byok: byok ? byok.provider : null,
+              message,
+              raw: rawMessage,
+            }),
+          );
           // Best-effort: client may already be gone if this was an abort path.
           try {
             controller.enqueue(
@@ -186,6 +252,7 @@ export async function POST(
           JSON.stringify({
             evt: "anthropic_message",
             model,
+            byok: byok ? byok.provider : null,
             input_tokens: inputTokens,
             output_tokens: outputTokens,
             cached_tokens: cachedTokens,
@@ -208,4 +275,28 @@ export async function POST(
       Connection: "keep-alive",
     },
   });
+}
+
+// Walk through nested error envelopes (provider SDKs often serialise an HTTP
+// error body as a JSON string inside `error.message` of another JSON body) to
+// surface a single human-readable line for the client toast.
+function extractFriendlyError(raw: string): string {
+  let current: unknown = raw;
+  for (let i = 0; i < 4; i++) {
+    if (typeof current !== "string") break;
+    const trimmed = current.trim();
+    if (!trimmed.startsWith("{")) break;
+    try {
+      current = JSON.parse(trimmed);
+    } catch {
+      break;
+    }
+    if (typeof current === "object" && current !== null) {
+      const c = current as Record<string, unknown>;
+      const inner = (c.error as Record<string, unknown> | undefined)?.message ?? c.message;
+      if (typeof inner === "string") current = inner;
+    }
+  }
+  if (typeof current === "string") return current.trim().split("\n")[0] || "stream error";
+  return "stream error";
 }
