@@ -1,8 +1,8 @@
-import { useCallback, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -85,67 +85,73 @@ export default function MenusScreen() {
     }
   }
 
+  // Handlers estables para que MenuCard memo no se re-renderice por tipear
+  // en el input de crear.
+  const handleCardPress = useCallback(
+    (id: string) => router.push({ pathname: "/menus/[id]", params: { id } }),
+    [router],
+  );
+  const handleDeletePress = useCallback((m: Menu) => setPendingDelete(m), []);
+  const renderItem = useCallback(
+    ({ item }: { item: Menu }) => (
+      <MenuCard
+        item={item}
+        canDelete={canDelete}
+        onPress={handleCardPress}
+        onDelete={handleDeletePress}
+        deleteLabel={t("confirm_delete")}
+      />
+    ),
+    [canDelete, handleCardPress, handleDeletePress, t],
+  );
+  const keyExtractor = useCallback((m: Menu) => m.id, []);
+
+  const header = canCreate ? (
+    <View style={styles.createBox}>
+      <TextInput
+        value={newName}
+        onChangeText={setNewName}
+        placeholder="Nombre del menú"
+        placeholderTextColor={colors.mute}
+        style={styles.createInput}
+        onSubmitEditing={handleCreate}
+        maxLength={120}
+      />
+      <Pressable
+        onPress={handleCreate}
+        disabled={!newName.trim() || creating}
+        style={[
+          styles.createBtn,
+          (!newName.trim() || creating) && styles.createBtnDisabled,
+        ]}
+      >
+        <Ionicons name="add" size={18} color={colors.paper} />
+        <Text style={styles.createLabel}>{creating ? "…" : "Crear"}</Text>
+      </Pressable>
+    </View>
+  ) : null;
+
   return (
     <Screen title={t("header_menus")}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {canCreate ? (
-          <View style={styles.createBox}>
-            <TextInput
-              value={newName}
-              onChangeText={setNewName}
-              placeholder="Nombre del menú"
-              placeholderTextColor={colors.mute}
-              style={styles.createInput}
-              onSubmitEditing={handleCreate}
-              maxLength={120}
-            />
-            <Pressable
-              onPress={handleCreate}
-              disabled={!newName.trim() || creating}
-              style={[
-                styles.createBtn,
-                (!newName.trim() || creating) && styles.createBtnDisabled,
-              ]}
-            >
-              <Ionicons name="add" size={18} color={colors.paper} />
-              <Text style={styles.createLabel}>{creating ? "…" : "Crear"}</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        {loading ? (
-          <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
-        ) : menus.length === 0 ? (
-          <Empty icon="list-outline" title={t("empty_menus_title")} sub={t("empty_menus_sub")} />
-        ) : (
-          menus.map((m) => (
-            <Pressable
-              key={m.id}
-              style={styles.card}
-              onPress={() => router.push({ pathname: "/menus/[id]", params: { id: m.id } })}
-            >
-              <View style={{ flex: 1, gap: 4 }}>
-                <Text style={styles.title}>{m.name}</Text>
-                {m.season ? <Text style={styles.season}>{m.season}</Text> : null}
-                <Text style={styles.count}>
-                  {m.itemCount} {m.itemCount === 1 ? "plato" : "platos"}
-                </Text>
-              </View>
-              {canDelete ? (
-                <Pressable
-                  hitSlop={10}
-                  onPress={() => setPendingDelete(m)}
-                  accessibilityLabel={t("confirm_delete")}
-                  style={styles.deleteBtn}
-                >
-                  <Ionicons name="trash-outline" size={18} color={colors.mute} />
-                </Pressable>
-              ) : null}
-              <Ionicons name="chevron-forward" size={18} color={colors.mute} />
-            </Pressable>
-          ))
-        )}
-      </ScrollView>
+      <FlatList
+        data={menus}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={header}
+        initialNumToRender={10}
+        maxToRenderPerBatch={5}
+        windowSize={11}
+        removeClippedSubviews
+        ListEmptyComponent={
+          loading ? (
+            <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
+          ) : (
+            <Empty icon="list-outline" title={t("empty_menus_title")} sub={t("empty_menus_sub")} />
+          )
+        }
+      />
       <ConfirmSheet
         open={!!pendingDelete}
         title={t("confirm_delete_menu_title")}
@@ -159,6 +165,45 @@ export default function MenusScreen() {
     </Screen>
   );
 }
+
+// Card memoizada — refs estables desde el padre evitan que tipear en el input
+// de crear re-renderice las 30 cards de menús.
+const MenuCard = memo(function MenuCard({
+  item,
+  canDelete,
+  onPress,
+  onDelete,
+  deleteLabel,
+}: {
+  item: Menu;
+  canDelete: boolean;
+  onPress: (id: string) => void;
+  onDelete: (m: Menu) => void;
+  deleteLabel: string;
+}) {
+  return (
+    <Pressable style={styles.card} onPress={() => onPress(item.id)}>
+      <View style={{ flex: 1, gap: 4 }}>
+        <Text style={styles.title}>{item.name}</Text>
+        {item.season ? <Text style={styles.season}>{item.season}</Text> : null}
+        <Text style={styles.count}>
+          {item.itemCount} {item.itemCount === 1 ? "plato" : "platos"}
+        </Text>
+      </View>
+      {canDelete ? (
+        <Pressable
+          hitSlop={10}
+          onPress={() => onDelete(item)}
+          accessibilityLabel={deleteLabel}
+          style={styles.deleteBtn}
+        >
+          <Ionicons name="trash-outline" size={18} color={colors.mute} />
+        </Pressable>
+      ) : null}
+      <Ionicons name="chevron-forward" size={18} color={colors.mute} />
+    </Pressable>
+  );
+});
 
 const styles = StyleSheet.create({
   content: {

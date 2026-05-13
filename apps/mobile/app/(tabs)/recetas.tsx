@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -97,6 +98,27 @@ export default function RecetasScreen() {
     }
   }
 
+  // Handlers estables — los pasamos a RecipeCard memo, así un cambio en el
+  // search/filter no fuerza re-render de todos los cards.
+  const handleCardPress = useCallback(
+    (id: string) => router.push({ pathname: "/recetas/[id]", params: { id } }),
+    [router],
+  );
+  const handleDeletePress = useCallback((r: Recipe) => setPendingDelete(r), []);
+  const renderItem = useCallback(
+    ({ item }: { item: Recipe }) => (
+      <RecipeCard
+        item={item}
+        canDelete={canDelete}
+        onPress={handleCardPress}
+        onDelete={handleDeletePress}
+        t={t}
+      />
+    ),
+    [canDelete, handleCardPress, handleDeletePress, t],
+  );
+  const keyExtractor = useCallback((r: Recipe) => r.id, []);
+
   return (
     <Screen title={t("header_recetas")}>
       {canCreate ? (
@@ -149,48 +171,32 @@ export default function RecetasScreen() {
         ))}
       </ScrollView>
 
-      <ScrollView contentContainerStyle={styles.listContent} style={styles.listScroll}>
-        {loading ? (
-          <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
-        ) : recipes.length === 0 ? (
-          <Empty
-            icon="book-outline"
-            title={
-              filter === "in_progress" || filter === "all"
-                ? t("empty_recetas_title")
-                : t("empty_recetas_filter")
-            }
-            sub={filter === "in_progress" || filter === "all" ? t("empty_recetas_sub") : undefined}
-          />
-        ) : (
-          recipes.map((r) => (
-            <Pressable
-              key={r.id}
-              style={styles.recipeCard}
-              onPress={() => router.push({ pathname: "/recetas/[id]", params: { id: r.id } })}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.recipeTitle}>{r.title}</Text>
-                <View style={styles.metaRow}>
-                  <StateChip state={r.state} t={t} />
-                  {r.priority ? (
-                    <View style={styles.priorityChip}>
-                      <Ionicons name="star" size={10} color={colors.terracota} />
-                      <Text style={styles.priorityLabel}>★</Text>
-                    </View>
-                  ) : null}
-                  <Text style={styles.author}>{r.authorName}</Text>
-                </View>
-              </View>
-              {canDelete ? (
-                <Pressable hitSlop={10} onPress={() => setPendingDelete(r)}>
-                  <Ionicons name="trash-outline" size={18} color={colors.mute} />
-                </Pressable>
-              ) : null}
-            </Pressable>
-          ))
-        )}
-      </ScrollView>
+      <FlatList
+        data={recipes}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        contentContainerStyle={styles.listContent}
+        style={styles.listScroll}
+        initialNumToRender={10}
+        maxToRenderPerBatch={5}
+        windowSize={11}
+        removeClippedSubviews
+        ListEmptyComponent={
+          loading ? (
+            <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
+          ) : (
+            <Empty
+              icon="book-outline"
+              title={
+                filter === "in_progress" || filter === "all"
+                  ? t("empty_recetas_title")
+                  : t("empty_recetas_filter")
+              }
+              sub={filter === "in_progress" || filter === "all" ? t("empty_recetas_sub") : undefined}
+            />
+          )
+        }
+      />
 
       <ConfirmSheet
         open={!!pendingDelete}
@@ -205,6 +211,46 @@ export default function RecetasScreen() {
     </Screen>
   );
 }
+
+// Card memoizada. Props se mantienen referencialmente estables desde el padre
+// (useCallback + t estable de useI18n), así un keystroke en el search no
+// re-renderiza las 50 cards — solo el ítem que realmente cambió.
+const RecipeCard = memo(function RecipeCard({
+  item,
+  canDelete,
+  onPress,
+  onDelete,
+  t,
+}: {
+  item: Recipe;
+  canDelete: boolean;
+  onPress: (id: string) => void;
+  onDelete: (r: Recipe) => void;
+  t: (key: "state_draft" | "state_in_test" | "state_approved") => string;
+}) {
+  return (
+    <Pressable style={styles.recipeCard} onPress={() => onPress(item.id)}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.recipeTitle}>{item.title}</Text>
+        <View style={styles.metaRow}>
+          <StateChip state={item.state} t={t} />
+          {item.priority ? (
+            <View style={styles.priorityChip}>
+              <Ionicons name="star" size={10} color={colors.terracota} />
+              <Text style={styles.priorityLabel}>★</Text>
+            </View>
+          ) : null}
+          <Text style={styles.author}>{item.authorName}</Text>
+        </View>
+      </View>
+      {canDelete ? (
+        <Pressable hitSlop={10} onPress={() => onDelete(item)}>
+          <Ionicons name="trash-outline" size={18} color={colors.mute} />
+        </Pressable>
+      ) : null}
+    </Pressable>
+  );
+});
 
 function StateChip({
   state,
