@@ -85,9 +85,15 @@ export async function POST(
       take: 8,
       select: { title: true, state: true },
     }),
+    // Sliding window: solo re-enviamos los últimos 20 mensajes a Claude. Más
+    // allá de ese tope la conversación crece linealmente en costo/latencia sin
+    // agregar señal útil (Claude ya tiene los principios estables y la idea
+    // anclada en el system prompt). Fetched desc para que `take` aplique al
+    // final cronológico; revertimos abajo antes de armar el array de messages.
     prisma.message.findMany({
       where: { conversationId },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" },
+      take: 20,
       select: { role: true, content: true },
     }),
     loadUserBYOK(ctx.userId),
@@ -97,13 +103,17 @@ export async function POST(
     return new Response(JSON.stringify({ error: "Restaurant not found" }), { status: 404 });
 
   const messages: Msg[] = history
+    .slice()
+    .reverse()
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
   const system = buildSystemBlocks(restaurant, recentRecipes, conv.idea?.text ?? null);
-  const storedModel =
-    conv.modelUsed === "opus" || conv.modelUsed === "haiku" ? conv.modelUsed : "sonnet";
-  const model = parse.data.model ?? storedModel;
+  // El mobile siempre manda `model` explícito (apps/mobile/src/api/conversations.ts).
+  // Si un cliente futuro lo omite, default a Sonnet — barato/rápido para chat.
+  // No usamos conv.modelUsed como fallback para evitar perpetuar Opus en turnos
+  // cortos cuando la conversación fue creada con Opus para una pregunta puntual.
+  const model = parse.data.model ?? "sonnet";
   const flatSystem = system.map((b) => b.text).join("\n\n");
 
   const start = Date.now();
