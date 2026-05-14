@@ -134,7 +134,13 @@ export default function CasaScreen() {
         {canBanco ? (
           <Pressable
             style={styles.bancoEntry}
-            onPress={() => router.push("/productos/index")}
+            onPress={() =>
+              // Cast a never: el typed-routes generator de Expo Router emite
+              // "/productos/index" como path para el archivo index.tsx, pero
+              // a runtime ese URL cae al dinámico [id] con id="index" y 404a.
+              // El URL correcto para alcanzar index.tsx es "/productos".
+              router.push("/productos" as never)
+            }
           >
             <View style={styles.bancoIcon}>
               <Ionicons name="archive-outline" size={20} color={colors.terracota} />
