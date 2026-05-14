@@ -298,4 +298,10 @@ export const it: EsDict = {
     "Quello che hai scritto somiglia a un prodotto del banco. Se è lo stesso, li colleghiamo e salviamo il tuo testo come alias per i prossimi match.",
   confirm_match_yes: "Sì, è lo stesso",
   confirm_match_no: "Crea nuovo",
+
+  // ─── Migrazione ricette legacy (Fase 5, solo admin) ───
+  btn_migrate_legacy: "Migra ricette legacy",
+  migrate_nothing_to_do: "Tutte le ricette sono già migrate",
+  migrate_confirm_title: "Migrare le ricette?",
+  migrate_done: "{recipes} ricette migrate, {drafts} bozze create",
 };

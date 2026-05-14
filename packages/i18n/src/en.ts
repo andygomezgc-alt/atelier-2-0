@@ -297,4 +297,10 @@ export const en: EsDict = {
     "What you typed looks similar to a product in the bank. If it's the same, we'll link them and save your text as an alias for future matches.",
   confirm_match_yes: "Yes, it's the same",
   confirm_match_no: "Create new",
+
+  // ─── Legacy recipe migration (Phase 5, admin only) ───
+  btn_migrate_legacy: "Migrate legacy recipes",
+  migrate_nothing_to_do: "All recipes are already migrated",
+  migrate_confirm_title: "Migrate recipes?",
+  migrate_done: "{recipes} recipes migrated, {drafts} drafts created",
 };

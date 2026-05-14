@@ -5,6 +5,7 @@
 import { memo, useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   ScrollView,
@@ -21,9 +22,11 @@ import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import {
   listProducts,
+  migrateLegacyRecipes,
   type ListProductFilters,
   type Product,
 } from "@/src/api/products";
+import { showToast } from "@/src/components/Toast";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
@@ -82,6 +85,8 @@ export default function ProductosScreen() {
       ? authState.user.role
       : "viewer";
   const canCreate = can(role, "manage_products");
+  // Migración legacy: solo admin (mismo gate que el endpoint).
+  const canMigrate = can(role, "edit_restaurant");
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -113,6 +118,48 @@ export default function ProductosScreen() {
     (id: string) => router.push({ pathname: "/productos/[id]", params: { id } }),
     [router],
   );
+
+  // Migración legacy: dry-run, mostrar Alert nativo con summary, confirmar → apply.
+  // Usamos Alert (RN nativo) en lugar de un sheet custom: la acción es rara
+  // (una sola vez por restaurante típicamente) y un Alert es suficiente.
+  const handleMigrateLegacy = useCallback(async () => {
+    try {
+      const dryRun = await migrateLegacyRecipes("dry-run");
+      const s = dryRun.summary;
+      if (s.recipesToMigrate === 0) {
+        showToast(t("migrate_nothing_to_do"));
+        return;
+      }
+      Alert.alert(
+        t("migrate_confirm_title"),
+        `${s.recipesToMigrate} recetas · ${s.totalIngredients} ingredientes\n\n` +
+          `Matches: ${s.matches.exact} exactos / ${s.matches.probable} probables (sin enlazar) / ${s.matches.none} nuevos drafts`,
+        [
+          { text: t("confirm_cancel"), style: "cancel" },
+          {
+            text: t("confirm_ok"),
+            onPress: async () => {
+              try {
+                const applied = await migrateLegacyRecipes("apply");
+                const r = applied.result;
+                showToast(
+                  t("migrate_done", {
+                    recipes: r?.recipesMigrated ?? 0,
+                    drafts: r?.draftsCreated ?? 0,
+                  }),
+                );
+                void reload();
+              } catch (err) {
+                showToast(err instanceof Error ? err.message : t("error_network"));
+              }
+            },
+          },
+        ],
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    }
+  }, [reload, t]);
   const renderItem = useCallback(
     ({ item }: { item: Product }) => (
       <ProductCard item={item} onPress={handleCardPress} t={t} />
@@ -132,6 +179,16 @@ export default function ProductosScreen() {
             <Ionicons name="add" size={16} color={colors.paper} />
             <Text style={styles.createLabel}>{t("btn_crear_producto")}</Text>
           </Pressable>
+          {canMigrate ? (
+            <Pressable
+              style={styles.migrateBtn}
+              onPress={handleMigrateLegacy}
+              accessibilityLabel={t("btn_migrate_legacy")}
+            >
+              <Ionicons name="arrow-up-circle-outline" size={14} color={colors.terracota} />
+              <Text style={styles.migrateLabel}>{t("btn_migrate_legacy")}</Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
 
@@ -283,6 +340,24 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: fontSizes.caption,
     color: colors.paper,
+    fontWeight: "600",
+    letterSpacing: 0.8,
+  },
+  migrateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.paperSoft,
+    borderRadius: radii.pill,
+    borderWidth: 0.5,
+    borderColor: colors.terracota,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 4,
+  },
+  migrateLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.terracota,
     fontWeight: "600",
     letterSpacing: 0.8,
   },

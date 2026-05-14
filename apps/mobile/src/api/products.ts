@@ -121,6 +121,65 @@ export async function matchProducts(queries: string[]): Promise<MatchResult[]> {
   return res.results;
 }
 
+// Migración de recetas existentes (Fase 5). Solo admin.
+export type MigrateRecipesReport = {
+  mode: "dry-run" | "apply";
+  applied: boolean;
+  summary: {
+    totalRecipes: number;
+    recipesToMigrate: number;
+    recipesSkipped: number;
+    totalIngredients: number;
+    matches: { exact: number; probable: number; none: number };
+    probableMatchesPolicy: "auto-link" | "leave-unmatched";
+  };
+  conflicts: Array<{
+    recipeId: string;
+    recipeTitle: string;
+    ingredientIdx: number;
+    rawText: string;
+    productId: string;
+    productName: string;
+    distance: number;
+  }>;
+  newDrafts: Array<{
+    recipeId: string;
+    recipeTitle: string;
+    ingredientIdx: number;
+    rawText: string;
+  }>;
+  result?: {
+    recipesMigrated: number;
+    draftsCreated: number;
+    errors: Array<{ recipeId: string; error: string }>;
+  };
+};
+
+export async function migrateLegacyRecipes(
+  mode: "dry-run" | "apply",
+  options: {
+    probableMatches?: "auto-link" | "leave-unmatched";
+    force?: boolean;
+  } = {},
+): Promise<MigrateRecipesReport> {
+  const report = await apiFetch<MigrateRecipesReport>(
+    "/api/products/migrate-recipes",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        mode,
+        probableMatches: options.probableMatches ?? "leave-unmatched",
+        force: options.force ?? false,
+      }),
+    },
+  );
+  // El apply muta el banco → invalidamos caches.
+  if (mode === "apply") {
+    invalidate("products:");
+  }
+  return report;
+}
+
 export const createProduct = async (data: CreateProductRequest) => {
   const result = await apiFetch<ProductFull>("/api/products", {
     method: "POST",

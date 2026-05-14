@@ -298,6 +298,12 @@ export const es = {
     "Lo que escribiste se parece a un producto del banco. Si es el mismo, lo enlazamos y guardamos tu texto como alias para próximos matches.",
   confirm_match_yes: "Sí, es el mismo",
   confirm_match_no: "Crear nuevo",
+
+  // ─── Migración de recetas legacy (Fase 5, admin only) ───
+  btn_migrate_legacy: "Migrar recetas legacy",
+  migrate_nothing_to_do: "Todas las recetas ya están migradas",
+  migrate_confirm_title: "¿Migrar recetas?",
+  migrate_done: "{recipes} recetas migradas, {drafts} drafts creados",
 } as const;
 
 // Each translation maps a key to a string. Values are not pinned as
