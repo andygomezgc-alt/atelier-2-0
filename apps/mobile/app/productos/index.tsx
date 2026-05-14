@@ -23,6 +23,7 @@ import { useAuth } from "@/src/hooks/useAuth";
 import {
   listProducts,
   migrateLegacyRecipes,
+  recalcCriticality,
   type ListProductFilters,
   type Product,
 } from "@/src/api/products";
@@ -79,6 +80,9 @@ export default function ProductosScreen() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  // Widget de "críticos sin medir": count de productos con criticidad alta
+  // + merma sugerida. Se actualiza vía la misma cache de listProducts.
+  const [criticalPendingCount, setCriticalPendingCount] = useState(0);
 
   const role =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -104,14 +108,30 @@ export default function ProductosScreen() {
     }
   }, [filter, q]);
 
+  // Count separado de críticos pendientes para el widget. Usa la misma
+  // cache TTL — si los datos están frescos no pega al server.
+  const reloadCriticalCount = useCallback(async () => {
+    try {
+      const list = await listProducts({
+        criticality: "alta",
+        mermaOrigen: "sugerida",
+      });
+      setCriticalPendingCount(list.filter((p) => p.estado !== "archivado").length);
+    } catch {
+      // No bloqueamos la pantalla si esto falla — el widget solo no se muestra.
+    }
+  }, []);
+
   useEffect(() => {
     void reload();
-  }, [reload]);
+    void reloadCriticalCount();
+  }, [reload, reloadCriticalCount]);
 
   useFocusEffect(
     useCallback(() => {
       void reload();
-    }, [reload]),
+      void reloadCriticalCount();
+    }, [reload, reloadCriticalCount]),
   );
 
   const handleCardPress = useCallback(
@@ -122,6 +142,41 @@ export default function ProductosScreen() {
   // Migración legacy: dry-run, mostrar Alert nativo con summary, confirmar → apply.
   // Usamos Alert (RN nativo) en lugar de un sheet custom: la acción es rara
   // (una sola vez por restaurante típicamente) y un Alert es suficiente.
+  // Recalc de criticidad por peso económico (Fase 6). Admin only.
+  const handleRecalcCriticality = useCallback(async () => {
+    try {
+      const dryRun = await recalcCriticality(true);
+      if (dryRun.summary.changes === 0) {
+        showToast(t("recalc_nothing_to_do"));
+        return;
+      }
+      Alert.alert(
+        t("btn_recalc_criticidad"),
+        `${dryRun.summary.changes} cambios pendientes. ${dryRun.summary.skippedManual} productos con criticidad manual no se tocan.\n\n¿Aplicar?`,
+        [
+          { text: t("confirm_cancel"), style: "cancel" },
+          {
+            text: t("confirm_ok"),
+            onPress: async () => {
+              try {
+                const applied = await recalcCriticality(false);
+                showToast(
+                  t("recalc_done", { changes: applied.summary.changes }),
+                );
+                void reload();
+                void reloadCriticalCount();
+              } catch (err) {
+                showToast(err instanceof Error ? err.message : t("error_network"));
+              }
+            },
+          },
+        ],
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    }
+  }, [reload, reloadCriticalCount, t]);
+
   const handleMigrateLegacy = useCallback(async () => {
     try {
       const dryRun = await migrateLegacyRecipes("dry-run");
@@ -189,7 +244,39 @@ export default function ProductosScreen() {
               <Text style={styles.migrateLabel}>{t("btn_migrate_legacy")}</Text>
             </Pressable>
           ) : null}
+          {canMigrate ? (
+            <Pressable
+              style={styles.migrateBtn}
+              onPress={handleRecalcCriticality}
+              accessibilityLabel={t("btn_recalc_criticidad")}
+            >
+              <Ionicons name="flame-outline" size={14} color={colors.terracota} />
+              <Text style={styles.migrateLabel}>{t("btn_recalc_criticidad")}</Text>
+            </Pressable>
+          ) : null}
         </View>
+      ) : null}
+
+      {/* Widget de críticos pendientes — solo cuando hay productos con
+          criticidad alta + merma sugerida sin medir. Tap filtra la lista. */}
+      {criticalPendingCount > 0 && filter !== "criticos" ? (
+        <Pressable
+          style={styles.criticalBanner}
+          onPress={() => setFilter("criticos")}
+        >
+          <Ionicons name="flame" size={16} color={colors.terracota} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.criticalTitle}>
+              {t("productos_criticos_pendientes_title")}
+            </Text>
+            <Text style={styles.criticalBody}>
+              {t("productos_criticos_pendientes_body", {
+                count: criticalPendingCount,
+              })}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={14} color={colors.terracota} />
+        </Pressable>
       ) : null}
 
       <View style={styles.searchRow}>
@@ -323,6 +410,7 @@ function unitLabelKey(
 const styles = StyleSheet.create({
   createRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.md,
@@ -360,6 +448,31 @@ const styles = StyleSheet.create({
     color: colors.terracota,
     fontWeight: "600",
     letterSpacing: 0.8,
+  },
+  criticalBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginHorizontal: spacing.xl,
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 0.5,
+    borderColor: colors.terracota,
+    backgroundColor: colors.terracotaSoft,
+  },
+  criticalTitle: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.terracota,
+    fontWeight: "600",
+  },
+  criticalBody: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.ink,
+    marginTop: 2,
   },
   searchRow: {
     flexDirection: "row",

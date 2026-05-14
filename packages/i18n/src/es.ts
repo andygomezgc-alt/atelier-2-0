@@ -304,6 +304,30 @@ export const es = {
   migrate_nothing_to_do: "Todas las recetas ya están migradas",
   migrate_confirm_title: "¿Migrar recetas?",
   migrate_done: "{recipes} recetas migradas, {drafts} drafts creados",
+
+  // ─── Yield tests + recalc criticidad (Fase 6) ───
+  yield_form_title: "Prueba de rendimiento",
+  yield_pending_high_warning:
+    "Producto crítico con merma sugerida. Registrá una prueba para tener costo real preciso.",
+  yield_form_peso_bruto_label: "Peso bruto (g)",
+  yield_form_peso_util_label: "Peso útil (g)",
+  yield_form_notas_label: "Notas",
+  yield_form_notas_placeholder: "Lote, fecha, condiciones…",
+  yield_form_merma_preview: "Merma calculada",
+  yield_form_save: "Guardar prueba",
+  yield_form_error_invalid: "Valores inválidos",
+  yield_form_error_util_excede_bruto: "El peso útil no puede exceder el bruto",
+  yield_advanced_toggle: "Registrar prueba de rendimiento",
+
+  // Widget "productos críticos pendientes" en lista
+  productos_criticos_pendientes_title: "Críticos sin medir",
+  productos_criticos_pendientes_body:
+    "{count} productos críticos con merma sugerida. Probá su rendimiento real.",
+
+  // Recalc criticidad (admin)
+  btn_recalc_criticidad: "Recalcular criticidad",
+  recalc_done: "{changes} productos actualizados",
+  recalc_nothing_to_do: "Criticidad al día",
 } as const;
 
 // Each translation maps a key to a string. Values are not pinned as

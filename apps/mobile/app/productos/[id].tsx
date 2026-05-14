@@ -19,6 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
+import { YieldTestForm } from "@/src/components/YieldTestForm";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import { showToast } from "@/src/components/Toast";
@@ -48,6 +49,10 @@ export default function ProductoDetailScreen() {
   const [history, setHistory] = useState<ProductHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [archivePending, setArchivePending] = useState(false);
+  // Para productos de criticidad baja, el form de yield test queda colapsado
+  // bajo un toggle "opciones avanzadas" — no contamina la vista del producto
+  // común. Para alta y media siempre visible.
+  const [showAdvancedYield, setShowAdvancedYield] = useState(false);
 
   const reload = useCallback(async () => {
     if (!id) return;
@@ -252,7 +257,62 @@ export default function ProductoDetailScreen() {
           )}
         </View>
 
-        {/* Yield tests (Fase 6 los carga; Fase 1 muestra el placeholder) */}
+        {/* Yield test form — visibilidad según criticidad:
+            alta + sugerida → prominente
+            alta o media  → visible normal
+            baja          → oculto bajo "opciones avanzadas" toggle */}
+        {canEdit ? (
+          product.criticality !== "baja" ? (
+            <YieldTestForm
+              productId={product.id}
+              prominent={product.criticality === "alta" && product.mermaOrigen === "sugerida"}
+              labels={{
+                title: t("yield_form_title"),
+                prominentWarning: t("yield_pending_high_warning"),
+                pesoBrutoLabel: t("yield_form_peso_bruto_label"),
+                pesoUtilLabel: t("yield_form_peso_util_label"),
+                notasLabel: t("yield_form_notas_label"),
+                notasPlaceholder: t("yield_form_notas_placeholder"),
+                mermaPreviewLabel: t("yield_form_merma_preview"),
+                saveLabel: t("yield_form_save"),
+                errorPesoUtilExcedeBruto: t("yield_form_error_util_excede_bruto"),
+                errorInvalid: t("yield_form_error_invalid"),
+              }}
+              onSuccess={(p) => {
+                setProduct(p);
+                void reload();
+              }}
+            />
+          ) : showAdvancedYield ? (
+            <YieldTestForm
+              productId={product.id}
+              prominent={false}
+              labels={{
+                title: t("yield_form_title"),
+                prominentWarning: "",
+                pesoBrutoLabel: t("yield_form_peso_bruto_label"),
+                pesoUtilLabel: t("yield_form_peso_util_label"),
+                notasLabel: t("yield_form_notas_label"),
+                notasPlaceholder: t("yield_form_notas_placeholder"),
+                mermaPreviewLabel: t("yield_form_merma_preview"),
+                saveLabel: t("yield_form_save"),
+                errorPesoUtilExcedeBruto: t("yield_form_error_util_excede_bruto"),
+                errorInvalid: t("yield_form_error_invalid"),
+              }}
+              onSuccess={(p) => {
+                setProduct(p);
+                void reload();
+              }}
+            />
+          ) : (
+            <Pressable onPress={() => setShowAdvancedYield(true)} style={styles.advancedToggle}>
+              <Ionicons name="flask-outline" size={14} color={colors.mute} />
+              <Text style={styles.advancedToggleLabel}>{t("yield_advanced_toggle")}</Text>
+            </Pressable>
+          )
+        ) : null}
+
+        {/* Yield tests histórico */}
         <View style={styles.section}>
           <Text style={styles.eyebrow}>{t("producto_yield_tests_label")}</Text>
           {!history || history.yieldTests.length === 0 ? (
@@ -402,4 +462,17 @@ const styles = StyleSheet.create({
   },
   historyDate: { fontFamily: fonts.sans, fontSize: fontSizes.bodySm, color: colors.mute },
   historyValue: { fontFamily: fonts.sans, fontSize: fontSizes.bodySm, color: colors.ink },
+  advancedToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    alignSelf: "flex-start",
+  },
+  advancedToggleLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.mute,
+    fontStyle: "italic",
+  },
 });

@@ -303,4 +303,26 @@ export const en: EsDict = {
   migrate_nothing_to_do: "All recipes are already migrated",
   migrate_confirm_title: "Migrate recipes?",
   migrate_done: "{recipes} recipes migrated, {drafts} drafts created",
+
+  // ─── Yield tests + criticality recalc (Phase 6) ───
+  yield_form_title: "Yield test",
+  yield_pending_high_warning:
+    "Critical product with suggested yield. Run a test to get accurate cost.",
+  yield_form_peso_bruto_label: "Gross weight (g)",
+  yield_form_peso_util_label: "Net weight (g)",
+  yield_form_notas_label: "Notes",
+  yield_form_notas_placeholder: "Batch, date, conditions…",
+  yield_form_merma_preview: "Calculated yield loss",
+  yield_form_save: "Save test",
+  yield_form_error_invalid: "Invalid values",
+  yield_form_error_util_excede_bruto: "Net weight cannot exceed gross",
+  yield_advanced_toggle: "Record yield test",
+
+  productos_criticos_pendientes_title: "Critical, untested",
+  productos_criticos_pendientes_body:
+    "{count} critical products with suggested yield. Test actual yield.",
+
+  btn_recalc_criticidad: "Recalc criticality",
+  recalc_done: "{changes} products updated",
+  recalc_nothing_to_do: "Criticality up to date",
 };

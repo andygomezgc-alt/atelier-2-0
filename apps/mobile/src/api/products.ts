@@ -20,6 +20,7 @@ import type {
   MatchProductsRequest,
   MatchProductsResponse,
   MatchResult,
+  CreateYieldTestRequest,
 } from "@atelier/shared";
 
 export type Product = ProductListItem;
@@ -154,6 +155,73 @@ export type MigrateRecipesReport = {
     errors: Array<{ recipeId: string; error: string }>;
   };
 };
+
+// Yield test (Fase 6): crear una prueba de rendimiento. El server calcula
+// la merma medida y la persiste tanto en la tabla YieldTest como en el
+// producto (Product.mermaPct + Product.mermaOrigen='medida').
+export type YieldTestResponse = {
+  product: ProductFull;
+  yieldTest: {
+    id: string;
+    pesoBrutoG: number;
+    pesoUtilG: number;
+    mermaCalculadaPct: number;
+    notas: string | null;
+    createdAt: string;
+  };
+};
+
+export async function createYieldTest(
+  productId: string,
+  data: CreateYieldTestRequest,
+): Promise<YieldTestResponse> {
+  const result = await apiFetch<YieldTestResponse>(
+    `/api/products/${productId}/yield-tests`,
+    { method: "POST", body: JSON.stringify(data) },
+  );
+  // El test cambia merma + agrega fila al historial → invalidar caches del
+  // producto y de la lista (la criticidad/realCost pueden cambiar al
+  // mostrarse en otras vistas).
+  setCached(`products:detail:${productId}`, result.product);
+  invalidate("products:list");
+  invalidate(`products:history:${productId}`);
+  return result;
+}
+
+// Recalc semanal de criticidad por peso económico (Fase 6). Solo admin.
+export type RecalcCriticalityReport = {
+  applied: boolean;
+  summary: {
+    totalProducts: number;
+    skippedManual: number;
+    changes: number;
+    timestamp: string;
+  };
+  changes: Array<{
+    productId: string;
+    productName: string;
+    from: Criticality;
+    to: Criticality;
+    reason: "economic" | "default";
+    maxShare: number;
+  }>;
+};
+
+export async function recalcCriticality(
+  dryRun = false,
+): Promise<RecalcCriticalityReport> {
+  const result = await apiFetch<RecalcCriticalityReport>(
+    "/api/products/recalc-criticality",
+    {
+      method: "POST",
+      body: JSON.stringify({ dryRun }),
+    },
+  );
+  if (!dryRun && result.changes.length > 0) {
+    invalidate("products:");
+  }
+  return result;
+}
 
 export async function migrateLegacyRecipes(
   mode: "dry-run" | "apply",

@@ -404,6 +404,14 @@ export const ProductDetailSchema = ProductListItemSchema.extend({
   updatedAt: z.string(),
 });
 
+// Yield test (Fase 6): el chef carga peso bruto y peso útil, el server
+// computa la merma medida y actualiza el producto.
+export const CreateYieldTestRequestSchema = z.object({
+  pesoBrutoG: z.number().positive().max(1_000_000),
+  pesoUtilG: z.number().nonnegative().max(1_000_000),
+  notas: z.string().max(2000).optional(),
+});
+
 // Matching de ingredientes contra el banco. POST con array de queries,
 // devuelve un MatchResult por cada uno (mismo orden).
 export const MatchProductsRequestSchema = z.object({
@@ -456,3 +464,4 @@ export type MatchResult = z.infer<typeof MatchResultSchema>;
 export type MatchProductsResponse = z.infer<typeof MatchProductsResponseSchema>;
 export type RecipeIngredientInput = z.infer<typeof RecipeIngredientInputSchema>;
 export type RecipeIngredientResponse = z.infer<typeof RecipeIngredientResponseSchema>;
+export type CreateYieldTestRequest = z.infer<typeof CreateYieldTestRequestSchema>;

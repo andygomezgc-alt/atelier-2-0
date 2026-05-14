@@ -304,4 +304,26 @@ export const it: EsDict = {
   migrate_nothing_to_do: "Tutte le ricette sono già migrate",
   migrate_confirm_title: "Migrare le ricette?",
   migrate_done: "{recipes} ricette migrate, {drafts} bozze create",
+
+  // ─── Prove di resa + ricalcolo criticità (Fase 6) ───
+  yield_form_title: "Prova di resa",
+  yield_pending_high_warning:
+    "Prodotto critico con resa suggerita. Registra una prova per avere il costo reale preciso.",
+  yield_form_peso_bruto_label: "Peso lordo (g)",
+  yield_form_peso_util_label: "Peso netto (g)",
+  yield_form_notas_label: "Note",
+  yield_form_notas_placeholder: "Lotto, data, condizioni…",
+  yield_form_merma_preview: "Resa calcolata",
+  yield_form_save: "Salva prova",
+  yield_form_error_invalid: "Valori non validi",
+  yield_form_error_util_excede_bruto: "Il peso netto non può superare il lordo",
+  yield_advanced_toggle: "Registra prova di resa",
+
+  productos_criticos_pendientes_title: "Critici da misurare",
+  productos_criticos_pendientes_body:
+    "{count} prodotti critici con resa suggerita. Prova la resa reale.",
+
+  btn_recalc_criticidad: "Ricalcola criticità",
+  recalc_done: "{changes} prodotti aggiornati",
+  recalc_nothing_to_do: "Criticità aggiornata",
 };
