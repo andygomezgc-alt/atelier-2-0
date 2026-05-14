@@ -27,6 +27,8 @@ import {
 } from "@/src/api/conversations";
 import { createRecipe } from "@/src/api/recipes";
 import { showToast } from "@/src/components/Toast";
+import { parseRecipePayload, stripRecipePayload } from "@/src/lib/recipe-payload";
+import { setRecipeDraft } from "@/src/lib/recipe-draft";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 type ModelKey = "haiku" | "sonnet" | "opus";
@@ -206,13 +208,45 @@ export default function AsistenteScreen() {
 
   async function saveAsRecipe() {
     if (messages.length === 0) return;
-    // Use the last user message as title hint, last assistant message as content
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
     if (!lastAssistant) return;
 
+    // Fase 4 del Banco: si Claude incluyó <recipe_payload> con la estructura
+    // de la receta, lo usamos para abrir el formulario pre-cargado (donde
+    // el chef revisa, el flow de matching corre al guardar). Si no hay
+    // payload (charla abstracta o respuesta sin receta concreta), caemos
+    // al fallback legacy: receta con notes del texto del asistente.
+    const payload = parseRecipePayload(lastAssistant.content);
+
+    if (payload) {
+      // Pre-llenar el draft y navegar a /recetas/nueva. El form acepta
+      // recipeIngredients estructurados (con productId=null) y el save
+      // flow de Fase 2 se encarga del matching contra el banco.
+      setRecipeDraft({
+        title: payload.title,
+        contentJson: {
+          ingredients: payload.ingredients.map((i) => i.rawText),
+          method: payload.method,
+          notes: payload.notes ?? "",
+        },
+        recipeIngredients: payload.ingredients.map((i) => ({
+          rawText: i.rawText,
+          productId: null,
+          qty: i.qty ?? null,
+          unit: i.unit ?? null,
+          pezzatura: i.pezzatura ?? null,
+        })),
+        sourceConversationId: conversationId,
+      });
+      router.push("/recetas/nueva");
+      return;
+    }
+
+    // Fallback legacy: sin payload estructurado, guardamos como receta-borrador
+    // con el texto plano como notes. El chef puede editar después.
     const title = (lastUser?.content ?? t("assistant_untitled_recipe")).slice(0, 80);
-    const notes = lastAssistant.content.slice(0, 800);
+    const notes = stripRecipePayload(lastAssistant.content).slice(0, 800);
 
     try {
       const recipe = await createRecipe({
@@ -319,14 +353,16 @@ export default function AsistenteScreen() {
                 <Text style={styles.bubbleRole}>
                   {m.role === "user" ? t("chat_role_user") : t("chat_role_assistant")}
                 </Text>
-                <Text style={styles.bubbleText}>{m.content}</Text>
+                <Text style={styles.bubbleText}>
+                  {m.role === "assistant" ? stripRecipePayload(m.content) : m.content}
+                </Text>
               </View>
             ))
           )}
           {streaming && streamBuf ? (
             <View style={[styles.bubble, styles.bubbleAssistant]}>
               <Text style={styles.bubbleRole}>{t("chat_role_assistant")}</Text>
-              <Text style={styles.bubbleText}>{streamBuf}</Text>
+              <Text style={styles.bubbleText}>{stripRecipePayload(streamBuf)}</Text>
             </View>
           ) : null}
         </ScrollView>
