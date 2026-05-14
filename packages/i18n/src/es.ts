@@ -291,6 +291,13 @@ export const es = {
   toast_producto_saved: "Producto guardado",
   toast_producto_archived: "Producto archivado",
   toast_producto_unarchived: "Producto reactivado",
+
+  // ─── Matching de ingredientes (Fase 2) ───
+  confirm_match_title: "¿Es el mismo producto?",
+  confirm_match_body:
+    "Lo que escribiste se parece a un producto del banco. Si es el mismo, lo enlazamos y guardamos tu texto como alias para próximos matches.",
+  confirm_match_yes: "Sí, es el mismo",
+  confirm_match_no: "Crear nuevo",
 } as const;
 
 // Each translation maps a key to a string. Values are not pinned as

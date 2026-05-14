@@ -17,6 +17,9 @@ import type {
   ProductUnit,
   MermaOrigin,
   Criticality,
+  MatchProductsRequest,
+  MatchProductsResponse,
+  MatchResult,
 } from "@atelier/shared";
 
 export type Product = ProductListItem;
@@ -101,6 +104,21 @@ function bumpProductCache(p: ProductFull): ProductFull {
   // Histórico cambia si fue update de precio — invalidar también.
   invalidate(`products:history:${p.id}`);
   return p;
+}
+
+// Matching de ingredientes contra el banco (Fase 2). Una sola request con
+// el array completo de queries; el server devuelve un MatchResult por cada
+// uno en el mismo orden. Sin caché — el set de productos puede cambiar
+// entre creación de receta y creación de producto draft.
+export type { MatchResult };
+export async function matchProducts(queries: string[]): Promise<MatchResult[]> {
+  if (queries.length === 0) return [];
+  const body: MatchProductsRequest = { queries };
+  const res = await apiFetch<MatchProductsResponse>("/api/products/match", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return res.results;
 }
 
 export const createProduct = async (data: CreateProductRequest) => {

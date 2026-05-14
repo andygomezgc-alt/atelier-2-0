@@ -10,6 +10,27 @@ export const LanguageSchema = z.enum(["es", "it", "en"]);
 export const ModelSchema = z.enum(["haiku", "sonnet", "opus"]);
 export const CustomProviderSchema = z.enum(["anthropic", "openai", "google"]);
 
+// Banco de Productos — los enums declarados acá arriba para que las recetas
+// (que ahora referencian estructura de producto en RecipeIngredientResponse)
+// puedan usarlos sin orden-de-declaración issues.
+export const ProductCategorySchema = z.enum([
+  "pescado",
+  "carne",
+  "verdura",
+  "fruta",
+  "lacteo",
+  "panaderia",
+  "seco",
+  "especia",
+  "hierba",
+  "vinagre_aceite",
+  "otro",
+]);
+export const ProductUnitSchema = z.enum(["kg", "g", "l", "ml", "unidad", "caja"]);
+export const ProductStateSchema = z.enum(["activo", "borrador", "archivado"]);
+export const MermaOrigenSchema = z.enum(["sugerida", "confirmada", "medida"]);
+export const CriticalitySchema = z.enum(["alta", "media", "baja"]);
+
 export const RecipeContentSchema = z.object({
   ingredients: z.array(z.string().max(500)).max(50).default([]),
   method: z.array(z.string().max(500)).max(50).default([]),
@@ -120,15 +141,35 @@ export const PostMessageRequestSchema = z.object({
 
 // ─────────── /api/recipes ───────────
 
+// Cada línea estructurada de ingrediente — Fase 2 del Banco de Productos.
+// rawText es OBLIGATORIO siempre (audit trail). qty/unit/pezzatura opcionales
+// porque hoy el form solo captura el nombre; Fase 4 los va a llenar desde
+// la respuesta estructurada del asistente.
+export const RecipeIngredientInputSchema = z.object({
+  rawText: z.string().min(1).max(500),
+  productId: z.string().nullable().optional(),
+  qty: z.number().nonnegative().nullable().optional(),
+  unit: z.string().max(50).nullable().optional(),
+  pezzatura: z.string().max(100).nullable().optional(),
+  mermaOverridePct: z.number().min(0).max(100).nullable().optional(),
+});
+
 export const CreateRecipeRequestSchema = z.object({
   title: z.string().min(1).max(200),
   contentJson: RecipeContentSchema,
+  // Cuando viene presente, el server crea filas en RecipeIngredient con el
+  // productId/rawText/etc. de cada entrada. Debe ser 1:1 con
+  // contentJson.ingredients (mismo orden, misma longitud). Si está ausente,
+  // legacy: solo contentJson.
+  recipeIngredients: z.array(RecipeIngredientInputSchema).max(50).optional(),
   sourceConversationId: z.string().nullable().optional(),
 });
 
 export const PatchRecipeRequestSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   contentJson: RecipeContentSchema.optional(),
+  // Si se manda, reemplaza completamente las filas existentes (delete + insert).
+  recipeIngredients: z.array(RecipeIngredientInputSchema).max(50).optional(),
   state: RecipeStateSchema.optional(),
   priority: z.boolean().optional(),
 });
@@ -143,8 +184,35 @@ export const RecipeListItemSchema = z.object({
   updatedAt: z.string().max(50),
 });
 
+// Línea de ingrediente en la response de detalle. Incluye la info del
+// producto enlazado (id + nombre + criticidad + estado) cuando hay match;
+// si productId es null la fila es legacy/no enlazada y el cliente solo
+// muestra el rawText.
+export const RecipeIngredientResponseSchema = z.object({
+  id: z.string(),
+  position: z.number().int().nonnegative(),
+  rawText: z.string(),
+  qty: z.number().nullable(),
+  unit: z.string().nullable(),
+  pezzatura: z.string().nullable(),
+  mermaOverridePct: z.number().nullable(),
+  product: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      criticality: CriticalitySchema,
+      estado: ProductStateSchema,
+    })
+    .nullable(),
+});
+
 export const RecipeDetailSchema = RecipeListItemSchema.extend({
   contentJson: RecipeContentSchema,
+  // Cuando hay filas en la tabla RecipeIngredient (recetas nuevas + recetas
+  // legacy migradas en Fase 5), se exponen acá. Para legacy puro queda [].
+  // El cliente debe preferir esto sobre contentJson.ingredients cuando esté
+  // poblado (mejor info estructurada).
+  recipeIngredients: z.array(RecipeIngredientResponseSchema).max(50).default([]),
   approvedByName: z.string().max(100).nullable(),
   approvedAt: z.string().max(50).nullable(),
   sourceConversationId: z.string().max(100).nullable(),
@@ -270,25 +338,8 @@ export const ReorderItemsRequestSchema = z.object({
 // más arriba (antes de MenuDetailSchema, que los referencia).
 
 // ─────────── /api/products (Banco de Productos) ───────────
-
-export const ProductCategorySchema = z.enum([
-  "pescado",
-  "carne",
-  "verdura",
-  "fruta",
-  "lacteo",
-  "panaderia",
-  "seco",
-  "especia",
-  "hierba",
-  "vinagre_aceite",
-  "otro",
-]);
-
-export const ProductUnitSchema = z.enum(["kg", "g", "l", "ml", "unidad", "caja"]);
-export const ProductStateSchema = z.enum(["activo", "borrador", "archivado"]);
-export const MermaOrigenSchema = z.enum(["sugerida", "confirmada", "medida"]);
-export const CriticalitySchema = z.enum(["alta", "media", "baja"]);
+// Los enums (ProductCategorySchema, etc.) están declarados al principio del
+// archivo porque RecipeIngredientResponseSchema los referencia.
 
 // Precios siempre en centavos enteros (mismo patrón que MenuItem.price).
 // Mermas como número decimal 0-100 (con .nonnegative + .max(100) en runtime).
@@ -353,6 +404,23 @@ export const ProductDetailSchema = ProductListItemSchema.extend({
   updatedAt: z.string(),
 });
 
+// Matching de ingredientes contra el banco. POST con array de queries,
+// devuelve un MatchResult por cada uno (mismo orden).
+export const MatchProductsRequestSchema = z.object({
+  queries: z.array(z.string().min(1).max(500)).max(50),
+});
+
+export const MatchResultSchema = z.object({
+  level: z.enum(["exact", "probable", "none"]),
+  productId: z.string().nullable(),
+  productName: z.string().nullable(),
+  distance: z.number(),
+});
+
+export const MatchProductsResponseSchema = z.object({
+  results: z.array(MatchResultSchema),
+});
+
 // ─────────── Inferred types (use these in handlers) ───────────
 
 export type MeResponse = z.infer<typeof MeResponseSchema>;
@@ -383,3 +451,8 @@ export type PostMessageRequest = z.infer<typeof PostMessageRequestSchema>;
 export type CreateConversationRequest = z.infer<typeof CreateConversationRequestSchema>;
 export type CreateProductRequest = z.infer<typeof CreateProductRequestSchema>;
 export type PatchProductRequest = z.infer<typeof PatchProductRequestSchema>;
+export type MatchProductsRequest = z.infer<typeof MatchProductsRequestSchema>;
+export type MatchResult = z.infer<typeof MatchResultSchema>;
+export type MatchProductsResponse = z.infer<typeof MatchProductsResponseSchema>;
+export type RecipeIngredientInput = z.infer<typeof RecipeIngredientInputSchema>;
+export type RecipeIngredientResponse = z.infer<typeof RecipeIngredientResponseSchema>;

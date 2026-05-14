@@ -291,4 +291,11 @@ export const it: EsDict = {
   toast_producto_saved: "Prodotto salvato",
   toast_producto_archived: "Prodotto archiviato",
   toast_producto_unarchived: "Prodotto riattivato",
+
+  // ─── Matching ingredienti (Fase 2) ───
+  confirm_match_title: "È lo stesso prodotto?",
+  confirm_match_body:
+    "Quello che hai scritto somiglia a un prodotto del banco. Se è lo stesso, li colleghiamo e salviamo il tuo testo come alias per i prossimi match.",
+  confirm_match_yes: "Sì, è lo stesso",
+  confirm_match_no: "Crea nuovo",
 };

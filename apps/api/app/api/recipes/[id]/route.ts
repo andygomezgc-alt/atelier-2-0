@@ -82,10 +82,67 @@ export async function PATCH(
       data.approvedAt = new Date();
     }
   }
-  if (parse.data.title || parse.data.contentJson) {
+  if (parse.data.title || parse.data.contentJson || parse.data.recipeIngredients) {
     data.version = { increment: 1 };
   }
 
+  // Si vienen ingredientes estructurados, validamos productIds + reemplazamos
+  // las filas existentes (delete + insert) dentro de la misma transacción
+  // que el update del Recipe — atómico.
+  if (parse.data.recipeIngredients !== undefined) {
+    const productIds = parse.data.recipeIngredients
+      .map((i) => i.productId)
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+    if (productIds.length > 0) {
+      const count = await prisma.product.count({
+        where: {
+          id: { in: productIds },
+          restaurantId: ctx.restaurantId,
+          deletedAt: null,
+        },
+      });
+      if (count !== new Set(productIds).size) {
+        return NextResponse.json(
+          { error: "invalid_product_reference" },
+          { status: 400 },
+        );
+      }
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.recipe.update({ where: { id }, data });
+      await tx.recipeIngredient.deleteMany({ where: { recipeId: id } });
+      if (parse.data.recipeIngredients!.length > 0) {
+        await tx.recipeIngredient.createMany({
+          data: parse.data.recipeIngredients!.map((ing, idx) => ({
+            recipeId: id,
+            productId: ing.productId ?? null,
+            position: idx,
+            rawText: ing.rawText,
+            qty: ing.qty ?? null,
+            unit: ing.unit ?? null,
+            pezzatura: ing.pezzatura ?? null,
+            mermaOverridePct: ing.mermaOverridePct ?? null,
+          })),
+        });
+      }
+      return tx.recipe.findUnique({ where: { id }, include: recipeDetailInclude });
+    });
+
+    if (!updated) throw new Error("recipe_update_lost");
+
+    if (parse.data.state) {
+      logger.info("recipe_state_changed", {
+        recipeId: id,
+        state: parse.data.state,
+        userId: ctx.userId,
+      });
+    }
+
+    return NextResponse.json(projectRecipeDetail(updated));
+  }
+
+  // Path sin ingredientes estructurados (legacy).
   const updated = await prisma.recipe.update({
     where: { id },
     data,

@@ -38,6 +38,16 @@ export const recipeDetailInclude = {
   menuItems: {
     include: { menuFolder: { select: { id: true, name: true } } },
   },
+  // Banco de Productos — Fase 2: ingredientes estructurados (productId,
+  // qty, unit, pezzatura, mermaOverridePct, rawText). Ordenados por position.
+  // Para recetas legacy sin filas todavía, viene []; el cliente cae al
+  // contentJson.ingredients de strings.
+  recipeIngredients: {
+    orderBy: { position: "asc" },
+    include: {
+      product: { select: { id: true, name: true, criticality: true, estado: true } },
+    },
+  },
 } as const;
 
 export const menuListInclude = {
@@ -130,12 +140,24 @@ export function projectRecipeListItem(r: RecipeListRow): RecipeListItem {
   };
 }
 
+type RecipeIngredientRow = {
+  id: string;
+  position: number;
+  rawText: string;
+  qty: { toString(): string } | null; // Prisma.Decimal
+  unit: string | null;
+  pezzatura: string | null;
+  mermaOverridePct: { toString(): string } | null;
+  product: { id: string; name: string; criticality: string; estado: string } | null;
+};
+
 type RecipeDetailRow = RecipeListRow & {
   contentJson: unknown;
   approvedAt: Date | null;
   sourceConversationId: string | null;
   approvedBy: { name: string | null; email: string | null } | null;
   menuItems: Array<{ menuFolder: { id: string; name: string } | null }>;
+  recipeIngredients: RecipeIngredientRow[];
 };
 
 export function projectRecipeDetail(r: RecipeDetailRow): RecipeDetail {
@@ -152,6 +174,23 @@ export function projectRecipeDetail(r: RecipeDetailRow): RecipeDetail {
   return {
     ...projectRecipeListItem(r),
     contentJson: r.contentJson as RecipeDetail["contentJson"],
+    recipeIngredients: (r.recipeIngredients ?? []).map((row) => ({
+      id: row.id,
+      position: row.position,
+      rawText: row.rawText,
+      qty: row.qty ? Number(row.qty.toString()) : null,
+      unit: row.unit,
+      pezzatura: row.pezzatura,
+      mermaOverridePct: row.mermaOverridePct ? Number(row.mermaOverridePct.toString()) : null,
+      product: row.product
+        ? {
+            id: row.product.id,
+            name: row.product.name,
+            criticality: row.product.criticality as "alta" | "media" | "baja",
+            estado: row.product.estado as "activo" | "borrador" | "archivado",
+          }
+        : null,
+    })),
     approvedByName: r.approvedBy?.name ?? r.approvedBy?.email ?? null,
     approvedAt: r.approvedAt?.toISOString() ?? null,
     sourceConversationId: r.sourceConversationId,

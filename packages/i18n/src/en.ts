@@ -290,4 +290,11 @@ export const en: EsDict = {
   toast_producto_saved: "Product saved",
   toast_producto_archived: "Product archived",
   toast_producto_unarchived: "Product reactivated",
+
+  // ─── Ingredient matching (Phase 2) ───
+  confirm_match_title: "Is this the same product?",
+  confirm_match_body:
+    "What you typed looks similar to a product in the bank. If it's the same, we'll link them and save your text as an alias for future matches.",
+  confirm_match_yes: "Yes, it's the same",
+  confirm_match_no: "Create new",
 };
