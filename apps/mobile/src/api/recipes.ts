@@ -57,6 +57,13 @@ export const deleteRecipe = async (id: string) => {
   return result;
 };
 
+// Fase 3 del Banco de Productos — el server, después de extraer la receta
+// del PDF/DOCX, corre matching contra el banco. La respuesta trae:
+//  - contentJson: shape legacy (string[] de ingredientes) — para compat.
+//  - recipeIngredients: shape estructurada con productId pre-set para
+//    matches exactos (productId=null para probables y nones).
+//  - pendingMatches: probables que el cliente debe confirmar con el chef
+//    antes de guardar la receta. Indexa por posición en recipeIngredients.
 export type ExtractedRecipeResponse = {
   title: string;
   contentJson: {
@@ -64,6 +71,12 @@ export type ExtractedRecipeResponse = {
     method: string[];
     notes: string;
   };
+  recipeIngredients: Array<{ rawText: string; productId: string | null }>;
+  pendingMatches: Array<{
+    ingredientIdx: number;
+    productId: string;
+    productName: string;
+  }>;
 };
 
 // Multipart upload — cannot use apiFetch because it forces JSON content-type.

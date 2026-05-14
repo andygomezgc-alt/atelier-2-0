@@ -88,11 +88,26 @@ export default function NuevaRecetaScreen() {
     const draft = consumeRecipeDraft();
     if (!draft) return;
     setTitle(draft.title);
-    // Convertir strings legacy a IngredientValue. productId=null en todos;
-    // el match al guardar se va a encargar de enlazar.
-    const fromDraft = draft.contentJson.ingredients.length
-      ? draft.contentJson.ingredients.map((s) => ({ rawText: s, productId: null as string | null }))
-      : [{ rawText: "", productId: null as string | null }];
+    // Preferencia de fuente:
+    //  1. draft.recipeIngredients (Fase 3): viene del upload server con
+    //     productIds ya pre-set para matches exactos. Es la mejor info.
+    //  2. draft.contentJson.ingredients (legacy): array de strings — los
+    //     convertimos a IngredientValue sin productId; el save-flow va a
+    //     intentar matchearlos.
+    let fromDraft: IngredientValue[];
+    if (draft.recipeIngredients && draft.recipeIngredients.length > 0) {
+      fromDraft = draft.recipeIngredients.map((r) => ({
+        rawText: r.rawText,
+        productId: r.productId ?? null,
+      }));
+    } else if (draft.contentJson.ingredients.length > 0) {
+      fromDraft = draft.contentJson.ingredients.map((s) => ({
+        rawText: s,
+        productId: null as string | null,
+      }));
+    } else {
+      fromDraft = [{ rawText: "", productId: null }];
+    }
     setIngredients(fromDraft);
     setMethod(draft.contentJson.method.length ? draft.contentJson.method : [""]);
     setNotes(draft.contentJson.notes ?? "");

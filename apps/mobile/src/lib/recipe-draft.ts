@@ -12,7 +12,20 @@
 
 import type { CreateRecipeRequest } from "@atelier/shared";
 
-export type RecipeDraft = CreateRecipeRequest & { editId?: string };
+// Hint de match probable que cargar.tsx pasa a nueva.tsx después de subir
+// un PDF/DOCX. nueva.tsx, al montar, dispara ConfirmMatchSheet por cada
+// uno para que el chef confirme/rechace antes de poder editar y guardar
+// la receta. (Fase 3 del Banco de Productos.)
+export type IngredientPendingMatch = {
+  ingredientIdx: number;  // posición en recipeIngredients (o contentJson.ingredients)
+  productId: string;
+  productName: string;
+};
+
+export type RecipeDraft = CreateRecipeRequest & {
+  editId?: string;
+  pendingMatches?: IngredientPendingMatch[];
+};
 
 let pending: RecipeDraft | null = null;
 

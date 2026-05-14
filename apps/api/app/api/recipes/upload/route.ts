@@ -3,6 +3,11 @@
 // client shows the result, lets the user review, then calls POST /api/recipes
 // to save the final version.
 //
+// Fase 3 del Banco: tras extraer, corremos matching contra el banco. La
+// response incluye recipeIngredients (estructurado con productId pre-set
+// para matches exactos) y pendingMatches (sugerencias probable que el
+// cliente debe confirmar antes de guardar la receta).
+//
 // Routes BYOK-aware (Anthropic/OpenAI/Google) so the user's own provider is
 // used for extraction when configured.
 
@@ -17,6 +22,7 @@ import {
   type ExtractorBYOK,
 } from "@/lib/recipe-extraction";
 import { loadUserBYOK } from "@/lib/byok-user";
+import { findMatch, type MatchCandidate } from "@/lib/products/matching";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -57,13 +63,66 @@ export async function POST(req: NextRequest) {
 
   const start = Date.now();
   try {
-    const extracted = await extractRecipeFromFile(buffer, mime, byok);
+    // Extracción + matching en paralelo — la extracción tarda 3-30s; mientras
+    // se ejecuta, prefetcheamos el banco de productos del restaurante para
+    // tener las candidatas listas y matchear sin un round-trip extra al
+    // terminar el LLM.
+    const [extracted, productList] = await Promise.all([
+      extractRecipeFromFile(buffer, mime, byok),
+      ctx.restaurantId
+        ? prisma.product.findMany({
+            where: {
+              restaurantId: ctx.restaurantId,
+              deletedAt: null,
+              estado: { in: ["activo", "borrador"] },
+            },
+            select: { id: true, name: true, aliases: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const candidates: MatchCandidate[] = productList.map((p) => ({
+      id: p.id,
+      name: p.name,
+      aliases: p.aliases,
+    }));
+
+    // Matcheamos cada ingrediente contra el banco. exact → productId pre-set;
+    // probable → lo mandamos en pendingMatches para que el mobile pida
+    // confirmación al chef; none → productId null, el mobile crea draft al
+    // guardar.
+    const recipeIngredients: Array<{ rawText: string; productId: string | null }> = [];
+    const pendingMatches: Array<{
+      ingredientIdx: number;
+      productId: string;
+      productName: string;
+    }> = [];
+
+    extracted.ingredients.forEach((rawText, idx) => {
+      const m = findMatch(rawText, candidates);
+      if (m.level === "exact" && m.productId) {
+        recipeIngredients.push({ rawText, productId: m.productId });
+      } else if (m.level === "probable" && m.productId && m.productName) {
+        recipeIngredients.push({ rawText, productId: null });
+        pendingMatches.push({
+          ingredientIdx: idx,
+          productId: m.productId,
+          productName: m.productName,
+        });
+      } else {
+        recipeIngredients.push({ rawText, productId: null });
+      }
+    });
+
     logger.info("recipe_upload_extracted", {
       userId: ctx.userId,
       mime,
       bytes: file.size,
       byok: byok?.provider ?? null,
       latencyMs: Date.now() - start,
+      ingredients: extracted.ingredients.length,
+      exactMatches: recipeIngredients.filter((r) => r.productId !== null).length,
+      probableMatches: pendingMatches.length,
     });
     return NextResponse.json({
       title: extracted.title,
@@ -72,6 +131,8 @@ export async function POST(req: NextRequest) {
         method: extracted.method,
         notes: extracted.notes ?? "",
       },
+      recipeIngredients,
+      pendingMatches,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error al procesar archivo";

@@ -77,9 +77,14 @@ export default function CargarRecetaScreen() {
         asset.name ?? "recipe",
         inferredMime,
       );
+      // Pasamos a nueva.tsx: contentJson (legacy compat), recipeIngredients
+      // (estructurado, productIds pre-set para exact matches), y
+      // pendingMatches (probables que el chef confirma al abrir el form).
       setRecipeDraft({
         title: extracted.title,
         contentJson: extracted.contentJson,
+        recipeIngredients: extracted.recipeIngredients,
+        pendingMatches: extracted.pendingMatches,
       });
       showToast(t("toast_recipe_uploaded"));
       router.replace("/recetas/nueva");
