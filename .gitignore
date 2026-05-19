@@ -38,3 +38,6 @@ apps/mobile/.expo-shared/
 # tests
 coverage/
 .env*.local
+
+# superpowers brainstorm
+.superpowers/
