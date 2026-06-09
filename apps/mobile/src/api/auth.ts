@@ -71,3 +71,29 @@ export function patchRestaurant(data: {
     body: JSON.stringify(data),
   });
 }
+
+// Gestión de equipo F3 — leave preflight (read-only, decide qué variante del
+// sheet rendear sin disparar acciones).
+export type LeavePreflightMember = {
+  id: string;
+  name: string;
+  role: "admin" | "chef_executive" | "sous_chef" | "viewer";
+};
+
+export type LeavePreflight = {
+  case: "A" | "B" | "C";
+  otherMembers?: LeavePreflightMember[];
+  // Solo en caso C — el sheet lo usa para el typing-confirm.
+  restaurantName?: string;
+};
+
+export function getLeavePreflight(): Promise<LeavePreflight> {
+  return apiFetch("/api/restaurant/leave/preflight");
+}
+
+// POST /api/restaurant/leave — la respuesta exitosa es solo {action} para
+// caso A; los casos B y C llegan como ApiError con el `code` correspondiente
+// y el caller decide qué rendear.
+export function leaveRestaurant(): Promise<{ action: "left" | "deleted" }> {
+  return apiFetch("/api/restaurant/leave", { method: "POST" });
+}

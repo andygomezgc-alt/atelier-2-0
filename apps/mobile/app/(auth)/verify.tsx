@@ -9,6 +9,7 @@ import { useAuth } from "@/src/hooks/useAuth";
 import { verifyMagicLink } from "@/src/api/auth";
 import { useI18n } from "@/src/hooks/useI18n";
 import { showToast } from "@/src/components/Toast";
+import { apiErrorMessage } from "@/src/lib/api-error";
 import { colors, fonts, fontSizes, spacing } from "@/src/theme";
 
 export default function VerifyScreen() {
@@ -38,8 +39,10 @@ export default function VerifyScreen() {
       })
       .catch((err: Error) => {
         inFlight.current = false;
-        showToast(err.message ?? t("error_network"));
-        setError(err.message);
+        // A-11 — usa code para localizar (token_invalid/expired/missing).
+        const msg = apiErrorMessage(err, t);
+        showToast(msg);
+        setError(msg);
         setTimeout(() => router.replace("/(auth)/login"), 2000);
       });
   }, [token, email, signInWithToken, router, t]);
@@ -64,8 +67,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xxl },
   mark: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifDisplay + 16,
     color: colors.teal,
     marginBottom: spacing.xl,

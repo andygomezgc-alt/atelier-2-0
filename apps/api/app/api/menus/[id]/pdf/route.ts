@@ -3,8 +3,11 @@ import { prisma } from "@atelier/db";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { TEMPLATES } from "@/lib/pdf/templates";
 import { renderHtmlToPdf } from "@/lib/pdf/render";
+import { computeRecipeAllergens } from "@/lib/products/allergens-recipe";
 import { logger } from "@/lib/logger";
-import type { ClientOverrides } from "@atelier/shared";
+import type { ClientOverrides, Allergen } from "@atelier/shared";
+import { ALLERGEN_ORDER } from "@atelier/shared";
+import { t, type Language } from "@atelier/i18n";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -25,11 +28,25 @@ export async function GET(
   const menu = await prisma.menuFolder.findUnique({
     where: { id },
     include: {
-      restaurant: { select: { name: true } },
+      restaurant: { select: { name: true, languageDefault: true } },
       sections: { orderBy: { order: "asc" }, select: { id: true, name: true } },
       items: {
         orderBy: { order: "asc" },
-        include: { recipe: { select: { title: true } } },
+        include: {
+          // Fase 2 alérgenos — incluir lo necesario para computeRecipeAllergens.
+          recipe: {
+            select: {
+              title: true,
+              manualAllergens: true,
+              recipeIngredients: {
+                select: {
+                  productId: true,
+                  product: { select: { id: true, allergen: true } },
+                },
+              },
+            },
+          },
+        },
       },
       clientOverride: { select: { overrides: true } },
     },
@@ -45,14 +62,38 @@ export async function GET(
   // partial deep. Cada campo: override > canonical-staff > fallback.
   const ov = (menu.clientOverride?.overrides ?? {}) as ClientOverrides;
 
-  const dishesBySection = new Map<string | null, Array<{ name: string; description: string; price: number }>>();
+  // Fase 2 alérgenos — el template recibe codes Allergen[] por plato (para
+  // resolver el icono SVG) + un mapa `allergenLabels` con los labels
+  // traducidos para la leyenda al pie. La resolución i18n vive acá porque el
+  // template no depende de @atelier/i18n.
+  const lang = (menu.restaurant?.languageDefault ?? "es") as Language;
+  const allergenLabels = Object.fromEntries(
+    ALLERGEN_ORDER.map((a) => [a, t(`allergen_${a}` as const, lang)]),
+  ) as Record<Allergen, string>;
+
+  const dishesBySection = new Map<
+    string | null,
+    Array<{ name: string; description: string; price: number; allergens: Allergen[] }>
+  >();
   for (const it of menu.items) {
     const sectionKey = it.sectionId ?? null;
     const list = dishesBySection.get(sectionKey) ?? [];
+
+    const allergensResult = it.recipe
+      ? computeRecipeAllergens(
+          (it.recipe.recipeIngredients ?? []).map((ing) => ({
+            productId: ing.productId,
+            product: ing.product ? { allergen: ing.product.allergen } : null,
+          })),
+          it.recipe.manualAllergens ?? [],
+        )
+      : { allergens: [] as Allergen[], unlinkedIngredients: 0 };
+
     list.push({
       name: ov.items?.[it.id]?.name ?? it.customName ?? it.recipe?.title ?? "",
       description: ov.items?.[it.id]?.description ?? it.customDesc ?? "",
       price: ov.items?.[it.id]?.price ?? it.price,
+      allergens: allergensResult.allergens,
     });
     dishesBySection.set(sectionKey, list);
   }
@@ -69,6 +110,9 @@ export async function GET(
     season: ov.subtitle ?? menu.season,
     sections,
     unsectioned,
+    showAllergensInPdf: menu.showAllergensInPdf,
+    allergenLegendTitle: t("menu_allergen_legend_title", lang),
+    allergenLabels,
   });
 
   let pdf: Buffer;

@@ -32,6 +32,9 @@ export type ListProductFilters = {
   estado?: ProductState;
   mermaOrigen?: MermaOrigin;
   pendientePrecio?: boolean;
+  // Entrega A.5 Fase 8 — productos sin pezzatura usados por unidad en
+  // alguna receta. Habilita el chip filtro "Pezzatura pendiente".
+  pezzaturaPendiente?: boolean;
   q?: string;
 };
 
@@ -67,6 +70,7 @@ function buildQuery(filters: ListProductFilters): string {
   if (filters.estado) qs.set("estado", filters.estado);
   if (filters.mermaOrigen) qs.set("mermaOrigen", filters.mermaOrigen);
   if (filters.pendientePrecio) qs.set("pendiente_precio", "true");
+  if (filters.pezzaturaPendiente) qs.set("pezzatura_pendiente", "true");
   if (filters.q) qs.set("q", filters.q);
   return qs.toString() ? `?${qs.toString()}` : "";
 }
@@ -99,11 +103,20 @@ export const getProductHistory = (id: string) =>
   );
 
 // Pre-popular caché de detalle después de una mutación que devuelve el full.
+//
+// IMPORTANTE: también invalidamos `recipes:` porque editar el precio o la
+// merma de un producto cambia el campo `cost` de cualquier receta que use
+// ese producto. No sabemos a priori cuántas recetas se ven afectadas, así
+// que invalidación global garantiza que la próxima vista de cualquier
+// receta (lista o detalle) traiga datos frescos del backend. Bug Andy
+// 2026-05-17: sin esta invalidación, totalCents/perPortionCents/foodCostPct
+// y el contador de missing del card de costo seguían mostrando valores
+// viejos hasta reiniciar la app.
 function bumpProductCache(p: ProductFull): ProductFull {
   setCached(`products:detail:${p.id}`, p);
   invalidate("products:list");
-  // Histórico cambia si fue update de precio — invalidar también.
   invalidate(`products:history:${p.id}`);
+  invalidate("recipes:");
   return p;
 }
 
@@ -181,10 +194,12 @@ export async function createYieldTest(
   );
   // El test cambia merma + agrega fila al historial → invalidar caches del
   // producto y de la lista (la criticidad/realCost pueden cambiar al
-  // mostrarse en otras vistas).
+  // mostrarse en otras vistas). También recipes: porque la merma entra al
+  // cálculo de cost de cada receta que usa este producto (bug Andy 2026-05-17).
   setCached(`products:detail:${productId}`, result.product);
   invalidate("products:list");
   invalidate(`products:history:${productId}`);
+  invalidate("recipes:");
   return result;
 }
 
@@ -223,6 +238,21 @@ export async function recalcCriticality(
   return result;
 }
 
+// Sub-paso 3 del rediseño: la pantalla Ajustes del banco muestra
+// "Último recalc: hace X días". Este GET devuelve el timestamp del
+// último run desde AuditLog. null si nunca corrió.
+export type RecalcStatus = { lastRunAt: string | null };
+
+export const getRecalcStatus = (): Promise<RecalcStatus> =>
+  apiFetch<RecalcStatus>("/api/products/recalc-criticality");
+
+// Sub-paso 5c: cuenta de recetas legacy pendientes — la usa Ajustes para
+// ocultar la entrada "Migrar recetas legacy" cuando no hay nada que hacer.
+export type MigrationStatus = { pendingCount: number };
+
+export const getMigrationStatus = (): Promise<MigrationStatus> =>
+  apiFetch<MigrationStatus>("/api/products/migrate-recipes");
+
 export async function migrateLegacyRecipes(
   mode: "dry-run" | "apply",
   options: {
@@ -241,9 +271,12 @@ export async function migrateLegacyRecipes(
       }),
     },
   );
-  // El apply muta el banco → invalidamos caches.
+  // El apply muta el banco → invalidamos caches. También recipes: porque
+  // migrate crea/reemplaza RecipeIngredient rows con qty/unit, lo que
+  // afecta el cost de cada receta migrada.
   if (mode === "apply") {
     invalidate("products:");
+    invalidate("recipes:");
   }
   return report;
 }
@@ -252,6 +285,23 @@ export const createProduct = async (data: CreateProductRequest) => {
   const result = await apiFetch<ProductFull>("/api/products", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+  return bumpProductCache(result);
+};
+
+// Sub-paso 6 Bug B fix (Andy 2026-05-17): cuando el editor de recetas
+// (nueva.tsx finalize) detecta un ingrediente sin match contra el banco,
+// crea el draft con esta función — el server aplica todos los helpers
+// (parseIngredient + categorizeFromName + defaultPurchaseUnit + merma +
+// criticality) para que el draft quede limpio (mismo patrón que migrate.ts).
+//
+// Diferencia con createProduct():
+//   createProduct        — el cliente manda todos los campos explícitos.
+//   createProductFromRaw — el cliente solo manda rawText; el server infiere.
+export const createProductFromRaw = async (rawText: string): Promise<ProductFull> => {
+  const result = await apiFetch<ProductFull>("/api/products/from-raw", {
+    method: "POST",
+    body: JSON.stringify({ rawText }),
   });
   return bumpProductCache(result);
 };
@@ -291,6 +341,10 @@ export async function deleteProduct(
 
   if (res.ok) {
     invalidate("products:");
+    // Borrar un producto deja sus RecipeIngredient con productId=null
+    // (SetNull en server). Las recetas que lo usaban pierden ese ingrediente
+    // del cálculo de cost. Invalidamos recipes: para refrescar.
+    invalidate("recipes:");
     return { ok: true };
   }
 

@@ -38,6 +38,23 @@ export const en: EsDict = {
   confirm_cancel: "Cancel",
   confirm_ok: "Confirm",
   confirm_delete: "Delete",
+  confirm_destructive_badge: "Heads up",
+  recetas_card_cost_label: "Cost/portion",
+  recetas_card_pvp_label: "Price",
+  casa_edit_name_title: "Edit site name",
+  casa_edit_name_placeholder: "Restaurant name",
+  staff_remove_title: "Remove {name}?",
+  staff_remove_body: "They'll lose access to the restaurant. You can invite them back with the code.",
+  casa_leave_btn: "Leave restaurant",
+  leave_case_a_title: "Leave the restaurant?",
+  leave_case_a_body: "You'll lose access. You can come back with a new invite code.",
+  leave_case_a_confirm: "Leave",
+  leave_case_b_title: "Blocked",
+  leave_case_b_body: "You're the only administrator. Transfer the admin role to another member before leaving.",
+  leave_case_c_title: "Delete restaurant",
+  leave_case_c_body: "You're the last member. Leaving permanently deletes the restaurant and all its content: recipes, menus, products, ideas, conversations. This cannot be undone.",
+  leave_case_c_typing_hint: "To confirm, type the exact restaurant name ({name}):",
+  leave_case_c_confirm: "Delete",
   confirm_delete_recipe_title: "Delete recipe?",
   confirm_delete_recipe_body: "This action cannot be undone.",
   confirm_delete_idea_title: "Delete this idea?",
@@ -95,16 +112,44 @@ export const en: EsDict = {
   style_minimal: "Minimal",
   btn_export_pdf: "Export menu card",
   chat_idea_anclada: "Anchored idea",
-  chat_placeholder: "Keep the conversation going…",
+  chat_placeholder: "Ask the assistant…",
   chat_role_user: "You",
   chat_role_assistant: "Assistant",
+  // ─── C-05 · Editorial assistant (mockup) ───
+  header_asistente_eyebrow: "ATELIER · ASSISTANT",
+  chat_greet: "Buongiorno, Chef.",
+  chat_history: "History",
+  assistant_eyebrow: "ATELIER · SUGGESTS",
+  model_haiku: "Sous-chef",
+  model_sonnet: "Creative",
+  model_opus: "Executive",
+  byok_tier_fast: "Fast",
+  byok_tier_balanced: "Balanced",
+  byok_tier_powerful: "Powerful",
+  byok_help_anthropic_note:
+    "Choosing Anthropic here uses your own Claude account instead of the server's.",
+  byok_paused_note: "Paused — you're using your own {provider} key.",
+  byok_back_to_app_models: "Switch back to app models",
+  byok_back_to_app_models_toast: "Switched back to app models",
+  chat_thinking: "Atelier thinking",
   chat_save_recipe: "Save as recipe",
+  chat_structuring: "Structuring recipe…",
+  extract_fail_title: "Couldn't structure the recipe",
+  extract_fail_body: "You can save it as a draft and edit it by hand.",
+  extract_fail_draft: "Save as draft",
+  extract_fail_cancel: "Cancel",
+  recipe_untitled: "Untitled recipe",
   chat_reformulate: "Rephrase",
   profile_role: "Role",
   profile_restaurant: "Restaurant",
   profile_language: "Language",
   profile_model: "Claude model",
   profile_logout: "Sign out",
+  profile_save: "Save",
+  profile_cancel: "Cancel",
+  profile_name_placeholder: "Your name",
+  profile_bio_placeholder: "Chef's mantra…",
+  profile_name_empty_toast: "Name can't be empty",
   role_admin: "Admin",
   role_chef_executive: "Executive chef",
   role_sous_chef: "Sous chef",
@@ -128,6 +173,7 @@ export const en: EsDict = {
   onboard_create_title: "Create my restaurant",
   onboard_create_sub: "You'll be admin of the group",
   onboard_join_title: "Join with a code",
+  onboard_already_in_restaurant: "You're already in a restaurant.",
   onboard_join_sub: "You got it from your team's admin",
   onboard_restaurant_tag: "Your restaurant",
   onboard_restaurant_name_placeholder: "Restaurant name",
@@ -222,6 +268,32 @@ export const en: EsDict = {
   producto_form_category_label: "Category",
   producto_form_pezzatura_label: "Size",
   producto_form_pezzatura_placeholder: "Large piece, fresh, etc.",
+  producto_form_pezzatura_hint_pz_per_kg: "e.g.: 15/20",
+  producto_form_pezzatura_hint_g_per_piece: "e.g.: 4-6 kg or 60 g/pc",
+  producto_form_pezzatura_error: "Could not interpret the size.",
+  producto_form_pezzatura_more_options: "More options",
+  recetas_aviso_no_pezzatura_unit:
+    "This product is measured by weight, not by unit. Change the unit to g/kg or change the product.",
+  recetas_aviso_falta_pezzatura:
+    "Pezzatura missing for this product to calculate cost. Load it →",
+  cost_card_wide_range_n:
+    "{n} ingredient(s) with wide size range — calculated cost is an approximation.",
+  pezzatura_pendiente_title:
+    "{name} is used by unit in this recipe.",
+  pezzatura_pendiente_body:
+    "What does each piece weigh on average?",
+  pezzatura_pendiente_save: "Save",
+  pezzatura_pendiente_later: "Later",
+  peso_por_pieza_label: "Weight per piece",
+  peso_por_pieza_from_bank: "{g} g (from bank)",
+  peso_por_pieza_custom: "{g} g (custom)",
+  peso_por_pieza_customize: "Customize",
+  peso_por_pieza_back_to_bank: "Back to bank",
+  peso_por_pieza_modal_title: "Weight per piece (grams)",
+  peso_por_pieza_modal_hint:
+    "Weight of the whole piece, before peeling or cleaning.",
+  peso_por_pieza_out_of_range:
+    "Weight out of bank range ({minG}-{maxG} g). Is this right?",
   producto_form_unidad_label: "Purchase unit",
   producto_form_precio_label: "Purchase price (€)",
   producto_form_precio_placeholder: "Per purchase unit",
@@ -238,6 +310,13 @@ export const en: EsDict = {
   filter_productos_pendientes_precio: "No price",
   filter_productos_merma_sugerida: "Suggested yield",
   filter_productos_archivados: "Archived",
+  filter_productos_pezzatura_pendiente: "Size pending",
+  product_list_pezzatura_pendiente: "size pending",
+  rename_pezzatura_desync_title: "Size mismatch",
+  rename_pezzatura_desync_body:
+    "The name suggests {detected} but the stored size is {current}. Update size?",
+  rename_pezzatura_update: "Update",
+  rename_pezzatura_keep: "Keep current",
 
   category_pescado: "Fish",
   category_carne: "Meat",
@@ -272,6 +351,7 @@ export const en: EsDict = {
 
   producto_real_cost_label: "Real cost",
   producto_real_cost_explainer: "Price adjusted for yield loss",
+  producto_more_options: "More options",
   producto_price_old_indicator: "Price updated {days} days ago",
   producto_used_in_recipes_label: "In recipes",
   producto_no_recipes_yet: "Not used in any recipe yet.",
@@ -282,7 +362,13 @@ export const en: EsDict = {
 
   confirm_archive_producto_title: "Archive product?",
   confirm_archive_producto_body:
-    "Recipes using it will be marked as 'needs review'. You can reactivate it later.",
+    "The product becomes unavailable for new recipes. You can reactivate it later.",
+  confirm_archive_producto_body_with_count:
+    "Used in {count} recipes. Those recipes are not modified, but the product becomes unavailable for new recipes. Continue?",
+  confirm_unarchive_producto_title: "Reactivate product?",
+  confirm_unarchive_producto_body:
+    "It will be available for new recipes again.",
+  archived_banner_label: "Archived",
   confirm_delete_producto_in_use_title: "Product in use",
   confirm_delete_producto_in_use_body:
     "This product appears in {count} recipes. Archive anyway?",
@@ -325,4 +411,128 @@ export const en: EsDict = {
   btn_recalc_criticidad: "Recalc criticality",
   recalc_done: "{changes} products updated",
   recalc_nothing_to_do: "Criticality up to date",
+
+  // ─── Bank settings (sub-step 3) ───
+  ajustes_title: "Bank settings",
+  ajustes_section_migration: "Migration",
+  ajustes_migrate_subtitle: "Process old recipes and link their ingredients to the bank.",
+  ajustes_migrate_subtitle_with_count: "{n} recipes with legacy-format ingredients.",
+
+  // ─── Recipe cost card (sub-paso 6) ───
+  cost_card_per_portion: "Cost per portion",
+  cost_card_total: "Total",
+  cost_card_food_cost: "Food cost: {n}%",
+  cost_card_no_portions: "No portions set",
+  cost_card_portions_n: "{n} portions",
+  cost_card_no_sale_price: "No sale price",
+  cost_card_sale_price: "Sale: {value}",
+  cost_card_missing_n: "{n} ingredients without cost",
+  cost_breakdown_no_price: "{n} no price",
+  cost_breakdown_no_qty: "{n} no quantity",
+  cost_breakdown_unlinked: "{n} no product",
+  cost_card_edit_portions_title: "Recipe portions",
+  cost_card_edit_portions_placeholder: "e.g. 4",
+  cost_card_edit_sale_price_title: "Sale price",
+  cost_card_edit_sale_price_placeholder: "e.g. 38.00",
+  ajustes_section_criticidad: "Criticality",
+  ajustes_criticidad_explanation:
+    "The system recalculates product criticality every week, based on each product's economic weight in recipes.",
+  ajustes_criticidad_last_run: "Last recalc: {relative}",
+  ajustes_criticidad_never_ran: "Not run yet.",
+  relative_minutes_ago: "a few minutes ago",
+  relative_hours_ago: "{n} h ago",
+  relative_days_ago: "{n} days ago",
+  relative_weeks_ago: "{n} weeks ago",
+  relative_months_ago: "over a month ago",
+
+  // ─── A-12 · Self-explaining app (permanent section subtitles) ───
+  section_explainer_inicio:
+    "Your kitchen notebook. Jot down loose ideas and work them with the Assistant when you're ready.",
+  section_explainer_asistente:
+    "Turn ideas into recipes: ask for techniques, tweak a dish until it's sharp.",
+  section_explainer_recetas:
+    "Your recipe book with cost, yield, and waste. Import PDFs or add new ones by hand.",
+  section_explainer_menus:
+    "Combine recipes into menus (tasting, fixed, events) ready to print.",
+
+  // ─── A-12 · Lazy restaurant/project creation ───
+  chat_save_needs_restaurant:
+    "To save, first create your restaurant or project.",
+  lazy_modal_title: "Name your place",
+  lazy_modal_sub:
+    "Restaurant, project, team: whatever you call it. You can change it later.",
+  lazy_modal_placeholder: "Ristorante Marche, My kitchen…",
+  lazy_modal_create: "Create and continue",
+  lazy_modal_cancel: "Cancel",
+
+  // ─── Bloque 5 · Editorial restyle of Menus (mockup) ───
+  menus_header_eyebrow: "MENUS · {count} TOTAL",
+  menus_header_title: "Menu composition",
+  menus_section_in_service: "IN SERVICE",
+  menus_section_others: "OTHERS",
+  menus_new_btn_label: "New menu",
+  menus_new_modal_title: "New menu",
+  menus_new_modal_placeholder: "Menu name",
+  menus_new_modal_create: "Create",
+  menu_eyebrow_season_dishes: "{season} · {count} dishes",
+  menu_eyebrow_dishes_only: "{count} dishes",
+  menu_from_recipe_book: "FROM RECIPE BOOK",
+  menu_btn_edit: "EDIT",
+  menu_btn_pdf: "PDF",
+  menu_category_eyebrow: "{n} · CATEGORY",
+  // Bloque 5 (second pass) · "in service" toggle in the detail header
+  menu_in_service_on: "IN SERVICE",
+  menu_in_service_off: "Out of service",
+  menu_in_service_toggle_a11y: "Turn menu service on or off",
+
+  // ─── A-11 · Localized API errors (lookup by code) ───
+  error_email_invalid: "Invalid email.",
+  error_rate_limited: "Too many requests. Try again in a few minutes.",
+  error_email_send_failed: "Couldn't send the email. Please try again.",
+  error_token_missing: "Missing code or email.",
+  error_token_invalid: "Invalid code. Request a new link.",
+  error_token_expired: "Code expired. Request a new link.",
+  error_invite_rate_limited:
+    "Too many attempts. Wait a few minutes before retrying.",
+  error_invite_code_invalid:
+    "Invalid or expired code. Ask your admin for a new one.",
+  error_already_in_restaurant: "You're already in a restaurant.",
+
+  // ─── BP-01 · Legacy migration Alert labels ───
+  migrate_dryrun_counts: "{recipes} recipes · {ingredients} ingredients",
+  migrate_dryrun_matches:
+    "Matches: {exact} exact / {probable} probable (unlinked) / {none} new drafts",
+
+  // ─── A-12 · Casa as a lobby when there's no restaurant yet ───
+  casa_lobby_title: "You haven't created your place yet",
+  casa_lobby_sub:
+    "Start by creating your restaurant or project, or paste a code to join someone's team.",
+  casa_lobby_btn_create: "Create my place",
+  casa_lobby_btn_join: "I have a code",
+  casa_invite_collapsed: "Invite someone",
+
+  // Allergens — EU Regulation 1169/2011 Annex II. UK FSA wording.
+  allergen_gluten: "Gluten",
+  allergen_crustaceans: "Crustaceans",
+  allergen_eggs: "Eggs",
+  allergen_fish: "Fish",
+  allergen_peanuts: "Peanuts",
+  allergen_soy: "Soybeans",
+  allergen_milk: "Milk",
+  allergen_tree_nuts: "Nuts",
+  allergen_celery: "Celery",
+  allergen_mustard: "Mustard",
+  allergen_sesame: "Sesame",
+  allergen_sulphites: "Sulphites",
+  allergen_lupin: "Lupin",
+  allergen_molluscs: "Molluscs",
+
+  // Phase 2 — footer legend in the client menu preview.
+  menu_allergen_legend_title: "ALLERGENS",
+  // Phase 2 — Sheet for the "+" button on a dish to add an allergen by hand.
+  menu_add_allergen_title: "Add allergen",
+  menu_add_allergen_see_all: "See all 14",
+  menu_add_allergen_see_common: "See common only",
+  // Phase 2 — Global PDF toggle.
+  menu_show_allergens_toggle: "Show allergens on the menu",
 };

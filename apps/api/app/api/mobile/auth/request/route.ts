@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
   const email = (body?.email ?? "").toLowerCase().trim();
 
   if (!email || !email.includes("@")) {
-    return NextResponse.json({ error: "Email inválido" }, { status: 400 });
+    return NextResponse.json({ error: "Email inválido", code: "email_invalid" }, { status: 400 });
   }
 
   const ip =
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
   const limit = rateLimited(email, ip);
   if (!limit.ok) {
     return NextResponse.json(
-      { error: "Demasiadas solicitudes. Intenta más tarde." },
+      { error: "Demasiadas solicitudes. Intenta más tarde.", code: "rate_limited" },
       { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
     );
   }
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       err: err instanceof Error ? err.message : String(err),
       email,
     });
-    return NextResponse.json({ error: "No se pudo enviar el correo" }, { status: 502 });
+    return NextResponse.json({ error: "No se pudo enviar el correo", code: "email_send_failed" }, { status: 502 });
   }
 
   logger.info("magic_link_sent", { email });

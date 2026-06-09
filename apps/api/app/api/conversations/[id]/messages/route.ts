@@ -45,70 +45,120 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const ctx = await requireAuth(req, "capture_idea");
-  if (isNextResponse(ctx)) return ctx;
-  if (!ctx.restaurantId)
-    return new Response(JSON.stringify({ error: "Not in a restaurant" }), { status: 403 });
   const { id: conversationId } = await params;
+  // A-12 — el chef en estado needs-restaurant también puede usar el Asistente.
+  // El cliente apunta a `/api/conversations/preview/messages` cuando todavía
+  // no tiene restaurante. Acá ni buscamos Conversation ni persistimos nada;
+  // el historial vive en memoria del cliente y nos lo manda en `body.history`.
+  // Al "Guardar como receta" se crea el restaurante (lazy), luego la
+  // Conversation real y se hidrata vía /messages/bulk en una sola llamada.
+  const isPreview = conversationId === "preview";
+
+  const ctx = isPreview
+    ? await requireAuth(req)
+    : await requireAuth(req, "capture_idea");
+  if (isNextResponse(ctx)) return ctx;
+  if (!isPreview && !ctx.restaurantId)
+    return new Response(JSON.stringify({ error: "Not in a restaurant" }), { status: 403 });
 
   const body = await req.json();
   const parse = PostMessageRequestSchema.safeParse(body);
   if (!parse.success)
     return new Response(JSON.stringify({ error: parse.error.flatten() }), { status: 400 });
 
-  const conv = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    include: { idea: { select: { text: true } } },
-  });
-  if (!conv || conv.restaurantId !== ctx.restaurantId)
-    return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+  let restaurant: { name: string; identityLine: string | null } | null = null;
+  let recentRecipes: { title: string; state: string }[] = [];
+  let messages: Msg[] = [];
+  let pinnedIdeaText: string | null = null;
+  let byok: Awaited<ReturnType<typeof loadUserBYOK>> | null = null;
 
-  // Persist user message before streaming.
-  await prisma.message.create({
-    data: {
-      conversationId,
-      role: "user",
-      content: parse.data.content,
-    },
-  });
+  if (isPreview) {
+    // Restaurante placeholder — el chef todavía no le puso nombre.
+    restaurant = { name: "Tu cocina", identityLine: null };
 
-  // Build context: recent recipes + pinned idea. loadUserBYOK descifra la
-  // clave si está cifrada y self-heals la legacy plaintext en background.
-  const [restaurant, recentRecipes, history, byok] = await Promise.all([
-    prisma.restaurant.findUnique({
-      where: { id: ctx.restaurantId },
-      select: { name: true, identityLine: true },
-    }),
-    prisma.recipe.findMany({
-      where: { restaurantId: ctx.restaurantId, deletedAt: null },
-      orderBy: { updatedAt: "desc" },
-      take: 8,
-      select: { title: true, state: true },
-    }),
-    // Sliding window: solo re-enviamos los últimos 20 mensajes a Claude. Más
-    // allá de ese tope la conversación crece linealmente en costo/latencia sin
-    // agregar señal útil (Claude ya tiene los principios estables y la idea
-    // anclada en el system prompt). Fetched desc para que `take` aplique al
-    // final cronológico; revertimos abajo antes de armar el array de messages.
-    prisma.message.findMany({
-      where: { conversationId },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-      select: { role: true, content: true },
-    }),
-    loadUserBYOK(ctx.userId),
-  ]);
+    // El cliente manda `history: [{ role, content }, ...]` con los últimos
+    // mensajes acumulados localmente (incluye el user msg actual ya pusheado
+    // o no — defensivo).
+    const rawHistory = Array.isArray((body as { history?: unknown }).history)
+      ? ((body as { history: unknown[] }).history as unknown[])
+      : [];
+    messages = rawHistory
+      .filter((m): m is { role: string; content: string } => {
+        if (typeof m !== "object" || m === null) return false;
+        const r = (m as { role?: unknown }).role;
+        const c = (m as { content?: unknown }).content;
+        return (r === "user" || r === "assistant") && typeof c === "string";
+      })
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+      .slice(-20);
+    // Si el último mensaje no es el `content` que viene en este request,
+    // lo agregamos al final (cliente correcto debería ya incluirlo).
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "user" || last.content !== parse.data.content) {
+      messages.push({ role: "user", content: parse.data.content });
+    }
 
-  if (!restaurant)
-    return new Response(JSON.stringify({ error: "Restaurant not found" }), { status: 404 });
+    byok = await loadUserBYOK(ctx.userId);
+  } else {
+    const conv = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { idea: { select: { text: true } } },
+    });
+    if (!conv || conv.restaurantId !== ctx.restaurantId)
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
 
-  const messages: Msg[] = history
-    .slice()
-    .reverse()
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+    pinnedIdeaText = conv.idea?.text ?? null;
 
-  const system = buildSystemBlocks(restaurant, recentRecipes, conv.idea?.text ?? null);
+    // Persist user message before streaming.
+    await prisma.message.create({
+      data: {
+        conversationId,
+        role: "user",
+        content: parse.data.content,
+      },
+    });
+
+    // Build context: recent recipes + pinned idea. loadUserBYOK descifra la
+    // clave si está cifrada y self-heals la legacy plaintext en background.
+    const [r, recent, history, byokLoaded] = await Promise.all([
+      prisma.restaurant.findUnique({
+        where: { id: ctx.restaurantId },
+        select: { name: true, identityLine: true },
+      }),
+      prisma.recipe.findMany({
+        where: { restaurantId: ctx.restaurantId, deletedAt: null },
+        orderBy: { updatedAt: "desc" },
+        take: 8,
+        select: { title: true, state: true },
+      }),
+      // Sliding window: solo re-enviamos los últimos 20 mensajes a Claude. Más
+      // allá de ese tope la conversación crece linealmente en costo/latencia sin
+      // agregar señal útil (Claude ya tiene los principios estables y la idea
+      // anclada en el system prompt). Fetched desc para que `take` aplique al
+      // final cronológico; revertimos abajo antes de armar el array de messages.
+      prisma.message.findMany({
+        where: { conversationId },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { role: true, content: true },
+      }),
+      loadUserBYOK(ctx.userId),
+    ]);
+
+    if (!r)
+      return new Response(JSON.stringify({ error: "Restaurant not found" }), { status: 404 });
+
+    restaurant = r;
+    recentRecipes = recent;
+    byok = byokLoaded;
+    messages = history
+      .slice()
+      .reverse()
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+  }
+
+  const system = buildSystemBlocks(restaurant, recentRecipes, pinnedIdeaText);
   // El mobile siempre manda `model` explícito (apps/mobile/src/api/conversations.ts).
   // Si un cliente futuro lo omite, default a Sonnet — barato/rápido para chat.
   // No usamos conv.modelUsed como fallback para evitar perpetuar Opus en turnos
@@ -130,6 +180,25 @@ export async function POST(
       let aborted = false;
       let errored = false;
 
+      // A-05 — heartbeat cada 8s ANTES de que llegue el primer delta del
+      // modelo. Mantiene viva la conexión y resetea el inactivity timer del
+      // cliente (35s); también es la señal con la que mobile decide cuándo
+      // mostrar el indicador "Atelier piensa •••". Se cancela apenas el
+      // modelo emite el primer texto.
+      let firstDeltaReceived = false;
+      const heartbeatInterval = setInterval(() => {
+        if (firstDeltaReceived || aborted || errored) return;
+        try {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "heartbeat", ts: Date.now() })}\n\n`,
+            ),
+          );
+        } catch {
+          // El cliente ya cerró; el finally limpia el interval.
+        }
+      }, 8_000);
+
       try {
         if (byok) {
           // User's own provider + key.
@@ -140,9 +209,14 @@ export async function POST(
             system: flatSystem,
             messages,
             signal: req.signal,
-            maxTokens: 2048,
+            // A-01b — antes 2048: las recetas largas se cortaban en el cap
+            // (texto visible + bloque <recipe_payload> JSON al final
+            // necesitan ~3-4k tokens). Cobramos por tokens generados, no
+            // por max; los chats simples no se ven afectados.
+            maxTokens: 4096,
           })) {
             if (ev.type === "delta") {
+              if (!firstDeltaReceived) firstDeltaReceived = true;
               assistantText += ev.text;
               controller.enqueue(
                 encoder.encode(`data: ${JSON.stringify({ type: "delta", text: ev.text })}\n\n`),
@@ -158,7 +232,11 @@ export async function POST(
           const anthroStream = anthropic.messages.stream(
             {
               model: MODEL_IDS[model],
-              max_tokens: 2048,
+              // A-01b — antes 2048: las recetas largas (texto visible +
+              // bloque <recipe_payload> al final) se cortaban en el cap.
+              // Se cobra por tokens generados, no por max; los chats
+              // simples no notan diferencia.
+              max_tokens: 4096,
               system,
               messages,
               // Sonnet 4.6 defaults to effort=high; force low for chat workloads
@@ -175,6 +253,7 @@ export async function POST(
 
           for await (const event of anthroStream) {
             if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+              if (!firstDeltaReceived) firstDeltaReceived = true;
               assistantText += event.delta.text;
               controller.enqueue(
                 encoder.encode(
@@ -227,11 +306,16 @@ export async function POST(
           } catch {}
         }
       } finally {
+        // A-05: parar heartbeats en cualquier salida (delta llegó, abort, error).
+        clearInterval(heartbeatInterval);
+
         // Persistence policy: only persist the assistant turn on a clean completion.
         // On abort/error we skip persistence rather than storing partial text — the
         // Message schema has no "partial"/"error" flag and adding one requires a
         // Prisma migration (out of scope for this fix). The client can retry.
-        if (assistantText && !aborted && !errored) {
+        // A-12: en modo preview NO persistimos — el cliente va a subir el
+        // historial entero con /messages/bulk cuando cree el restaurante.
+        if (!isPreview && assistantText && !aborted && !errored) {
           await prisma.message.create({
             data: {
               conversationId,

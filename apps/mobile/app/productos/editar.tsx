@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -24,6 +25,14 @@ import { Screen } from "@/src/components/Screen";
 import { useI18n } from "@/src/hooks/useI18n";
 import { showToast } from "@/src/components/Toast";
 import { getProduct, patchProduct } from "@/src/api/products";
+import {
+  PezzaturaField,
+  getInitialPezzaturaInput,
+} from "@/src/components/PezzaturaField";
+import {
+  detectPezzaturaFromName,
+  formatPezzatura,
+} from "@atelier/shared";
 import type {
   Criticality,
   PatchProductRequest,
@@ -72,7 +81,16 @@ export default function EditarProductoScreen() {
 
   const [name, setName] = useState("");
   const [category, setCategory] = useState<ProductCategory>("otro");
-  const [pezzatura, setPezzatura] = useState("");
+  // Entrega A.5: pezzaturaInput es el structured field (parser → mode/min/max).
+  // El campo legacy `pezzatura: string` ya no se expone en el form; queda en
+  // DB para deprecación gradual.
+  const [pezzaturaInput, setPezzaturaInput] = useState("");
+  // Fase 9 — snapshots iniciales para detectar desincronización al renombrar.
+  // Si el chef cambió el nombre Y el nuevo nombre contiene calibre distinto
+  // al cargado, mostramos Alert al save.
+  const [initialName, setInitialName] = useState("");
+  const [initialPezzaturaInput, setInitialPezzaturaInput] = useState("");
+  const [recipesUsingByUnitCount, setRecipesUsingByUnitCount] = useState(0);
   const [unidad, setUnidad] = useState<ProductUnit>("kg");
   const [precioInput, setPrecioInput] = useState("");
   const [mermaInput, setMermaInput] = useState("");
@@ -90,8 +108,14 @@ export default function EditarProductoScreen() {
       try {
         const p = await getProduct(id);
         setName(p.name);
+        setInitialName(p.name);
         setCategory(p.category);
-        setPezzatura(p.pezzatura ?? "");
+        // Pre-popular pezzaturaInput desde los structured fields; si está null
+        // queda "" y el campo (si la categoría aplica) aparece vacío.
+        const initialPzInput = getInitialPezzaturaInput(p);
+        setPezzaturaInput(initialPzInput);
+        setInitialPezzaturaInput(initialPzInput);
+        setRecipesUsingByUnitCount(p.recipesUsingByUnitCount);
         setUnidad(p.unidadCompra);
         setPrecioInput(p.precioCompra > 0 ? (p.precioCompra / 100).toFixed(2) : "");
         setMermaInput(p.mermaPct.toFixed(2).replace(/\.?0+$/, ""));
@@ -109,69 +133,131 @@ export default function EditarProductoScreen() {
     })();
   }, [id, t]);
 
-  const handleSave = useCallback(async () => {
+  // Helper interno: arma el payload y lo manda. Si se pasa
+  // `pezzaturaOverride`, lo usa en vez de `pezzaturaInput` del state
+  // (Fase 9 — el chef aceptó actualizar desde el aviso de desincronización).
+  const submitPatch = useCallback(
+    async (pezzaturaOverride?: string) => {
+      if (!id) return;
+      const trimmedName = name.trim();
+      const cents = parseEurosToCents(precioInput) ?? 0;
+      const merma = parseMermaPct(mermaInput);
+
+      const aliases = aliasesInput
+        .split(",")
+        .map((a) => a.trim())
+        .filter((a) => a.length > 0);
+
+      const pzRaw =
+        pezzaturaOverride !== undefined
+          ? pezzaturaOverride
+          : pezzaturaInput.trim();
+      const payload: PatchProductRequest = {
+        name: trimmedName,
+        category,
+        // pezzaturaInput vacío → server limpia los 3 structured fields.
+        // No-vacío → server parsea y persiste. El campo legacy `pezzatura`
+        // no se toca acá (queda como esté en DB).
+        pezzaturaInput: pzRaw === "" ? null : pzRaw,
+        unidadCompra: unidad,
+        precioCompra: cents,
+        mermaPct: merma ?? undefined,
+        proveedor: proveedor.trim() || null,
+        notas: notas.trim() || null,
+        aliases,
+      };
+
+      if (criticality === "auto") {
+        if (wasManual) payload.criticalityManual = false;
+      } else if (criticality !== originalCriticality || !wasManual) {
+        payload.criticality = criticality;
+      }
+
+      setSaving(true);
+      try {
+        await patchProduct(id, payload);
+        showToast(t("toast_producto_saved"));
+        router.back();
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : t("error_network"));
+      } finally {
+        setSaving(false);
+      }
+    },
+    [
+      id,
+      name,
+      category,
+      pezzaturaInput,
+      unidad,
+      precioInput,
+      mermaInput,
+      proveedor,
+      notas,
+      aliasesInput,
+      criticality,
+      originalCriticality,
+      wasManual,
+      router,
+      t,
+    ],
+  );
+
+  const handleSave = useCallback(() => {
     if (!id || saving) return;
     const trimmedName = name.trim();
     if (!trimmedName) {
       showToast(t("producto_form_name_label"));
       return;
     }
-    const cents = parseEurosToCents(precioInput) ?? 0;
-    const merma = parseMermaPct(mermaInput);
 
-    const aliases = aliasesInput
-      .split(",")
-      .map((a) => a.trim())
-      .filter((a) => a.length > 0);
-
-    const payload: PatchProductRequest = {
-      name: trimmedName,
-      category,
-      pezzatura: pezzatura.trim() || null,
-      unidadCompra: unidad,
-      precioCompra: cents,
-      mermaPct: merma ?? undefined,
-      proveedor: proveedor.trim() || null,
-      notas: notas.trim() || null,
-      aliases,
-    };
-
-    // criticality: "auto" → reset manual flag. Específica → mandar valor
-    // (el server marca manual). Para no spamear el manual flag, solo
-    // mandamos criticality si efectivamente cambió o si el actual no era
-    // manual y queremos forzar manual.
-    if (criticality === "auto") {
-      if (wasManual) payload.criticalityManual = false;
-    } else if (criticality !== originalCriticality || !wasManual) {
-      payload.criticality = criticality;
+    // Fase 9 — Aviso de desincronización al renombrar.
+    // Dispara si:
+    //   1. El name cambió respecto al cargado.
+    //   2. El producto tenía pezzatura cargada al cargar (no es null).
+    //   3. El chef NO modificó manualmente el pezzaturaInput en este editor
+    //      (sino el suyo gana — el aviso solo previene desincronización por
+    //      cambio de nombre, no pisa lo que el chef escribió).
+    //   4. detectPezzaturaFromName(newName) devuelve un valor distinto al
+    //      cargado (en formato canónico para comparar).
+    const nameChanged = trimmedName !== initialName;
+    const pezzaturaUnchanged = pezzaturaInput.trim() === initialPezzaturaInput;
+    if (nameChanged && initialPezzaturaInput !== "" && pezzaturaUnchanged) {
+      const detected = detectPezzaturaFromName(trimmedName, category);
+      const detectedCanonical = detected ? formatPezzatura(detected) : null;
+      if (detectedCanonical && detectedCanonical !== initialPezzaturaInput) {
+        Alert.alert(
+          t("rename_pezzatura_desync_title"),
+          t("rename_pezzatura_desync_body", {
+            detected: detectedCanonical,
+            current: initialPezzaturaInput,
+          }),
+          [
+            {
+              text: t("rename_pezzatura_keep"),
+              style: "cancel",
+              onPress: () => void submitPatch(),
+            },
+            {
+              text: t("rename_pezzatura_update"),
+              onPress: () => void submitPatch(detectedCanonical),
+            },
+          ],
+          { cancelable: false },
+        );
+        return;
+      }
     }
-
-    setSaving(true);
-    try {
-      await patchProduct(id, payload);
-      showToast(t("toast_producto_saved"));
-      router.back();
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
-    } finally {
-      setSaving(false);
-    }
+    void submitPatch();
   }, [
     id,
     saving,
     name,
+    initialName,
+    pezzaturaInput,
+    initialPezzaturaInput,
     category,
-    pezzatura,
-    unidad,
-    precioInput,
-    mermaInput,
-    proveedor,
-    notas,
-    aliasesInput,
-    criticality,
-    originalCriticality,
-    wasManual,
-    router,
+    submitPatch,
     t,
   ]);
 
@@ -230,14 +316,13 @@ export default function EditarProductoScreen() {
             ))}
           </ScrollView>
 
-          <Text style={styles.label}>{t("producto_form_pezzatura_label")}</Text>
-          <TextInput
-            value={pezzatura}
-            onChangeText={setPezzatura}
-            placeholder={t("producto_form_pezzatura_placeholder")}
-            placeholderTextColor={colors.mute}
-            style={styles.input}
-            maxLength={100}
+          {/* Pezzatura — visibilidad dinámica según categoría + uso por unidad */}
+          <PezzaturaField
+            name={name}
+            category={category}
+            value={pezzaturaInput}
+            onChangeValue={setPezzaturaInput}
+            recipesUsingByUnitCount={recipesUsingByUnitCount}
           />
 
           <Text style={styles.label}>{t("producto_form_unidad_label")}</Text>

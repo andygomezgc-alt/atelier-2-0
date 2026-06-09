@@ -1,24 +1,44 @@
-import { memo, useCallback, useState } from "react";
+// Bloque 5 — Lista de menús "Composición de la carta" con secciones
+// EN SERVICIO (tarjeta teal del menú con updatedAt más reciente con platos) y
+// OTROS (cards normales). Sin etiquetas Activo/Archivado/Borrador — heurística
+// updatedAt, no toca schema. Botón "+" arriba abre NewMenuSheet (reemplaza el
+// input inline anterior).
+
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import * as SecureStore from "@/src/lib/secure-storage";
 import { Screen } from "@/src/components/Screen";
 import { Empty } from "@/src/components/Empty";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
+import { SectionExplainer } from "@/src/components/SectionExplainer";
+import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
+import { NewMenuSheet } from "@/src/components/NewMenuSheet";
+import { ExportPreviewSheet } from "@/src/components/ExportPreviewSheet";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
-import { createMenu, listMenus, deleteMenu, type Menu } from "@/src/api/menus";
+import { createMenu, listMenus, deleteMenu, getMenu, type Menu, type MenuFull } from "@/src/api/menus";
 import { showToast } from "@/src/components/Toast";
+import { TOKEN_KEY } from "@/src/api/client";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+
+const API = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+
+function sanitizeFilename(name: string): string {
+  const cleaned = name.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim();
+  return cleaned || "menu";
+}
 
 export default function MenusScreen() {
   const { t } = useI18n();
@@ -27,16 +47,26 @@ export default function MenusScreen() {
 
   const [menus, setMenus] = useState<Menu[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newName, setNewName] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [newSheetOpen, setNewSheetOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Menu | null>(null);
+  // El botón PDF de la card abre la previsualización (no descarga directo).
+  // La descarga vive dentro del ExportPreviewSheet, igual que cuando se
+  // entra al menú vía EDITAR. `previewExporting` controla el spinner del
+  // botón de descarga dentro del preview.
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewMenu, setPreviewMenu] = useState<MenuFull | null>(null);
+  const [previewExporting, setPreviewExporting] = useState(false);
 
   const role =
     state.status === "signed-in" || state.status === "needs-restaurant"
       ? state.user.role
       : "viewer";
-  const canCreate = can(role, "create_menu");
+  const hasRestaurant =
+    (state.status === "signed-in" || state.status === "needs-restaurant") &&
+    Boolean(state.user.restaurantId);
+  const canCreate = !hasRestaurant || can(role, "create_menu");
   const canDelete = can(role, "delete_menu");
+  const canEdit = can(role, "edit_menu");
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -55,18 +85,18 @@ export default function MenusScreen() {
     }, [reload]),
   );
 
-  async function handleCreate() {
-    const name = newName.trim();
-    if (!name || creating) return;
-    setCreating(true);
+  async function handleCreate(name: string) {
     try {
+      // A-12: lazy create del sitio si todavía no hay restaurante.
+      try {
+        await ensureRestaurant();
+      } catch {
+        return;
+      }
       const menu = await createMenu({ name });
       setMenus((prev) => [menu, ...prev]);
-      setNewName("");
     } catch (err) {
       showToast(err instanceof Error ? err.message : t("error_network"));
-    } finally {
-      setCreating(false);
     }
   }
 
@@ -74,7 +104,6 @@ export default function MenusScreen() {
     if (!pendingDelete) return;
     const id = pendingDelete.id;
     setPendingDelete(null);
-    // Optimistic removal so the card disappears immediately; reload on error.
     const prev = menus;
     setMenus((m) => m.filter((x) => x.id !== id));
     try {
@@ -85,61 +114,168 @@ export default function MenusScreen() {
     }
   }
 
-  // Handlers estables para que MenuCard memo no se re-renderice por tipear
-  // en el input de crear.
+  // Descarga el PDF y dispara share-sheet. Toma `{id, name}` para servir
+  // tanto al Menu de la lista (legacy) como al MenuFull del preview (nuevo
+  // flujo unificado). El botón de la card ya no llama esto directo — pasa
+  // por el preview, y el preview llama `downloadAndShare` vía onDownload.
+  async function downloadAndShare(menu: { id: string; name: string }) {
+    try {
+      const token = await SecureStore.getItemAsync(TOKEN_KEY);
+      const url = `${API}/api/menus/${menu.id}/pdf`;
+      const fileUri = `${FileSystem.cacheDirectory}${encodeURIComponent(sanitizeFilename(menu.name))}.pdf`;
+      const dl = await FileSystem.downloadAsync(url, fileUri, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (dl.status !== 200) throw new Error("Export failed");
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(dl.uri, { mimeType: "application/pdf" });
+        showToast(t("toast_pdf_shared"));
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    }
+  }
+
+  // Abre el ExportPreviewSheet con el detalle del menú. El detalle se
+  // re-fetchea cada vez (no se cachea entre aperturas) para garantizar que
+  // los alérgenos/iconos reflejen el estado actual.
+  async function openPreview(m: Menu) {
+    try {
+      const detail = await getMenu(m.id);
+      setPreviewMenu(detail);
+      setPreviewOpen(true);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    }
+  }
+
+  // Reconciliation silenciosa cuando el sheet hace add/remove allergen
+  // manual o toggle: re-fetch del detalle sin tocar `loading` (el sheet
+  // queda montado y reactivo a la prop nueva).
+  async function reloadPreview() {
+    if (!previewMenu) return;
+    try {
+      setPreviewMenu(await getMenu(previewMenu.id));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    }
+  }
+
+  // Bloque 5 (segunda tanda) — estado "en servicio" real, controlado por el
+  // chef desde el toggle del header. Varios menús pueden estar en servicio
+  // simultáneamente (carta fija + degustación + …). La heurística updatedAt
+  // que estaba acá fue reemplazada por el filtro real m.inService.
+  const { inService, others } = useMemo(() => {
+    return {
+      inService: menus.filter((m) => m.inService),
+      others: menus.filter((m) => !m.inService),
+    };
+  }, [menus]);
+
   const handleCardPress = useCallback(
     (id: string) => router.push({ pathname: "/menus/[id]", params: { id } }),
     [router],
   );
-  const handleDeletePress = useCallback((m: Menu) => setPendingDelete(m), []);
+
   const renderItem = useCallback(
     ({ item }: { item: Menu }) => (
       <MenuCard
         item={item}
         canDelete={canDelete}
         onPress={handleCardPress}
-        onDelete={handleDeletePress}
+        onDelete={(m) => setPendingDelete(m)}
         deleteLabel={t("confirm_delete")}
+        dishesLabel={t("menu_eyebrow_dishes_only", { count: item.itemCount })}
       />
     ),
-    [canDelete, handleCardPress, handleDeletePress, t],
+    [canDelete, handleCardPress, t],
   );
   const keyExtractor = useCallback((m: Menu) => m.id, []);
 
-  const header = canCreate ? (
-    <View style={styles.createBox}>
-      <TextInput
-        value={newName}
-        onChangeText={setNewName}
-        placeholder="Nombre del menú"
-        placeholderTextColor={colors.mute}
-        style={styles.createInput}
-        onSubmitEditing={handleCreate}
-        maxLength={120}
-      />
-      <Pressable
-        onPress={handleCreate}
-        disabled={!newName.trim() || creating}
-        style={[
-          styles.createBtn,
-          (!newName.trim() || creating) && styles.createBtnDisabled,
-        ]}
-      >
-        <Ionicons name="add" size={18} color={colors.paper} />
-        <Text style={styles.createLabel}>{creating ? "…" : "Crear"}</Text>
-      </Pressable>
+  const headerComponent = (
+    <View>
+      <View style={styles.header}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerEyebrow}>
+            {t("menus_header_eyebrow", { count: menus.length })}
+          </Text>
+          <Text style={styles.headerTitle}>{t("menus_header_title")}</Text>
+        </View>
+        {canCreate ? (
+          <Pressable
+            style={styles.plusBtn}
+            onPress={() => setNewSheetOpen(true)}
+            accessibilityLabel={t("menus_new_btn_label")}
+          >
+            <Ionicons name="add" size={20} color={colors.ink} />
+          </Pressable>
+        ) : null}
+      </View>
+
+      {inService.length > 0 ? (
+        <View style={styles.inServiceWrap}>
+          <Text style={styles.sectionEyebrow}>{t("menus_section_in_service")}</Text>
+          {/* Bug-fix Bloque 5: las cards NO son Pressable (Pressable anidado
+              dentro de Pressable rompía EDITAR/PDF). Bloque 5 segunda tanda:
+              con varios menús en servicio simultáneo, la card se compacta —
+              padding, serif y altura ajustados — para no ocupar toda la
+              pantalla. Un solo menú = tarjeta grande del mockup. */}
+          {inService.map((m) => {
+            const compact = inService.length > 1;
+            return (
+              <View
+                key={m.id}
+                style={[styles.inServiceCard, compact && styles.inServiceCardCompact]}
+              >
+                <Text style={styles.inServiceSeason}>
+                  {m.season
+                    ? t("menu_eyebrow_season_dishes", {
+                        season: m.season,
+                        count: m.itemCount,
+                      })
+                    : t("menu_eyebrow_dishes_only", { count: m.itemCount })}
+                </Text>
+                <Text style={[styles.inServiceName, compact && styles.inServiceNameCompact]}>
+                  {m.name}
+                </Text>
+                <View style={styles.inServiceActions}>
+                  <Pressable style={styles.btnEdit} onPress={() => handleCardPress(m.id)}>
+                    <Ionicons name="create-outline" size={14} color={colors.paper} />
+                    <Text style={styles.btnEditLabel}>{t("menu_btn_edit")}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.btnPdf}
+                    onPress={() => void openPreview(m)}
+                  >
+                    <Ionicons name="document-text-outline" size={14} color={colors.paper} />
+                    <Text style={styles.btnPdfLabel}>{t("menu_btn_pdf")}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+
+      {others.length > 0 ? (
+        <Text style={[styles.sectionEyebrow, styles.othersEyebrow]}>
+          {t("menus_section_others")}
+        </Text>
+      ) : null}
     </View>
-  ) : null;
+  );
 
   return (
-    <Screen title={t("header_menus")}>
+    <Screen>
+      <SectionExplainer text={t("section_explainer_menus")} />
       <FlatList
-        data={menus}
+        data={others}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
+        style={{ flex: 1 }}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
-        ListHeaderComponent={header}
+        ListHeaderComponent={headerComponent}
         initialNumToRender={10}
         maxToRenderPerBatch={5}
         windowSize={11}
@@ -147,10 +283,16 @@ export default function MenusScreen() {
         ListEmptyComponent={
           loading ? (
             <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
-          ) : (
+          ) : !inService ? (
             <Empty icon="list-outline" title={t("empty_menus_title")} sub={t("empty_menus_sub")} />
-          )
+          ) : null
         }
+      />
+
+      <NewMenuSheet
+        open={newSheetOpen}
+        onClose={() => setNewSheetOpen(false)}
+        onCreate={handleCreate}
       />
       <ConfirmSheet
         open={!!pendingDelete}
@@ -162,32 +304,60 @@ export default function MenusScreen() {
         onConfirm={handleDelete}
         onCancel={() => setPendingDelete(null)}
       />
+
+      {/* PDF unificado: el botón PDF de la card abre la previsualización
+          (mismo componente que el del editor del menú). Iconos + leyenda +
+          toggle + "+" funcionan igual. La descarga vive dentro del sheet,
+          vía onDownload. previewMenu queda guardado entre aperturas — al
+          cerrar el sheet el contenido se conserva hasta el próximo openPreview
+          (que re-fetchea el detalle fresco). */}
+      {previewMenu ? (
+        <ExportPreviewSheet
+          open={previewOpen}
+          menu={previewMenu}
+          exporting={previewExporting}
+          canEdit={canEdit}
+          onClose={() => setPreviewOpen(false)}
+          onChanged={() => void reloadPreview()}
+          onDownload={async () => {
+            if (!previewMenu) return;
+            setPreviewExporting(true);
+            try {
+              await downloadAndShare(previewMenu);
+              setPreviewOpen(false);
+            } finally {
+              setPreviewExporting(false);
+            }
+          }}
+        />
+      ) : null}
     </Screen>
   );
 }
 
-// Card memoizada — refs estables desde el padre evitan que tipear en el input
-// de crear re-renderice las 30 cards de menús.
+// Card normal para la sección "OTROS". Sin etiquetas de estado (decisión
+// visual: heurística sin schema).
 const MenuCard = memo(function MenuCard({
   item,
   canDelete,
   onPress,
   onDelete,
   deleteLabel,
+  dishesLabel,
 }: {
   item: Menu;
   canDelete: boolean;
   onPress: (id: string) => void;
   onDelete: (m: Menu) => void;
   deleteLabel: string;
+  dishesLabel: string;
 }) {
   return (
     <Pressable style={styles.card} onPress={() => onPress(item.id)}>
       <View style={{ flex: 1, gap: 4 }}>
-        <Text style={styles.title}>{item.name}</Text>
-        {item.season ? <Text style={styles.season}>{item.season}</Text> : null}
-        <Text style={styles.count}>
-          {item.itemCount} {item.itemCount === 1 ? "plato" : "platos"}
+        <Text style={styles.cardTitle}>{item.name}</Text>
+        <Text style={styles.cardMeta}>
+          {item.season ? `${dishesLabel} · ${item.season}` : dishesLabel}
         </Text>
       </View>
       {canDelete ? (
@@ -208,39 +378,115 @@ const MenuCard = memo(function MenuCard({
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.xl,
-    paddingTop: spacing.xl,
+    paddingTop: spacing.md,
     paddingBottom: spacing.xxl,
     gap: spacing.sm,
   },
-  createBox: {
+  header: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.paperSoft,
-    borderRadius: radii.md,
+    alignItems: "flex-start",
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  headerEyebrow: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.eyebrow,
+    color: colors.mute,
+    letterSpacing: 1.4,
+  },
+  headerTitle: {
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifXl,
+    color: colors.ink,
+    lineHeight: fontSizes.serifXl * 1.15,
+  },
+  plusBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.pill,
     borderWidth: 0.5,
     borderColor: colors.edge,
-    padding: spacing.sm,
+    backgroundColor: colors.paper,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sectionEyebrow: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.eyebrow,
+    color: colors.mute,
+    letterSpacing: 1.4,
     marginBottom: spacing.sm,
   },
-  createInput: {
-    flex: 1,
-    fontFamily: fonts.sans,
-    fontSize: fontSizes.body,
-    color: colors.ink,
-    paddingHorizontal: spacing.sm,
+  othersEyebrow: {
+    marginTop: spacing.lg,
   },
-  createBtn: {
+  inServiceWrap: {
+    marginBottom: spacing.lg,
+  },
+  inServiceCard: {
+    backgroundColor: colors.teal,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  // Bloque 5 segunda tanda — cuando hay varias cartas en servicio, cada una
+  // se compacta: menos padding, tipografía un punto más chica, sin gap extra.
+  inServiceCardCompact: {
+    padding: spacing.md,
+    gap: 2,
+  },
+  inServiceNameCompact: {
+    fontSize: fontSizes.serifMd,
+    marginBottom: spacing.xs,
+  },
+  inServiceSeason: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.eyebrow,
+    color: colors.paperWarm,
+    letterSpacing: 1.4,
+    opacity: 0.85,
+  },
+  inServiceName: {
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifLg,
+    color: colors.paper,
+    lineHeight: fontSizes.serifLg * 1.2,
+    marginTop: 2,
+    marginBottom: spacing.sm,
+  },
+  inServiceActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  btnEdit: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    justifyContent: "center",
+    gap: spacing.xs,
     backgroundColor: colors.terracota,
-    borderRadius: radii.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
+    borderRadius: radii.md,
+    paddingVertical: spacing.sm + 2,
   },
-  createBtnDisabled: { opacity: 0.4 },
-  createLabel: {
+  btnEditLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.paper,
+    fontWeight: "600",
+    letterSpacing: 1.2,
+  },
+  btnPdf: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.tealSoft,
+    borderRadius: radii.md,
+    paddingVertical: spacing.sm + 2,
+  },
+  btnPdfLabel: {
     fontFamily: fonts.sans,
     fontSize: fontSizes.caption,
     color: colors.paper,
@@ -257,13 +503,16 @@ const styles = StyleSheet.create({
     borderColor: colors.edge,
     padding: spacing.md,
   },
-  title: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.serifLg,
+  cardTitle: {
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBody,
     color: colors.ink,
   },
-  season: { fontFamily: fonts.sans, fontSize: fontSizes.bodySm, color: colors.mute },
-  count: { fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.mute, marginTop: 2 },
-  deleteBtn: { padding: spacing.xs },
+  cardMeta: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.mute,
+    letterSpacing: 0.4,
+  },
+  deleteBtn: { padding: 4 },
 });

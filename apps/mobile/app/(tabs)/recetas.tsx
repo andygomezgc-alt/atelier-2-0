@@ -14,6 +14,8 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Empty } from "@/src/components/Empty";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
+import { SectionExplainer } from "@/src/components/SectionExplainer";
+import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n } from "@/src/hooks/useI18n";
 import { listRecipes, deleteRecipe, type Recipe, type ListFilters } from "@/src/api/recipes";
 import { showToast } from "@/src/components/Toast";
@@ -59,7 +61,13 @@ export default function RecetasScreen() {
       ? authState.user.role
       : "viewer";
   const canDelete = can(role, "approve_recipe");
-  const canCreate = can(role, "edit_recipe");
+  // A-12: en needs-restaurant el role default es viewer pero el chef va a ser
+  // admin de su sitio en cuanto cree el restaurante (lazy). Le mostramos los
+  // botones de crear para que la app le diga qué puede hacer.
+  const hasRestaurant =
+    (authState.status === "signed-in" || authState.status === "needs-restaurant") &&
+    Boolean(authState.user.restaurantId);
+  const canCreate = !hasRestaurant || can(role, "edit_recipe");
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -121,18 +129,26 @@ export default function RecetasScreen() {
 
   return (
     <Screen title={t("header_recetas")}>
+      <SectionExplainer text={t("section_explainer_recetas")} />
       {canCreate ? (
         <View style={styles.createRow}>
           <Pressable
             style={styles.createBtn}
-            onPress={() => router.push("/recetas/nueva")}
+            onPress={async () => {
+              // A-12 — lazy create del sitio si todavía no hay restaurante.
+              try { await ensureRestaurant(); } catch { return; }
+              router.push("/recetas/nueva");
+            }}
           >
             <Ionicons name="add" size={16} color={colors.paper} />
             <Text style={styles.createLabel}>{t("btn_crear_receta")}</Text>
           </Pressable>
           <Pressable
             style={styles.uploadBtn}
-            onPress={() => router.push("/recetas/cargar")}
+            onPress={async () => {
+              try { await ensureRestaurant(); } catch { return; }
+              router.push("/recetas/cargar");
+            }}
           >
             <Ionicons name="cloud-upload-outline" size={16} color={colors.terracota} />
             <Text style={styles.uploadLabel}>{t("btn_cargar_receta")}</Text>
@@ -215,6 +231,21 @@ export default function RecetasScreen() {
 // Card memoizada. Props se mantienen referencialmente estables desde el padre
 // (useCallback + t estable de useI18n), así un keystroke en el search no
 // re-renderiza las 50 cards — solo el ítem que realmente cambió.
+// C-06a: cents → "€3.20" (formato chico para card; sin separador de miles
+// porque los precios de plato/coste por porción no llegan a 4 cifras).
+function formatEuroFromCents(cents: number): string {
+  return `€${(cents / 100).toFixed(2)}`;
+}
+
+type RecipeCardTFn = (
+  key:
+    | "state_draft"
+    | "state_in_test"
+    | "state_approved"
+    | "recetas_card_cost_label"
+    | "recetas_card_pvp_label",
+) => string;
+
 const RecipeCard = memo(function RecipeCard({
   item,
   canDelete,
@@ -226,8 +257,12 @@ const RecipeCard = memo(function RecipeCard({
   canDelete: boolean;
   onPress: (id: string) => void;
   onDelete: (r: Recipe) => void;
-  t: (key: "state_draft" | "state_in_test" | "state_approved") => string;
+  t: RecipeCardTFn;
 }) {
+  // C-06a — solo renderizamos la línea si hay al menos un dato. Si no hay
+  // coste computable ni PVP, no ensuciamos la card con "—".
+  const hasCost = item.perPortionCents != null;
+  const hasPvp = item.salePrice != null;
   return (
     <Pressable style={styles.recipeCard} onPress={() => onPress(item.id)}>
       <View style={{ flex: 1 }}>
@@ -242,6 +277,21 @@ const RecipeCard = memo(function RecipeCard({
           ) : null}
           <Text style={styles.author}>{item.authorName}</Text>
         </View>
+        {hasCost || hasPvp ? (
+          <View style={styles.priceRow}>
+            {hasCost ? (
+              <Text style={styles.priceCost}>
+                {t("recetas_card_cost_label")} {formatEuroFromCents(item.perPortionCents!)}
+              </Text>
+            ) : null}
+            {hasCost && hasPvp ? <Text style={styles.priceSep}> · </Text> : null}
+            {hasPvp ? (
+              <Text style={styles.pricePvp}>
+                {t("recetas_card_pvp_label")} {formatEuroFromCents(item.salePrice!)}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
       </View>
       {canDelete ? (
         <Pressable hitSlop={10} onPress={() => onDelete(item)}>
@@ -295,21 +345,21 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 0.8,
   },
+  // Bloque 4 · C-03 — par Crear (terracota) + Cargar (teal) siguiendo el
+  // patrón EDITAR/PDF de Menús: ambas solid, secondary en tealSoft + paper.
   uploadBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
-    backgroundColor: colors.paperSoft,
+    backgroundColor: colors.tealSoft,
     borderRadius: radii.pill,
-    borderWidth: 0.5,
-    borderColor: colors.terracota,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs + 4,
   },
   uploadLabel: {
     fontFamily: fonts.sans,
     fontSize: fontSizes.caption,
-    color: colors.terracota,
+    color: colors.paper,
     fontWeight: "600",
     letterSpacing: 0.8,
   },
@@ -366,9 +416,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   recipeTitle: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.body,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBody,
     color: colors.ink,
   },
   metaRow: { flexDirection: "row", gap: spacing.xs, alignItems: "center", marginTop: spacing.xs },
@@ -381,4 +430,15 @@ const styles = StyleSheet.create({
   priorityChip: { flexDirection: "row", alignItems: "center", gap: 2 },
   priorityLabel: { color: colors.terracota, fontFamily: fonts.sans, fontSize: 10 },
   author: { fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.mute },
+  // C-06a — línea de coste/PVP debajo de chips. Coste mute (info derivada),
+  // PVP destacado en ink + bold (es la decisión del chef).
+  priceRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  priceCost: { fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.mute },
+  priceSep: { fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.mute },
+  pricePvp: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.ink,
+    fontWeight: "600",
+  },
 });

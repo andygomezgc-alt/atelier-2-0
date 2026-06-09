@@ -1,0 +1,61 @@
+Certo, Chef. Desarrollemos esta propuesta para que sea completamente reproducible, con todos los detalles técnicos y de ejecución.
+
+### Sashimi di Ricciola, Leche de Tigre Moras e Lamponi al Shiro Miso
+
+Una preparación que busca el equilibrio entre la grasa sutil de la ricciola, la acidez matizada de los frutos rojos y la profundidad umami del *garum* y el *shiro miso*, con una frescura herbácea.
+
+**Ingredienti (per 1 ración):**
+
+*   **Per la Ricciola:**
+    *   Ricciola (Seriola dumerili) freschissima, lomo central, senza pelle né lische: 90g
+    *   Fiocchi di sale (tipo Maldon): 0.5g
+    *   Olio extra vergine d'oliva delicato: 3 ml
+*   **Per la Leche de Tigre Moras e Lamponi:**
+    *   More fresche e mature: 100g
+    *   Lamponi freschi: 50g
+    *   Zumo de lima fresco (recién exprimido): 20 ml
+    *   Aceto di Chardonnay: 10 ml
+    *   Shiro Miso (miso blanco dulce): 10g
+    *   Garum di pesce (preferibilmente di alici o colatura di alici): 5 ml
+    *   Cebolla roja (solo la parte blanca-rosada), finamente picada: 15g
+    *   Tallos de coriandolo fresco, troceados: 5g
+    *   Aji limo fresco (o similar), una fina rodaja (sin semillas, opcional): 0.5g
+    *   Olio extra vergine d'oliva delicato: 15 ml
+    *   Acqua fredda o ghiaccio: 30 ml (para facilitar la licuado)
+*   **Per Guarnire:**
+    *   More frescas: 2-3 unidades, cortadas por la mitad o en cuartos
+    *   Lamponi frescos: 2-3 unidades
+    *   Coriandolo fresco (hojas pequeñas o *pluches*): 3-4 hojas
+    *   Brotes de acedera roja o flores comestibles pequeñas (opcional): q.b.
+
+**Metodo:**
+
+1.  **Preparazione della Ricciola:**
+    *   Asegúrese de que el lomo de ricciola esté bien limpio y frío. Con un cuchillo de sashimi (yanagiba o sujihiki), corte la ricciola en láminas muy finas, estilo *usuzukuri*, de aproximadamente 2-3 mm de grosor. Dispóngalas de inmediato sobre papel de cocina para absorber cualquier exceso de humedad.
+    *   Enfríe la ricciola ya cortada en nevera hasta el momento del pase.
+
+2.  **Preparazione della Leche de Tigre Moras e Lamponi:**
+    *   En una batidora de vaso de alta velocidad, combine las moras, los lamponi, el zumo de lima, el aceto di Chardonnay, el shiro miso, el garum, la cebolla roja picada, los tallos de coriandolo y el aji limo (si se usa). Agregue los 30 ml de agua fría o hielo para ayudar a la licuado.
+    *   Procese a máxima potencia hasta obtener una mezcla perfectamente lisa y homogénea. La mezcla debe estar fría.
+    *   Pase la *leche de tigre* por un colador fino (chinoise o tamiz de malla muy fina), presionando bien con una espátula para extraer todo el líquido. Deseche los sólidos.
+    *   Incorpore el olio extra vergine d'oliva a la *leche de tigre* filtrada y emulsione ligeramente con una varilla o *mixer* de mano para integrar. Pruebe y ajuste el punto de sal si fuera necesario, aunque el garum y el miso ya aportan salinidad. Reserve en frío.
+
+3.  **Impiattamento (Montaje del plato):**
+    *   En un plato llano y frío, disponga armoniosamente las láminas de ricciola. Se pueden solapar ligeramente o formar una roseta.
+    *   Sazone la ricciola con los fiocchi di sale y un hilo de olio extra vergine d'oliva.
+    *   Justo antes de servir, vierta cuidadosamente una cucharada generosa (aproximadamente 30-40 ml) de la *leche de tigre* sobre la ricciola, asegurándose de cubrir cada pieza.
+    *   Decore con las moras y lamponi frescos cortados, las hojas de coriandolo y, si se usa, los brotes de acedera o flores.
+    *   Sirva inmediatamente para asegurar la frescura del pescado y la vivacidad de la *leche de tigre*.
+
+**Note:**
+
+*   **Temperatura:** Es crucial que tanto la ricciola como la *leche de tigre* se mantengan muy frías hasta el momento de servir. La calidad del corte del pescado es fundamental para la textura.
+*   **Variante picante:** Para un picante más controlado, se puede añadir unas gotas de aceite de ají en lugar del ají fresco directamente en la batidora.
+*   **Conservación:** La *leche de tigre* se debe preparar el mismo día y consumir en pocas horas para mantener su perfil de sabor fresco.
+
+<recipe_payload>
+{
+  "title": "Sashimi di Ricciola, Leche de Tigre Moras e Lamponi al Shiro Miso",
+  "ingredients": [
+    {"rawText": "Ricciola (Seriola dumerili) freschissima, lomo central, senza pelle né lische: 90g", "qty": 90, "unit": "g", "pezzatura": "lomo central"},
+    {"rawText": "Fiocchi di sale (tipo Maldon): 0.5g", "qty": 0.5, "unit": "g",

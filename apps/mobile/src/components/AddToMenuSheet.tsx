@@ -373,8 +373,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   title: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifLg,
     color: colors.ink,
     flex: 1,
@@ -401,7 +400,7 @@ const styles = StyleSheet.create({
     borderColor: colors.edge,
   },
   menuRowMute: { backgroundColor: colors.paperWarm },
-  menuName: { fontFamily: fonts.serif, fontStyle: "italic", fontSize: fontSizes.body, color: colors.ink },
+  menuName: { fontFamily: fonts.serifItalic, fontSize: fontSizes.serifBody, color: colors.ink },
   menuNameMute: {
     fontFamily: fonts.sans,
     fontSize: fontSizes.body,
@@ -455,9 +454,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paperSoft,
   },
   presetChipLabel: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.bodySm,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBodySm,
     color: colors.terracota,
   },
   customRow: {

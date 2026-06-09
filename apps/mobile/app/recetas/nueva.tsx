@@ -38,19 +38,30 @@ import {
   type IngredientValue,
 } from "@/src/components/IngredientAutocomplete";
 import { ConfirmMatchSheet } from "@/src/components/ConfirmMatchSheet";
+import { PezzaturaPendienteModal } from "@/src/components/PezzaturaPendienteModal";
+import { PesoCalculoEditor } from "@/src/components/PesoCalculoEditor";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import { createRecipe, patchRecipe } from "@/src/api/recipes";
 import {
-  createProduct,
+  createProductFromRaw,
+  listProducts,
   matchProducts,
   patchProduct,
   getProduct,
 } from "@/src/api/products";
 import { showToast } from "@/src/components/Toast";
 import { consumeRecipeDraft } from "@/src/lib/recipe-draft";
-import { can } from "@atelier/shared";
-import type { RecipeIngredientInput } from "@atelier/shared";
+import {
+  can,
+  parseIngredient,
+  resolvePezzaturaMode,
+} from "@atelier/shared";
+import type {
+  ProductCategory,
+  ProductListItem,
+  RecipeIngredientInput,
+} from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 // Cola de probables a confirmar. Procesamos uno a uno.
@@ -77,6 +88,132 @@ export default function NuevaRecetaScreen() {
 
   // Estado del flujo de matching durante el save.
   const [pendingMatches, setPendingMatches] = useState<PendingMatch[]>([]);
+
+  // Cache local de productos del banco. Sirve para:
+  //  - Aviso anti-typo (Ajuste 2 del plan A.5).
+  //  - Modal Estado 3 (Fase 6) — necesita pezzaturaMode null.
+  //  - PesoCalculoEditor (Fase 7) — necesita pezzaturaMode/Min/Max no-null.
+  // Una request al montar — listProducts ya tiene TTL 30s.
+  const [productsById, setProductsById] = useState<
+    Map<
+      string,
+      Pick<
+        ProductListItem,
+        "name" | "category" | "pezzaturaMode" | "pezzaturaMin" | "pezzaturaMax"
+      >
+    >
+  >(new Map());
+
+  // Fase 6 — modal Estado 3.
+  // skippedSet vive en useRef para no re-renderizar cuando se modifica;
+  // su contenido se "olvida" al desmontar la screen (acepable según spec).
+  const skippedSet = useRef<Set<string>>(new Set());
+  const [pezzaturaModalProduct, setPezzaturaModalProduct] = useState<{
+    id: string;
+    name: string;
+    category: ProductCategory;
+  } | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const all = await listProducts();
+        const map = new Map<
+          string,
+          Pick<
+            ProductListItem,
+            "name" | "category" | "pezzaturaMode" | "pezzaturaMin" | "pezzaturaMax"
+          >
+        >();
+        for (const p of all)
+          map.set(p.id, {
+            name: p.name,
+            category: p.category,
+            pezzaturaMode: p.pezzaturaMode,
+            pezzaturaMin: p.pezzaturaMin,
+            pezzaturaMax: p.pezzaturaMax,
+          });
+        setProductsById(map);
+      } catch {
+        // Si falla, el aviso simplemente no aparece — no rompe el editor.
+      }
+    })();
+  }, []);
+
+  // Fase 6 — evalúa si el ingrediente disparara el modal Estado 3 en blur:
+  //   - hay productId asignado,
+  //   - producto en categoría que admite pezzatura,
+  //   - producto SIN pezzatura cargada (pezzaturaMode === null),
+  //   - rawText cuyo parser sugiere unit="unidad",
+  //   - productId NO está en skippedSet.
+  function maybeOpenPezzaturaModal(ingredient: IngredientValue) {
+    if (!ingredient.productId) return;
+    if (skippedSet.current.has(ingredient.productId)) return;
+    const product = productsById.get(ingredient.productId);
+    if (!product) return;
+    if (product.pezzaturaMode !== null) return; // ya cargada
+    if (
+      resolvePezzaturaMode(product.name, product.category as ProductCategory) ===
+      null
+    )
+      return; // categoría no admite
+    const parsed = parseIngredient(ingredient.rawText);
+    if (parsed.unit !== "unidad") return;
+    setPezzaturaModalProduct({
+      id: ingredient.productId,
+      name: product.name,
+      category: product.category as ProductCategory,
+    });
+  }
+
+  function closePezzaturaModal(action: "saved" | "later") {
+    if (pezzaturaModalProduct && action === "later") {
+      skippedSet.current.add(pezzaturaModalProduct.id);
+    }
+    if (pezzaturaModalProduct && action === "saved") {
+      // El producto ya tiene pezzatura cargada — refrescamos el cache local
+      // para que el siguiente blur sobre el mismo no vuelva a abrir.
+      const existing = productsById.get(pezzaturaModalProduct.id);
+      if (existing) {
+        const next = new Map(productsById);
+        next.set(pezzaturaModalProduct.id, {
+          ...existing,
+          pezzaturaMode: "g_per_piece", // valor temporal — el server tiene el real
+        });
+        setProductsById(next);
+      }
+    }
+    setPezzaturaModalProduct(null);
+  }
+
+  // Avisos inline debajo de cada ingrediente (mutuamente excluyentes):
+  //  - "anti_typo" — unit=piezas pero la categoría del producto NO admite
+  //    pezzatura (ej: "2 Zucchine" sobre verdura). El chef seguramente quiso
+  //    medir por peso.
+  //  - "missing_pezzatura" — unit=piezas, la categoría SÍ admite pezzatura,
+  //    pero el producto enlazado tiene pezzaturaMode=null. Recordatorio
+  //    pasivo del modal Estado 3 (que se puede cerrar con "Después"). Es
+  //    tocable: navega al detail del producto donde el chef carga calibre.
+  type IngredientInlineWarning =
+    | { kind: "anti_typo" }
+    | { kind: "missing_pezzatura"; productId: string };
+  function getIngredientInlineWarning(
+    ingredient: { rawText: string; productId: string | null },
+  ): IngredientInlineWarning | null {
+    if (!ingredient.productId) return null;
+    const product = productsById.get(ingredient.productId);
+    if (!product) return null;
+    const parsed = parseIngredient(ingredient.rawText);
+    if (parsed.unit !== "unidad") return null;
+    const categoryMode = resolvePezzaturaMode(
+      product.name,
+      product.category as ProductCategory,
+    );
+    if (categoryMode === null) return { kind: "anti_typo" };
+    if (product.pezzaturaMode === null)
+      return { kind: "missing_pezzatura", productId: ingredient.productId };
+    return null;
+  }
   // Ref para que el callback del modal vea el array vigente sin re-bindings.
   const flowStateRef = useRef<{
     workingIngredients: IngredientValue[];
@@ -99,6 +236,9 @@ export default function NuevaRecetaScreen() {
       fromDraft = draft.recipeIngredients.map((r) => ({
         rawText: r.rawText,
         productId: r.productId ?? null,
+        // Fase 7: pre-fill del override cuando "Modificar receta" abre una
+        // receta que ya tiene pesoCalculoG persistido.
+        pesoCalculoG: r.pesoCalculoG ?? null,
       }));
     } else if (draft.contentJson.ingredients.length > 0) {
       fromDraft = draft.contentJson.ingredients.map((s) => ({
@@ -128,8 +268,15 @@ export default function NuevaRecetaScreen() {
 
     try {
       // Snapshot de ingredientes con rawText limpio (descartamos los vacíos).
+      // pesoCalculoG (Entrega A.5, Fase 7) viaja en el snapshot para que
+      // el server lo persista en RecipeIngredient cuando finalize() construye
+      // el payload del create/patch.
       const working = ingredients
-        .map((i) => ({ rawText: i.rawText.trim(), productId: i.productId }))
+        .map((i) => ({
+          rawText: i.rawText.trim(),
+          productId: i.productId,
+          pesoCalculoG: i.pesoCalculoG ?? null,
+        }))
         .filter((i) => i.rawText.length > 0);
 
       // Disparar matching solo para los que no tienen productId todavía.
@@ -231,18 +378,15 @@ export default function NuevaRecetaScreen() {
 
     try {
       if (draftIndices.length > 0) {
-        // Creamos drafts en paralelo. El server auto-asigna criticidad por
-        // nombre + categoría 'otro' (sin más info). El chef puede ajustarlos
-        // después en el banco.
+        // Sub-paso 6 Bug B fix (Andy 2026-05-17): usamos createProductFromRaw
+        // para que el server aplique parseIngredient + categorizeFromName +
+        // defaultPurchaseUnit + defaultMermaPct + defaultCriticality sobre
+        // el rawText. Antes hardcodeábamos category="otro", unidadCompra=
+        // "unidad" y name=rawText con cantidad pegada — chapuza que duplicaba
+        // todo lo que ya estaba migrado vía pipelines distintos.
         const created = await Promise.all(
           draftIndices.map((idx) =>
-            createProduct({
-              name: workingIngredients[idx]!.rawText,
-              category: "otro",
-              unidadCompra: "unidad",
-              precioCompra: 0,
-              estado: "borrador",
-            }),
+            createProductFromRaw(workingIngredients[idx]!.rawText),
           ),
         );
         created.forEach((p, k) => {
@@ -255,6 +399,9 @@ export default function NuevaRecetaScreen() {
         (i) => ({
           rawText: i.rawText,
           productId: i.productId,
+          // Entrega A.5, Fase 7: el override viaja al server vía workingIngredients
+          // (poblado en handleSave) y persiste en RecipeIngredient.pesoCalculoG.
+          pesoCalculoG: i.pesoCalculoG ?? null,
         }),
       );
 
@@ -326,23 +473,80 @@ export default function NuevaRecetaScreen() {
 
           <View>
             <Eyebrow>{t("section_ingredients")}</Eyebrow>
-            {ingredients.map((it, idx) => (
-              <View key={idx} style={styles.ingredientRow}>
-                <IngredientAutocomplete
-                  value={it}
-                  onChange={(next) =>
-                    setIngredients((prev) => prev.map((p, i) => (i === idx ? next : p)))
-                  }
-                  placeholder={t("recetas_form_ingredient_placeholder")}
-                  onRemove={
-                    ingredients.length > 1
-                      ? () =>
-                          setIngredients((prev) => prev.filter((_, i) => i !== idx))
-                      : undefined
-                  }
-                />
-              </View>
-            ))}
+            {ingredients.map((it, idx) => {
+              const warning = getIngredientInlineWarning(it);
+              // Fase 7 — PesoCalculoEditor solo si:
+              //   - hay producto enlazado,
+              //   - producto tiene pezzatura del banco (mode !== null),
+              //   - el rawText sugiere unit=piezas.
+              const product = it.productId
+                ? productsById.get(it.productId)
+                : null;
+              const parsed = parseIngredient(it.rawText);
+              const showPesoEditor =
+                product !== null &&
+                product?.pezzaturaMode !== null &&
+                product?.pezzaturaMin !== null &&
+                product?.pezzaturaMax !== null &&
+                parsed.unit === "unidad";
+              return (
+                <View key={idx} style={styles.ingredientRow}>
+                  <IngredientAutocomplete
+                    value={it}
+                    onChange={(next) =>
+                      setIngredients((prev) =>
+                        prev.map((p, i) => (i === idx ? next : p)),
+                      )
+                    }
+                    onBlur={() => maybeOpenPezzaturaModal(it)}
+                    placeholder={t("recetas_form_ingredient_placeholder")}
+                    onRemove={
+                      ingredients.length > 1
+                        ? () =>
+                            setIngredients((prev) =>
+                              prev.filter((_, i) => i !== idx),
+                            )
+                        : undefined
+                    }
+                  />
+                  {warning?.kind === "anti_typo" && (
+                    <Text style={styles.antiTypoWarning}>
+                      {t("recetas_aviso_no_pezzatura_unit")}
+                    </Text>
+                  )}
+                  {warning?.kind === "missing_pezzatura" && (
+                    <Pressable
+                      onPress={() =>
+                        router.push({
+                          pathname: "/productos/[id]",
+                          params: { id: warning.productId },
+                        })
+                      }
+                      hitSlop={4}
+                    >
+                      <Text style={styles.antiTypoWarning}>
+                        {t("recetas_aviso_falta_pezzatura")}
+                      </Text>
+                    </Pressable>
+                  )}
+                  {showPesoEditor && product && (
+                    <PesoCalculoEditor
+                      pezzaturaMode={product.pezzaturaMode!}
+                      pezzaturaMin={product.pezzaturaMin!}
+                      pezzaturaMax={product.pezzaturaMax!}
+                      value={it.pesoCalculoG ?? null}
+                      onChange={(next) =>
+                        setIngredients((prev) =>
+                          prev.map((p, i) =>
+                            i === idx ? { ...p, pesoCalculoG: next } : p,
+                          ),
+                        )
+                      }
+                    />
+                  )}
+                </View>
+              );
+            })}
             <Pressable
               style={styles.addBtn}
               onPress={() =>
@@ -429,6 +633,15 @@ export default function NuevaRecetaScreen() {
           onNo={() => void handleMatchNo()}
         />
       ) : null}
+
+      {/* Fase 6 — modal Estado 3 (pezzatura pendiente). Dispara en blur del
+          IngredientAutocomplete cuando el ingrediente cuenta unidades y el
+          producto enlazado no tiene pezzatura cargada. */}
+      <PezzaturaPendienteModal
+        open={pezzaturaModalProduct !== null}
+        product={pezzaturaModalProduct}
+        onClose={closePezzaturaModal}
+      />
     </Screen>
   );
 }
@@ -442,8 +655,7 @@ const styles = StyleSheet.create({
   },
   titleInput: {
     marginTop: spacing.sm,
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifLg,
     lineHeight: fontSizes.serifLg * 1.25,
     color: colors.ink,
@@ -455,6 +667,15 @@ const styles = StyleSheet.create({
     minHeight: 72,
   },
   ingredientRow: { marginTop: spacing.sm },
+  antiTypoWarning: {
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.mute,
+    fontStyle: "italic",
+    lineHeight: fontSizes.bodySm * 1.4,
+  },
   row: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -463,7 +684,7 @@ const styles = StyleSheet.create({
   },
   step: {
     fontFamily: fonts.serif,
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.serifBody,
     color: colors.terracota,
     paddingTop: spacing.sm + 4,
     minWidth: 22,
@@ -471,7 +692,7 @@ const styles = StyleSheet.create({
   lineInput: {
     flex: 1,
     fontFamily: fonts.serif,
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.serifBody,
     color: colors.ink,
     backgroundColor: colors.paperSoft,
     borderRadius: radii.sm,
@@ -496,7 +717,7 @@ const styles = StyleSheet.create({
   notesInput: {
     marginTop: spacing.sm,
     fontFamily: fonts.serif,
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.serifBody,
     color: colors.ink,
     backgroundColor: colors.paperSoft,
     borderRadius: radii.md,

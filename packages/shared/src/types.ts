@@ -78,6 +78,10 @@ export type ProductState = "activo" | "borrador" | "archivado";
 
 export type MermaOrigin = "sugerida" | "confirmada" | "medida";
 
+// Entrega A.5 — pezzatura estructurada. El modo se decide por categoría
+// (marisco → pz_per_kg; pescado/carne_pieza/fruta/panadería → g_per_piece).
+export type PezzaturaMode = "pz_per_kg" | "g_per_piece";
+
 export type Criticality = "alta" | "media" | "baja";
 
 // Fila en la lista del banco. realCost es calculado en el backend
@@ -88,6 +92,10 @@ export type ProductListItem = {
   name: string;
   category: ProductCategory;
   pezzatura: string | null;
+  // Entrega A.5 — pezzatura estructurada. Los tres van juntos por CHECK en DB.
+  pezzaturaMode: PezzaturaMode | null;
+  pezzaturaMin: number | null;
+  pezzaturaMax: number | null;
   unidadCompra: ProductUnit;
   precioCompra: number; // centavos
   realCost: number;     // centavos, computed
@@ -96,6 +104,10 @@ export type ProductListItem = {
   criticality: Criticality;
   estado: ProductState;
   precioActualizadoAt: string; // ISO
+  // Entrega A.5, Fase 8 — count distinct de recetas que usan el producto
+  // con unit ∈ ("piezas","unidad"). Habilita el indicador pasivo "pezzatura
+  // pendiente" en el banco y el filtro asociado.
+  usedByUnitCount: number;
 };
 
 export type ProductDetail = ProductListItem & {
@@ -103,6 +115,15 @@ export type ProductDetail = ProductListItem & {
   notas: string | null;
   aliases: string[];
   criticalityManual: boolean;
+  // Cantidad de recetas que enlazan a este producto via RecipeIngredient.
+  // Distinct por recipeId (un producto que aparece dos veces en la misma
+  // receta cuenta una sola). Usado en el ConfirmSheet de archivar.
+  recipesUsingCount: number;
+  // Entrega A.5 — recetas que usan el producto con unit ∈ ("piezas", "unidad").
+  // Determina visibilidad del campo pezzatura en el editor del producto:
+  //   > 0 → vista principal (alguien ya lo usa por unidad, necesita calibre)
+  //   === 0 → accordion "Más opciones"
+  recipesUsingByUnitCount: number;
   createdAt: string;
   updatedAt: string;
 };

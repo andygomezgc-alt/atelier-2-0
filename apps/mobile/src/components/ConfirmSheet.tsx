@@ -1,4 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { useI18n } from "@/src/hooks/useI18n";
+import { StatusBadge } from "./StatusBadge";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 type Props = {
@@ -22,11 +24,17 @@ export function ConfirmSheet({
   onConfirm,
   onCancel,
 }: Props) {
+  const { t } = useI18n();
   return (
     <Modal visible={open} animationType="fade" transparent onRequestClose={onCancel}>
       <Pressable style={styles.backdrop} onPress={onCancel} />
       <View style={styles.center}>
         <View style={styles.dialog}>
+          {/* Bloque 4 · C-04 — badge "warning" arriba para marcar acción
+              destructiva con el vocabulario único (color + ícono fijos). */}
+          {destructive ? (
+            <StatusBadge level="warning" label={t("confirm_destructive_badge")} />
+          ) : null}
           <Text style={styles.title}>{title}</Text>
           {body ? <Text style={styles.body}>{body}</Text> : null}
           <View style={styles.actions}>
@@ -58,8 +66,7 @@ const styles = StyleSheet.create({
     maxWidth: 360,
   },
   title: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifLg,
     color: colors.ink,
   },

@@ -79,6 +79,17 @@ export type ExtractedRecipeResponse = {
   }>;
 };
 
+// A-01 Opción A — el Asistente manda el texto visible de la receta (ya sin
+// <recipe_payload>); el server lo estructura con Haiku (tool use forzado) +
+// matchea contra el banco. Misma shape que uploadRecipeFile → el formulario
+// /recetas/nueva lo consume igual. apiFetch ya da timeout 30s + ApiError/
+// NetworkError, que saveAsRecipe traduce a un Alert claro (no fallback mudo).
+export const extractRecipeFromAssistant = (text: string) =>
+  apiFetch<ExtractedRecipeResponse>("/api/recipes/extract", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+
 // Multipart upload — cannot use apiFetch because it forces JSON content-type.
 // We send the file as { uri, name, type } which React Native turns into a
 // FormData part the server reads as a Blob.

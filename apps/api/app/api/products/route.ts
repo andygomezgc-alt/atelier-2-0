@@ -17,13 +17,16 @@ import {
 } from "@/lib/products/projections";
 import { defaultCriticality } from "@/lib/products/criticality";
 import { defaultMermaPct } from "@/lib/products/defaults";
+import { detectPezzaturaFromName, parsePezzatura } from "@atelier/shared";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/products
 // Filtros opcionales (query string): category, criticality, estado,
 // mermaOrigen, pendiente_precio (=true → precioCompra=0), q (substring sobre
-// name, case insensitive). Sin filtro state = devuelve todos los no-borrados.
+// name, case insensitive), pezzatura_pendiente (Entrega A.5 Fase 8: sin
+// pezzaturaMode + alguna receta lo usa por unidad). Sin filtro state =
+// devuelve todos los no-borrados.
 export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
   const { searchParams } = new URL(req.url);
   const category = searchParams.get("category") as ProductCategory | null;
@@ -31,6 +34,8 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
   const estado = searchParams.get("estado") as ProductState | null;
   const mermaOrigen = searchParams.get("mermaOrigen") as MermaOrigin | null;
   const pendientePrecio = searchParams.get("pendiente_precio") === "true";
+  const pezzaturaPendiente =
+    searchParams.get("pezzatura_pendiente") === "true";
   const q = searchParams.get("q");
 
   const where: Prisma.ProductWhereInput = {
@@ -43,6 +48,19 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
   if (mermaOrigen) where.mermaOrigen = mermaOrigen;
   if (pendientePrecio) where.precioCompra = 0;
   if (q) where.name = { contains: q, mode: "insensitive" };
+  // Entrega A.5 Fase 8 — productos sin pezzatura cargada que SÍ se usan por
+  // unidad en alguna receta. El indicador pasivo en el banco también filtra
+  // por el "se usa por unidad" client-side (con resolvePezzaturaMode), pero
+  // server-side limitamos a `pezzaturaMode IS NULL` + `tiene RI por unidad`.
+  if (pezzaturaPendiente) {
+    where.pezzaturaMode = null;
+    where.recipeIngredients = {
+      some: {
+        unit: { in: ["piezas", "unidad"] },
+        recipe: { deletedAt: null },
+      },
+    };
+  }
 
   const products = await prisma.product.findMany({
     where,
@@ -52,7 +70,34 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
     take: 500,
   });
 
-  return NextResponse.json(products.map(projectProductListItem));
+  // Entrega A.5 Fase 8 — count distinct de recetas por producto que lo
+  // usan con unit ∈ ("piezas","unidad"). Una sola groupBy en vez de N
+  // queries (cada producto va al banco una vez). Solo cuenta sobre los
+  // productIds devueltos para no hacer trabajo extra.
+  const productIds = products.map((p) => p.id);
+  const usageRows =
+    productIds.length > 0
+      ? await prisma.recipeIngredient.findMany({
+          where: {
+            productId: { in: productIds },
+            unit: { in: ["piezas", "unidad"] },
+            recipe: { deletedAt: null },
+          },
+          select: { productId: true, recipeId: true },
+          distinct: ["productId", "recipeId"],
+        })
+      : [];
+  const usedByUnitCount = new Map<string, number>();
+  for (const r of usageRows) {
+    if (!r.productId) continue;
+    usedByUnitCount.set(r.productId, (usedByUnitCount.get(r.productId) ?? 0) + 1);
+  }
+
+  return NextResponse.json(
+    products.map((p) =>
+      projectProductListItem(p, usedByUnitCount.get(p.id) ?? 0),
+    ),
+  );
 });
 
 // POST /api/products
@@ -66,12 +111,45 @@ export const POST = withAuth(
   async (ctx, body: CreateProductRequest) => {
     const autoCrit = defaultCriticality(body.category, body.name);
 
+    // Entrega A.5 — pezzatura estructurada:
+    //   - Si el chef mandó pezzaturaInput, parsearlo. Si parsea null → 400.
+    //   - Si no mandó nada, correr detect sobre el nombre (silencioso, sin
+    //     error si no detecta).
+    let pezzaturaMode: "pz_per_kg" | "g_per_piece" | null = null;
+    let pezzaturaMin: number | null = null;
+    let pezzaturaMax: number | null = null;
+    if (body.pezzaturaInput && body.pezzaturaInput.trim() !== "") {
+      const parsed = parsePezzatura(body.pezzaturaInput.trim(), body.category, body.name);
+      if (!parsed) {
+        return NextResponse.json(
+          {
+            error: "invalid_pezzatura",
+            message: `No se pudo interpretar la pezzatura "${body.pezzaturaInput}" para categoría ${body.category}.`,
+          },
+          { status: 400 },
+        );
+      }
+      pezzaturaMode = parsed.mode;
+      pezzaturaMin = parsed.min;
+      pezzaturaMax = parsed.max;
+    } else {
+      const detected = detectPezzaturaFromName(body.name, body.category);
+      if (detected) {
+        pezzaturaMode = detected.mode;
+        pezzaturaMin = detected.min;
+        pezzaturaMax = detected.max;
+      }
+    }
+
     const product = await prisma.product.create({
       data: {
         restaurantId: ctx.restaurantId!,
         name: body.name,
         category: body.category,
         pezzatura: body.pezzatura ?? null,
+        pezzaturaMode,
+        pezzaturaMin,
+        pezzaturaMax,
         unidadCompra: body.unidadCompra,
         precioCompra: body.precioCompra,
         mermaPct: body.mermaPct ?? defaultMermaPct(body.category),

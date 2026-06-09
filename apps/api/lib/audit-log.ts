@@ -4,6 +4,7 @@ import { logger } from "./logger";
 export type AuditAction =
   | "staff_role_changed"
   | "staff_removed"
+  | "staff_left"
   | "invite_regenerated"
   | "token_revoked";
 

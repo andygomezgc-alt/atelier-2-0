@@ -4,13 +4,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/src/hooks/useAuth";
 import { useI18n } from "@/src/hooks/useI18n";
-import { apiFetch } from "@/src/api/client";
+import { apiFetch, ApiError } from "@/src/api/client";
+import type { CreateRestaurantResponse } from "@atelier/shared";
 import { Button } from "@/src/components/Button";
 import { showToast } from "@/src/components/Toast";
+import { apiErrorMessage } from "@/src/lib/api-error";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 export default function CreateRestaurantScreen() {
-  const { refreshMe } = useAuth();
+  const { refreshMe, patchLocalUser } = useAuth();
   const { t } = useI18n();
   const router = useRouter();
 
@@ -24,13 +26,30 @@ export default function CreateRestaurantScreen() {
     if (!valid || loading) return;
     setLoading(true);
     try {
-      await apiFetch("/api/restaurant", {
+      // A-10 / Ola 0 0.2: usar la respuesta del server para actualizar
+      // auth-state localmente (patchLocalUser), en vez de un GET /me a
+      // ciegas con refreshMe. Elimina la race en la que el server creó el
+      // restaurante pero refreshMe falla y el cliente queda en estado roto.
+      const res = await apiFetch<CreateRestaurantResponse>("/api/restaurant", {
         method: "POST",
         body: JSON.stringify({ name: name.trim(), identityLine: identityLine.trim() || undefined }),
       });
-      await refreshMe();
+      patchLocalUser({
+        restaurantId: res.id,
+        restaurantName: res.name,
+        role: res.role,
+      });
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      // 409 = el usuario YA está en un restaurante (race entre devices/
+      // sesiones). No es fatal: refreshMe averigua cuál y el layout redirige.
+      if (err instanceof ApiError && err.status === 409) {
+        // 409 ahora viene con code "already_in_restaurant"; usamos el helper
+        // pero conservamos el refreshMe (single-source-of-truth en el server).
+        showToast(apiErrorMessage(err, t));
+        await refreshMe();
+      } else {
+        showToast(apiErrorMessage(err, t));
+      }
     } finally {
       setLoading(false);
     }
@@ -89,8 +108,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   title: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifLg,
     color: colors.ink,
     marginBottom: spacing.xs,

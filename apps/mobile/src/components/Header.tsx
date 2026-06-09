@@ -70,15 +70,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   mark: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.serifMd,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifLg,
     color: colors.teal,
   },
   markGlyph: { color: colors.terracota },
   title: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifMd,
     color: colors.ink,
   },

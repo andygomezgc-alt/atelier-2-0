@@ -152,8 +152,7 @@ const styles = StyleSheet.create({
   },
   hero: { alignItems: "center", gap: spacing.sm },
   title: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifLg,
     color: colors.ink,
     textAlign: "center",

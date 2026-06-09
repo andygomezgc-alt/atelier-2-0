@@ -5,7 +5,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { SignJWT } from "jose";
-import { generateInviteCode } from "@atelier/shared/invite-code";
 import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +26,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Email inválido" }, { status: 400 });
   }
 
-  let user = await prisma.user.upsert({
+  // A-12 — el dev-login YA NO regala restaurante: con la app autoexplicada
+  // los users nuevos caen en (tabs) sin restaurante y disparan el lazy
+  // create al primer guardado. Si el user nuevo se le auto-asignaba un
+  // "Dev Kitchen" acá, se saltaba justo el flujo que A-12 quiere validar
+  // y, peor, ensuciaba la DB con duplicados de Dev Kitchen al ritmo de
+  // los emails de prueba.
+  const user = await prisma.user.upsert({
     where: { email },
     update: {},
     create: { email, name: email.split("@")[0] },
@@ -46,33 +51,6 @@ export async function POST(req: NextRequest) {
       customApiKey: true,
     },
   });
-
-  // Auto-attach a dev restaurant so the app lands directly in the tabs and
-  // bypasses the choose-flow / create-restaurant screens during manual testing.
-  if (!user.restaurantId) {
-    const name = "Dev Kitchen";
-    const restaurant = await prisma.restaurant.create({
-      data: { name, inviteCode: generateInviteCode(name) },
-    });
-    user = await prisma.user.update({
-      where: { id: user.id },
-      data: { restaurantId: restaurant.id, role: "admin" },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        restaurantId: true,
-        languagePref: true,
-        defaultModel: true,
-        tokenVersion: true,
-        restaurant: { select: { name: true } },
-        customProvider: true,
-        customModel: true,
-        customApiKey: true,
-      },
-    });
-  }
 
   const accessToken = await new SignJWT({ sub: user.id, email: user.email, tv: user.tokenVersion })
     .setProtectedHeader({ alg: "HS256" })

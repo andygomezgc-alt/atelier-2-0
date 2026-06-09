@@ -101,10 +101,13 @@ type MenuSection = MenuFull["sections"][number];
 
 type SectionHeaderProps = {
   section: MenuSection;
+  index: number; // 1-based para el eyebrow "{n} · CATEGORÍA"
   count: number;
   isCollapsed: boolean;
   canEdit: boolean;
   placeholder: string;
+  eyebrowLabel: string; // "{n} · CATEGORÍA" ya formateado por el padre
+  dishesLabel: string; // "{count} platos" ya formateado
   onToggle: (id: string) => void;
   onSaveName: (id: string, value: string) => void;
   onDelete: (id: string, name: string) => void;
@@ -112,10 +115,13 @@ type SectionHeaderProps = {
 
 const SectionHeader = memo(function SectionHeader({
   section,
-  count,
+  index: _index,
+  count: _count,
   isCollapsed,
   canEdit,
   placeholder,
+  eyebrowLabel,
+  dishesLabel,
   onToggle,
   onSaveName,
   onDelete,
@@ -125,32 +131,37 @@ const SectionHeader = memo(function SectionHeader({
     [onSaveName, section.id],
   );
   return (
-    <View style={styles.sectionHeader}>
-      <Pressable
-        onPress={() => onToggle(section.id)}
-        hitSlop={6}
-        style={styles.collapseToggle}
-      >
-        <Ionicons
-          name={isCollapsed ? "chevron-forward" : "chevron-down"}
-          size={14}
-          color={colors.terracota}
-        />
-      </Pressable>
-      <DebouncedTextInput
-        value={section.name}
-        onSave={handleSave}
-        editable={canEdit}
-        placeholder={placeholder}
-        style={styles.sectionNameInput}
-        maxLength={120}
-      />
-      <Text style={styles.sectionCount}>{count}</Text>
-      {canEdit ? (
-        <Pressable hitSlop={10} onPress={() => onDelete(section.id, section.name)}>
-          <Ionicons name="trash-outline" size={16} color={colors.mute} />
+    <View>
+      <View style={styles.sectionTopRow}>
+        <Text style={styles.sectionEyebrowSmall}>{eyebrowLabel}</Text>
+        <Text style={styles.sectionDishesCount}>{dishesLabel}</Text>
+      </View>
+      <View style={styles.sectionNameRow}>
+        <Pressable
+          onPress={() => onToggle(section.id)}
+          hitSlop={6}
+          style={styles.collapseToggle}
+        >
+          <Ionicons
+            name={isCollapsed ? "chevron-forward" : "chevron-down"}
+            size={14}
+            color={colors.terracota}
+          />
         </Pressable>
-      ) : null}
+        <DebouncedTextInput
+          value={section.name}
+          onSave={handleSave}
+          editable={canEdit}
+          placeholder={placeholder}
+          style={styles.sectionNameInput}
+          maxLength={120}
+        />
+        {canEdit ? (
+          <Pressable hitSlop={10} onPress={() => onDelete(section.id, section.name)}>
+            <Ionicons name="trash-outline" size={16} color={colors.mute} />
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 });
@@ -168,6 +179,7 @@ type DishCardProps = {
   descPlaceholder: string;
   viewRecipeLabel: string;
   clearCustomNameLabel: string;
+  fromRecipeBookLabel: string; // Bloque 5 — eyebrow "DESDE RECETARIO"
   onSaveName: (itemId: string, value: string) => void;
   onSaveDesc: (itemId: string, value: string) => void;
   onSavePrice: (itemId: string, value: string) => void;
@@ -189,6 +201,7 @@ const DishCard = memo(function DishCard({
   descPlaceholder,
   viewRecipeLabel,
   clearCustomNameLabel,
+  fromRecipeBookLabel,
   onSaveName,
   onSaveDesc,
   onSavePrice,
@@ -201,9 +214,6 @@ const DishCard = memo(function DishCard({
   const handleSaveName = useCallback((v: string) => onSaveName(dish.id, v), [onSaveName, dish.id]);
   const handleSaveDesc = useCallback((v: string) => onSaveDesc(dish.id, v), [onSaveDesc, dish.id]);
   const handleSavePrice = useCallback((v: string) => onSavePrice(dish.id, v), [onSavePrice, dish.id]);
-  // Custom name "drift" indicator: si está set, mostramos un toggle que lo
-  // limpia y vuelve al título canónico de la receta. Cubre el caso donde el
-  // chef renombró la receta original pero el menú quedó pegado al viejo nombre.
   const hasCustomName = !!dish.customName && dish.customName.trim() !== "";
   return (
     <View style={styles.dishCard}>
@@ -244,6 +254,8 @@ const DishCard = memo(function DishCard({
             multiline
             maxLength={200}
           />
+          {/* Bloque 5 — eyebrow "DESDE RECETARIO" debajo del nombre, como en el mockup */}
+          <Text style={styles.fromRecipeBookEyebrow}>{fromRecipeBookLabel}</Text>
           {canEdit && hasCustomName ? (
             <Pressable
               style={styles.customNameBadge}
@@ -334,17 +346,25 @@ export default function MenuDetailScreen() {
   const canExport = can(role, "export_pdf");
   const canViewStaffRecipe = can(role, "view_staff_recipe");
 
-  const reload = useCallback(async () => {
-    if (!id) return;
-    setLoading(true);
-    try {
-      setMenu(await getMenu(id));
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
-    } finally {
-      setLoading(false);
-    }
-  }, [id, t]);
+  // Si se llama con { silent: true }, el reload no toca `loading` —
+  // sirve para refrescos puntuales (ej. agregar/quitar alérgeno manual desde
+  // el "+" en la preview) donde mostrar spinner desmontaría el ExportPreviewSheet
+  // y el Modal nativo de RN re-monta feo. El silent mantiene el sheet abierto
+  // y reconcilia el cambio de menu por reactividad de prop.
+  const reload = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!id) return;
+      if (!opts?.silent) setLoading(true);
+      try {
+        setMenu(await getMenu(id));
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : t("error_network"));
+      } finally {
+        if (!opts?.silent) setLoading(false);
+      }
+    },
+    [id, t],
+  );
 
   useEffect(() => {
     void reload();
@@ -365,6 +385,21 @@ export default function MenuDetailScreen() {
     },
     [id, t, reload],
   );
+
+  // Bloque 5 (segunda tanda) — toggle "en servicio". Optimistic update +
+  // revert al error. Mismo patrón que handleStyleChange.
+  const handleToggleInService = useCallback(async () => {
+    if (!menu) return;
+    const next = !menu.inService;
+    setMenu((m) => (m ? { ...m, inService: next } : m));
+    try {
+      const updated = await patchMenu(menu.id, { inService: next });
+      setMenu(updated);
+    } catch {
+      showToast(t("error_network"));
+      void reload();
+    }
+  }, [menu, t, reload]);
 
   const handleSaveItemName = useCallback(
     async (itemId: string, value: string) => {
@@ -649,39 +684,95 @@ export default function MenuDetailScreen() {
 
   const noContent = menu.items.length === 0 && partition.sections.length === 0;
 
-  return (
-    <Screen title={menu.name} back onBack={() => router.back()}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.staffBanner}>
-          <Ionicons name="construct-outline" size={12} color={colors.teal} />
-          <Text style={styles.staffBannerLabel}>{t("view_staff_label")}</Text>
-        </View>
-        {menu.season ? <Text style={styles.season}>{menu.season}</Text> : null}
+  // Bloque 5 — botón PDF arriba a la derecha que abre el preview sheet.
+  // Reemplaza el "view_client_btn" que estaba al pie de la pantalla.
+  const pdfHeaderBtn =
+    canExport && menu.items.length > 0 ? (
+      <Pressable
+        style={styles.headerPdfBtn}
+        onPress={() => setPreviewOpen(true)}
+        disabled={exporting}
+        accessibilityLabel={t("menu_btn_pdf")}
+      >
+        <Ionicons name="download-outline" size={12} color={colors.ink} />
+        <Text style={styles.headerPdfLabel}>{t("menu_btn_pdf")}</Text>
+      </Pressable>
+    ) : null;
 
-        <View>
-          <Eyebrow>{t("eyebrow_estilo")}</Eyebrow>
-          <View style={styles.styleRow}>
-            {STYLES.map((s) => (
-              <Pressable
-                key={s.id}
+  // Bloque 5 (segunda tanda) — toggle "en servicio" al lado del PDF.
+  // Encendido = pill teal con dot blanco + "EN SERVICIO".
+  // Apagado = pill paperSoft con borde edge + dot mute + "Fuera de servicio".
+  const inServiceToggle = canEdit ? (
+    <Pressable
+      style={[
+        styles.inServicePill,
+        menu.inService ? styles.inServicePillOn : styles.inServicePillOff,
+      ]}
+      onPress={handleToggleInService}
+      accessibilityLabel={t("menu_in_service_toggle_a11y")}
+    >
+      <View
+        style={[
+          styles.inServiceDot,
+          menu.inService ? styles.inServiceDotOn : styles.inServiceDotOff,
+        ]}
+      />
+      <Text
+        style={[
+          styles.inServicePillLabel,
+          menu.inService ? styles.inServicePillLabelOn : styles.inServicePillLabelOff,
+        ]}
+      >
+        {menu.inService ? t("menu_in_service_on") : t("menu_in_service_off")}
+      </Text>
+    </Pressable>
+  ) : null;
+
+  const headerRight = (
+    <View style={styles.headerRightRow}>
+      {inServiceToggle}
+      {pdfHeaderBtn}
+    </View>
+  );
+
+  return (
+    <Screen back onBack={() => router.back()} right={headerRight}>
+      <ScrollView contentContainerStyle={styles.content}>
+        {/* Header editorial del mockup */}
+        <View style={styles.menuHeader}>
+          <Text style={styles.menuEyebrow}>
+            {menu.season
+              ? t("menu_eyebrow_season_dishes", {
+                  season: menu.season.toUpperCase(),
+                  count: menu.items.length,
+                })
+              : t("menu_eyebrow_dishes_only", { count: menu.items.length })}
+          </Text>
+          <Text style={styles.menuTitle}>{menu.name}</Text>
+        </View>
+        <View style={styles.menuHeaderDivider} />
+
+        <View style={styles.styleRow}>
+          {STYLES.map((s) => (
+            <Pressable
+              key={s.id}
+              style={[
+                styles.styleChip,
+                menu.presentationStyle === s.id && styles.styleChipActive,
+              ]}
+              onPress={() => canEdit && void handleStyleChange(s.id)}
+              disabled={!canEdit || menu.presentationStyle === s.id}
+            >
+              <Text
                 style={[
-                  styles.styleChip,
-                  menu.presentationStyle === s.id && styles.styleChipActive,
+                  styles.styleLabel,
+                  menu.presentationStyle === s.id && styles.styleLabelActive,
                 ]}
-                onPress={() => canEdit && void handleStyleChange(s.id)}
-                disabled={!canEdit || menu.presentationStyle === s.id}
               >
-                <Text
-                  style={[
-                    styles.styleLabel,
-                    menu.presentationStyle === s.id && styles.styleLabelActive,
-                  ]}
-                >
-                  {t(s.labelKey)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+                {t(s.labelKey)}
+              </Text>
+            </Pressable>
+          ))}
         </View>
 
         {noContent ? (
@@ -708,16 +799,19 @@ export default function MenuDetailScreen() {
           </View>
         ) : (
           <>
-            {partition.sections.map(({ section, items }) => {
+            {partition.sections.map(({ section, items }, sectionIdx) => {
               const isCollapsed = !!collapsed[section.id];
               return (
                 <View key={section.id} style={styles.sectionBlock}>
                   <SectionHeader
                     section={section}
+                    index={sectionIdx + 1}
                     count={items.length}
                     isCollapsed={isCollapsed}
                     canEdit={canEdit}
                     placeholder={t("section_name_placeholder")}
+                    eyebrowLabel={t("menu_category_eyebrow", { n: sectionIdx + 1 })}
+                    dishesLabel={t("menu_eyebrow_dishes_only", { count: items.length })}
                     onToggle={toggleSection}
                     onSaveName={handleSaveSectionName}
                     onDelete={handleOpenDeleteSection}
@@ -740,6 +834,7 @@ export default function MenuDetailScreen() {
                           descPlaceholder={t("recetas_form_notes_placeholder")}
                           viewRecipeLabel={t("dish_view_recipe")}
                           clearCustomNameLabel={t("dish_custom_name_clear")}
+                          fromRecipeBookLabel={t("menu_from_recipe_book")}
                           onSaveName={handleSaveItemName}
                           onSaveDesc={handleSaveItemDesc}
                           onSavePrice={handleSaveItemPrice}
@@ -781,6 +876,7 @@ export default function MenuDetailScreen() {
                     descPlaceholder={t("recetas_form_notes_placeholder")}
                     viewRecipeLabel={t("dish_view_recipe")}
                     clearCustomNameLabel={t("dish_custom_name_clear")}
+                    fromRecipeBookLabel={t("menu_from_recipe_book")}
                     onSaveName={handleSaveItemName}
                     onSaveDesc={handleSaveItemDesc}
                     onSavePrice={handleSaveItemPrice}
@@ -812,14 +908,8 @@ export default function MenuDetailScreen() {
           </>
         )}
 
-        {canExport ? (
-          <Button
-            label={t("view_client_btn")}
-            iconLeft="eye-outline"
-            onPress={() => setPreviewOpen(true)}
-            disabled={exporting || menu.items.length === 0}
-          />
-        ) : null}
+        {/* Bloque 5: el botón de "Vista cliente / PDF" se movió al header.
+            Lo eliminamos del pie para no duplicar. */}
       </ScrollView>
 
       <ExportPreviewSheet
@@ -828,7 +918,7 @@ export default function MenuDetailScreen() {
         exporting={exporting}
         canEdit={canEdit}
         onClose={() => setPreviewOpen(false)}
-        onChanged={reload}
+        onChanged={() => reload({ silent: true })}
         onDownload={async () => {
           await exportPdf();
           setPreviewOpen(false);
@@ -885,32 +975,84 @@ export default function MenuDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: spacing.xl, paddingVertical: spacing.xl, gap: spacing.xl },
-  season: {
+  content: { paddingHorizontal: spacing.xl, paddingVertical: spacing.xl, gap: spacing.lg },
+  // Bloque 5 — header editorial del menú: eyebrow caps + título serif italic.
+  menuHeader: { gap: 4 },
+  menuEyebrow: {
     fontFamily: fonts.sans,
-    fontSize: fontSizes.bodySm,
+    fontSize: fontSizes.eyebrow,
     color: colors.mute,
-    letterSpacing: 0.5,
+    letterSpacing: 1.4,
   },
-  staffBanner: {
+  menuTitle: {
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifXl,
+    color: colors.ink,
+    lineHeight: fontSizes.serifXl * 1.15,
+  },
+  menuHeaderDivider: {
+    height: 0.5,
+    backgroundColor: colors.edge,
+    marginTop: spacing.xs,
+  },
+  // Bloque 5 — botón PDF en el header (pill teal con ícono download).
+  headerPdfBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 0.5,
+    borderColor: colors.edge,
+    backgroundColor: colors.paper,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 4,
+  },
+  headerPdfLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.ink,
+    fontWeight: "600",
+    letterSpacing: 0.8,
+  },
+  // Bloque 5 (segunda tanda) — toggle "EN SERVICIO" pill al lado del PDF.
+  headerRightRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
-    alignSelf: "flex-start",
-    backgroundColor: colors.tealSoft,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
+  },
+  inServicePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 4,
+    borderWidth: 0.5,
   },
-  staffBannerLabel: {
+  inServicePillOn: {
+    backgroundColor: colors.teal,
+    borderColor: colors.teal,
+  },
+  inServicePillOff: {
+    backgroundColor: colors.paperSoft,
+    borderColor: colors.edge,
+  },
+  inServiceDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  inServiceDotOn: { backgroundColor: colors.paper },
+  inServiceDotOff: { backgroundColor: colors.mute },
+  inServicePillLabel: {
     fontFamily: fonts.sans,
-    fontSize: fontSizes.eyebrow,
-    color: colors.teal,
-    textTransform: "uppercase",
-    letterSpacing: 1.4,
+    fontSize: fontSizes.caption,
     fontWeight: "600",
+    letterSpacing: 0.8,
   },
-  styleRow: { flexDirection: "row", gap: spacing.xs, marginTop: spacing.sm },
+  inServicePillLabelOn: { color: colors.paper },
+  inServicePillLabelOff: { color: colors.mute },
+  styleRow: { flexDirection: "row", gap: spacing.xs },
   styleChip: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs + 2,
@@ -933,9 +1075,8 @@ const styles = StyleSheet.create({
   },
   dishTopRow: { flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" },
   dishName: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.body,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBody,
     color: colors.ink,
     padding: 0,
     margin: 0,
@@ -983,9 +1124,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   emptyText: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.body,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBody,
     color: colors.mute,
     marginTop: spacing.sm,
   },
@@ -995,9 +1135,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
   },
   emptyMenuHint: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.body,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBody,
     color: colors.mute,
     textAlign: "center",
     lineHeight: fontSizes.body * 1.4,
@@ -1009,24 +1148,47 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     justifyContent: "center",
   },
-  sectionBlock: { gap: spacing.xs, marginTop: spacing.md },
-  sectionHeader: {
+  // Bloque 5 — cada sección es una card independiente (mockup imagen 2).
+  sectionBlock: {
+    gap: spacing.xs,
+    backgroundColor: colors.paperSoft,
+    borderRadius: radii.lg,
+    borderWidth: 0.5,
+    borderColor: colors.edge,
+    padding: spacing.md,
+  },
+  sectionTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 2,
+  },
+  sectionEyebrowSmall: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.eyebrow,
+    color: colors.mute,
+    letterSpacing: 1.4,
+  },
+  sectionDishesCount: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.mute,
+    letterSpacing: 0.4,
+  },
+  sectionNameRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
     borderBottomWidth: 0.5,
-    borderBottomColor: colors.edge,
-    paddingBottom: spacing.xs,
+    borderBottomColor: colors.edgeSoft,
+    paddingBottom: spacing.sm,
     marginBottom: spacing.xs,
   },
   sectionNameInput: {
     flex: 1,
-    fontFamily: fonts.sans,
-    fontSize: fontSizes.eyebrow,
-    color: colors.terracota,
-    textTransform: "uppercase",
-    letterSpacing: 1.4,
-    fontWeight: "600",
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifMd,
+    color: colors.ink,
     padding: 0,
   },
   sectionNameMute: {
@@ -1086,9 +1248,8 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   sectionEmptyHint: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.bodySm,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBodySm,
     color: colors.mute,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
@@ -1112,11 +1273,13 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 0.4,
   },
+  // Bloque 5 — "+ Añadir plato" centrado en cada categoría (mockup imagen 2).
   addDishBtn: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: spacing.xs,
-    alignSelf: "flex-start",
+    alignSelf: "center",
     paddingVertical: spacing.sm,
     marginTop: spacing.xs,
   },
@@ -1126,6 +1289,16 @@ const styles = StyleSheet.create({
     color: colors.terracota,
     fontWeight: "600",
     letterSpacing: 0.4,
+  },
+  // Bloque 5 — eyebrow "DESDE RECETARIO" debajo del nombre de cada plato.
+  fromRecipeBookEyebrow: {
+    fontFamily: fonts.sans,
+    fontSize: 10,
+    color: colors.terracota,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    fontWeight: "600",
+    marginTop: 2,
   },
   addSectionBtn: {
     flexDirection: "row",

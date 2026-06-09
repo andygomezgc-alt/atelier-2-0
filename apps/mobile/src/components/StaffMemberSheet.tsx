@@ -118,8 +118,8 @@ export function StaffMemberSheet({ open, member, onClose, onChanged }: Props) {
 
       <ConfirmSheet
         open={confirmDelete}
-        title={`¿Eliminar a ${member.name}?`}
-        body="Perderá acceso al restaurante. Puedes volver a invitarle con el código."
+        title={t("staff_remove_title", { name: member.name })}
+        body={t("staff_remove_body")}
         confirmLabel={t("confirm_delete")}
         cancelLabel={t("confirm_cancel")}
         destructive
@@ -143,8 +143,7 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: colors.paper, fontFamily: fonts.sans, fontSize: 22, fontWeight: "600" },
   name: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifLg,
     color: colors.ink,
   },

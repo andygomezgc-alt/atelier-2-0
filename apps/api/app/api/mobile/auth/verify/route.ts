@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   const email = (body?.email ?? "").toLowerCase().trim();
 
   if (!token || !email) {
-    return NextResponse.json({ error: "token y email son requeridos" }, { status: 400 });
+    return NextResponse.json({ error: "token y email son requeridos", code: "token_missing" }, { status: 400 });
   }
 
   const tokenHash = hashToken(token);
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 
   if (!record) {
     logger.warn("mobile_auth_invalid_token", { email });
-    return NextResponse.json({ error: "Token no válido" }, { status: 401 });
+    return NextResponse.json({ error: "Token no válido", code: "token_invalid" }, { status: 401 });
   }
 
   if (record.expires < new Date()) {
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       where: { identifier_token: { identifier: email, token: tokenHash } },
     });
     logger.warn("mobile_auth_token_expired", { email });
-    return NextResponse.json({ error: "Token expirado" }, { status: 401 });
+    return NextResponse.json({ error: "Token expirado", code: "token_expired" }, { status: 401 });
   }
 
   await prisma.verificationToken.delete({

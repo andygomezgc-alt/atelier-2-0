@@ -5,6 +5,7 @@ import { useAuth } from "@/src/hooks/useAuth";
 import { useI18n } from "@/src/hooks/useI18n";
 import { showToast } from "@/src/components/Toast";
 import { verifyMagicLink } from "@/src/api/auth";
+import { apiErrorMessage } from "@/src/lib/api-error";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 type Mode = "email" | "sent" | "paste";
@@ -25,8 +26,10 @@ export default function LoginScreen() {
     try {
       await sendMagicLink(email.toLowerCase().trim());
       setMode("sent");
-    } catch {
-      showToast(t("error_network"));
+    } catch (err) {
+      // A-11 — usa el `code` del server para localizar (email_invalid,
+      // rate_limited, email_send_failed); cae a "error_network" si no.
+      showToast(apiErrorMessage(err, t));
     } finally {
       setLoading(false);
     }
@@ -43,7 +46,8 @@ export default function LoginScreen() {
       const { accessToken, user } = await verifyMagicLink(token, email.toLowerCase().trim());
       await signInWithToken(accessToken, user);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      // A-11 — token_missing / token_invalid / token_expired vienen con code.
+      showToast(apiErrorMessage(err, t));
     } finally {
       setLoading(false);
     }
@@ -128,8 +132,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   center: { flex: 1, paddingHorizontal: spacing.xxl, justifyContent: "center" },
   mark: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifDisplay + 16,
     color: colors.teal,
     textAlign: "center",
@@ -137,9 +140,8 @@ const styles = StyleSheet.create({
   },
   markGlyph: { color: colors.terracota },
   tag: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.body,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBody,
     color: colors.mute,
     textAlign: "center",
     marginBottom: spacing.xxl,
@@ -172,8 +174,7 @@ const styles = StyleSheet.create({
   },
   sentBox: { alignItems: "center", gap: spacing.md },
   sentTitle: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifLg,
     color: colors.ink,
     textAlign: "center",

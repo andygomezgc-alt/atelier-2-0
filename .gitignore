@@ -38,6 +38,8 @@ apps/mobile/.expo-shared/
 # tests
 coverage/
 .env*.local
+# rotaciones de secretos — backups locales temporales no deben ir al repo
+.env*.local.bak.*
 
 # superpowers brainstorm
 .superpowers/

@@ -43,8 +43,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   mark: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifDisplay + 16,
     color: colors.teal,
     textAlign: "center",
@@ -52,8 +51,7 @@ const styles = StyleSheet.create({
   },
   markGlyph: { color: colors.terracota },
   title: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifLg,
     color: colors.ink,
     textAlign: "center",

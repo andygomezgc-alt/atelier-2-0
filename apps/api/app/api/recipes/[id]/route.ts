@@ -4,7 +4,34 @@ import { PatchRecipeRequestSchema, can } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 import { projectRecipeDetail, recipeDetailInclude } from "@/lib/projections";
+import { parseIngredient } from "@/lib/products/parser";
 import type { Prisma } from "@atelier/db";
+
+// Sub-paso 6 — auto-enrich: si el cliente manda recipeIngredients sin
+// qty/unit explícitos, el server los parsea del rawText. Mismo helper que
+// /api/recipes (POST). Si después estos crecen, los extraigo a lib/.
+function autoEnrich(ing: {
+  rawText: string;
+  qty?: number | null;
+  unit?: string | null;
+  pezzatura?: string | null;
+}): { qty: number | null; unit: string | null; pezzatura: string | null } {
+  const hasQty = ing.qty !== undefined && ing.qty !== null;
+  const hasUnit = ing.unit !== undefined && ing.unit !== null;
+  if (hasQty && hasUnit) {
+    return {
+      qty: ing.qty ?? null,
+      unit: ing.unit ?? null,
+      pezzatura: ing.pezzatura ?? null,
+    };
+  }
+  const parsed = parseIngredient(ing.rawText);
+  return {
+    qty: hasQty ? (ing.qty ?? null) : parsed.quantity,
+    unit: hasUnit ? (ing.unit ?? null) : parsed.unit,
+    pezzatura: ing.pezzatura ?? null,
+  };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -71,10 +98,25 @@ export async function PATCH(
     );
   }
 
+  // Fase 2 alérgenos — gate: no se permite add + remove en el mismo body
+  // (semánticamente ambiguo y permitiría que el cliente intente "swap" de
+  // alérgeno; el flujo natural del sheet hace un solo tap por vez).
+  if (
+    parse.data.addManualAllergen !== undefined &&
+    parse.data.removeManualAllergen !== undefined
+  ) {
+    return NextResponse.json(
+      { error: "Cannot add and remove allergen in the same request" },
+      { status: 400 },
+    );
+  }
+
   const data: Prisma.RecipeUpdateInput = {};
   if (parse.data.title !== undefined) data.title = parse.data.title;
   if (parse.data.contentJson !== undefined) data.contentJson = parse.data.contentJson;
   if (parse.data.priority !== undefined) data.priority = parse.data.priority;
+  if (parse.data.portions !== undefined) data.portions = parse.data.portions;
+  if (parse.data.salePrice !== undefined) data.salePrice = parse.data.salePrice;
   if (parse.data.state !== undefined) {
     data.state = parse.data.state;
     if (parse.data.state === "approved") {
@@ -84,6 +126,27 @@ export async function PATCH(
   }
   if (parse.data.title || parse.data.contentJson || parse.data.recipeIngredients) {
     data.version = { increment: 1 };
+  }
+
+  // Fase 2 alérgenos — mutaciones idempotentes sobre `manualAllergens`.
+  // Postgres scalar arrays no tienen "distinct push" nativo de Prisma; lo
+  // resolvemos en JS leyendo la lista actual y asignándola completa.
+  if (parse.data.addManualAllergen !== undefined) {
+    const current = existing.manualAllergens;
+    if (!current.includes(parse.data.addManualAllergen)) {
+      data.manualAllergens = { set: [...current, parse.data.addManualAllergen] };
+    }
+    // Si ya estaba, no-op (no escribimos manualAllergens en el data).
+  }
+  if (parse.data.removeManualAllergen !== undefined) {
+    const current = existing.manualAllergens;
+    if (current.includes(parse.data.removeManualAllergen)) {
+      data.manualAllergens = {
+        set: current.filter((a) => a !== parse.data.removeManualAllergen),
+      };
+    }
+    // Si no estaba, no-op. Heredados de productos NO viven en esta lista,
+    // así que intentar removerlos también es no-op (correcto).
   }
 
   // Si vienen ingredientes estructurados, validamos productIds + reemplazamos
@@ -114,16 +177,21 @@ export async function PATCH(
       await tx.recipeIngredient.deleteMany({ where: { recipeId: id } });
       if (parse.data.recipeIngredients!.length > 0) {
         await tx.recipeIngredient.createMany({
-          data: parse.data.recipeIngredients!.map((ing, idx) => ({
-            recipeId: id,
-            productId: ing.productId ?? null,
-            position: idx,
-            rawText: ing.rawText,
-            qty: ing.qty ?? null,
-            unit: ing.unit ?? null,
-            pezzatura: ing.pezzatura ?? null,
-            mermaOverridePct: ing.mermaOverridePct ?? null,
-          })),
+          data: parse.data.recipeIngredients!.map((ing, idx) => {
+            const enriched = autoEnrich(ing);
+            return {
+              recipeId: id,
+              productId: ing.productId ?? null,
+              position: idx,
+              rawText: ing.rawText,
+              qty: enriched.qty,
+              unit: enriched.unit,
+              pezzatura: enriched.pezzatura,
+              mermaOverridePct: ing.mermaOverridePct ?? null,
+              // Entrega A.5, Fase 7 — override del peso por pieza.
+              pesoCalculoG: ing.pesoCalculoG ?? null,
+            };
+          }),
         });
       }
       return tx.recipe.findUnique({ where: { id }, include: recipeDetailInclude });

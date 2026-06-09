@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -7,7 +7,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "@/src/components/Screen";
 import { Eyebrow } from "@/src/components/Eyebrow";
@@ -17,6 +17,8 @@ import { useAuth } from "@/src/hooks/useAuth";
 import { getRecipe, patchRecipe, type RecipeFull } from "@/src/api/recipes";
 import { showToast } from "@/src/components/Toast";
 import { AddToMenuSheet } from "@/src/components/AddToMenuSheet";
+import { RecipeCostCard } from "@/src/components/RecipeCostCard";
+import { StatusBadge, type StatusLevel } from "@/src/components/StatusBadge";
 import { setRecipeDraft } from "@/src/lib/recipe-draft";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
@@ -49,9 +51,17 @@ export default function RecipeDetailScreen() {
     }
   }, [id, t]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  // useFocusEffect en vez de useEffect: cuando el chef vuelve a esta
+  // pantalla desde el banco (después de cargar/editar un precio), la
+  // pantalla refetchea automáticamente. Combinado con la invalidación de
+  // `recipes:` que hace patchProduct, garantiza que el cost del backend
+  // venga fresco — totalCents, perPortionCents, foodCostPct y los
+  // contadores de missing del aviso (bug Andy 2026-05-17).
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload]),
+  );
 
   async function togglePriority() {
     if (!recipe) return;
@@ -94,6 +104,21 @@ export default function RecipeDetailScreen() {
       title: recipe.title,
       contentJson: recipe.contentJson,
       editId: recipe.id,
+      // Bug A fix (Andy 2026-05-17): pasamos los recipeIngredients con
+      // productId ya resuelto. Sin esto, el editor recibía solo los strings
+      // de contentJson.ingredients, los marcaba como productId=null, y el
+      // flujo de save corría matching para todos → creaba drafts duplicados
+      // en el banco para los que no matcheaban exact (los rawText con
+      // cantidad pegada al nombre). Combinado con Bug C, el editor de
+      // recetas migradas no duplica nada al guardar sin cambios.
+      recipeIngredients: recipe.recipeIngredients.map((ri) => ({
+        rawText: ri.rawText,
+        productId: ri.product?.id ?? null,
+        // Entrega A.5, Fase 7: preservar el override para que al re-guardar
+        // sin cambios no se pierda. Si el chef lo modificó en el editor, el
+        // valor del editor reemplaza este snapshot.
+        pesoCalculoG: ri.pesoCalculoG ?? null,
+      })),
     });
     router.push("/recetas/nueva");
   }
@@ -128,6 +153,29 @@ export default function RecipeDetailScreen() {
             {recipe.authorName} · v{recipe.version}
           </Text>
         </View>
+
+        {/* Sub-paso 6 — tarjeta de costo. Se auto-oculta si la receta no
+            tiene RecipeIngredient enlazados (legacy puro). */}
+        <RecipeCostCard
+          recipe={recipe}
+          canEdit={canModify}
+          onPatchPortions={async (portions) => {
+            try {
+              const updated = await patchRecipe(recipe.id, { portions });
+              setRecipe(updated);
+            } catch (err) {
+              showToast(err instanceof Error ? err.message : t("error_network"));
+            }
+          }}
+          onPatchSalePrice={async (salePrice) => {
+            try {
+              const updated = await patchRecipe(recipe.id, { salePrice });
+              setRecipe(updated);
+            } catch (err) {
+              showToast(err instanceof Error ? err.message : t("error_network"));
+            }
+          }}
+        />
 
         {recipe.state === "approved" ? (
           <View style={styles.menusSection}>
@@ -228,28 +276,31 @@ function StateLabel({
   state: RecipeFull["state"];
   t: (key: "state_draft" | "state_in_test" | "state_approved") => string;
 }) {
-  const map = {
-    draft: { label: t("state_draft"), color: colors.inkSoft },
-    in_test: { label: t("state_in_test"), color: colors.teal },
-    approved: { label: t("state_approved"), color: colors.terracota },
-  } as const;
-  return <Text style={[styles.stateLabel, { color: map[state].color }]}>{map[state].label}</Text>;
+  // Bloque 4 · C-04 — mapping al vocabulario único:
+  //   draft   → info    (borrador, sin validación todavía)
+  //   in_test → warning (en período de prueba, ojo)
+  //   approved→ ok      (validada para servicio)
+  // Invierte los colores previos (teal⇄terracota) intencionalmente para
+  // alinear color con significado.
+  const levelMap: Record<RecipeFull["state"], StatusLevel> = {
+    draft: "info",
+    in_test: "warning",
+    approved: "ok",
+  };
+  const labelMap = {
+    draft: t("state_draft"),
+    in_test: t("state_in_test"),
+    approved: t("state_approved"),
+  };
+  return <StatusBadge level={levelMap[state]} label={labelMap[state]} />;
 }
 
 const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.xl, paddingVertical: spacing.xl, gap: spacing.xl },
   hero: { gap: spacing.xs },
   heroTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  stateLabel: {
-    fontFamily: fonts.sans,
-    fontSize: fontSizes.eyebrow,
-    textTransform: "uppercase",
-    letterSpacing: 1.4,
-    fontWeight: "600",
-  },
   title: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifDisplay,
     color: colors.ink,
     lineHeight: fontSizes.serifDisplay * 1.15,
@@ -263,17 +314,16 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.xs,
   },
-  bullet: { fontFamily: fonts.serif, fontSize: fontSizes.body, color: colors.ink, lineHeight: fontSizes.body * 1.5 },
+  bullet: { fontFamily: fonts.serif, fontSize: fontSizes.serifBody, color: colors.ink, lineHeight: fontSizes.serifBody * 1.5 },
   numbered: {
     fontFamily: fonts.serif,
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.serifBody,
     color: colors.ink,
     lineHeight: fontSizes.body * 1.5,
   },
   note: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.body,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBody,
     color: colors.inkSoft,
     lineHeight: fontSizes.body * 1.5,
   },

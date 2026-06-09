@@ -80,8 +80,7 @@ export function SectionPickerSheet({
 
 const styles = StyleSheet.create({
   title: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifLg,
     color: colors.ink,
     paddingHorizontal: spacing.xl,
@@ -110,9 +109,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.terracotaSoft,
   },
   label: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.body,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBody,
     color: colors.ink,
   },
   labelMute: {

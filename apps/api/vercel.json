@@ -4,5 +4,11 @@
   "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
   "buildCommand": "cd ../.. && pnpm db:generate && pnpm --filter api build",
   "outputDirectory": ".next",
-  "regions": ["fra1"]
+  "regions": ["fra1"],
+  "crons": [
+    {
+      "path": "/api/cron/recalc-criticality",
+      "schedule": "0 4 * * 1"
+    }
+  ]
 }

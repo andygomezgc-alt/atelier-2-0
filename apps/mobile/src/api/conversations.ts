@@ -40,6 +40,21 @@ export const listConversations = () =>
 export const listMessages = (conversationId: string) =>
   apiFetch<ChatMessage[]>(`/api/conversations/${conversationId}/messages`);
 
+// A-12 — hidrata mensajes locales (modo preview) en una Conversation real
+// recién creada. Lo usa `saveAsRecipe` en Asistente cuando el chef pasa de
+// needs-restaurant → signed-in.
+export const bulkAddMessages = (
+  conversationId: string,
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+) =>
+  apiFetch<{ inserted: number }>(
+    `/api/conversations/${conversationId}/messages/bulk`,
+    {
+      method: "POST",
+      body: JSON.stringify({ messages }),
+    },
+  );
+
 export type IdeaConversation = {
   id: string;
   modelUsed: string;
@@ -63,6 +78,7 @@ export const getConversationByIdea = (ideaId: string) =>
  */
 export type SseEvent =
   | { type: "delta"; text: string }
+  | { type: "heartbeat"; ts: number }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -72,6 +88,12 @@ export function parseSseEvent(data: string): SseEvent | null {
     if (json && typeof json === "object") {
       if (json.type === "delta" && typeof json.text === "string") {
         return { type: "delta", text: json.text };
+      }
+      // A-05 — el server manda heartbeats cada 8s mientras espera el primer
+      // delta del modelo. Le decimos al cliente "sigo vivo" sin generar texto;
+      // el cliente resetea su inactivity timer pero NO lo expone como delta.
+      if (json.type === "heartbeat" && typeof json.ts === "number") {
+        return { type: "heartbeat", ts: json.ts };
       }
       if (json.type === "done") return { type: "done" };
       if (json.type === "error") {
@@ -89,13 +111,19 @@ export function parseSseEvent(data: string): SseEvent | null {
  * not expose `Response.body` as a readable stream (Hermes returns null), so we
  * use `react-native-sse` (XHR-backed) which works on Android/iOS and web.
  * Calls `onDelta` for each text fragment, resolves with the full text on done.
+ *
+ * A-12 — `conversationId` puede ser `null`: el cliente apunta al endpoint
+ * compartido pero con segmento "preview", donde el server stremea sin
+ * persistir y usa `history` del body como contexto. La firma para el chef
+ * (UX, estados) es idéntica al modo persistente.
  */
 export async function streamMessage(
-  conversationId: string,
+  conversationId: string | null,
   content: string,
   model: "haiku" | "sonnet" | "opus",
   onDelta: (delta: string) => void,
   signal?: AbortSignal,
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
 ): Promise<string> {
   const token = await SecureStore.getItemAsync(TOKEN_KEY);
 
@@ -112,10 +140,14 @@ export async function streamMessage(
     };
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const es = new EventSource(`${BASE}/api/conversations/${conversationId}/messages`, {
+    const pathSegment = conversationId ?? "preview";
+    const body: Record<string, unknown> = { content, model };
+    if (!conversationId && history) body.history = history;
+
+    const es = new EventSource(`${BASE}/api/conversations/${pathSegment}/messages`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ content, model }),
+      body: JSON.stringify(body),
       // We manage inactivity ourselves — disable the lib's auto-reconnect.
       pollingInterval: 0,
     });
@@ -165,6 +197,10 @@ export async function streamMessage(
       if (ev.type === "delta") {
         full += ev.text;
         onDelta(ev.text);
+      } else if (ev.type === "heartbeat") {
+        // A-05 — el resetInactivityTimer ya se llamó arriba; no hace falta
+        // más nada. Mantiene viva la conexión cuando el modelo tarda en
+        // empezar a generar.
       } else if (ev.type === "done") {
         settle(() => resolve(full));
       } else if (ev.type === "error") {

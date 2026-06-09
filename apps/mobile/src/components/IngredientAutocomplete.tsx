@@ -34,6 +34,11 @@ const MAX_SUGGESTIONS = 5;
 export type IngredientValue = {
   rawText: string;
   productId: string | null;
+  // Entrega A.5 — override de "peso por pieza" para esta receta.
+  // Null = usar punto medio de pezzatura del banco.
+  // Solo se renderiza el editor cuando unit=piezas y producto tiene
+  // pezzaturaMode no-null (ver Fase 7).
+  pesoCalculoG?: number | null;
 };
 
 type Props = {

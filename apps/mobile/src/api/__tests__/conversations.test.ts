@@ -78,6 +78,16 @@ describe("parseSseEvent", () => {
   it("returns null for unknown type", () => {
     expect(parseSseEvent('{"type":"unknown"}')).toBeNull();
   });
+  // A-05 — heartbeat: el server lo manda cada 8s mientras espera el 1er delta.
+  it("returns heartbeat event with ts", () => {
+    expect(parseSseEvent('{"type":"heartbeat","ts":1700000000000}')).toEqual({
+      type: "heartbeat",
+      ts: 1_700_000_000_000,
+    });
+  });
+  it("returns null for heartbeat without ts", () => {
+    expect(parseSseEvent('{"type":"heartbeat"}')).toBeNull();
+  });
   it("returns null for delta with non-string text", () => {
     expect(parseSseEvent('{"type":"delta","text":42}')).toBeNull();
   });

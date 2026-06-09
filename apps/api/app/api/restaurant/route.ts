@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   if (isNextResponse(ctx)) return ctx;
 
   if (ctx.restaurantId) {
-    return NextResponse.json({ error: "Already in a restaurant" }, { status: 409 });
+    return NextResponse.json({ error: "Already in a restaurant", code: "already_in_restaurant" }, { status: 409 });
   }
 
   const body = await req.json();
@@ -74,8 +74,15 @@ export async function POST(req: NextRequest) {
     data: { restaurantId: restaurant.id, role: "admin" },
   });
 
+  // Devolvemos `role` también: el cliente lo usa con patchLocalUser para
+  // actualizar auth-state sin un GET /me extra (A-10 / Ola 0 0.2).
   return NextResponse.json(
-    { id: restaurant.id, name: restaurant.name, inviteCode: restaurant.inviteCode },
+    {
+      id: restaurant.id,
+      name: restaurant.name,
+      inviteCode: restaurant.inviteCode,
+      role: "admin",
+    },
     { status: 201 },
   );
 }

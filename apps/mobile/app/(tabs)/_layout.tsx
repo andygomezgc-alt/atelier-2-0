@@ -23,6 +23,9 @@ export default function TabsLayout() {
         const iconName = ICONS[route.name] ?? "ellipse-outline";
         return {
           headerShown: false,
+          // Bloque 4 · C-01 — fade conservador entre tabs (~200ms default).
+          // Reemplaza el snap seco anterior. Sin escalas ni rebotes.
+          animation: "fade",
           tabBarActiveTintColor: colors.terracota,
           tabBarInactiveTintColor: colors.mute,
           tabBarStyle: {

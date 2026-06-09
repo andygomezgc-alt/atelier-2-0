@@ -4,7 +4,36 @@ import { CreateRecipeRequestSchema, type CreateRecipeRequest } from "@atelier/sh
 import { withAuth } from "@/lib/with-auth";
 import { logger } from "@/lib/logger";
 import { projectRecipeListItem, recipeListInclude } from "@/lib/projections";
+import { parseIngredient } from "@/lib/products/parser";
 import type { Prisma } from "@atelier/db";
+
+// Sub-paso 6 — fix unificado: el cliente puede mandar `recipeIngredients`
+// con `rawText` solo (sin qty/unit/pezzatura), y el server completa esos
+// campos parseando el rawText. Si el cliente ya manda qty/unit/pezzatura,
+// los respeta tal como vienen.
+function autoEnrich(ing: {
+  rawText: string;
+  qty?: number | null;
+  unit?: string | null;
+  pezzatura?: string | null;
+}): { qty: number | null; unit: string | null; pezzatura: string | null } {
+  // Si el cliente envió algo explícito (incluso null), lo respeto.
+  const hasQty = ing.qty !== undefined && ing.qty !== null;
+  const hasUnit = ing.unit !== undefined && ing.unit !== null;
+  if (hasQty && hasUnit) {
+    return {
+      qty: ing.qty ?? null,
+      unit: ing.unit ?? null,
+      pezzatura: ing.pezzatura ?? null,
+    };
+  }
+  const parsed = parseIngredient(ing.rawText);
+  return {
+    qty: hasQty ? (ing.qty ?? null) : parsed.quantity,
+    unit: hasUnit ? (ing.unit ?? null) : parsed.unit,
+    pezzatura: ing.pezzatura ?? null,
+  };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -71,16 +100,21 @@ export const POST = withAuth(
           },
         });
         await tx.recipeIngredient.createMany({
-          data: body.recipeIngredients!.map((ing, idx) => ({
-            recipeId: created.id,
-            productId: ing.productId ?? null,
-            position: idx,
-            rawText: ing.rawText,
-            qty: ing.qty ?? null,
-            unit: ing.unit ?? null,
-            pezzatura: ing.pezzatura ?? null,
-            mermaOverridePct: ing.mermaOverridePct ?? null,
-          })),
+          data: body.recipeIngredients!.map((ing, idx) => {
+            const enriched = autoEnrich(ing);
+            return {
+              recipeId: created.id,
+              productId: ing.productId ?? null,
+              position: idx,
+              rawText: ing.rawText,
+              qty: enriched.qty,
+              unit: enriched.unit,
+              pezzatura: enriched.pezzatura,
+              mermaOverridePct: ing.mermaOverridePct ?? null,
+              // Entrega A.5, Fase 7 — override del peso por pieza.
+              pesoCalculoG: ing.pesoCalculoG ?? null,
+            };
+          }),
         });
         return tx.recipe.findUnique({ where: { id: created.id }, include: recipeListInclude });
       });

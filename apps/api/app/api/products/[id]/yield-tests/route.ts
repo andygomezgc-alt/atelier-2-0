@@ -21,6 +21,7 @@ import { withAuth } from "@/lib/with-auth";
 import { logger } from "@/lib/logger";
 import { computeMermaPctFromYield } from "@/lib/products/yield";
 import { projectProductDetail } from "@/lib/products/projections";
+import { countRecipesUsingProduct } from "@/lib/products/usage";
 
 export const dynamic = "force-dynamic";
 
@@ -84,9 +85,10 @@ export const POST = withAuth(
       mermaCalculadaPct,
     });
 
+    const recipesUsingCount = await countRecipesUsingProduct(productId);
     return NextResponse.json(
       {
-        product: projectProductDetail(product),
+        product: projectProductDetail(product, recipesUsingCount),
         yieldTest: {
           id: yieldTest.id,
           pesoBrutoG: Number(yieldTest.pesoBrutoG),

@@ -23,6 +23,7 @@ import { Screen } from "@/src/components/Screen";
 import { useI18n } from "@/src/hooks/useI18n";
 import { showToast } from "@/src/components/Toast";
 import { createProduct } from "@/src/api/products";
+import { PezzaturaField } from "@/src/components/PezzaturaField";
 import type {
   ProductCategory,
   ProductUnit,
@@ -69,7 +70,11 @@ export default function NuevoProductoScreen() {
 
   const [name, setName] = useState("");
   const [category, setCategory] = useState<ProductCategory>("otro");
-  const [pezzatura, setPezzatura] = useState("");
+  // Entrega A.5: pezzaturaInput es el structured field (parser lo transforma
+  // en pezzaturaMode/Min/Max canónicos en el server). El campo legacy
+  // `pezzatura: string` ya no se expone en el editor (queda en DB para
+  // productos que lo tengan, deprecación gradual).
+  const [pezzaturaInput, setPezzaturaInput] = useState("");
   const [unidad, setUnidad] = useState<ProductUnit>("kg");
   const [precioInput, setPrecioInput] = useState("");
   const [mermaInput, setMermaInput] = useState("");
@@ -96,7 +101,10 @@ export default function NuevoProductoScreen() {
     const payload: CreateProductRequest = {
       name: trimmedName,
       category,
-      pezzatura: pezzatura.trim() || undefined,
+      // pezzaturaInput se manda al server; el server parsea y persiste
+      // pezzaturaMode/Min/Max canónicos. Si está vacío, server corre
+      // detectPezzaturaFromName silencioso para auto-detect.
+      pezzaturaInput: pezzaturaInput.trim() || undefined,
       unidadCompra: unidad,
       precioCompra: cents,
       mermaPct: merma ?? undefined,
@@ -119,7 +127,7 @@ export default function NuevoProductoScreen() {
     saving,
     name,
     category,
-    pezzatura,
+    pezzaturaInput,
     unidad,
     precioInput,
     mermaInput,
@@ -178,15 +186,13 @@ export default function NuevoProductoScreen() {
             ))}
           </ScrollView>
 
-          {/* Pezzatura */}
-          <Text style={styles.label}>{t("producto_form_pezzatura_label")}</Text>
-          <TextInput
-            value={pezzatura}
-            onChangeText={setPezzatura}
-            placeholder={t("producto_form_pezzatura_placeholder")}
-            placeholderTextColor={colors.mute}
-            style={styles.input}
-            maxLength={100}
+          {/* Pezzatura — solo aparece si la categoría/nombre la admite */}
+          <PezzaturaField
+            name={name}
+            category={category}
+            value={pezzaturaInput}
+            onChangeValue={setPezzaturaInput}
+            recipesUsingByUnitCount={0}
           />
 
           {/* Unidad */}

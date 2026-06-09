@@ -80,6 +80,37 @@ enum Criticality {
   baja
 }
 
+// Entrega A.5 — Pezzatura estructurada.
+// Distinguimos dos modos según la categoría del producto:
+//  - pz_per_kg:   piezas por kilo (marisco/crostacei). Min/Max en pz/kg.
+//  - g_per_piece: gramos por pieza (pescado entero, carne en pieza, fruta,
+//                 panadería). Min/Max siempre en gramos.
+// Render canónico se hace en cliente desde estos campos + categoría.
+enum PezzaturaMode {
+  pz_per_kg
+  g_per_piece
+}
+
+// 14 alérgenos obligatorios — Reg. EU 1169/2011 Anexo II. Orden por número
+// oficial del regulamento; el helper `ALLERGEN_ORDER` en @atelier/shared
+// espeja este orden para presentar leyendas y listas de forma estable.
+enum Allergen {
+  gluten        // 1
+  crustaceans   // 2
+  eggs          // 3
+  fish          // 4
+  peanuts       // 5
+  soy           // 6
+  milk          // 7
+  tree_nuts     // 8
+  celery        // 9
+  mustard       // 10
+  sesame        // 11
+  sulphites     // 12
+  lupin         // 13
+  molluscs      // 14
+}
+
 model Restaurant {
   id              String   @id @default(cuid())
   name            String
@@ -210,6 +241,13 @@ model Recipe {
   state    RecipeState @default(draft)
   priority Boolean     @default(false)
 
+  // Alérgenos añadidos manualmente desde el "+" en la preview del menú.
+  // Aditivos globales (cualquier menú que use la receta los hereda). Los
+  // alérgenos heredados de productos NO viven acá: se computan al vuelo
+  // por `computeRecipeAllergens` uniéndolos con esta lista. "Quitar" desde
+  // el sheet solo elimina entradas de esta columna, nunca toca los heredados.
+  manualAllergens Allergen[] @default([])
+
   sourceConversationId String?
   sourceConversation   Conversation? @relation(fields: [sourceConversationId], references: [id], onDelete: SetNull)
 
@@ -238,6 +276,15 @@ model MenuFolder {
   name              String
   season            String?
   presentationStyle MenuStyle  @default(elegant)
+  // Bloque 5 — estado "en servicio" independiente por menú. Varios pueden
+  // estar prendidos a la vez (carta fija + degustación + …). Default false:
+  // los menús existentes arrancan apagados. El chef los enciende manualmente.
+  inService         Boolean    @default(false)
+  // Toggle global del menú. ON = TODOS los alérgenos del plato salen en
+  // el PDF cliente (sin granularidad por alérgeno). OFF = ninguno. La
+  // preview chef siempre los muestra completos; este flag solo afecta
+  // al render del PDF cliente (apps/api/lib/pdf).
+  showAllergensInPdf Boolean   @default(true)
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 
@@ -247,6 +294,7 @@ model MenuFolder {
 
   @@index([restaurantId])
   @@index([restaurantId, updatedAt])
+  @@index([restaurantId, inService])
 }
 
 // Capa de overrides "solo para PDF cliente" — el compositor (staff) jamás
@@ -364,7 +412,17 @@ model Product {
 
   name      String
   category  ProductCategory
+  // Legacy: texto libre del calibre (ej. "15/20", "2-4 kg"). Se mantiene como
+  // notas humanas durante la transición; el cálculo de costeo usa los campos
+  // estructurados pezzaturaMode/Min/Max. Migración retroactiva en Fase 3.
   pezzatura String?
+
+  // Entrega A.5 — pezzatura estructurada. Los tres campos van juntos:
+  // todos null (sin pezzatura cargada) o todos no-null (válida). Enforced
+  // por CHECK Product_pezzatura_consistency.
+  pezzaturaMode PezzaturaMode?
+  pezzaturaMin  Decimal?       @db.Decimal(10, 2)
+  pezzaturaMax  Decimal?       @db.Decimal(10, 2)
 
   unidadCompra ProductUnit
   precioCompra Int // centavos / cents
@@ -385,6 +443,11 @@ model Product {
   // = true cuando el chef la sobrescribió y no querés que el job semanal la pise.
   criticality       Criticality
   criticalityManual Boolean     @default(false)
+
+  // Reg. EU 1169/2011 — 0 o 1 alérgeno por producto (uno solo o ninguno;
+  // ej. aceite de oliva = null). El plato calcula sus alérgenos uniendo
+  // este campo de cada ingrediente enlazado + Recipe.manualAllergens.
+  allergen Allergen?
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -419,6 +482,13 @@ model RecipeIngredient {
   // Permite que una receta use una merma distinta a la default del producto
   // (ej. "este corte va con merma especial"). Null = usar la del Product.
   mermaOverridePct Decimal? @db.Decimal(5, 2)
+
+  // Entrega A.5 — override de "peso por pieza" para esta receta puntual.
+  // Solo aplica cuando unit = "piezas" y el chef quiere usar un peso distinto
+  // al rango del banco (ej. "yo compro gambero más grande para este plato").
+  // Null = usar el punto medio de pezzaturaMin/Max del producto. Enforced
+  // > 0 por CHECK RecipeIngredient_pesoCalculoG_positive.
+  pesoCalculoG     Decimal? @db.Decimal(10, 3)
 
   @@index([recipeId, position])
   @@index([productId])

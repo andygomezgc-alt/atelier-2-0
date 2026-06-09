@@ -77,6 +77,85 @@ export async function extractRecipeFromFile(
   return parsed.data;
 }
 
+// --- Extracción desde TEXTO (Asistente → "Guardar como receta", A-01). ---
+// A diferencia de extractRecipeFromFile (BYOK-aware), esta SIEMPRE usa la
+// clave del server + Haiku con TOOL USE FORZADO. Decisión A-01 "Opción A":
+// la extracción es infraestructura de la app, no el servicio personal del
+// chef; y el tool use forzado da garantía técnica de JSON parseable (no
+// "esperanza" de que el modelo cumpla un formato de texto). Validado en
+// datos reales (Arroz Meloso truncado + Ricciola): Haiku 10/10.
+const EMIT_RECIPE_TOOL = {
+  name: "emit_recipe",
+  description:
+    "Emití la receta del texto en forma estructurada. Es obligatorio llamar a esta herramienta una sola vez.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      title: {
+        type: "string",
+        description:
+          "Nombre real del plato tal como aparece en el texto (suele ser un encabezado en negrita). NUNCA una pregunta, instrucción o mensaje del usuario.",
+      },
+      ingredients: {
+        type: "array",
+        items: { type: "string" },
+        description: "Cada ingrediente con su cantidad como string, en orden.",
+      },
+      method: {
+        type: "array",
+        items: { type: "string" },
+        description: "Cada paso del método como string, en orden.",
+      },
+      notes: {
+        type: "string",
+        description: "Notas/técnica/servicio. String vacía si no hay.",
+      },
+    },
+    required: ["title", "ingredients", "method", "notes"],
+  },
+} as const;
+
+const EXTRACT_TEXT_SYSTEM =
+  "Sos un extractor de recetas. Convertí el texto de receta a la herramienta emit_recipe. " +
+  "`title` = el nombre real del plato tal como aparece en el texto (un encabezado, normalmente en negrita), " +
+  "NUNCA una pregunta, instrucción o mensaje del usuario. Si el texto está incompleto o truncado, " +
+  "extraé lo que haya. No expliques nada fuera de la herramienta.";
+
+export async function extractRecipeFromText(
+  recipeText: string,
+): Promise<ExtractedRecipe> {
+  const text = recipeText.trim();
+  if (!text) throw new Error("Texto de receta vacío");
+  const truncated = text.length > 30_000 ? text.slice(0, 30_000) : text;
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey)
+    throw new Error("ANTHROPIC_API_KEY no configurada en el servidor");
+
+  const client = new Anthropic({ apiKey });
+  const msg = await client.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 4096,
+    system: EXTRACT_TEXT_SYSTEM,
+    tools: [EMIT_RECIPE_TOOL as unknown as Anthropic.Tool],
+    tool_choice: { type: "tool", name: "emit_recipe" },
+    messages: [{ role: "user", content: truncated }],
+  });
+
+  const block = msg.content.find((b) => b.type === "tool_use");
+  if (!block || block.type !== "tool_use")
+    throw new Error("El modelo no devolvió el bloque estructurado");
+
+  const parsed = ExtractedRecipeSchema.safeParse(block.input);
+  if (!parsed.success)
+    throw new Error(
+      `Receta estructurada inválida: ${parsed.error.issues
+        .map((i) => i.message)
+        .join(", ")}`,
+    );
+  return parsed.data;
+}
+
 async function fileToText(buffer: Uint8Array, mimeType: string): Promise<string> {
   if (mimeType === PDF_MIME) {
     const doc = await getDocumentProxy(buffer);

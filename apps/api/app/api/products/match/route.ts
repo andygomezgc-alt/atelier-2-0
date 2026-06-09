@@ -20,6 +20,7 @@ import {
 } from "@atelier/shared";
 import { withAuth } from "@/lib/with-auth";
 import { findMatch, type MatchCandidate } from "@/lib/products/matching";
+import { parseIngredient } from "@/lib/products/parser";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,18 @@ export const POST = withAuth(
       aliases: p.aliases,
     }));
 
-    const results = body.queries.map((q) => findMatch(q, candidates));
+    // Bug C fix (Andy 2026-05-17): el rawText del cliente puede traer la
+    // cantidad+unidad pegada al nombre ("500g Pomodorini Gialli del
+    // Piennolo"). findMatch compara Levenshtein contra los names limpios
+    // del banco, así que parseamos primero y matcheamos contra el nombre
+    // limpio. Si el parser no detecta cantidad, parsed.name === q.trim()
+    // y el comportamiento es idéntico al anterior. Sin este fix, editar
+    // una receta migrada duplicaba todos los productos cuyo rawText incluía
+    // cantidad — el matching no los reconocía y se creaban drafts nuevos.
+    const results = body.queries.map((q) => {
+      const parsed = parseIngredient(q);
+      return findMatch(parsed.name || q, candidates);
+    });
 
     const response: MatchProductsResponse = { results };
     return NextResponse.json(response);

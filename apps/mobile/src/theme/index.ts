@@ -2,6 +2,11 @@
 
 import { Platform } from "react-native";
 
+// Bloque 4 · C-02 — Crimson Pro como serif única (iOS + Android).
+// Cargada en app/_layout.tsx vía expo-font + @expo-google-fonts/crimson-pro.
+// En RN las variantes italic/medium no se resuelven por `fontStyle`/`fontWeight`
+// con fuentes custom: hay que apuntar al fontFamily exacto del peso/estilo.
+
 export const colors = {
   paper: "#f9f7f2",
   paperSoft: "#fffaf2",
@@ -19,11 +24,11 @@ export const colors = {
 } as const;
 
 export const fonts = {
-  serif: Platform.select({
-    ios: "Iowan Old Style",
-    android: "serif", // RN Android can't load Iowan; falls back to system serif (resembles Georgia).
-    default: "serif",
-  }) as string,
+  // Crimson Pro — 4 variantes cargadas en _layout.tsx.
+  serif: "CrimsonPro_400Regular",
+  serifItalic: "CrimsonPro_400Regular_Italic",
+  serifMedium: "CrimsonPro_500Medium",
+  serifMediumItalic: "CrimsonPro_500Medium_Italic",
   sans: Platform.select({
     ios: "System",
     android: "sans-serif",
@@ -62,11 +67,17 @@ export const fontSizes = {
   body: 14,
   bodyLg: 15,
 
-  // Serif headings.
-  serifMd: 18,
-  serifLg: 22,
-  serifXl: 28,
-  serifDisplay: 36,
+  // Bloque 4 · C-02 — escala serif propia.
+  // Crimson Pro tiene x-height más baja que la system serif anterior; para
+  // mantener altura visible al ojo, los escalones chicos/medianos viajan
+  // ~+2px y los grandes apenas +1 (los grandes ya rinden bien).
+  serifBodySm: 15.5, // antes 12.5 (sans) +3 — meta serif chico
+  serifBody: 17, // antes 14 (sans) +3 — cuerpo de receta, nombres de tarjeta
+  serifBodyLg: 18, // antes 15 (sans) +3 — títulos de plato en bubble asistente
+  serifMd: 20, // antes 18
+  serifLg: 23, // antes 22
+  serifXl: 28, // sin cambio — titulares grandes
+  serifDisplay: 36, // sin cambio
 } as const;
 
 export const lineHeights = {

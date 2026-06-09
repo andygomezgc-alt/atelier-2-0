@@ -23,6 +23,7 @@ import {
 } from "@/lib/recipe-extraction";
 import { loadUserBYOK } from "@/lib/byok-user";
 import { findMatch, type MatchCandidate } from "@/lib/products/matching";
+import { parseIngredient } from "@/lib/products/parser";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -99,7 +100,13 @@ export async function POST(req: NextRequest) {
     }> = [];
 
     extracted.ingredients.forEach((rawText, idx) => {
-      const m = findMatch(rawText, candidates);
+      // Bug C fix (Andy 2026-05-17): parsear rawText antes de matchear
+      // contra el banco. El LLM extrae líneas tipo "200g harina" — si las
+      // pasamos enteras a findMatch, Levenshtein contra "harina" da
+      // distance>3 y cae como "none" → se crea draft duplicado. Parseando
+      // primero, matcheamos sólo el nombre limpio.
+      const parsed = parseIngredient(rawText);
+      const m = findMatch(parsed.name || rawText, candidates);
       if (m.level === "exact" && m.productId) {
         recipeIngredients.push({ rawText, productId: m.productId });
       } else if (m.level === "probable" && m.productId && m.productName) {

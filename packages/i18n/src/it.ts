@@ -39,6 +39,23 @@ export const it: EsDict = {
   confirm_cancel: "Annulla",
   confirm_ok: "Conferma",
   confirm_delete: "Elimina",
+  confirm_destructive_badge: "Attenzione",
+  recetas_card_cost_label: "Costo/porz.",
+  recetas_card_pvp_label: "Prezzo",
+  casa_edit_name_title: "Modifica nome del ristorante",
+  casa_edit_name_placeholder: "Nome del ristorante",
+  staff_remove_title: "Rimuovere {name}?",
+  staff_remove_body: "Perderà l'accesso al ristorante. Puoi reinvitarlo con il codice.",
+  casa_leave_btn: "Esci dal ristorante",
+  leave_case_a_title: "Uscire dal ristorante?",
+  leave_case_a_body: "Perderai l'accesso. Puoi rientrare con un codice nuovo.",
+  leave_case_a_confirm: "Esci",
+  leave_case_b_title: "Azione bloccata",
+  leave_case_b_body: "Sei l'unico amministratore. Passa il ruolo di amministratore a un altro membro prima di uscire.",
+  leave_case_c_title: "Eliminare il ristorante",
+  leave_case_c_body: "Sei l'ultimo membro. Uscire elimina permanentemente il ristorante e tutti i suoi contenuti: ricette, menù, prodotti, idee, conversazioni. Questa azione non si può annullare.",
+  leave_case_c_typing_hint: "Per confermare, scrivi il nome esatto del ristorante ({name}):",
+  leave_case_c_confirm: "Elimina",
   confirm_delete_recipe_title: "Eliminare la ricetta?",
   confirm_delete_recipe_body: "Questa azione non si può annullare.",
   confirm_delete_idea_title: "Eliminare questa idea?",
@@ -96,16 +113,44 @@ export const it: EsDict = {
   style_minimal: "Minimal",
   btn_export_pdf: "Esporta carta PDF",
   chat_idea_anclada: "Idea ancorata",
-  chat_placeholder: "Continua la conversazione…",
+  chat_placeholder: "Chiedi all'assistente…",
   chat_role_user: "Tu",
   chat_role_assistant: "Assistente",
+  // ─── C-05 · Assistente editoriale (mockup) ───
+  header_asistente_eyebrow: "ATELIER · ASSISTENTE",
+  chat_greet: "Buongiorno, Chef.",
+  chat_history: "Cronologia",
+  assistant_eyebrow: "ATELIER · SUGGERISCE",
+  model_haiku: "Sous-chef",
+  model_sonnet: "Creativo",
+  model_opus: "Esecutivo",
+  byok_tier_fast: "Veloce",
+  byok_tier_balanced: "Equilibrato",
+  byok_tier_powerful: "Potente",
+  byok_help_anthropic_note:
+    "Se scegli Anthropic qui, viene usato il tuo account Claude invece di quello del server.",
+  byok_paused_note: "In pausa — stai usando la tua chiave di {provider}.",
+  byok_back_to_app_models: "Torna ai modelli dell'app",
+  byok_back_to_app_models_toast: "Sei tornato ai modelli dell'app",
+  chat_thinking: "Atelier pensa",
   chat_save_recipe: "Salva come ricetta",
+  chat_structuring: "Sto strutturando la ricetta…",
+  extract_fail_title: "Non è stato possibile strutturare la ricetta",
+  extract_fail_body: "Puoi salvarla come bozza e modificarla a mano.",
+  extract_fail_draft: "Salva come bozza",
+  extract_fail_cancel: "Annulla",
+  recipe_untitled: "Ricetta senza titolo",
   chat_reformulate: "Riformula",
   profile_role: "Ruolo",
   profile_restaurant: "Ristorante",
   profile_language: "Lingua",
   profile_model: "Modello Claude",
   profile_logout: "Esci",
+  profile_save: "Salva",
+  profile_cancel: "Annulla",
+  profile_name_placeholder: "Il tuo nome",
+  profile_bio_placeholder: "Mantra dello chef…",
+  profile_name_empty_toast: "Il nome non può essere vuoto",
   role_admin: "Admin",
   role_chef_executive: "Chef esecutivo",
   role_sous_chef: "Sous-chef",
@@ -129,6 +174,7 @@ export const it: EsDict = {
   onboard_create_title: "Crea il mio ristorante",
   onboard_create_sub: "Sarai admin del gruppo",
   onboard_join_title: "Unirmi con un codice",
+  onboard_already_in_restaurant: "Sei già in un ristorante.",
   onboard_join_sub: "Te l'ha dato l'admin del tuo team",
   onboard_restaurant_tag: "Il tuo ristorante",
   onboard_restaurant_name_placeholder: "Nome del ristorante",
@@ -223,6 +269,32 @@ export const it: EsDict = {
   producto_form_category_label: "Categoria",
   producto_form_pezzatura_label: "Pezzatura",
   producto_form_pezzatura_placeholder: "Pezzo grande, fresca, ecc.",
+  producto_form_pezzatura_hint_pz_per_kg: "es: 15/20",
+  producto_form_pezzatura_hint_g_per_piece: "es: 4-6 kg o 60 g/pz",
+  producto_form_pezzatura_error: "Non è stato possibile interpretare la pezzatura.",
+  producto_form_pezzatura_more_options: "Altre opzioni",
+  recetas_aviso_no_pezzatura_unit:
+    "Questo prodotto si misura a peso, non a unità. Cambia l'unità a g/kg o cambia il prodotto.",
+  recetas_aviso_falta_pezzatura:
+    "Manca caricare la pezzatura di questo prodotto per calcolare il costo. Caricarla →",
+  cost_card_wide_range_n:
+    "{n} ingrediente(i) con range di pezzatura ampio — il costo calcolato è un'approssimazione.",
+  pezzatura_pendiente_title:
+    "{name} si usa a unità in questa ricetta.",
+  pezzatura_pendiente_body:
+    "Quanto pesa ogni pezzo in media?",
+  pezzatura_pendiente_save: "Salva",
+  pezzatura_pendiente_later: "Dopo",
+  peso_por_pieza_label: "Peso per pezzo",
+  peso_por_pieza_from_bank: "{g} g (dal banco)",
+  peso_por_pieza_custom: "{g} g (personalizzato)",
+  peso_por_pieza_customize: "Personalizza",
+  peso_por_pieza_back_to_bank: "Torna al banco",
+  peso_por_pieza_modal_title: "Peso per pezzo (grammi)",
+  peso_por_pieza_modal_hint:
+    "Peso del pezzo intero, prima di pulire o sgusciare.",
+  peso_por_pieza_out_of_range:
+    "Peso fuori dal range del banco ({minG}-{maxG} g). È corretto?",
   producto_form_unidad_label: "Unità d'acquisto",
   producto_form_precio_label: "Prezzo d'acquisto (€)",
   producto_form_precio_placeholder: "Per unità d'acquisto",
@@ -239,6 +311,13 @@ export const it: EsDict = {
   filter_productos_pendientes_precio: "Senza prezzo",
   filter_productos_merma_sugerida: "Resa suggerita",
   filter_productos_archivados: "Archiviati",
+  filter_productos_pezzatura_pendiente: "Pezzatura pendente",
+  product_list_pezzatura_pendiente: "pezzatura pendente",
+  rename_pezzatura_desync_title: "Pezzatura disallineata",
+  rename_pezzatura_desync_body:
+    "Il nome indica {detected} ma la pezzatura caricata è {current}. Aggiornare la pezzatura?",
+  rename_pezzatura_update: "Aggiorna",
+  rename_pezzatura_keep: "Mantieni attuale",
 
   category_pescado: "Pesce",
   category_carne: "Carne",
@@ -273,6 +352,7 @@ export const it: EsDict = {
 
   producto_real_cost_label: "Costo reale",
   producto_real_cost_explainer: "Prezzo aggiustato per la resa",
+  producto_more_options: "Altre opzioni",
   producto_price_old_indicator: "Prezzo aggiornato {days} giorni fa",
   producto_used_in_recipes_label: "Nelle ricette",
   producto_no_recipes_yet: "Non ancora usato in nessuna ricetta.",
@@ -283,7 +363,13 @@ export const it: EsDict = {
 
   confirm_archive_producto_title: "Archiviare il prodotto?",
   confirm_archive_producto_body:
-    "Le ricette che lo usano resteranno segnate come «da rivedere». Puoi riattivarlo dopo.",
+    "Il prodotto non sarà più disponibile per nuove ricette. Puoi riattivarlo dopo.",
+  confirm_archive_producto_body_with_count:
+    "È usato in {count} ricette. Quelle ricette non vengono modificate, ma il prodotto non sarà più disponibile per nuove ricette. Continuare?",
+  confirm_unarchive_producto_title: "Riattivare il prodotto?",
+  confirm_unarchive_producto_body:
+    "Tornerà disponibile per nuove ricette.",
+  archived_banner_label: "Archiviato",
   confirm_delete_producto_in_use_title: "Prodotto in uso",
   confirm_delete_producto_in_use_body:
     "Questo prodotto compare in {count} ricette. Archiviarlo lo stesso?",
@@ -326,4 +412,128 @@ export const it: EsDict = {
   btn_recalc_criticidad: "Ricalcola criticità",
   recalc_done: "{changes} prodotti aggiornati",
   recalc_nothing_to_do: "Criticità aggiornata",
+
+  // ─── Impostazioni del banco (sotto-passo 3) ───
+  ajustes_title: "Impostazioni del banco",
+  ajustes_section_migration: "Migrazione",
+  ajustes_migrate_subtitle: "Elabora le ricette vecchie e collega i loro ingredienti al banco.",
+  ajustes_migrate_subtitle_with_count: "{n} ricette con ingredienti in formato legacy.",
+
+  // ─── Scheda costo ricetta (sub-paso 6) ───
+  cost_card_per_portion: "Costo per porzione",
+  cost_card_total: "Totale",
+  cost_card_food_cost: "Food cost: {n}%",
+  cost_card_no_portions: "Senza porzioni",
+  cost_card_portions_n: "{n} porzioni",
+  cost_card_no_sale_price: "Senza prezzo di vendita",
+  cost_card_sale_price: "Vendita: {value}",
+  cost_card_missing_n: "{n} ingredienti senza costo",
+  cost_breakdown_no_price: "{n} senza prezzo",
+  cost_breakdown_no_qty: "{n} senza quantità",
+  cost_breakdown_unlinked: "{n} senza prodotto",
+  cost_card_edit_portions_title: "Porzioni della ricetta",
+  cost_card_edit_portions_placeholder: "es. 4",
+  cost_card_edit_sale_price_title: "Prezzo di vendita",
+  cost_card_edit_sale_price_placeholder: "es. 38,00",
+  ajustes_section_criticidad: "Criticità",
+  ajustes_criticidad_explanation:
+    "Il sistema ricalcola la criticità dei prodotti ogni settimana, in base al peso economico che hanno nelle ricette.",
+  ajustes_criticidad_last_run: "Ultimo ricalcolo: {relative}",
+  ajustes_criticidad_never_ran: "Non ancora eseguito.",
+  relative_minutes_ago: "qualche minuto fa",
+  relative_hours_ago: "{n} h fa",
+  relative_days_ago: "{n} giorni fa",
+  relative_weeks_ago: "{n} settimane fa",
+  relative_months_ago: "più di un mese fa",
+
+  // ─── A-12 · App autoesplicativa (sottotitoli permanenti per sezione) ───
+  section_explainer_inicio:
+    "Il tuo blocco di cucina. Annota idee sciolte e lavorale con l'Assistente quando vorrai.",
+  section_explainer_asistente:
+    "Trasforma le idee in ricette: chiedi tecniche, perfeziona un piatto fino a renderlo affilato.",
+  section_explainer_recetas:
+    "Il tuo libro di ricette con costo, scarto e resa. Importa PDF o aggiungi nuove a mano.",
+  section_explainer_menus:
+    "Combina ricette in carte (degustazione, fissa, eventi) pronte da stampare.",
+
+  // ─── A-12 · Creazione differita del ristorante/progetto ───
+  chat_save_needs_restaurant:
+    "Per salvare, prima crea il tuo ristorante o progetto.",
+  lazy_modal_title: "Dai un nome al tuo posto",
+  lazy_modal_sub:
+    "Ristorante, progetto, squadra: come lo chiami tu. Puoi cambiarlo dopo.",
+  lazy_modal_placeholder: "Ristorante Marche, La mia cucina…",
+  lazy_modal_create: "Crea e continua",
+  lazy_modal_cancel: "Annulla",
+
+  // ─── Bloque 5 · Restyle editoriale dei Menù (mockup) ───
+  menus_header_eyebrow: "CARTE · {count} MENÙ",
+  menus_header_title: "Composizione della carta",
+  menus_section_in_service: "IN SERVIZIO",
+  menus_section_others: "ALTRI",
+  menus_new_btn_label: "Nuova carta",
+  menus_new_modal_title: "Nuova carta",
+  menus_new_modal_placeholder: "Nome della carta",
+  menus_new_modal_create: "Crea",
+  menu_eyebrow_season_dishes: "{season} · {count} piatti",
+  menu_eyebrow_dishes_only: "{count} piatti",
+  menu_from_recipe_book: "DAL RICETTARIO",
+  menu_btn_edit: "MODIFICA",
+  menu_btn_pdf: "PDF",
+  menu_category_eyebrow: "{n} · CATEGORIA",
+  // Bloque 5 (seconda tornata) · toggle "in servizio" nell'header del dettaglio
+  menu_in_service_on: "IN SERVIZIO",
+  menu_in_service_off: "Fuori servizio",
+  menu_in_service_toggle_a11y: "Attiva o disattiva il servizio del menù",
+
+  // ─── A-11 · Errori API localizzati (lookup per code) ───
+  error_email_invalid: "Email non valida.",
+  error_rate_limited: "Troppe richieste. Riprova tra qualche minuto.",
+  error_email_send_failed: "Impossibile inviare l'email. Riprova.",
+  error_token_missing: "Manca il codice o l'email.",
+  error_token_invalid: "Codice non valido. Richiedi un nuovo link.",
+  error_token_expired: "Il codice è scaduto. Richiedi un nuovo link.",
+  error_invite_rate_limited:
+    "Troppi tentativi. Aspetta qualche minuto prima di riprovare.",
+  error_invite_code_invalid:
+    "Codice non valido o scaduto. Chiedi all'admin di generarne uno nuovo.",
+  error_already_in_restaurant: "Sei già in un ristorante.",
+
+  // ─── BP-01 · Etichette dell'Alert di migrazione legacy ───
+  migrate_dryrun_counts: "{recipes} ricette · {ingredients} ingredienti",
+  migrate_dryrun_matches:
+    "Match: {exact} esatti / {probable} probabili (non collegati) / {none} nuove bozze",
+
+  // ─── A-12 · Casa come lobby quando non c'è ancora ristorante ───
+  casa_lobby_title: "Non hai ancora creato il tuo posto",
+  casa_lobby_sub:
+    "Inizia creando il tuo ristorante o progetto, o incolla un codice per unirti al team di qualcuno.",
+  casa_lobby_btn_create: "Crea il mio posto",
+  casa_lobby_btn_join: "Ho un codice",
+  casa_invite_collapsed: "Invita qualcuno",
+
+  // Allergeni — Reg. UE 1169/2011 Allegato II. Terminologia legale italiana.
+  allergen_gluten: "Glutine",
+  allergen_crustaceans: "Crostacei",
+  allergen_eggs: "Uova",
+  allergen_fish: "Pesce",
+  allergen_peanuts: "Arachidi",
+  allergen_soy: "Soia",
+  allergen_milk: "Latte",
+  allergen_tree_nuts: "Frutta a guscio",
+  allergen_celery: "Sedano",
+  allergen_mustard: "Senape",
+  allergen_sesame: "Sesamo",
+  allergen_sulphites: "Solfiti",
+  allergen_lupin: "Lupini",
+  allergen_molluscs: "Molluschi",
+
+  // Fase 2 — legenda al piè della previsualizzazione del menu cliente.
+  menu_allergen_legend_title: "ALLERGENI",
+  // Fase 2 — Sheet del bottone "+" sopra un piatto per aggiungere allergene.
+  menu_add_allergen_title: "Aggiungi allergene",
+  menu_add_allergen_see_all: "Vedi tutti i 14",
+  menu_add_allergen_see_common: "Vedi solo comuni",
+  // Fase 2 — Toggle globale del PDF cliente.
+  menu_show_allergens_toggle: "Mostra allergeni nel menu",
 };

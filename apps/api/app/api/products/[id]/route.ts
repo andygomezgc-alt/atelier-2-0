@@ -8,6 +8,11 @@ import { withAuth } from "@/lib/with-auth";
 import { logger } from "@/lib/logger";
 import { projectProductDetail } from "@/lib/products/projections";
 import { defaultCriticality } from "@/lib/products/criticality";
+import {
+  countRecipesUsingProduct,
+  countRecipesUsingProductByUnit,
+} from "@/lib/products/usage";
+import { parsePezzatura } from "@atelier/shared";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +20,14 @@ export const dynamic = "force-dynamic";
 export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
   const id = req.nextUrl.pathname.split("/").at(-1)!;
 
-  const product = await prisma.product.findUnique({ where: { id } });
+  // Producto + counts de recetas en paralelo. recipesUsingCount alimenta el
+  // ConfirmSheet de archivar; recipesUsingByUnitCount decide visibilidad del
+  // campo pezzatura en el editor (Entrega A.5).
+  const [product, recipesUsingCount, recipesUsingByUnitCount] = await Promise.all([
+    prisma.product.findUnique({ where: { id } }),
+    countRecipesUsingProduct(id),
+    countRecipesUsingProductByUnit(id),
+  ]);
   if (
     !product ||
     product.restaurantId !== ctx.restaurantId ||
@@ -23,7 +35,9 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
   )
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json(projectProductDetail(product));
+  return NextResponse.json(
+    projectProductDetail(product, recipesUsingCount, recipesUsingByUnitCount),
+  );
 });
 
 // PATCH /api/products/:id
@@ -95,12 +109,50 @@ export const PATCH = withAuth(
     const priceChanged =
       body.precioCompra !== undefined && body.precioCompra !== existing.precioCompra;
 
+    // Entrega A.5 — pezzaturaInput se traduce a pezzaturaMode/Min/Max:
+    //  - undefined → no toca los 3 campos.
+    //  - null o "" → limpia los 3 a null.
+    //  - string no vacío → parsePezzatura(input, nextCategory, nextName). Si
+    //    falla, 400. Si tiene éxito, persiste los 3 canónicos.
+    //
+    // NO re-corremos detectPezzaturaFromName aunque el name haya cambiado:
+    // si el chef renombró un producto que ya tenía pezzatura, NO la pisamos
+    // automáticamente. El aviso de desincronización al renombrar va en Fase 9.
+    let pezzaturaMode: "pz_per_kg" | "g_per_piece" | null | undefined;
+    let pezzaturaMin: number | null | undefined;
+    let pezzaturaMax: number | null | undefined;
+    if (body.pezzaturaInput !== undefined) {
+      const input = body.pezzaturaInput?.trim() ?? "";
+      if (input === "") {
+        pezzaturaMode = null;
+        pezzaturaMin = null;
+        pezzaturaMax = null;
+      } else {
+        const parsed = parsePezzatura(input, nextCategory, nextName);
+        if (!parsed) {
+          return NextResponse.json(
+            {
+              error: "invalid_pezzatura",
+              message: `No se pudo interpretar la pezzatura "${input}" para categoría ${nextCategory}.`,
+            },
+            { status: 400 },
+          );
+        }
+        pezzaturaMode = parsed.mode;
+        pezzaturaMin = parsed.min;
+        pezzaturaMax = parsed.max;
+      }
+    }
+
     const updated = await prisma.product.update({
       where: { id },
       data: {
         name: body.name ?? undefined,
         category: body.category ?? undefined,
         pezzatura: body.pezzatura === undefined ? undefined : body.pezzatura,
+        pezzaturaMode,
+        pezzaturaMin,
+        pezzaturaMax,
         unidadCompra: body.unidadCompra ?? undefined,
         precioCompra: body.precioCompra ?? undefined,
         precioActualizadoAt: priceChanged ? new Date() : undefined,
@@ -136,7 +188,13 @@ export const PATCH = withAuth(
         nextCriticality !== existing.criticality && body.criticality === undefined,
     });
 
-    return NextResponse.json(projectProductDetail(updated));
+    const [recipesUsingCount, recipesUsingByUnitCount] = await Promise.all([
+      countRecipesUsingProduct(id),
+      countRecipesUsingProductByUnit(id),
+    ]);
+    return NextResponse.json(
+      projectProductDetail(updated, recipesUsingCount, recipesUsingByUnitCount),
+    );
   },
 );
 

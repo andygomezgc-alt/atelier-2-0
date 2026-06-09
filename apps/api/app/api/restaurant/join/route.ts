@@ -34,13 +34,13 @@ export async function POST(req: NextRequest) {
   const rl = rateLimit(`join:${ctx.userId}`, { max: 10, windowMs: 10 * 60 * 1000 });
   if (!rl.ok) {
     return NextResponse.json(
-      { error: "Demasiados intentos. Espera unos minutos antes de volver a intentarlo." },
+      { error: "Demasiados intentos. Espera unos minutos antes de volver a intentarlo.", code: "invite_rate_limited" },
       { status: 429, headers: { "Retry-After": String(rl.retryAfter ?? 60) } },
     );
   }
 
   if (ctx.restaurantId) {
-    return NextResponse.json({ error: "Already in a restaurant" }, { status: 409 });
+    return NextResponse.json({ error: "Already in a restaurant", code: "already_in_restaurant" }, { status: 409 });
   }
 
   const body = await req.json();
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
 
   if (!restaurant) {
     return NextResponse.json(
-      { error: "Código no válido o expirado. Pide al administrador que genere uno nuevo." },
+      { error: "Código no válido o expirado. Pide al administrador que genere uno nuevo.", code: "invite_code_invalid" },
       { status: 404 },
     );
   }
@@ -66,5 +66,11 @@ export async function POST(req: NextRequest) {
     data: { restaurantId: restaurant.id, role: "viewer" },
   });
 
-  return NextResponse.json({ restaurantId: restaurant.id, restaurantName: restaurant.name });
+  // Devolvemos `role` también: el cliente lo usa con patchLocalUser para
+  // actualizar auth-state sin un GET /me extra (A-10 / Ola 0 0.2).
+  return NextResponse.json({
+    restaurantId: restaurant.id,
+    restaurantName: restaurant.name,
+    role: "viewer",
+  });
 }

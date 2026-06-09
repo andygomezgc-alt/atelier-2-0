@@ -21,13 +21,25 @@ function computeRealCost(precioCompraCents: number, mermaPct: number): number {
   return Math.ceil(precioCompraCents / yieldRatio);
 }
 
-export function projectProductListItem(p: Product): ProductListItem {
+export function projectProductListItem(
+  p: Product,
+  usedByUnitCount = 0,
+): ProductListItem {
   const mermaPctNum = Number(p.mermaPct);
   return {
     id: p.id,
     name: p.name,
     category: p.category,
     pezzatura: p.pezzatura,
+    // Entrega A.5: pezzatura estructurada. Mode/Min/Max van juntos (CHECK
+    // consistency en DB). Min/Max son Decimal en Prisma → convert a number.
+    // `?? null` defensivo: si el query engine de runtime es viejo (Windows
+    // EPERM al regenerar la .dll antes de reiniciar dev server) el campo
+    // viene undefined, que JSON.stringify omite. Normalizar a null mantiene
+    // shape consistente.
+    pezzaturaMode: p.pezzaturaMode ?? null,
+    pezzaturaMin: p.pezzaturaMin ? Number(p.pezzaturaMin) : null,
+    pezzaturaMax: p.pezzaturaMax ? Number(p.pezzaturaMax) : null,
     unidadCompra: p.unidadCompra,
     precioCompra: p.precioCompra,
     realCost: computeRealCost(p.precioCompra, mermaPctNum),
@@ -36,16 +48,24 @@ export function projectProductListItem(p: Product): ProductListItem {
     criticality: p.criticality,
     estado: p.estado,
     precioActualizadoAt: p.precioActualizadoAt.toISOString(),
+    usedByUnitCount,
   };
 }
 
-export function projectProductDetail(p: Product): ProductDetail {
+export function projectProductDetail(
+  p: Product,
+  recipesUsingCount = 0,
+  recipesUsingByUnitCount = 0,
+): ProductDetail {
+  // El detail comparte el mismo concepto que la lista para usedByUnitCount.
   return {
-    ...projectProductListItem(p),
+    ...projectProductListItem(p, recipesUsingByUnitCount),
     proveedor: p.proveedor,
     notas: p.notas,
     aliases: p.aliases,
     criticalityManual: p.criticalityManual,
+    recipesUsingCount,
+    recipesUsingByUnitCount,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   };

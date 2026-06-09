@@ -33,6 +33,40 @@ export function getAuthState(): AuthState {
   return _state;
 }
 
+// A-12 — Acciones imperativas accesibles fuera de componentes (ej. el
+// `LazyRestaurantHost` que vive global). Mismo comportamiento que las que
+// expone el hook; las definimos a nivel módulo para que el host pueda
+// patchLocalUser y refreshMe sin estar bajo el árbol de un componente.
+async function refreshMeImpl(): Promise<void> {
+  try {
+    const user = await fetchMe();
+    setState(
+      user.restaurantId
+        ? { status: "signed-in", user }
+        : { status: "needs-restaurant", user },
+    );
+  } catch {
+    // keep current state on network error
+  }
+}
+
+function patchLocalUserImpl(updates: Partial<MeUser>): void {
+  if (_state.status !== "signed-in" && _state.status !== "needs-restaurant") return;
+  const next = { ..._state.user, ...updates };
+  setState(
+    next.restaurantId
+      ? { status: "signed-in", user: next }
+      : { status: "needs-restaurant", user: next },
+  );
+}
+
+export function getAuthActions() {
+  return { refreshMe: refreshMeImpl, patchLocalUser: patchLocalUserImpl };
+}
+
+// Re-exportamos MeUser para los consumidores no-hook (ej. LazyRestaurantHost).
+export type { MeUser };
+
 async function bootstrap() {
   // DEV: if the dev-auth env var is set, skip every login flow and sign in
   // with a fixed test user that auto-gets a Dev Kitchen restaurant. We do this
@@ -110,31 +144,12 @@ export function useAuth() {
     [],
   );
 
-  const refreshMe = useCallback(async (): Promise<void> => {
-    try {
-      const user = await fetchMe();
-      setState(
-        user.restaurantId
-          ? { status: "signed-in", user }
-          : { status: "needs-restaurant", user },
-      );
-    } catch {
-      // keep current state on network error
-    }
-  }, []);
+  const refreshMe = useCallback(refreshMeImpl, []);
 
   // Local-only merge into the signed-in user — útil tras un PATCH que ya
   // devuelve el shape canónico (ej. rename del restaurante). Evita el GET
   // a /api/me extra que dispararía `refreshMe`.
-  const patchLocalUser = useCallback((updates: Partial<MeUser>): void => {
-    if (_state.status !== "signed-in" && _state.status !== "needs-restaurant") return;
-    const next = { ..._state.user, ...updates };
-    setState(
-      next.restaurantId
-        ? { status: "signed-in", user: next }
-        : { status: "needs-restaurant", user: next },
-    );
-  }, []);
+  const patchLocalUser = useCallback(patchLocalUserImpl, []);
 
   const signOut = useCallback(async (): Promise<void> => {
     await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => null);

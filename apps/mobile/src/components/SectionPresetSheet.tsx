@@ -101,8 +101,7 @@ export function SectionPresetSheet({ open, onClose, onPick }: Props) {
 
 const styles = StyleSheet.create({
   title: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifLg,
     color: colors.ink,
     paddingHorizontal: spacing.xl,
@@ -128,9 +127,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paperSoft,
   },
   chipLabel: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.bodySm,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBodySm,
     color: colors.terracota,
   },
   customRow: {

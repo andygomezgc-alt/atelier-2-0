@@ -17,6 +17,8 @@ import { Screen } from "@/src/components/Screen";
 import { Eyebrow } from "@/src/components/Eyebrow";
 import { Empty } from "@/src/components/Empty";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
+import { SectionExplainer } from "@/src/components/SectionExplainer";
+import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import { useOfflineQueueSize, enqueueIdea, flushQueue } from "@/src/hooks/useOfflineQueue";
@@ -66,6 +68,14 @@ export default function InicioScreen() {
     if (!text.trim() || saving) return;
     setSaving(true);
     try {
+      // A-12 — lazy create del restaurante/proyecto si todavía no hay uno.
+      // Si el chef cancela el modal, abortamos silenciosamente sin toast.
+      try {
+        await ensureRestaurant();
+      } catch {
+        setSaving(false);
+        return;
+      }
       const idea = await createIdea(text.trim());
       setIdeas((prev) => [idea, ...prev]);
       setText("");
@@ -133,6 +143,7 @@ export default function InicioScreen() {
 
   return (
     <Screen>
+      <SectionExplainer text={t("section_explainer_inicio")} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -292,7 +303,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
     lineHeight: fontSizes.serifLg * 1.3,
   },
-  greetEm: { fontStyle: "italic", color: colors.terracota },
+  greetEm: { fontFamily: fonts.serifItalic, color: colors.terracota },
   ideaBox: {
     backgroundColor: colors.paperSoft,
     borderWidth: 0.5,
@@ -303,9 +314,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   ideaInput: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.body,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBody,
     color: colors.ink,
     minHeight: 60,
     textAlignVertical: "top",
@@ -356,9 +366,8 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
   modalInput: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.body,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBody,
     color: colors.ink,
     minHeight: 100,
     textAlignVertical: "top",
@@ -387,9 +396,8 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
   },
   ideaText: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
-    fontSize: fontSizes.body,
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBody,
     color: colors.ink,
     lineHeight: fontSizes.body * 1.4,
   },

@@ -1,18 +1,24 @@
 // Global toast: any component can fire `showToast(msg)` without piping
 // callbacks through props. The host renders <ToastHost /> once, near
 // the root, and listens to the same store.
+//
+// Bloque 4 · C-04 — `level` opcional (default "ok") mapea al vocabulario
+// único de StatusBadge (color + ícono fijos por nivel).
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Animated, StyleSheet, Text } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { STATUS_MAP, type StatusLevel } from "./StatusBadge";
 
-let current: { id: number; message: string } | null = null;
+type ToastEntry = { id: number; message: string; level: StatusLevel };
+
+let current: ToastEntry | null = null;
 const listeners = new Set<() => void>();
 let nextId = 1;
 
-export function showToast(message: string) {
-  current = { id: nextId++, message };
+export function showToast(message: string, level: StatusLevel = "ok") {
+  current = { id: nextId++, message, level };
   listeners.forEach((l) => l());
 }
 
@@ -53,12 +59,18 @@ export function ToastHost() {
 
   if (!visible || !value) return null;
 
+  const cfg = STATUS_MAP[value.level];
+
   return (
     <Animated.View
       pointerEvents="none"
-      style={[styles.root, { opacity, transform: [{ translateY }] }]}
+      style={[
+        styles.root,
+        { backgroundColor: cfg.color },
+        { opacity, transform: [{ translateY }] },
+      ]}
     >
-      <Ionicons name="checkmark" size={16} color={colors.paper} />
+      <Ionicons name={cfg.icon} size={16} color={colors.paper} />
       <Text style={styles.text}>{value.message}</Text>
     </Animated.View>
   );
@@ -72,7 +84,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
-    backgroundColor: colors.teal,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm + 2,

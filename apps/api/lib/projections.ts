@@ -7,7 +7,12 @@ import type {
   IdeaResponse,
   RestaurantResponse,
   ClientOverrides,
+  ProductUnit,
+  PezzaturaMode,
 } from "@atelier/shared";
+import { computeRecipeCost } from "./products/cost";
+import { computeRecipeAllergens } from "./products/allergens-recipe";
+import type { Allergen } from "@atelier/shared";
 
 // ─────────── Includes (re-use in Prisma queries) ───────────
 
@@ -27,8 +32,40 @@ export const meSelect = {
   customApiKey: true,
 } as const;
 
+// Include compartido lista/detalle de receta. C-06a: la lista también
+// trae los ingredientes con producto para poder computar perPortionCents
+// vía computeRecipeCost.
+const recipeIngredientsForCostInclude = {
+  orderBy: { position: "asc" },
+  include: {
+    // Para computar el costo necesitamos precioCompra/mermaPct/unidadCompra
+    // del producto enlazado.
+    // Entrega A.5: + pezzaturaMode/Min/Max para resolver casos
+    // unit=piezas vs unidadCompra=kg con el peso por pieza.
+    product: {
+      select: {
+        id: true,
+        name: true,
+        criticality: true,
+        estado: true,
+        precioCompra: true,
+        mermaPct: true,
+        unidadCompra: true,
+        pezzaturaMode: true,
+        pezzaturaMin: true,
+        pezzaturaMax: true,
+        // Fase 1 alérgenos: heredado al plato vía computeRecipeAllergens.
+        allergen: true,
+      },
+    },
+  },
+} as const;
+
 export const recipeListInclude = {
   author: { select: { name: true, email: true } },
+  // Banco de Productos — Fase 2: ingredientes estructurados ordenados por
+  // position. Para recetas legacy sin filas todavía, viene [].
+  recipeIngredients: recipeIngredientsForCostInclude,
 } as const;
 
 export const recipeDetailInclude = {
@@ -38,16 +75,7 @@ export const recipeDetailInclude = {
   menuItems: {
     include: { menuFolder: { select: { id: true, name: true } } },
   },
-  // Banco de Productos — Fase 2: ingredientes estructurados (productId,
-  // qty, unit, pezzatura, mermaOverridePct, rawText). Ordenados por position.
-  // Para recetas legacy sin filas todavía, viene []; el cliente cae al
-  // contentJson.ingredients de strings.
-  recipeIngredients: {
-    orderBy: { position: "asc" },
-    include: {
-      product: { select: { id: true, name: true, criticality: true, estado: true } },
-    },
-  },
+  recipeIngredients: recipeIngredientsForCostInclude,
 } as const;
 
 export const menuListInclude = {
@@ -57,7 +85,19 @@ export const menuListInclude = {
 export const menuDetailInclude = {
   items: {
     orderBy: { order: "asc" },
-    include: { recipe: { select: { title: true } } },
+    include: {
+      // Fase 2 alérgenos — para que cada item del menú llegue con
+      // `allergens` precomputado (unión heredados + manuales) en la
+      // projection. Reusa el include de costo que ya extendió product.allergen
+      // en Fase 1, + manualAllergens del Recipe.
+      recipe: {
+        select: {
+          title: true,
+          manualAllergens: true,
+          recipeIngredients: recipeIngredientsForCostInclude,
+        },
+      },
+    },
   },
   sections: {
     orderBy: { order: "asc" },
@@ -118,28 +158,6 @@ export function projectMe(user: MeUser): MeResponse {
   };
 }
 
-type RecipeListRow = {
-  id: string;
-  title: string;
-  state: string;
-  priority: boolean;
-  version: number;
-  updatedAt: Date;
-  author: { name: string | null; email: string | null } | null;
-};
-
-export function projectRecipeListItem(r: RecipeListRow): RecipeListItem {
-  return {
-    id: r.id,
-    title: r.title,
-    state: r.state as RecipeListItem["state"],
-    priority: r.priority,
-    version: r.version,
-    authorName: r.author?.name ?? r.author?.email ?? "—",
-    updatedAt: r.updatedAt.toISOString(),
-  };
-}
-
 type RecipeIngredientRow = {
   id: string;
   position: number;
@@ -148,8 +166,108 @@ type RecipeIngredientRow = {
   unit: string | null;
   pezzatura: string | null;
   mermaOverridePct: { toString(): string } | null;
-  product: { id: string; name: string; criticality: string; estado: string } | null;
+  // Entrega A.5: override de peso por pieza para esta receta. Null = usar
+  // el punto medio de pezzaturaMin/Max del producto enlazado.
+  pesoCalculoG: { toString(): string } | null;
+  product:
+    | {
+        id: string;
+        name: string;
+        criticality: string;
+        estado: string;
+        // Sub-paso 6: campos necesarios para computar el costo.
+        precioCompra: number;
+        mermaPct: { toString(): string }; // Prisma.Decimal
+        unidadCompra: string;
+        // Entrega A.5: pezzatura del banco.
+        pezzaturaMode: string | null;
+        pezzaturaMin: { toString(): string } | null;
+        pezzaturaMax: { toString(): string } | null;
+        // Fase 1 alérgenos.
+        allergen: Allergen | null;
+      }
+    | null;
 };
+
+// C-06a: helper compartido lista/detalle. Convierte filas Prisma de
+// RecipeIngredient al shape que espera computeRecipeCost (Decimal→number,
+// products con casts a unions del shared).
+function mapIngredientsForCost(rows: RecipeIngredientRow[]) {
+  return rows.map((row) => ({
+    qty: row.qty ? Number(row.qty.toString()) : null,
+    unit: row.unit,
+    mermaOverridePct: row.mermaOverridePct
+      ? Number(row.mermaOverridePct.toString())
+      : null,
+    pesoCalculoG: row.pesoCalculoG
+      ? Number(row.pesoCalculoG.toString())
+      : null,
+    product: row.product
+      ? {
+          precioCompra: row.product.precioCompra,
+          mermaPct: Number(row.product.mermaPct.toString()),
+          unidadCompra: row.product.unidadCompra as ProductUnit,
+          pezzaturaMode: row.product.pezzaturaMode as PezzaturaMode | null,
+          pezzaturaMin: row.product.pezzaturaMin
+            ? Number(row.product.pezzaturaMin.toString())
+            : null,
+          pezzaturaMax: row.product.pezzaturaMax
+            ? Number(row.product.pezzaturaMax.toString())
+            : null,
+        }
+      : null,
+  }));
+}
+
+type RecipeListRow = {
+  id: string;
+  title: string;
+  state: string;
+  priority: boolean;
+  version: number;
+  updatedAt: Date;
+  author: { name: string | null; email: string | null } | null;
+  // C-06a: lista trae ingredientes + portions + salePrice para computar el
+  // perPortionCents sin pedir el detalle.
+  recipeIngredients: RecipeIngredientRow[];
+  portions: number | null;
+  salePrice: number | null; // centavos
+  // Fase 1 alérgenos: lista de manuales aditivos. El array completo lo manda
+  // Prisma por default al hacer findMany sin select explícito.
+  manualAllergens: Allergen[];
+};
+
+export function projectRecipeListItem(r: RecipeListRow): RecipeListItem {
+  // C-06a: el coste por porción se computa con el mismo helper que el
+  // detalle (computeRecipeCost) para que ambos no divergan.
+  const cost = computeRecipeCost({
+    ingredients: mapIngredientsForCost(r.recipeIngredients ?? []),
+    portions: r.portions,
+    salePriceCents: r.salePrice,
+  });
+  // Fase 1 alérgenos: unión heredados + manuales, dedup, en orden EU 1169.
+  const allergensResult = computeRecipeAllergens(
+    (r.recipeIngredients ?? []).map((ing) => ({
+      productId: ing.product?.id ?? null,
+      product: ing.product ? { allergen: ing.product.allergen } : null,
+    })),
+    r.manualAllergens ?? [],
+  );
+  return {
+    id: r.id,
+    title: r.title,
+    state: r.state as RecipeListItem["state"],
+    priority: r.priority,
+    version: r.version,
+    authorName: r.author?.name ?? r.author?.email ?? "—",
+    updatedAt: r.updatedAt.toISOString(),
+    perPortionCents: cost.perPortionCents,
+    salePrice: r.salePrice,
+    portions: r.portions,
+    allergens: allergensResult.allergens,
+    unlinkedIngredients: allergensResult.unlinkedIngredients,
+  };
+}
 
 type RecipeDetailRow = RecipeListRow & {
   contentJson: unknown;
@@ -157,7 +275,6 @@ type RecipeDetailRow = RecipeListRow & {
   sourceConversationId: string | null;
   approvedBy: { name: string | null; email: string | null } | null;
   menuItems: Array<{ menuFolder: { id: string; name: string } | null }>;
-  recipeIngredients: RecipeIngredientRow[];
 };
 
 export function projectRecipeDetail(r: RecipeDetailRow): RecipeDetail {
@@ -171,30 +288,66 @@ export function projectRecipeDetail(r: RecipeDetailRow): RecipeDetail {
     seen.add(mi.menuFolder.id);
     menus.push({ id: mi.menuFolder.id, name: mi.menuFolder.name });
   }
+
+  // Sub-paso 6: cost compute. Pasamos los productos completos (con precio/
+  // merma/unidad + pezzatura) al helper. La response al cliente solo expone
+  // el breakdown agregado + warningsByIdx para aplicar al ingrediente.
+  // C-06a: el mapeo Decimal→number vive en mapIngredientsForCost (compartido
+  // con la lista) para que ambos paths no divergan.
+  const cost = computeRecipeCost({
+    ingredients: mapIngredientsForCost(r.recipeIngredients ?? []),
+    portions: r.portions,
+    salePriceCents: r.salePrice,
+  });
+
+  const recipeIngredients = (r.recipeIngredients ?? []).map((row, idx) => ({
+    id: row.id,
+    position: row.position,
+    rawText: row.rawText,
+    qty: row.qty ? Number(row.qty.toString()) : null,
+    unit: row.unit,
+    pezzatura: row.pezzatura,
+    mermaOverridePct: row.mermaOverridePct
+      ? Number(row.mermaOverridePct.toString())
+      : null,
+    // Entrega A.5: pesoCalculoG es Decimal en Prisma → convert a number.
+    // Null cuando el chef no personalizó el peso por pieza (usa el banco).
+    pesoCalculoG: row.pesoCalculoG ? Number(row.pesoCalculoG.toString()) : null,
+    // Warning per-ingredient (rango ancho de pezzatura → costo aproximado).
+    pezzaturaWarning: cost.warningsByIdx.get(idx) ?? null,
+    product: row.product
+      ? {
+          id: row.product.id,
+          name: row.product.name,
+          criticality: row.product.criticality as "alta" | "media" | "baja",
+          estado: row.product.estado as "activo" | "borrador" | "archivado",
+        }
+      : null,
+  }));
+
   return {
     ...projectRecipeListItem(r),
     contentJson: r.contentJson as RecipeDetail["contentJson"],
-    recipeIngredients: (r.recipeIngredients ?? []).map((row) => ({
-      id: row.id,
-      position: row.position,
-      rawText: row.rawText,
-      qty: row.qty ? Number(row.qty.toString()) : null,
-      unit: row.unit,
-      pezzatura: row.pezzatura,
-      mermaOverridePct: row.mermaOverridePct ? Number(row.mermaOverridePct.toString()) : null,
-      product: row.product
-        ? {
-            id: row.product.id,
-            name: row.product.name,
-            criticality: row.product.criticality as "alta" | "media" | "baja",
-            estado: row.product.estado as "activo" | "borrador" | "archivado",
-          }
-        : null,
-    })),
+    recipeIngredients,
     approvedByName: r.approvedBy?.name ?? r.approvedBy?.email ?? null,
     approvedAt: r.approvedAt?.toISOString() ?? null,
     sourceConversationId: r.sourceConversationId,
     menus,
+    portions: r.portions,
+    salePrice: r.salePrice,
+    // Exponer todo menos warningsByIdx (Map no serializa a JSON limpio; el
+    // mapeo ya se aplicó al recipeIngredients arriba).
+    cost: {
+      totalCents: cost.totalCents,
+      perPortionCents: cost.perPortionCents,
+      foodCostPct: cost.foodCostPct,
+      totalIngredients: cost.totalIngredients,
+      computableCount: cost.computableCount,
+      missingPriceCount: cost.missingPriceCount,
+      unmeasuredCount: cost.unmeasuredCount,
+      unlinkedCount: cost.unlinkedCount,
+      wideRangeCount: cost.wideRangeCount,
+    },
   };
 }
 
@@ -203,6 +356,7 @@ type MenuListRow = {
   name: string;
   season: string | null;
   updatedAt: Date;
+  inService: boolean;
   _count: { items: number };
 };
 
@@ -213,6 +367,7 @@ export function projectMenuListItem(m: MenuListRow): MenuListItem {
     season: m.season,
     itemCount: m._count.items,
     updatedAt: m.updatedAt.toISOString(),
+    inService: m.inService,
   };
 }
 
@@ -221,6 +376,9 @@ type MenuDetailRow = {
   name: string;
   season: string | null;
   presentationStyle: string;
+  inService: boolean;
+  // Fase 2 alérgenos — toggle del PDF/preview cliente.
+  showAllergensInPdf: boolean;
   items: Array<{
     id: string;
     recipeId: string;
@@ -229,7 +387,16 @@ type MenuDetailRow = {
     customDesc: string | null;
     price: number;
     order: number;
-    recipe: { title: string } | null;
+    recipe:
+      | {
+          title: string;
+          // Fase 2 alérgenos — los necesitamos por item para computar
+          // `allergens` por plato en la projection. recipeIngredients reusa el
+          // include de costo (que ya trae product.allergen desde Fase 1).
+          manualAllergens: Allergen[];
+          recipeIngredients: RecipeIngredientRow[];
+        }
+      | null;
   }>;
   sections: Array<{
     id: string;
@@ -254,19 +421,37 @@ export function projectMenuDetail(m: MenuDetailRow): MenuDetail {
     name: m.name,
     season: m.season,
     presentationStyle: m.presentationStyle as MenuDetail["presentationStyle"],
+    inService: m.inService,
+    showAllergensInPdf: m.showAllergensInPdf,
     sections: m.sections.map((s) => ({ id: s.id, name: s.name, order: s.order })),
-    items: m.items.map((it) => ({
-      id: it.id,
-      recipeId: it.recipeId,
-      sectionId: it.sectionId,
-      name: it.customName ?? it.recipe?.title ?? "",
-      description: it.customDesc ?? "",
-      price: it.price,
-      order: it.order,
-      // Exponer el flag permite que el compositor staff sepa cuándo el
-      // nombre está pisado y muestre el toggle para revertir.
-      customName: it.customName,
-    })),
+    items: m.items.map((it) => {
+      // Fase 2 alérgenos — unión heredados (de los productos enlazados a
+      // los ingredientes de la receta) + manualAllergens, dedup, en orden
+      // Reg. EU 1169. Si la receta no llegó (caso defensivo), allergens=[].
+      const allergensResult = it.recipe
+        ? computeRecipeAllergens(
+            (it.recipe.recipeIngredients ?? []).map((ing) => ({
+              productId: ing.product?.id ?? null,
+              product: ing.product ? { allergen: ing.product.allergen } : null,
+            })),
+            it.recipe.manualAllergens ?? [],
+          )
+        : { allergens: [] as Allergen[], unlinkedIngredients: 0 };
+      return {
+        id: it.id,
+        recipeId: it.recipeId,
+        sectionId: it.sectionId,
+        name: it.customName ?? it.recipe?.title ?? "",
+        description: it.customDesc ?? "",
+        price: it.price,
+        order: it.order,
+        // Exponer el flag permite que el compositor staff sepa cuándo el
+        // nombre está pisado y muestre el toggle para revertir.
+        customName: it.customName,
+        allergens: allergensResult.allergens,
+        manualAllergens: it.recipe?.manualAllergens ?? [],
+      };
+    }),
     clientOverrides,
   };
 }

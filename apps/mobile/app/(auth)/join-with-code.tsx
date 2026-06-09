@@ -4,13 +4,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/src/hooks/useAuth";
 import { useI18n } from "@/src/hooks/useI18n";
-import { apiFetch } from "@/src/api/client";
+import { apiFetch, ApiError } from "@/src/api/client";
+import type { JoinRestaurantResponse } from "@atelier/shared";
 import { Button } from "@/src/components/Button";
 import { showToast } from "@/src/components/Toast";
+import { apiErrorMessage } from "@/src/lib/api-error";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 export default function JoinWithCodeScreen() {
-  const { refreshMe } = useAuth();
+  const { refreshMe, patchLocalUser } = useAuth();
   const { t } = useI18n();
   const router = useRouter();
 
@@ -23,14 +25,26 @@ export default function JoinWithCodeScreen() {
     if (!valid || loading) return;
     setLoading(true);
     try {
-      await apiFetch("/api/restaurant/join", {
+      // A-10 / Ola 0 0.2: ver create-restaurant.tsx — mismo patrón.
+      const res = await apiFetch<JoinRestaurantResponse>("/api/restaurant/join", {
         method: "POST",
         body: JSON.stringify({ code: code.trim().toUpperCase() }),
       });
-      await refreshMe();
+      patchLocalUser({
+        restaurantId: res.restaurantId,
+        restaurantName: res.restaurantName,
+        role: res.role,
+      });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : t("error_network");
-      showToast(msg);
+      // A-11: rate_limited (429), invite_code_invalid (404), already_in_restaurant (409)
+      // vienen con code. El helper hace el lookup; en el 409 además refrescamos
+      // /me para descubrir el restaurante real (race entre devices).
+      if (err instanceof ApiError && err.status === 409) {
+        showToast(apiErrorMessage(err, t));
+        await refreshMe();
+      } else {
+        showToast(apiErrorMessage(err, t));
+      }
     } finally {
       setLoading(false);
     }
@@ -76,8 +90,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   title: {
-    fontFamily: fonts.serif,
-    fontStyle: "italic",
+    fontFamily: fonts.serifItalic,
     fontSize: fontSizes.serifLg,
     color: colors.ink,
   },
