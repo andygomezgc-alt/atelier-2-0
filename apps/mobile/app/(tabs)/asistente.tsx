@@ -14,6 +14,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Animated, { Easing, withSpring, withTiming } from "react-native-reanimated";
+import type { EntryExitAnimationFunction } from "react-native-reanimated";
 
 import { Empty } from "@/src/components/Empty";
 import { NetworkError } from "@/src/components/NetworkError";
@@ -35,7 +37,10 @@ import { extractRecipeFromAssistant } from "@/src/api/recipes";
 import { showToast } from "@/src/components/Toast";
 import { stripRecipePayload } from "@/src/lib/recipe-payload";
 import { setRecipeDraft } from "@/src/lib/recipe-draft";
-import { highlightQuantities } from "@/src/lib/highlight-quantities";
+import { MarkdownText } from "@/src/components/MarkdownText";
+import { TypingDots } from "@/src/components/TypingDots";
+import { SendButton } from "@/src/components/SendButton";
+import { selection, tapLight } from "@/src/lib/haptics";
 import type { TranslationKey } from "@atelier/i18n";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
@@ -67,70 +72,69 @@ function formatTime(iso: string): string {
   }
 }
 
-// C-05 — Texto del cuerpo del bubble del asistente con cantidades/temperaturas
-// resaltadas en terracota negrita (como en el mockup: "70°C / 11h 30m" en bold).
-function HighlightedText({ text }: { text: string }) {
-  const tokens = useMemo(() => highlightQuantities(text), [text]);
-  return (
-    <Text style={styles.assistantBody}>
-      {tokens.map((tok, i) =>
-        tok.type === "qty" ? (
-          <Text key={i} style={styles.qtyHighlight}>
-            {tok.text}
-          </Text>
-        ) : (
-          tok.text
-        ),
-      )}
-    </Text>
-  );
-}
+// Entrada "con más vida" (spec): fade + sube 14px + scale desde 0.97, spring
+// con mini rebote. Worklet custom porque FadeInDown no trae scale.
+const messageEntering: EntryExitAnimationFunction = () => {
+  "worklet";
+  const SPRING = { damping: 14, stiffness: 170, mass: 0.8 };
+  return {
+    initialValues: {
+      opacity: 0,
+      transform: [{ translateY: 14 }, { scale: 0.97 }],
+    },
+    animations: {
+      opacity: withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) }),
+      transform: [
+        { translateY: withSpring(0, SPRING) },
+        { scale: withSpring(1, SPRING) },
+      ],
+    },
+  };
+};
 
-// A-03 — Bubble memoizada. Refs estables desde el padre (Bubble vive afuera
-// del componente, los handlers y datos son estables por mensaje) evitan
-// re-render del resto de la lista cuando llega un delta nuevo.
+// A-03 — Bubble memoizada (igual que antes). `animate` solo es true para
+// mensajes que llegan en vivo; el historial carga quieto.
 const Bubble = memo(function Bubble({
   m,
   eyebrowLabel,
+  animate,
 }: {
   m: ChatMessage;
   eyebrowLabel: string;
+  animate: boolean;
 }) {
   if (m.role === "user") {
-    return (
-      <View style={styles.userWrap}>
+    const inner = (
+      <>
         <View style={styles.userBubble}>
           <Text style={styles.userText}>{m.content}</Text>
         </View>
         <Text style={styles.userTime}>{formatTime(m.createdAt)}</Text>
-      </View>
+      </>
+    );
+    return animate ? (
+      <Animated.View entering={messageEntering} style={styles.userWrap}>
+        {inner}
+      </Animated.View>
+    ) : (
+      <View style={styles.userWrap}>{inner}</View>
     );
   }
-  const stripped = stripRecipePayload(m.content).trim();
-  const lines = stripped.split(/\r?\n/);
-  const titleLine = lines[0] ?? "";
-  const restText = lines.slice(1).join("\n").trim();
-  // Heurística simple: si la primera línea es corta y no termina en "." o ":",
-  // se trata como título de receta (mockup la muestra serif itálico bold).
-  const isTitle =
-    lines.length > 1 &&
-    titleLine.length > 0 &&
-    titleLine.length < 80 &&
-    !/[.:]\s*$/.test(titleLine);
-  return (
-    <View style={styles.assistantWrap}>
+  const inner = (
+    <>
       <Text style={styles.assistantEyebrow}>{eyebrowLabel}</Text>
-      <View style={styles.assistantBubble}>
-        {isTitle ? (
-          <>
-            <Text style={styles.assistantTitle}>{titleLine}</Text>
-            {restText ? <HighlightedText text={restText} /> : null}
-          </>
-        ) : (
-          <HighlightedText text={stripped} />
-        )}
+      <View style={styles.assistantRule} />
+      <View style={styles.assistantBody}>
+        <MarkdownText text={stripRecipePayload(m.content).trim()} />
       </View>
-    </View>
+    </>
+  );
+  return animate ? (
+    <Animated.View entering={messageEntering} style={styles.assistantWrap}>
+      {inner}
+    </Animated.View>
+  ) : (
+    <View style={styles.assistantWrap}>{inner}</View>
   );
 });
 
@@ -180,6 +184,10 @@ export default function AsistenteScreen() {
 
   const abortRef = useRef<AbortController | null>(null);
 
+  // Los mensajes presentes al cargar la conversación NO se animan; solo los
+  // que llegan en vivo. Set de ids conocidos al momento del load.
+  const preloadedIds = useRef<Set<string>>(new Set());
+
   // Initialize the model preference once.
   const initialized = useRef(false);
   useEffect(() => {
@@ -201,6 +209,7 @@ export default function AsistenteScreen() {
     setMessages([]);
     setStreamBuf("");
     setStreamError(null);
+    preloadedIds.current = new Set();
 
     let cancelled = false;
 
@@ -210,6 +219,7 @@ export default function AsistenteScreen() {
           const msgs = await listMessages(conversationIdParam);
           if (cancelled) return;
           setConversationId(conversationIdParam);
+          preloadedIds.current = new Set(msgs.map((m) => m.id));
           setMessages(msgs);
         } catch (err) {
           if (cancelled) return;
@@ -227,6 +237,7 @@ export default function AsistenteScreen() {
           const conv = await getConversationByIdea(ideaId);
           if (cancelled) return;
           setConversationId(conv.id);
+          preloadedIds.current = new Set(conv.messages.map((m) => m.id));
           setMessages(conv.messages);
         } catch (err) {
           if (cancelled) return;
@@ -270,6 +281,7 @@ export default function AsistenteScreen() {
         text,
         modelToUse,
         (delta) => {
+          if (acc === "") selection();
           acc += delta;
           setStreamBuf(acc);
         },
@@ -302,6 +314,7 @@ export default function AsistenteScreen() {
   async function handleSend() {
     const text = input.trim();
     if (!text || streaming) return;
+    tapLight();
     setInput("");
 
     const userMsg: ChatMessage = {
@@ -411,7 +424,13 @@ export default function AsistenteScreen() {
 
   const assistantEyebrow = t("assistant_eyebrow");
   const renderItem = useCallback(
-    ({ item }: { item: ChatMessage }) => <Bubble m={item} eyebrowLabel={assistantEyebrow} />,
+    ({ item }: { item: ChatMessage }) => (
+      <Bubble
+        m={item}
+        eyebrowLabel={assistantEyebrow}
+        animate={!preloadedIds.current.has(item.id)}
+      />
+    ),
     [assistantEyebrow],
   );
   const keyExtractor = useCallback((m: ChatMessage) => m.id, []);
@@ -518,12 +537,17 @@ export default function AsistenteScreen() {
                 streaming && streamBuf ? (
                   <View style={styles.assistantWrap}>
                     <Text style={styles.assistantEyebrow}>{assistantEyebrow}</Text>
-                    <View style={styles.assistantBubble}>
-                      <HighlightedText text={stripRecipePayload(streamBuf)} />
+                    <View style={styles.assistantRule} />
+                    <View style={styles.assistantBody}>
+                      <MarkdownText text={stripRecipePayload(streamBuf)} />
                     </View>
                   </View>
                 ) : awaitingFirstDelta ? (
-                  <Text style={styles.thinking}>{t("chat_thinking")} •••</Text>
+                  <View style={styles.assistantWrap}>
+                    <Text style={styles.assistantEyebrow}>{assistantEyebrow}</Text>
+                    <View style={styles.assistantRule} />
+                    <TypingDots />
+                  </View>
                 ) : null
               }
             />
@@ -568,14 +592,11 @@ export default function AsistenteScreen() {
             multiline
             editable={!streaming}
           />
-          <Pressable
-            style={[styles.sendBtn, (!input.trim() || streaming) && styles.sendBtnDisabled]}
-            onPress={handleSend}
+          <SendButton
             disabled={!input.trim() || streaming}
-            accessibilityLabel="send"
-          >
-            <Ionicons name="send" size={16} color={colors.paper} />
-          </Pressable>
+            streaming={streaming}
+            onPress={handleSend}
+          />
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -701,7 +722,7 @@ const styles = StyleSheet.create({
   messages: {
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
-    gap: spacing.lg,
+    gap: spacing.xl,
   },
 
   // ── Bubble del chef (verde teal, derecha, hora abajo) ───────────────
@@ -726,7 +747,7 @@ const styles = StyleSheet.create({
     marginRight: spacing.xs,
   },
 
-  // ── Bubble del asistente (tarjeta crema, eyebrow + título + body) ───
+  // ── Bubble del asistente (eyebrow + regla + body) ───────────────────
   assistantWrap: { alignItems: "flex-start", gap: spacing.xs },
   assistantEyebrow: {
     fontFamily: fonts.sans,
@@ -735,38 +756,17 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
     paddingHorizontal: spacing.xs,
   },
-  assistantBubble: {
-    backgroundColor: colors.paperSoft,
-    borderWidth: 0.5,
-    borderColor: colors.edge,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    maxWidth: "92%",
-  },
-  assistantTitle: {
-    fontFamily: fonts.serifItalic,
-    fontSize: fontSizes.serifBodyLg + 2,
-    color: colors.ink,
+  // ── Mensaje del asistente: cuaderno editorial (sin tarjeta) ──────────
+  assistantRule: {
+    width: 28,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: colors.terracota,
+    marginTop: 2,
     marginBottom: spacing.xs,
   },
   assistantBody: {
-    fontFamily: fonts.serif,
-    fontSize: fontSizes.serifBody,
-    color: colors.ink,
-    lineHeight: fontSizes.body * 1.6,
-  },
-  qtyHighlight: {
-    color: colors.terracota,
-    fontWeight: "700",
-  },
-
-  // ── "Atelier piensa •••" (A-05) ─────────────────────────────────────
-  thinking: {
-    fontFamily: fonts.serifItalic,
-    fontSize: fontSizes.serifBodySm,
-    color: colors.mute,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.sm,
+    maxWidth: "94%",
   },
 
   // ── Error banner ────────────────────────────────────────────────────
@@ -825,13 +825,4 @@ const styles = StyleSheet.create({
     color: colors.ink,
     maxHeight: 120,
   },
-  sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.terracota,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sendBtnDisabled: { opacity: 0.4 },
 });
