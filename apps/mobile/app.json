@@ -7,11 +7,6 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#f9f7f2"
-    },
     "ios": {
       "bundleIdentifier": "com.atelier.app",
       "supportsTablet": false
@@ -30,6 +25,16 @@
         "expo-image-picker",
         {
           "photosPermission": "Atelier accede a tu galería para que cambies tu foto de perfil."
+        }
+      ],
+      "expo-font",
+      "expo-sharing",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#f9f7f2"
         }
       ]
     ],
