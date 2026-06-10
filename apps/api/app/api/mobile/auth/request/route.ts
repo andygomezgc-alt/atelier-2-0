@@ -87,14 +87,16 @@ export async function POST(req: NextRequest) {
       // Las respuestas de los chefs al magic link van a la bandeja de Andy
       // (el remitente onboarding@resend.dev no recibe correo).
       ...(process.env.RESEND_REPLY_TO ? { replyTo: process.env.RESEND_REPLY_TO } : {}),
-      subject: "Tu enlace mágico — Atelier",
+      // Opción A "professionale sobrio" elegida por Andy (2026-06-10): chefs
+      // del pilot son italianos, el correo llega en italiano.
+      subject: "Il tuo accesso ad Atelier",
       html: `
       <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#f9f7f2;color:#2a2520">
         <h1 style="font-style:italic;color:#1a3a3a;margin-bottom:8px">Atelier</h1>
-        <p style="color:#8b7a6f;margin-bottom:32px">Tu cuaderno creativo</p>
-        <p>Toca el botón para entrar. El enlace expira en <strong>15 minutos</strong>.</p>
-        <a href="${deepLink}" style="display:inline-block;background:#c47e4f;color:#f9f7f2;text-decoration:none;padding:14px 28px;border-radius:10px;font-family:system-ui,sans-serif;font-weight:600;margin:24px 0">Abrir Atelier</a>
-        <p style="font-size:13px;color:#8b7a6f;margin-top:32px">Si la app no se abrió al tocar el botón, copia este código y pégalo en la pantalla de login:</p>
+        <p style="color:#8b7a6f;margin-bottom:32px">Ricette, menù e allergeni — la cucina, in ordine</p>
+        <p>Tocca il pulsante per entrare. Il link scade tra <strong>15 minuti</strong>.</p>
+        <a href="${deepLink}" style="display:inline-block;background:#c47e4f;color:#f9f7f2;text-decoration:none;padding:14px 28px;border-radius:10px;font-family:system-ui,sans-serif;font-weight:600;margin:24px 0">Apri Atelier</a>
+        <p style="font-size:13px;color:#8b7a6f;margin-top:32px">Se l'app non si è aperta, copia questo codice e incollalo nella schermata di accesso:</p>
         <p style="font-family:'SF Mono',Menlo,monospace;font-size:12px;background:#fff;border:1px solid #e8e2d8;border-radius:8px;padding:12px;word-break:break-all;color:#2a2520">${token}</p>
       </div>
     `,
