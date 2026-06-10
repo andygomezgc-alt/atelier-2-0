@@ -84,6 +84,9 @@ export async function POST(req: NextRequest) {
     await getResend().emails.send({
       from: FROM,
       to: email,
+      // Las respuestas de los chefs al magic link van a la bandeja de Andy
+      // (el remitente onboarding@resend.dev no recibe correo).
+      ...(process.env.RESEND_REPLY_TO ? { replyTo: process.env.RESEND_REPLY_TO } : {}),
       subject: "Tu enlace mágico — Atelier",
       html: `
       <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#f9f7f2;color:#2a2520">
