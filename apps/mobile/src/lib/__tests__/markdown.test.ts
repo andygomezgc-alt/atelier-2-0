@@ -57,6 +57,33 @@ describe("parseAssistantMarkdown", () => {
     ]);
   });
 
+  it("viñetas con * al inicio de linea son lista, no cursiva", () => {
+    expect(parseAssistantMarkdown("* shio-koji\n* aceite")).toEqual([
+      {
+        type: "list",
+        ordered: false,
+        items: [[{ text: "shio-koji" }], [{ text: "aceite" }]],
+      },
+    ]);
+  });
+
+  it("listas mixtas UL→OL producen dos blocks separados", () => {
+    expect(parseAssistantMarkdown("- uno\n1. dos")).toEqual([
+      { type: "list", ordered: false, items: [[{ text: "uno" }]] },
+      { type: "list", ordered: true, items: [[{ text: "dos" }]] },
+    ]);
+  });
+
+  it("markdown inline dentro de items de lista", () => {
+    expect(parseAssistantMarkdown("- **frio** siempre")).toEqual([
+      {
+        type: "list",
+        ordered: false,
+        items: [[{ text: "frio", bold: true }, { text: " siempre" }]],
+      },
+    ]);
+  });
+
   it("lista ordenada con 1. 2.", () => {
     const blocks = parseAssistantMarkdown("1. marinar\n2. secar");
     expect(blocks).toEqual([

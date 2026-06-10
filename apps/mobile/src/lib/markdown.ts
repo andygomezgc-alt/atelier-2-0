@@ -11,6 +11,7 @@ export type Block =
   | { type: "list"; ordered: boolean; items: Span[][] };
 
 // **bold** primero (no-greedy, sin * adentro), después *italic*.
+// Énfasis anidado (**x *y* z**) NO forma negrita: trade-off intencional del [^*\n]+.
 const INLINE_RE = /(\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g;
 
 export function parseInline(text: string): Span[] {
