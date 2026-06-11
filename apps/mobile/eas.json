@@ -1,0 +1,16 @@
+{
+  "cli": {
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "pilot": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://atelier-2-0-mu.vercel.app"
+      }
+    }
+  }
+}
