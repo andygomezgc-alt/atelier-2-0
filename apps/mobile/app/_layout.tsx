@@ -30,7 +30,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     // con los subtítulos por sección. El alta del sitio se dispara al primer
     // intento de guardar algo (lazy create vía LazyRestaurantHost) o
     // explícitamente desde el lobby en Casa.
-    if (state.status === "signed-out" && !inAuthGroup) {
+    // "auth" es el alias del deep link del magic link (app/auth.tsx): su
+    // Redirect a verify corre en el mismo commit que este efecto; si acá
+    // forzáramos login, pisaríamos esa navegación y el token se perdería.
+    if (state.status === "signed-out" && !inAuthGroup && sub[0] !== "auth") {
       router.replace("/(auth)/login");
     } else if (state.status === "needs-restaurant" && inAuthGroup) {
       // A-12: el chef en needs-restaurant cae en INICIO, no en Casa.
