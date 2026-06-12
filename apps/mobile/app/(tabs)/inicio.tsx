@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Eyebrow } from "@/src/components/Eyebrow";
 import { Empty } from "@/src/components/Empty";
@@ -60,9 +60,14 @@ export default function InicioScreen() {
     }
   }, [t, refreshQueue]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  // useFocusEffect (no useEffect): las tabs quedan montadas, así que al
+  // volver de guardar una receta hay que refetchear o la nota recién
+  // archivada seguiría visible hasta reabrir la app.
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload]),
+  );
 
   async function handleSave() {
     if (!text.trim() || saving) return;

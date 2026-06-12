@@ -219,6 +219,7 @@ export default function NuevaRecetaScreen() {
     workingIngredients: IngredientValue[];
     draftIndices: number[];
   } | null>(null);
+  const [sourceConversationId, setSourceConversationId] = useState<string | null>(null);
 
   // Pre-fill desde upload o "Modificar receta".
   useEffect(() => {
@@ -252,6 +253,10 @@ export default function NuevaRecetaScreen() {
     setMethod(draft.contentJson.method.length ? draft.contentJson.method : [""]);
     setNotes(draft.contentJson.notes ?? "");
     if (draft.editId) setEditId(draft.editId);
+    // El vínculo con la conversación del Asistente se perdía acá: el draft
+    // lo traía pero el payload del save no lo incluía. El server lo usa para
+    // archivar la nota (Idea) de origen al guardar la receta.
+    if (draft.sourceConversationId) setSourceConversationId(draft.sourceConversationId);
   }, []);
 
   const role =
@@ -420,7 +425,10 @@ export default function NuevaRecetaScreen() {
         showToast(t("toast_recipe_saved"));
         router.replace({ pathname: "/recetas/[id]", params: { id: editId } });
       } else {
-        await createRecipe(payload);
+        await createRecipe({
+          ...payload,
+          ...(sourceConversationId ? { sourceConversationId } : {}),
+        });
         showToast(t("toast_recipe_saved"));
         router.replace("/(tabs)/recetas");
       }

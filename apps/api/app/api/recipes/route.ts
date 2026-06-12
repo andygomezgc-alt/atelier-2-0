@@ -58,6 +58,34 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
   return NextResponse.json(recipes.map(projectRecipeListItem));
 });
 
+// La nota (Idea) que originó la conversación queda consumida cuando el chef
+// la vuelve receta: la archivamos para que salga de la lista de Inicio.
+// Best-effort fuera de la transacción de la receta: si esto falla, la receta
+// ya está guardada (lo importante) y la nota solo queda visible de más.
+async function archiveSourceIdea(
+  sourceConversationId: string | null | undefined,
+  restaurantId: string,
+): Promise<void> {
+  if (!sourceConversationId) return;
+  try {
+    const conv = await prisma.conversation.findFirst({
+      where: { id: sourceConversationId, restaurantId },
+      select: { ideaId: true },
+    });
+    if (!conv?.ideaId) return;
+    await prisma.idea.updateMany({
+      where: { id: conv.ideaId, restaurantId, status: { not: "archived" } },
+      data: { status: "archived" },
+    });
+  } catch (err) {
+    logger.error("idea_archive_failed", {
+      sourceConversationId,
+      restaurantId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export const POST = withAuth(
   { permission: "edit_recipe", body: CreateRecipeRequestSchema },
   async (ctx, body: CreateRecipeRequest) => {
@@ -129,6 +157,8 @@ export const POST = withAuth(
         linkedProducts: productIds.length,
       });
 
+      await archiveSourceIdea(body.sourceConversationId, ctx.restaurantId);
+
       return NextResponse.json(projectRecipeListItem(recipe), { status: 201 });
     }
 
@@ -152,6 +182,8 @@ export const POST = withAuth(
       restaurantId: ctx.restaurantId,
       userId: ctx.userId,
     });
+
+    await archiveSourceIdea(body.sourceConversationId, ctx.restaurantId);
 
     return NextResponse.json(projectRecipeListItem(recipe), { status: 201 });
   },
