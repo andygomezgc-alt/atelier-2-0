@@ -1,6 +1,7 @@
 import { apiFetch, TOKEN_KEY, ApiError, NetworkError } from "./client";
 import { cached, invalidate } from "./cache";
 import * as SecureStore from "@/src/lib/secure-storage";
+import * as FileSystem from "expo-file-system/legacy";
 import type {
   RecipeListItem,
   RecipeDetail,
@@ -90,52 +91,38 @@ export const extractRecipeFromAssistant = (text: string) =>
     body: JSON.stringify({ text }),
   });
 
-// Multipart upload — cannot use apiFetch because it forces JSON content-type.
-// We send the file as { uri, name, type } which React Native turns into a
-// FormData part the server reads as a Blob.
+// Multipart upload — RN's fetch + FormData({uri}) lanza "Network request
+// failed" en builds standalone (SDK 56, arquitectura nueva): el request
+// nunca sale del teléfono (en Expo Go no se reproduce). uploadAsync es la
+// vía nativa de Expo para multipart y no depende del polyfill de fetch.
 export async function uploadRecipeFile(
   uri: string,
-  name: string,
   mimeType: string,
 ): Promise<ExtractedRecipeResponse> {
   const base = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
   const token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
 
-  const form = new FormData();
-  // React Native FormData accepts this shape for file uploads; the type
-  // assertion is needed because the standard DOM FormData typings don't
-  // allow it. The runtime in RN handles it correctly.
-  form.append("file", { uri, name, type: mimeType } as unknown as Blob);
-
-  // Upstream extraction can take 30-40s with cold LLM cache; allow 90s.
-  const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), 90_000);
-
-  let res: Response;
+  let res: FileSystem.FileSystemUploadResult;
   try {
-    res = await fetch(`${base}/api/recipes/upload`, {
-      method: "POST",
+    res = await FileSystem.uploadAsync(`${base}/api/recipes/upload`, uri, {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
-      signal: abort.signal,
     });
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new NetworkError("request_timeout");
-    }
+  } catch {
     throw new NetworkError();
-  } finally {
-    clearTimeout(timer);
   }
 
-  if (!res.ok) {
+  if (res.status < 200 || res.status >= 300) {
     let message = `HTTP ${res.status}`;
     try {
-      const json = await res.json();
+      const json = JSON.parse(res.body);
       message = json?.error ?? message;
     } catch {}
     throw new ApiError(res.status, message);
   }
 
-  return res.json() as Promise<ExtractedRecipeResponse>;
+  return JSON.parse(res.body) as ExtractedRecipeResponse;
 }

@@ -25,6 +25,7 @@ import { Button } from "@/src/components/Button";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import { uploadRecipeFile } from "@/src/api/recipes";
+import { apiErrorMessage } from "@/src/lib/api-error";
 import { setRecipeDraft } from "@/src/lib/recipe-draft";
 import { showToast } from "@/src/components/Toast";
 import { can } from "@atelier/shared";
@@ -72,11 +73,7 @@ export default function CargarRecetaScreen() {
 
     setProcessing(true);
     try {
-      const extracted = await uploadRecipeFile(
-        asset.uri,
-        asset.name ?? "recipe",
-        inferredMime,
-      );
+      const extracted = await uploadRecipeFile(asset.uri, inferredMime);
       // Pasamos a nueva.tsx: contentJson (legacy compat), recipeIngredients
       // (estructurado, productIds pre-set para exact matches), y
       // pendingMatches (probables que el chef confirma al abrir el form).
@@ -89,9 +86,9 @@ export default function CargarRecetaScreen() {
       showToast(t("toast_recipe_uploaded"));
       router.replace("/recetas/nueva");
     } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : t("recetas_cargar_error"),
-      );
+      // NetworkError lleva codes internos ("network_unreachable") que no son
+      // para humanos — apiErrorMessage los traduce.
+      showToast(apiErrorMessage(err, t));
     } finally {
       setProcessing(false);
     }

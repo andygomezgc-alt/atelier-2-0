@@ -6,7 +6,7 @@
 
 import type { ApiErrorCode } from "@atelier/shared";
 import type { TranslationKey } from "@atelier/i18n";
-import { ApiError } from "@/src/api/client";
+import { ApiError, NetworkError } from "@/src/api/client";
 
 // Mapeo exhaustivo (typecheck force: si se agrega un code en shared sin la
 // key i18n correspondiente, TS rompe).
@@ -28,6 +28,9 @@ export function apiErrorMessage(err: unknown, t: T): string {
   if (err instanceof ApiError && err.code) {
     return t(CODE_TO_KEY[err.code]);
   }
+  // NetworkError.message es un code interno (network_unreachable /
+  // request_timeout), no texto para humanos.
+  if (err instanceof NetworkError) return t("error_network");
   if (err instanceof Error) return err.message;
   return t("error_network");
 }
