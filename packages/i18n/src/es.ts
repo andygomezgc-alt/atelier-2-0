@@ -241,6 +241,10 @@ export const es = {
   recetas_cargar_hint: "Hasta 10 MB. Acepta PDF y .docx — también desde Google Drive.",
   recetas_cargar_review: "Revisa y guarda",
   recetas_cargar_error: "No se pudo leer el archivo. Probá con otro.",
+  recetas_cargar_gdoc_hint:
+    "¿La receta está en Google Docs? Pega el enlace aquí. El doc debe estar compartido como \"cualquier persona con el enlace\".",
+  recetas_cargar_gdoc_placeholder: "Pega el enlace de Google Docs",
+  recetas_cargar_gdoc_btn: "Importar de Google Docs",
   toast_recipe_uploaded: "Receta procesada — revisá y guardá",
   btn_modificar: "Modificar",
   recipe_editar_title: "Modificar receta",

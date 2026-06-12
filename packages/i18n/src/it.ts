@@ -232,6 +232,10 @@ export const it: EsDict = {
   recetas_cargar_hint: "Fino a 10 MB. PDF e .docx — anche da Google Drive.",
   recetas_cargar_review: "Rivedi e salva",
   recetas_cargar_error: "Impossibile leggere il file. Prova con un altro.",
+  recetas_cargar_gdoc_hint:
+    "La ricetta è su Google Docs? Incolla il link qui. Il documento deve essere condiviso come \"chiunque abbia il link\".",
+  recetas_cargar_gdoc_placeholder: "Incolla il link di Google Docs",
+  recetas_cargar_gdoc_btn: "Importa da Google Docs",
   toast_recipe_uploaded: "Ricetta processata — rivedi e salva",
   btn_modificar: "Modifica",
   recipe_editar_title: "Modifica ricetta",

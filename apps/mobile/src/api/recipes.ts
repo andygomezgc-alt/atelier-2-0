@@ -91,6 +91,15 @@ export const extractRecipeFromAssistant = (text: string) =>
     body: JSON.stringify({ text }),
   });
 
+// Los Google Docs nativos no pasan por el picker (son "archivos virtuales"
+// de Android que el SAF no entrega): el chef pega el enlace compartido y el
+// server descarga el export DOCX y corre la misma extracción + matching.
+export const importRecipeFromGDoc = (url: string) =>
+  apiFetch<ExtractedRecipeResponse>("/api/recipes/import-gdoc", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+
 // Multipart upload — RN's fetch + FormData({uri}) lanza "Network request
 // failed" en builds standalone (SDK 56, arquitectura nueva): el request
 // nunca sale del teléfono (en Expo Go no se reproduce). uploadAsync es la

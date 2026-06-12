@@ -15,6 +15,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,7 +25,7 @@ import { Screen } from "@/src/components/Screen";
 import { Button } from "@/src/components/Button";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
-import { uploadRecipeFile } from "@/src/api/recipes";
+import { uploadRecipeFile, importRecipeFromGDoc } from "@/src/api/recipes";
 import { apiErrorMessage } from "@/src/lib/api-error";
 import { setRecipeDraft } from "@/src/lib/recipe-draft";
 import { showToast } from "@/src/components/Toast";
@@ -34,17 +35,16 @@ import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 const PDF_MIME = "application/pdf";
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-// Including the Google Docs MIME makes Drive show native Google Docs as
-// pickable in the Android system picker. Drive auto-exports the chosen Doc
-// to one of the formats we list (PDF or DOCX), so the server still receives
-// a normal file — we don't need to handle the Google Docs MIME ourselves.
-const GDOC_MIME = "application/vnd.google-apps.document";
+// Los Google Docs nativos NO entran por acá: son "archivos virtuales" del
+// SAF de Android (el picker los muestra pero no puede entregarlos). Para
+// esos existe el campo de pegar enlace (importRecipeFromGDoc).
 
 export default function CargarRecetaScreen() {
   const { t } = useI18n();
   const { state: authState } = useAuth();
   const router = useRouter();
   const [processing, setProcessing] = useState(false);
+  const [gdocUrl, setGdocUrl] = useState("");
 
   const role =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -55,7 +55,7 @@ export default function CargarRecetaScreen() {
   async function pickAndUpload() {
     if (processing) return;
     const result = await DocumentPicker.getDocumentAsync({
-      type: [PDF_MIME, DOCX_MIME, GDOC_MIME],
+      type: [PDF_MIME, DOCX_MIME],
       copyToCacheDirectory: true,
       multiple: false,
     });
@@ -94,6 +94,26 @@ export default function CargarRecetaScreen() {
     }
   }
 
+  async function importFromGDoc() {
+    if (processing) return;
+    setProcessing(true);
+    try {
+      const extracted = await importRecipeFromGDoc(gdocUrl.trim());
+      setRecipeDraft({
+        title: extracted.title,
+        contentJson: extracted.contentJson,
+        recipeIngredients: extracted.recipeIngredients,
+        pendingMatches: extracted.pendingMatches,
+      });
+      showToast(t("toast_recipe_uploaded"));
+      router.replace("/recetas/nueva");
+    } catch (err) {
+      showToast(apiErrorMessage(err, t));
+    } finally {
+      setProcessing(false);
+    }
+  }
+
   if (!canEdit) {
     return (
       <Screen title={t("recetas_cargar_title")} back onBack={() => router.back()}>
@@ -121,11 +141,34 @@ export default function CargarRecetaScreen() {
             <Text style={styles.processingLabel}>{t("recetas_cargar_processing")}</Text>
           </View>
         ) : (
-          <Button
-            label={t("recetas_cargar_pick")}
-            iconLeft="cloud-upload-outline"
-            onPress={pickAndUpload}
-          />
+          <>
+            <Button
+              label={t("recetas_cargar_pick")}
+              iconLeft="cloud-upload-outline"
+              onPress={pickAndUpload}
+            />
+
+            <View style={styles.gdocCard}>
+              <Text style={styles.gdocHint}>{t("recetas_cargar_gdoc_hint")}</Text>
+              <TextInput
+                value={gdocUrl}
+                onChangeText={setGdocUrl}
+                placeholder={t("recetas_cargar_gdoc_placeholder")}
+                placeholderTextColor={colors.mute}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                style={styles.gdocInput}
+              />
+              <Button
+                label={t("recetas_cargar_gdoc_btn")}
+                iconLeft="link-outline"
+                variant="secondary"
+                onPress={importFromGDoc}
+                disabled={!gdocUrl.trim()}
+              />
+            </View>
+          </>
         )}
 
         <Pressable
@@ -174,6 +217,31 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: fontSizes.bodySm,
     color: colors.inkSoft,
+  },
+  gdocCard: {
+    backgroundColor: colors.paperSoft,
+    borderRadius: radii.md,
+    borderWidth: 0.5,
+    borderColor: colors.edge,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  gdocHint: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.mute,
+    lineHeight: 18,
+  },
+  gdocInput: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.ink,
+    backgroundColor: colors.paper,
+    borderRadius: radii.sm,
+    borderWidth: 0.5,
+    borderColor: colors.edge,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   skipBtn: {
     alignSelf: "center",

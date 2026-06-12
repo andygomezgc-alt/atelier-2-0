@@ -231,6 +231,10 @@ export const en: EsDict = {
   recetas_cargar_hint: "Up to 10 MB. Accepts PDF and .docx — also from Google Drive.",
   recetas_cargar_review: "Review and save",
   recetas_cargar_error: "Couldn't read the file. Try another.",
+  recetas_cargar_gdoc_hint:
+    "Is the recipe in Google Docs? Paste the link here. The doc must be shared as \"anyone with the link\".",
+  recetas_cargar_gdoc_placeholder: "Paste the Google Docs link",
+  recetas_cargar_gdoc_btn: "Import from Google Docs",
   toast_recipe_uploaded: "Recipe processed — review and save",
   btn_modificar: "Modify",
   recipe_editar_title: "Edit recipe",
