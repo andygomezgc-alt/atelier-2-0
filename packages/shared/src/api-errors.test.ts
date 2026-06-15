@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { ApiErrorResponseSchema, ApiErrorCodeSchema } from "./api-contract";
 
 describe("ApiErrorCodeSchema (A-11)", () => {
-  it("acepta los 9 codes definidos", () => {
+  it("acepta los 10 codes definidos", () => {
     const codes = [
       "email_invalid",
       "rate_limited",
@@ -13,6 +13,7 @@ describe("ApiErrorCodeSchema (A-11)", () => {
       "invite_rate_limited",
       "invite_code_invalid",
       "already_in_restaurant",
+      "google_signin_failed",
     ];
     for (const c of codes) {
       expect(ApiErrorCodeSchema.safeParse(c).success).toBe(true);

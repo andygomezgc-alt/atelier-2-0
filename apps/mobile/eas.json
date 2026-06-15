@@ -9,7 +9,9 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://atelier-2-0-mu.vercel.app"
+        "EXPO_PUBLIC_API_URL": "https://atelier-2-0-mu.vercel.app",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "147262114833-bjejn5r52gtcfejbq64nf9salo3q55c8.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "147262114833-pcalma01h1d16rrbe3o8iigk4lv0ubf2.apps.googleusercontent.com"
       }
     }
   }

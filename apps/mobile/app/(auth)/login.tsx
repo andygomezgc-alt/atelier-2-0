@@ -1,17 +1,19 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FontAwesome } from "@expo/vector-icons";
 import { useAuth } from "@/src/hooks/useAuth";
 import { useI18n } from "@/src/hooks/useI18n";
 import { showToast } from "@/src/components/Toast";
 import { verifyMagicLink } from "@/src/api/auth";
+import { ApiError, NetworkError } from "@/src/api/client";
 import { apiErrorMessage } from "@/src/lib/api-error";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 type Mode = "email" | "sent" | "paste";
 
 export default function LoginScreen() {
-  const { sendMagicLink, signInWithToken } = useAuth();
+  const { sendMagicLink, signInWithGoogle, signInWithToken } = useAuth();
   const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [mode, setMode] = useState<Mode>("email");
@@ -30,6 +32,24 @@ export default function LoginScreen() {
       // A-11 — usa el `code` del server para localizar (email_invalid,
       // rate_limited, email_send_failed); cae a "error_network" si no.
       showToast(apiErrorMessage(err, t));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleGoogle() {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      // Errores del server llegan tipados (google_signin_failed) o de red; el
+      // resto (sin idToken, Play Services) cae al mensaje genérico de Google.
+      const msg =
+        err instanceof ApiError || err instanceof NetworkError
+          ? apiErrorMessage(err, t)
+          : t("error_google_signin");
+      showToast(msg);
     } finally {
       setLoading(false);
     }
@@ -121,6 +141,21 @@ export default function LoginScreen() {
                 {loading ? t("onboard_sending") : t("onboard_btn_magic_link")}
               </Text>
             </Pressable>
+
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>{t("onboard_or")}</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <Pressable
+              style={[styles.googleButton, loading && styles.buttonDisabled]}
+              disabled={loading}
+              onPress={handleGoogle}
+            >
+              <FontAwesome name="google" size={18} color={colors.ink} />
+              <Text style={styles.googleLabel}>{t("onboard_btn_google")}</Text>
+            </Pressable>
           </>
         )}
       </View>
@@ -169,6 +204,36 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: fontSizes.body,
     color: colors.paper,
+    fontWeight: "600",
+    letterSpacing: 0.4,
+  },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: spacing.lg,
+    gap: spacing.md,
+  },
+  dividerLine: { flex: 1, height: 0.5, backgroundColor: colors.edge },
+  dividerText: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.mute,
+  },
+  googleButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.paperSoft,
+    borderWidth: 0.5,
+    borderColor: colors.edge,
+    borderRadius: radii.lg,
+    paddingVertical: 14,
+  },
+  googleLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.body,
+    color: colors.ink,
     fontWeight: "600",
     letterSpacing: 0.4,
   },

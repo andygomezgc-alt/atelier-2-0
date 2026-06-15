@@ -35,6 +35,18 @@ export function verifyMagicLink(
   });
 }
 
+// Login con Google: la app obtiene el idToken del SDK nativo y el server lo
+// verifica contra las llaves públicas de Google. Devuelve el mismo
+// {accessToken, user} que el magic link.
+export function loginWithGoogle(
+  idToken: string,
+): Promise<{ accessToken: string; user: MeUser }> {
+  return apiFetch("/api/mobile/auth/google", {
+    method: "POST",
+    body: JSON.stringify({ idToken }),
+  });
+}
+
 export function fetchMe(): Promise<MeUser> {
   return apiFetch("/api/me");
 }

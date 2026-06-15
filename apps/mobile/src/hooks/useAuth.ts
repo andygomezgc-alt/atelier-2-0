@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as SecureStore from "@/src/lib/secure-storage";
 import { TOKEN_KEY } from "@/src/api/client";
-import { devLogin, fetchMe, requestMagicLink, type MeUser } from "@/src/api/auth";
+import { devLogin, fetchMe, loginWithGoogle, requestMagicLink, type MeUser } from "@/src/api/auth";
 import { clearAll as clearApiCache } from "@/src/api/cache";
 
 export type AuthState =
@@ -62,6 +62,46 @@ function patchLocalUserImpl(updates: Partial<MeUser>): void {
 
 export function getAuthActions() {
   return { refreshMe: refreshMeImpl, patchLocalUser: patchLocalUserImpl };
+}
+
+// Google Sign-In. Import perezoso del módulo nativo: así vitest (node) y la
+// web no intentan cargar el binario al evaluar este archivo. Configure es
+// idempotente (lo corremos una sola vez).
+let _googleConfigured = false;
+async function getGoogle() {
+  const mod = await import("@react-native-google-signin/google-signin");
+  if (!_googleConfigured) {
+    mod.GoogleSignin.configure({
+      webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    });
+    _googleConfigured = true;
+  }
+  return mod;
+}
+
+// Resuelve sin error si el usuario cancela; lanza en fallos reales (el caller
+// muestra el toast). El idToken se valida en el server (/api/mobile/auth/google).
+async function signInWithGoogleImpl(): Promise<void> {
+  const { GoogleSignin, statusCodes, isErrorWithCode } = await getGoogle();
+  try {
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    const res = await GoogleSignin.signIn();
+    if (res.type === "cancelled") return;
+    const idToken = res.data?.idToken;
+    if (!idToken) throw new Error("google_no_id_token");
+    const { accessToken, user } = await loginWithGoogle(idToken);
+    await SecureStore.setItemAsync(TOKEN_KEY, accessToken);
+    setState(
+      user.restaurantId
+        ? { status: "signed-in", user }
+        : { status: "needs-restaurant", user },
+    );
+  } catch (err) {
+    // Algunas versiones tiran la cancelación como error en vez de devolverla.
+    if (isErrorWithCode(err) && err.code === statusCodes.SIGN_IN_CANCELLED) return;
+    throw err;
+  }
 }
 
 // Re-exportamos MeUser para los consumidores no-hook (ej. LazyRestaurantHost).
@@ -144,6 +184,8 @@ export function useAuth() {
     [],
   );
 
+  const signInWithGoogle = useCallback(signInWithGoogleImpl, []);
+
   const refreshMe = useCallback(refreshMeImpl, []);
 
   // Local-only merge into the signed-in user — útil tras un PATCH que ya
@@ -158,5 +200,5 @@ export function useAuth() {
     setState({ status: "signed-out" });
   }, []);
 
-  return { state, sendMagicLink, signInWithToken, refreshMe, patchLocalUser, signOut };
+  return { state, sendMagicLink, signInWithGoogle, signInWithToken, refreshMe, patchLocalUser, signOut };
 }
