@@ -45,6 +45,14 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.147262114833-pcalma01h1d16rrbe3o8iigk4lv0ubf2"
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Atelier usa el micrófono para que dictes tus ideas al asistente.",
+          "speechRecognitionPermission": "Atelier convierte tu voz en texto para el asistente.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+        }
       ]
     ],
     "experiments": {

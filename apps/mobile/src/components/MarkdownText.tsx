@@ -101,7 +101,8 @@ const styles = StyleSheet.create({
     fontFamily: fonts.serif,
     fontSize: fontSizes.serifBody,
     color: colors.ink,
-    lineHeight: fontSizes.body * 1.6,
+    // Pulido (spec 2026-06-23): más ritmo de lectura en la respuesta.
+    lineHeight: fontSizes.serifBody * 1.5,
   },
   bold: { fontFamily: fonts.serifMedium, fontWeight: "600" },
   italic: { fontFamily: fonts.serifItalic },
@@ -112,7 +113,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.serif,
     fontSize: fontSizes.serifBody,
     color: colors.terracota,
-    lineHeight: fontSizes.body * 1.6,
+    lineHeight: fontSizes.serifBody * 1.5,
   },
   listText: { flex: 1 },
 });

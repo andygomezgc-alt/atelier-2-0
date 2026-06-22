@@ -114,6 +114,13 @@ export const it: EsDict = {
   btn_export_pdf: "Esporta carta PDF",
   chat_idea_anclada: "Idea ancorata",
   chat_placeholder: "Chiedi all'assistente…",
+  chat_placeholder_voice: "Scrivi o detta…",
+  chat_mic_label: "Detta a voce",
+  chat_mic_stop: "Ferma la dettatura",
+  error_mic_permission: "Mi serve il permesso del microfono per dettare. Attivalo nelle impostazioni del telefono.",
+  error_mic_unavailable: "La dettatura vocale non è disponibile su questo telefono.",
+  day_today: "oggi",
+  day_yesterday: "ieri",
   chat_role_user: "Tu",
   chat_role_assistant: "Assistente",
   // ─── C-05 · Assistente editoriale (mockup) ───

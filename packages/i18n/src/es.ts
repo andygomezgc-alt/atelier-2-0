@@ -114,6 +114,13 @@ export const es = {
   btn_export_pdf: "Exportar carta PDF",
   chat_idea_anclada: "Idea anclada",
   chat_placeholder: "Pregúntale al asistente…",
+  chat_placeholder_voice: "Escribí o dictá…",
+  chat_mic_label: "Dictar por voz",
+  chat_mic_stop: "Detener dictado",
+  error_mic_permission: "Necesito permiso del micrófono para dictar. Actívalo en los ajustes del teléfono.",
+  error_mic_unavailable: "El dictado por voz no está disponible en este teléfono.",
+  day_today: "hoy",
+  day_yesterday: "ayer",
   chat_role_user: "Tú",
   chat_role_assistant: "Asistente",
   // ─── C-05 · Asistente editorial (mockup) ───

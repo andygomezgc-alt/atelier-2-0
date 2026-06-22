@@ -24,6 +24,7 @@ import { ProfileSheet } from "@/src/components/ProfileSheet";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
+import { useSpeechInput } from "@/src/hooks/useSpeechInput";
 import {
   bulkAddMessages,
   createConversation,
@@ -67,6 +68,29 @@ function formatTime(iso: string): string {
     const hh = String(d.getHours()).padStart(2, "0");
     const mm = String(d.getMinutes()).padStart(2, "0");
     return `${hh}:${mm}`;
+  } catch {
+    return "";
+  }
+}
+
+// Dictado por voz: app lang → BCP-47 del reconocedor nativo.
+const SPEECH_LANG: Record<"es" | "it" | "en", string> = {
+  es: "es-ES",
+  it: "it-IT",
+  en: "en-US",
+};
+
+// Separador de día (pulido spec 2026-06-23): "hoy" / "ayer" / "12 jun".
+function dayLabel(iso: string, t: (k: TranslationKey) => string): string {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const startOf = (x: Date) =>
+      new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diff = Math.round((startOf(now) - startOf(d)) / 86_400_000);
+    if (diff <= 0) return t("day_today");
+    if (diff === 1) return t("day_yesterday");
+    return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
   } catch {
     return "";
   }
@@ -166,6 +190,11 @@ export default function AsistenteScreen() {
       : "";
   const userInitials = userName ? initials(userName) : "?";
 
+  const langPref: "es" | "it" | "en" =
+    authState.status === "signed-in" || authState.status === "needs-restaurant"
+      ? authState.user.languagePref
+      : "es";
+
   // A-12 — el Asistente funciona igual con o sin restaurante. Sin restaurante
   // no creamos Conversation en server; los mensajes viven en memoria y se
   // persisten todos juntos al guardar como receta.
@@ -183,6 +212,16 @@ export default function AsistenteScreen() {
   const [streamError, setStreamError] = useState<{ content: string; model: ModelKey } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+
+  // Dictado por voz: el texto reconocido se vuelca en el input en vivo.
+  const { listening, start: startMic, stop: stopMic } = useSpeechInput({
+    lang: SPEECH_LANG[langPref] ?? "es-ES",
+    onText: setInput,
+    onError: (code) =>
+      showToast(
+        t(code === "permission" ? "error_mic_permission" : "error_mic_unavailable"),
+      ),
+  });
 
   // Los mensajes presentes al cargar la conversación NO se animan; solo los
   // que llegan en vivo. Set de ids conocidos al momento del load.
@@ -325,6 +364,16 @@ export default function AsistenteScreen() {
     };
     setMessages((prev) => [...prev, userMsg]);
     await runStream(text, model);
+  }
+
+  function handleMic() {
+    if (streaming) return;
+    if (listening) {
+      stopMic();
+      return;
+    }
+    tapLight();
+    startMic(input);
   }
 
   async function retryStream() {
@@ -550,6 +599,15 @@ export default function AsistenteScreen() {
                   </View>
                 ) : null
               }
+              ListFooterComponent={
+                messages.length > 0 ? (
+                  <View style={styles.daySep}>
+                    <Text style={styles.dayChip}>
+                      {dayLabel(messages[0].createdAt, t)}
+                    </Text>
+                  </View>
+                ) : null
+              }
             />
           )}
         </View>
@@ -583,10 +641,26 @@ export default function AsistenteScreen() {
         ) : null}
 
         <View style={styles.composer}>
+          <Pressable
+            onPress={handleMic}
+            disabled={streaming}
+            style={[
+              styles.micBtn,
+              listening && styles.micBtnActive,
+              streaming && styles.micBtnDisabled,
+            ]}
+            accessibilityLabel={listening ? t("chat_mic_stop") : t("chat_mic_label")}
+          >
+            <Ionicons
+              name={listening ? "stop" : "mic-outline"}
+              size={18}
+              color={listening ? colors.paper : colors.terracota}
+            />
+          </Pressable>
           <TextInput
             value={input}
             onChangeText={setInput}
-            placeholder={t("chat_placeholder")}
+            placeholder={t("chat_placeholder_voice")}
             placeholderTextColor={colors.mute}
             style={styles.composerInput}
             multiline
@@ -722,7 +796,21 @@ const styles = StyleSheet.create({
   messages: {
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
-    gap: spacing.xl,
+    // Pulido (spec 2026-06-23): más aire entre mensajes.
+    gap: 28,
+  },
+
+  // ── Separador de día (chip discreto al tope de la conversación) ──────
+  daySep: { alignItems: "center", marginBottom: spacing.lg, marginTop: spacing.xs },
+  dayChip: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.mute,
+    backgroundColor: colors.paperWarm,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 3,
+    overflow: "hidden",
   },
 
   // ── Bubble del chef (verde teal, derecha, hora abajo) ───────────────
@@ -825,4 +913,17 @@ const styles = StyleSheet.create({
     color: colors.ink,
     maxHeight: 120,
   },
+
+  // ── Micrófono (dictado por voz) ─────────────────────────────────────
+  micBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: colors.terracota,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  micBtnActive: { backgroundColor: colors.terracota, borderColor: colors.terracota },
+  micBtnDisabled: { opacity: 0.4 },
 });

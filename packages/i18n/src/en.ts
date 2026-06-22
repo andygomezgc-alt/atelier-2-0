@@ -113,6 +113,13 @@ export const en: EsDict = {
   btn_export_pdf: "Export menu card",
   chat_idea_anclada: "Anchored idea",
   chat_placeholder: "Ask the assistant…",
+  chat_placeholder_voice: "Type or dictate…",
+  chat_mic_label: "Dictate by voice",
+  chat_mic_stop: "Stop dictation",
+  error_mic_permission: "I need microphone permission to dictate. Enable it in your phone settings.",
+  error_mic_unavailable: "Voice dictation isn't available on this phone.",
+  day_today: "today",
+  day_yesterday: "yesterday",
   chat_role_user: "You",
   chat_role_assistant: "Assistant",
   // ─── C-05 · Editorial assistant (mockup) ───
