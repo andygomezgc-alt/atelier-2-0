@@ -129,6 +129,9 @@ export async function POST(req: NextRequest) {
       chars: parsed.data.text.length,
       error: message,
     });
-    return NextResponse.json({ error: message }, { status: 422 });
+    return NextResponse.json(
+      { error: message, code: "recipe_extraction_failed" },
+      { status: 422 },
+    );
   }
 }

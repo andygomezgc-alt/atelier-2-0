@@ -181,6 +181,12 @@ export const en: EsDict = {
   error_google_signin: "We couldn't verify your Google account. Please try again.",
   error_ai_daily_limit:
     "You've reached today's AI limit. Come back tomorrow, or use your own key in Settings.",
+  error_recipe_extraction_failed:
+    "I couldn't read the recipe. Try another text or file.",
+  error_file_invalid:
+    "That file won't work: upload a valid PDF or DOCX (max 10 MB).",
+  error_gdoc_access_denied:
+    'I can\'t open the document. In Google Docs: Share → "Anyone with the link".',
   onboard_choose_title: "How would you like to start?",
   onboard_create_title: "Create my restaurant",
   onboard_create_sub: "You'll be admin of the group",

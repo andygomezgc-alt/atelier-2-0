@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
         {
           error:
             'No puedo acceder al documento. En Google Docs: Compartir → "Cualquier persona con el enlace".',
+          code: "gdoc_access_denied",
         },
         { status: 422 },
       );
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
     buffer = new Uint8Array(await res.arrayBuffer());
     if (buffer.byteLength > MAX_BYTES)
       return NextResponse.json(
-        { error: "Archivo demasiado grande", max: MAX_BYTES },
+        { error: "Archivo demasiado grande", max: MAX_BYTES, code: "file_invalid" },
         { status: 413 },
       );
     // Google debería exportar un DOCX (ZIP); si no coincide, no lo mandamos al
@@ -81,6 +82,7 @@ export async function POST(req: NextRequest) {
         {
           error:
             'No puedo acceder al documento. En Google Docs: Compartir → "Cualquier persona con el enlace".',
+          code: "gdoc_access_denied",
         },
         { status: 422 },
       );
@@ -179,6 +181,9 @@ export async function POST(req: NextRequest) {
       byok: byok?.provider ?? null,
       error: message,
     });
-    return NextResponse.json({ error: message }, { status: 422 });
+    return NextResponse.json(
+      { error: message, code: "recipe_extraction_failed" },
+      { status: 422 },
+    );
   }
 }

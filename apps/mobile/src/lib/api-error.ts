@@ -22,6 +22,9 @@ const CODE_TO_KEY: Record<ApiErrorCode, TranslationKey> = {
   already_in_restaurant: "error_already_in_restaurant",
   google_signin_failed: "error_google_signin",
   ai_daily_limit: "error_ai_daily_limit",
+  recipe_extraction_failed: "error_recipe_extraction_failed",
+  file_invalid: "error_file_invalid",
+  gdoc_access_denied: "error_gdoc_access_denied",
 };
 
 type T = (key: TranslationKey, vars?: Record<string, string | number>) => string;

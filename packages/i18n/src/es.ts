@@ -191,6 +191,12 @@ export const es = {
   error_google_signin: "No pudimos validar tu cuenta de Google. Intenta de nuevo.",
   error_ai_daily_limit:
     "Llegaste al límite de ayudas de IA por hoy. Vuelve mañana, o usa tu propia clave en Ajustes.",
+  error_recipe_extraction_failed:
+    "No pude leer bien la receta. Probá con otro texto o archivo.",
+  error_file_invalid:
+    "Ese archivo no sirve: subí un PDF o DOCX válido (máx 10 MB).",
+  error_gdoc_access_denied:
+    'No puedo abrir el documento. En Google Docs: Compartir → "Cualquiera con el enlace".',
   onboard_choose_title: "¿Cómo quieres empezar?",
   onboard_create_title: "Crear mi restaurante",
   onboard_create_sub: "Serás admin del grupo",

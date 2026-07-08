@@ -40,7 +40,10 @@ export async function POST(req: NextRequest) {
   const form = await req.formData();
   const file = form.get("file");
   if (!file || !(file instanceof Blob))
-    return NextResponse.json({ error: "Falta el archivo" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Falta el archivo", code: "file_invalid" },
+      { status: 400 },
+    );
 
   // Some clients (Expo on Android) send empty/missing mime — accept the form
   // hint from `name`'s extension as a fallback.
@@ -48,13 +51,13 @@ export async function POST(req: NextRequest) {
   const mime = inferMime(file.type, fileName);
   if (!ALLOWED_MIMES.includes(mime))
     return NextResponse.json(
-      { error: "Tipo de archivo no soportado", allowed: ALLOWED_MIMES },
+      { error: "Tipo de archivo no soportado", allowed: ALLOWED_MIMES, code: "file_invalid" },
       { status: 415 },
     );
 
   if (file.size > MAX_BYTES)
     return NextResponse.json(
-      { error: "Archivo demasiado grande", max: MAX_BYTES },
+      { error: "Archivo demasiado grande", max: MAX_BYTES, code: "file_invalid" },
       { status: 413 },
     );
 
@@ -64,7 +67,7 @@ export async function POST(req: NextRequest) {
   // mentir). Evita alimentar basura/archivos disfrazados al parser.
   if (!fileMatchesMime(buffer, mime))
     return NextResponse.json(
-      { error: "El archivo no coincide con su tipo", allowed: ALLOWED_MIMES },
+      { error: "El archivo no coincide con su tipo", allowed: ALLOWED_MIMES, code: "file_invalid" },
       { status: 415 },
     );
 
@@ -166,7 +169,10 @@ export async function POST(req: NextRequest) {
       byok: byok?.provider ?? null,
       error: message,
     });
-    return NextResponse.json({ error: message }, { status: 422 });
+    return NextResponse.json(
+      { error: message, code: "recipe_extraction_failed" },
+      { status: 422 },
+    );
   }
 }
 
