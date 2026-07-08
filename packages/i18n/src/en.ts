@@ -179,6 +179,8 @@ export const en: EsDict = {
   onboard_btn_google: "Continue with Google",
   onboard_or: "or",
   error_google_signin: "We couldn't verify your Google account. Please try again.",
+  error_ai_daily_limit:
+    "You've reached today's AI limit. Come back tomorrow, or use your own key in Settings.",
   onboard_choose_title: "How would you like to start?",
   onboard_create_title: "Create my restaurant",
   onboard_create_sub: "You'll be admin of the group",

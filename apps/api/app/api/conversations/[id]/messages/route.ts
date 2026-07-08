@@ -6,6 +6,7 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { buildSystemBlocks, MODEL_IDS, type Msg } from "@/lib/anthropic";
 import { streamBYOK } from "@/lib/byok-providers";
 import { loadUserBYOK } from "@/lib/byok-user";
+import { reserveAiCall, recordAiTokens, aiQuotaExceededResponse } from "@/lib/ai-quota";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
 
@@ -99,6 +100,12 @@ export async function POST(
     }
 
     byok = await loadUserBYOK(ctx.userId);
+
+    // Tope diario de IA: solo con la clave del server (BYOK no nos cuesta).
+    if (!byok) {
+      const quota = await reserveAiCall(ctx.userId);
+      if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
+    }
   } else {
     const conv = await prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -109,6 +116,15 @@ export async function POST(
 
     pinnedIdeaText = conv.idea?.text ?? null;
 
+    // Cargar BYOK ANTES de persistir/gastar. Con la clave del server aplica el
+    // tope diario; lo chequeamos antes de persistir el mensaje del user para no
+    // dejar un mensaje huérfano sin respuesta si rebota el 429.
+    byok = await loadUserBYOK(ctx.userId);
+    if (!byok) {
+      const quota = await reserveAiCall(ctx.userId);
+      if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
+    }
+
     // Persist user message before streaming.
     await prisma.message.create({
       data: {
@@ -118,9 +134,8 @@ export async function POST(
       },
     });
 
-    // Build context: recent recipes + pinned idea. loadUserBYOK descifra la
-    // clave si está cifrada y self-heals la legacy plaintext en background.
-    const [r, recent, history, byokLoaded] = await Promise.all([
+    // Build context: recent recipes + pinned idea.
+    const [r, recent, history] = await Promise.all([
       prisma.restaurant.findUnique({
         where: { id: ctx.restaurantId },
         select: { name: true, identityLine: true },
@@ -142,7 +157,6 @@ export async function POST(
         take: 20,
         select: { role: true, content: true },
       }),
-      loadUserBYOK(ctx.userId),
     ]);
 
     if (!r)
@@ -150,7 +164,6 @@ export async function POST(
 
     restaurant = r;
     recentRecipes = recent;
-    byok = byokLoaded;
     messages = history
       .slice()
       .reverse()
@@ -342,6 +355,11 @@ export async function POST(
             partial_chars: aborted || errored ? assistantText.length : undefined,
           }),
         );
+        // Sumar tokens gastados al contador diario (solo clave del server;
+        // best-effort, ya reservamos el slot antes de arrancar el stream).
+        if (!byok && (inputTokens || outputTokens)) {
+          await recordAiTokens(ctx.userId, inputTokens ?? 0, outputTokens ?? 0);
+        }
         try {
           controller.close();
         } catch {}

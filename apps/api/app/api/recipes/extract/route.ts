@@ -24,6 +24,7 @@ import { logger } from "@/lib/logger";
 import { extractRecipeFromText } from "@/lib/recipe-extraction";
 import { findMatch, type MatchCandidate } from "@/lib/products/matching";
 import { parseIngredient } from "@/lib/products/parser";
+import { reserveAiCall, aiQuotaExceededResponse } from "@/lib/ai-quota";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -44,6 +45,10 @@ export async function POST(req: NextRequest) {
       { error: "Texto de receta requerido" },
       { status: 400 },
     );
+
+  // Extracción usa SIEMPRE la clave del server → tope diario por usuario.
+  const quota = await reserveAiCall(ctx.userId);
+  if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
 
   const start = Date.now();
   try {

@@ -189,6 +189,7 @@ export const ApiErrorCodeSchema = z.enum([
   "invite_code_invalid",
   "already_in_restaurant",
   "google_signin_failed",
+  "ai_daily_limit",
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
 

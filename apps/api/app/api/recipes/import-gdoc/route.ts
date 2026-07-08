@@ -25,6 +25,7 @@ import { parseGDocId, gdocExportUrl } from "@/lib/gdoc";
 import { loadUserBYOK } from "@/lib/byok-user";
 import { findMatch, type MatchCandidate } from "@/lib/products/matching";
 import { parseIngredient } from "@/lib/products/parser";
+import { reserveAiCall, aiQuotaExceededResponse } from "@/lib/ai-quota";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -80,6 +81,13 @@ export async function POST(req: NextRequest) {
   }
 
   const byok: ExtractorBYOK = await loadUserBYOK(ctx.userId);
+
+  // Con clave del server aplica el tope diario; con BYOK (clave del chef) no.
+  if (!byok) {
+    const quota = await reserveAiCall(ctx.userId);
+    if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
+  }
+
   const start = Date.now();
   try {
     const [extracted, productList] = await Promise.all([

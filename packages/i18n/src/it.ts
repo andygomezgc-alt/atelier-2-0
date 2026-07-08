@@ -180,6 +180,8 @@ export const it: EsDict = {
   onboard_btn_google: "Continua con Google",
   onboard_or: "oppure",
   error_google_signin: "Non è stato possibile verificare il tuo account Google. Riprova.",
+  error_ai_daily_limit:
+    "Hai raggiunto il limite di aiuti IA per oggi. Riprova domani, o usa la tua chiave in Impostazioni.",
   onboard_choose_title: "Come vuoi iniziare?",
   onboard_create_title: "Crea il mio ristorante",
   onboard_create_sub: "Sarai admin del gruppo",

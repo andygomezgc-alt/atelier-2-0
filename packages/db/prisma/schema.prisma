@@ -169,6 +169,8 @@ model User {
   yieldTests           YieldTest[]           @relation("YieldTestAuthor")
   productPriceHistory  ProductPriceHistory[] @relation("PriceHistoryAuthor")
 
+  aiUsage AiUsage[]
+
   @@index([restaurantId])
 }
 
@@ -219,6 +221,25 @@ model Message {
   latencyMs    Int?
 
   @@index([conversationId, createdAt])
+}
+
+/// Contador diario por usuario de llamadas a la IA hechas con la clave
+/// ANTHROPIC del server. Las llamadas BYOK (clave propia del chef) NO se
+/// cuentan: no nos cuestan. Protege contra que una sola cuenta agote la
+/// clave compartida. Una fila por (userId, día-UTC). Ver lib/ai-quota.ts.
+model AiUsage {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day          String // YYYY-MM-DD en UTC
+  requestCount Int      @default(0)
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, day])
+  @@index([day])
 }
 
 model Recipe {

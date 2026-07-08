@@ -14,6 +14,10 @@ Thumbs.db
 .env.local
 .env.*.local
 !.env.example
+# backups y pulls de secretos — NUNCA al repo (claves de prod)
+*.pull
+.env*.bak*
+.env*.backup
 
 # prisma
 packages/db/generated/

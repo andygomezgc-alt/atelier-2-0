@@ -189,6 +189,8 @@ export const es = {
   onboard_btn_google: "Continuar con Google",
   onboard_or: "o",
   error_google_signin: "No pudimos validar tu cuenta de Google. Intenta de nuevo.",
+  error_ai_daily_limit:
+    "Llegaste al límite de ayudas de IA por hoy. Vuelve mañana, o usa tu propia clave en Ajustes.",
   onboard_choose_title: "¿Cómo quieres empezar?",
   onboard_create_title: "Crear mi restaurante",
   onboard_create_sub: "Serás admin del grupo",
