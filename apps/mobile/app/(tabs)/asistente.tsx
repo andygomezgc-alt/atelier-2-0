@@ -22,7 +22,7 @@ import { NetworkError } from "@/src/components/NetworkError";
 import { PreviousChatsSheet } from "@/src/components/PreviousChatsSheet";
 import { ProfileSheet } from "@/src/components/ProfileSheet";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
-import { useI18n } from "@/src/hooks/useI18n";
+import { useI18n, dateLocale } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import { useSpeechInput } from "@/src/hooks/useSpeechInput";
 import {
@@ -81,7 +81,11 @@ const SPEECH_LANG: Record<"es" | "it" | "en", string> = {
 };
 
 // Separador de día (pulido spec 2026-06-23): "hoy" / "ayer" / "12 jun".
-function dayLabel(iso: string, t: (k: TranslationKey) => string): string {
+function dayLabel(
+  iso: string,
+  t: (k: TranslationKey) => string,
+  locale: string,
+): string {
   try {
     const d = new Date(iso);
     const now = new Date();
@@ -90,7 +94,8 @@ function dayLabel(iso: string, t: (k: TranslationKey) => string): string {
     const diff = Math.round((startOf(now) - startOf(d)) / 86_400_000);
     if (diff <= 0) return t("day_today");
     if (diff === 1) return t("day_yesterday");
-    return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    // Idioma del chef, no el del teléfono.
+    return d.toLocaleDateString(locale, { day: "numeric", month: "short" });
   } catch {
     return "";
   }
@@ -603,7 +608,7 @@ export default function AsistenteScreen() {
                 messages.length > 0 ? (
                   <View style={styles.daySep}>
                     <Text style={styles.dayChip}>
-                      {dayLabel(messages[0].createdAt, t)}
+                      {dayLabel(messages[0].createdAt, t, dateLocale(langPref))}
                     </Text>
                   </View>
                 ) : null
@@ -916,9 +921,10 @@ const styles = StyleSheet.create({
 
   // ── Micrófono (dictado por voz) ─────────────────────────────────────
   micBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    // Objetivo táctil mínimo recomendado 44px (accesibilidad). Antes 38.
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: colors.terracota,
     alignItems: "center",

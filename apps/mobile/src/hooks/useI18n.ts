@@ -8,6 +8,17 @@ import { t as translate, type Language, type TranslationKey } from "@atelier/i18
 let currentLang: Language = "es";
 const listeners = new Set<(lang: Language) => void>();
 
+// Locale para formatear fechas/números en el idioma del chef (no el del
+// teléfono). Se usa con toLocaleDateString / Intl.
+const DATE_LOCALE: Record<Language, string> = {
+  es: "es-ES",
+  it: "it-IT",
+  en: "en-GB",
+};
+export function dateLocale(lang: Language): string {
+  return DATE_LOCALE[lang] ?? "es-ES";
+}
+
 // Exportado a nivel módulo para que useAuth aplique el idioma del chef
 // (user.languagePref) apenas hay sesión, sin estar bajo el árbol de un
 // componente. Idempotente.

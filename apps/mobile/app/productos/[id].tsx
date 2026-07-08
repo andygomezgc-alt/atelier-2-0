@@ -35,7 +35,7 @@ import { EditableCell } from "@/src/components/EditableCell";
 import { YieldTestForm } from "@/src/components/YieldTestForm";
 import { DebouncedTextInput } from "@/src/components/DebouncedTextInput";
 import { ChoiceSheet, type ChoiceOption } from "@/src/components/ChoiceSheet";
-import { useI18n } from "@/src/hooks/useI18n";
+import { useI18n, dateLocale } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import { showToast } from "@/src/components/Toast";
 import { StatusBadge } from "@/src/components/StatusBadge";
@@ -79,7 +79,7 @@ function realCostLocal(cents: number, mermaPct: number): number {
 }
 
 export default function ProductoDetailScreen() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { state: authState } = useAuth();
@@ -566,7 +566,7 @@ export default function ProductoDetailScreen() {
                   history.priceHistory.map((row) => (
                     <View key={row.id} style={styles.historyRow}>
                       <Text style={styles.historyDate}>
-                        {new Date(row.createdAt).toLocaleDateString()}
+                        {new Date(row.createdAt).toLocaleDateString(dateLocale(lang))}
                       </Text>
                       <Text style={styles.historyValue}>
                         {(row.precio / 100).toFixed(2)} € / {UNIT_SHORT[row.unidadCompra]}
