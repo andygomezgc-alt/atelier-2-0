@@ -8,7 +8,10 @@ import { t as translate, type Language, type TranslationKey } from "@atelier/i18
 let currentLang: Language = "es";
 const listeners = new Set<(lang: Language) => void>();
 
-function setLang(lang: Language) {
+// Exportado a nivel módulo para que useAuth aplique el idioma del chef
+// (user.languagePref) apenas hay sesión, sin estar bajo el árbol de un
+// componente. Idempotente.
+export function setLang(lang: Language) {
   currentLang = lang;
   listeners.forEach((l) => l(lang));
 }

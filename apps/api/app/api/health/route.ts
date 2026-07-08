@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { logger } from "@/lib/logger";
 
@@ -39,18 +39,45 @@ async function checkDb(): Promise<CheckResult> {
   }
 }
 
-function checkAnthropic(): CheckResult {
+// Sin `deep`: solo valida el formato (barato, para pings de uptime frecuentes).
+// Con `deep`: pega a Anthropic para confirmar que ACEPTA la clave. Una key con
+// formato correcto pero revocada pasa el chequeo de formato y sin embargo
+// rompe el asistente + extracción con 401 — el deep lo detecta.
+async function checkAnthropic(deep: boolean): Promise<CheckResult> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return { ok: true, skipped: true };
-  const ok = key.startsWith("sk-ant-");
-  if (!ok) {
+  if (!key.startsWith("sk-ant-")) {
     logger.error("health_check_failed", {
       check: "anthropic",
       err: "invalid key format",
     });
     return { ok: false, error: "invalid key format" };
   }
-  return { ok: true };
+  if (!deep) return { ok: true };
+
+  const start = Date.now();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/models?limit=1", {
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) {
+      logger.error("health_check_failed", {
+        check: "anthropic",
+        err: `status ${res.status}`,
+      });
+      return { ok: false, latencyMs: Date.now() - start, error: `anthropic ${res.status}` };
+    }
+    return { ok: true, latencyMs: Date.now() - start };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error("health_check_failed", { check: "anthropic", err: msg });
+    return { ok: false, latencyMs: Date.now() - start, error: msg };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function checkResend(): CheckResult {
@@ -67,10 +94,13 @@ function checkResend(): CheckResult {
   return { ok: true };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // ?deep=1 valida la clave de IA contra Anthropic (más lento, para chequeos
+  // manuales o un cron ocasional). Sin él, chequeo barato de formato.
+  const deep = new URL(req.url).searchParams.get("deep") === "1";
   const [db, anthropic, resend] = await Promise.all([
     checkDb(),
-    Promise.resolve(checkAnthropic()),
+    checkAnthropic(deep),
     Promise.resolve(checkResend()),
   ]);
 

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as SecureStore from "@/src/lib/secure-storage";
-import { TOKEN_KEY } from "@/src/api/client";
+import { TOKEN_KEY, setUnauthorizedHandler } from "@/src/api/client";
 import { devLogin, fetchMe, loginWithGoogle, requestMagicLink, type MeUser } from "@/src/api/auth";
 import { clearAll as clearApiCache } from "@/src/api/cache";
+import { setLang } from "@/src/hooks/useI18n";
 
 export type AuthState =
   | { status: "loading" }
@@ -16,6 +17,12 @@ let _state: AuthState = { status: "loading" };
 const _listeners = new Set<() => void>();
 
 function setState(next: AuthState) {
+  // Apenas hay usuario, la app arranca en SU idioma (languagePref). Sin esto un
+  // chef italiano veía la app en español (default del módulo i18n) aunque su
+  // perfil dijera "it". Centralizado acá cubre todos los caminos de login.
+  if (next.status === "signed-in" || next.status === "needs-restaurant") {
+    setLang(next.user.languagePref);
+  }
   _state = next;
   _listeners.forEach((l) => l());
 }
@@ -62,6 +69,15 @@ function patchLocalUserImpl(updates: Partial<MeUser>): void {
 
 export function getAuthActions() {
   return { refreshMe: refreshMeImpl, patchLocalUser: patchLocalUserImpl };
+}
+
+// signOut imperativo reutilizable: lo usa el hook y el handler global de 401
+// (sesión inválida). Idempotente: llamarlo ya deslogueado no hace daño.
+async function signOutImpl(): Promise<void> {
+  await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => null);
+  // Si otro usuario logea en el mismo device, no debe ver datos del anterior.
+  clearApiCache();
+  setState({ status: "signed-out" });
 }
 
 // Google Sign-In. Import perezoso del módulo nativo: así vitest (node) y la
@@ -155,6 +171,11 @@ let bootstrapped = false;
 function ensureBootstrapped() {
   if (bootstrapped) return;
   bootstrapped = true;
+  // Cualquier request autenticado que reciba 401 (token vencido a los 30d o
+  // tokenVersion revocado) desloguea limpio en vez de dejar la sesión zombi.
+  setUnauthorizedHandler(() => {
+    void signOutImpl();
+  });
   bootstrap();
 }
 
@@ -193,12 +214,7 @@ export function useAuth() {
   // a /api/me extra que dispararía `refreshMe`.
   const patchLocalUser = useCallback(patchLocalUserImpl, []);
 
-  const signOut = useCallback(async (): Promise<void> => {
-    await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => null);
-    // Si otro usuario logea en el mismo device, no debe ver datos del anterior.
-    clearApiCache();
-    setState({ status: "signed-out" });
-  }, []);
+  const signOut = useCallback(signOutImpl, []);
 
   return { state, sendMagicLink, signInWithGoogle, signInWithToken, refreshMe, patchLocalUser, signOut };
 }

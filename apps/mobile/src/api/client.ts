@@ -30,6 +30,16 @@ export class NetworkError extends Error {
   }
 }
 
+// Handler global de "sesión inválida". useAuth lo registra para hacer signOut
+// cuando el server rechaza un request autenticado con 401 (token expirado a los
+// 30d, o tokenVersion bumpeado por revocación). Sin esto la sesión queda zombi:
+// el chef ve toasts de error pero nunca vuelve al login. Registrable para
+// evitar un import circular client <-> useAuth.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  onUnauthorized = fn;
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
@@ -68,6 +78,9 @@ export async function apiFetch<T>(
     } catch {
       // keep default
     }
+    // Sesión inválida en un request autenticado → cerrar sesión limpia. Solo si
+    // había token (un 401 sin token es esperable en flujos pre-login).
+    if (res.status === 401 && token) onUnauthorized?.();
     throw new ApiError(res.status, message, code);
   }
 
