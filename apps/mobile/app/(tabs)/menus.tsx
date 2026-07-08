@@ -283,7 +283,12 @@ export default function MenusScreen() {
         ListEmptyComponent={
           loading ? (
             <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
-          ) : !inService ? (
+          ) : inService.length === 0 ? (
+            // Bug de lógica (auditoría jul 2026): antes `!inService`, pero
+            // inService es un array — un array vacío es truthy, así que la guía
+            // "crea tu primera carta" NUNCA aparecía. La FlatList ya solo muestra
+            // este componente cuando `others` está vacío; falta chequear que
+            // tampoco haya menús en servicio para mostrar el estado vacío real.
             <Empty icon="list-outline" title={t("empty_menus_title")} sub={t("empty_menus_sub")} />
           ) : null
         }
