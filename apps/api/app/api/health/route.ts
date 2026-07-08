@@ -108,8 +108,23 @@ export async function GET(req: NextRequest) {
   const allOk = Object.values(checks).every((c) => c.skipped || c.ok);
   const status = allOk ? "ok" : "degraded";
 
+  // Higiene: /health es público. El detalle del error (que puede filtrar host
+  // de la base, esquema, o el mensaje crudo del driver) se queda en los logs
+  // del server (cada check ya hace logger.error); la respuesta solo expone
+  // ok/latencia/skipped.
+  const publicChecks = Object.fromEntries(
+    Object.entries(checks).map(([name, c]) => [
+      name,
+      {
+        ok: c.ok,
+        ...(c.latencyMs !== undefined ? { latencyMs: c.latencyMs } : {}),
+        ...(c.skipped ? { skipped: true } : {}),
+      },
+    ]),
+  );
+
   return NextResponse.json(
-    { status, checks, ts: new Date().toISOString() },
+    { status, checks: publicChecks, ts: new Date().toISOString() },
     { status: allOk ? 200 : 503 },
   );
 }

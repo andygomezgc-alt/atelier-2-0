@@ -10,6 +10,7 @@ const verificationToken = {
   findUnique: vi.fn(),
   upsert: vi.fn(),
   delete: vi.fn(),
+  deleteMany: vi.fn(),
   create: vi.fn(),
 };
 const user = {
@@ -44,12 +45,14 @@ beforeEach(() => {
   verificationToken.findUnique.mockReset();
   verificationToken.upsert.mockReset();
   verificationToken.delete.mockReset();
+  verificationToken.deleteMany.mockReset();
   verificationToken.create.mockReset();
   user.findUnique.mockReset();
   user.upsert.mockReset();
   sendMock.mockClear();
-  // Default: upsert succeeds, returns nothing useful.
-  verificationToken.upsert.mockResolvedValue({});
+  // Default: la request route barre previos (deleteMany) y crea el nuevo token.
+  verificationToken.deleteMany.mockResolvedValue({ count: 0 });
+  verificationToken.create.mockResolvedValue({});
 });
 
 afterEach(() => {
@@ -75,12 +78,14 @@ describe("POST /api/mobile/auth/request (magic link)", () => {
       }),
     );
     expect(res.status).toBe(200);
-    expect(verificationToken.upsert).toHaveBeenCalledTimes(1);
+    expect(verificationToken.create).toHaveBeenCalledTimes(1);
+    // Barre los enlaces previos del mismo correo + vencidos.
+    expect(verificationToken.deleteMany).toHaveBeenCalledTimes(1);
     expect(sendMock).toHaveBeenCalledTimes(1);
 
     // Token persisted hashed, not in plaintext.
-    const arg = verificationToken.upsert.mock.calls[0]![0];
-    const stored = arg.create.token as string;
+    const arg = verificationToken.create.mock.calls[0]![0];
+    const stored = arg.data.token as string;
     expect(stored).toMatch(/^[a-f0-9]{64}$/); // sha256 hex
   });
 

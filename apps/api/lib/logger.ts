@@ -16,3 +16,11 @@ export const logger = {
   error: (msg: string, ctx?: Ctx) => emit("error", msg, ctx),
   debug: (msg: string, ctx?: Ctx) => emit("debug", msg, ctx),
 };
+
+// Recorta el correo para no guardarlo en claro en los logs: "andy@gmail.com"
+// -> "a***@gmail.com". Mantiene el dominio (útil para depurar) y la inicial.
+export function redactEmail(email: string): string {
+  const at = email.indexOf("@");
+  if (at <= 0) return "***";
+  return `${email[0]}***${email.slice(at)}`;
+}

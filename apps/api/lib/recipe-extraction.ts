@@ -22,6 +22,26 @@ export const PDF_MIME = "application/pdf";
 export const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
+// Valida que el CONTENIDO real coincida con el MIME declarado. El cliente puede
+// mentir en el header/extensión; acá miramos los primeros bytes (magic number).
+// PDF empieza con "%PDF"; DOCX es un contenedor ZIP ("PK" + 0x03/0x05/0x07).
+export function fileMatchesMime(buffer: Uint8Array, mime: string): boolean {
+  if (buffer.length < 4) return false;
+  if (mime === PDF_MIME) {
+    return (
+      buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46
+    );
+  }
+  if (mime === DOCX_MIME) {
+    return (
+      buffer[0] === 0x50 &&
+      buffer[1] === 0x4b &&
+      (buffer[2] === 0x03 || buffer[2] === 0x05 || buffer[2] === 0x07)
+    );
+  }
+  return false;
+}
+
 export type ExtractorBYOK = {
   provider: "anthropic" | "openai" | "google";
   apiKey: string;

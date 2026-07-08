@@ -17,6 +17,7 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 import {
   extractRecipeFromFile,
+  fileMatchesMime,
   PDF_MIME,
   DOCX_MIME,
   type ExtractorBYOK,
@@ -58,6 +59,14 @@ export async function POST(req: NextRequest) {
     );
 
   const buffer = new Uint8Array(await file.arrayBuffer());
+
+  // El contenido real debe coincidir con el MIME declarado (el cliente puede
+  // mentir). Evita alimentar basura/archivos disfrazados al parser.
+  if (!fileMatchesMime(buffer, mime))
+    return NextResponse.json(
+      { error: "El archivo no coincide con su tipo", allowed: ALLOWED_MIMES },
+      { status: 415 },
+    );
 
   // loadUserBYOK descifra la clave (formato `v1:...`) y self-heala las
   // entradas legacy plaintext que pudieran quedar de antes de la encripción.

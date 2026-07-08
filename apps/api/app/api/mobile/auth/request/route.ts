@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { Resend } from "resend";
 import { randomBytes, createHash } from "crypto";
-import { logger } from "@/lib/logger";
+import { logger, redactEmail } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -72,10 +72,14 @@ export async function POST(req: NextRequest) {
   // We persist sha256(token) instead of the plaintext to limit blast radius
   // of a DB leak. Pre-deploy tokens still in flight (TTL 15min) will fail
   // verification and users must request a new magic link.
-  await prisma.verificationToken.upsert({
-    where: { identifier_token: { identifier: email, token: tokenHash } },
-    update: { token: tokenHash, expires },
-    create: { identifier: email, token: tokenHash, expires },
+  //
+  // Higiene: invalidamos los enlaces previos del mismo correo (solo el último
+  // vale) y de paso barremos los ya vencidos para que no se acumulen filas.
+  await prisma.verificationToken.deleteMany({
+    where: { OR: [{ identifier: email }, { expires: { lt: new Date() } }] },
+  });
+  await prisma.verificationToken.create({
+    data: { identifier: email, token: tokenHash, expires },
   });
 
   const deepLink = `atelier://auth?token=${token}&email=${encodeURIComponent(email)}`;
@@ -104,11 +108,11 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     logger.error("magic_link_email_failed", {
       err: err instanceof Error ? err.message : String(err),
-      email,
+      email: redactEmail(email),
     });
     return NextResponse.json({ error: "No se pudo enviar el correo", code: "email_send_failed" }, { status: 502 });
   }
 
-  logger.info("magic_link_sent", { email });
+  logger.info("magic_link_sent", { email: redactEmail(email) });
   return NextResponse.json({ ok: true });
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { SignJWT } from "jose";
 import { createHash } from "node:crypto";
-import { logger } from "@/lib/logger";
+import { logger, redactEmail } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   });
 
   if (!record) {
-    logger.warn("mobile_auth_invalid_token", { email });
+    logger.warn("mobile_auth_invalid_token", { email: redactEmail(email) });
     return NextResponse.json({ error: "Token no válido", code: "token_invalid" }, { status: 401 });
   }
 
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     await prisma.verificationToken.delete({
       where: { identifier_token: { identifier: email, token: tokenHash } },
     });
-    logger.warn("mobile_auth_token_expired", { email });
+    logger.warn("mobile_auth_token_expired", { email: redactEmail(email) });
     return NextResponse.json({ error: "Token expirado", code: "token_expired" }, { status: 401 });
   }
 
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     .setExpirationTime("30d")
     .sign(getSecret());
 
-  logger.info("mobile_auth_success", { userId: user.id, email });
+  logger.info("mobile_auth_success", { userId: user.id, email: redactEmail(email) });
   return NextResponse.json({
     accessToken,
     user: {

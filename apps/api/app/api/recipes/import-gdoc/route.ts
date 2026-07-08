@@ -18,6 +18,7 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 import {
   extractRecipeFromFile,
+  fileMatchesMime,
   DOCX_MIME,
   type ExtractorBYOK,
 } from "@/lib/recipe-extraction";
@@ -72,6 +73,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "Archivo demasiado grande", max: MAX_BYTES },
         { status: 413 },
+      );
+    // Google debería exportar un DOCX (ZIP); si no coincide, no lo mandamos al
+    // parser (doc raro, o Google devolvió algo inesperado).
+    if (!fileMatchesMime(buffer, DOCX_MIME))
+      return NextResponse.json(
+        {
+          error:
+            'No puedo acceder al documento. En Google Docs: Compartir → "Cualquier persona con el enlace".',
+        },
+        { status: 422 },
       );
   } catch {
     return NextResponse.json(
