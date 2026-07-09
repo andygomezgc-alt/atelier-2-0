@@ -257,6 +257,8 @@ export const it: EsDict = {
   recetas_cargar_gdoc_btn: "Importa da Google Docs",
   toast_recipe_uploaded: "Ricetta processata — rivedi e salva",
   btn_modificar: "Modifica",
+  btn_duplicar: "Duplica",
+  toast_recipe_duplicated: "Ricetta duplicata come bozza",
   recipe_editar_title: "Modifica ricetta",
   recipe_editar_locked: "Solo l'admin può modificare ricette approvate",
   recipe_in_menus: "Nei menù",

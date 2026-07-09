@@ -14,7 +14,7 @@ import { Eyebrow } from "@/src/components/Eyebrow";
 import { Button } from "@/src/components/Button";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
-import { getRecipe, patchRecipe, type RecipeFull } from "@/src/api/recipes";
+import { getRecipe, patchRecipe, duplicateRecipe, type RecipeFull } from "@/src/api/recipes";
 import { showToast } from "@/src/components/Toast";
 import { AddToMenuSheet } from "@/src/components/AddToMenuSheet";
 import { RecipeCostCard } from "@/src/components/RecipeCostCard";
@@ -71,6 +71,21 @@ export default function RecipeDetailScreen() {
       showToast(updated.priority ? t("toast_priority_on") : t("toast_priority_off"));
     } catch (err) {
       showToast(err instanceof Error ? err.message : t("error_network"));
+    }
+  }
+
+  const [duplicating, setDuplicating] = useState(false);
+  async function handleDuplicate() {
+    if (!recipe || duplicating) return;
+    setDuplicating(true);
+    try {
+      const copy = await duplicateRecipe(recipe.id);
+      showToast(t("toast_recipe_duplicated"));
+      router.push({ pathname: "/recetas/[id]", params: { id: copy.id } });
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setDuplicating(false);
     }
   }
 
@@ -255,6 +270,14 @@ export default function RecipeDetailScreen() {
               label={recipe.priority ? t("btn_priority_off") : t("btn_priority_on")}
               variant="ghost"
               onPress={togglePriority}
+            />
+          ) : null}
+          {can(role, "edit_recipe") ? (
+            <Button
+              label={t("btn_duplicar")}
+              iconLeft="copy-outline"
+              variant="ghost"
+              onPress={handleDuplicate}
             />
           ) : null}
         </View>

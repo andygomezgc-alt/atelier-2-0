@@ -58,6 +58,13 @@ export const deleteRecipe = async (id: string) => {
   return result;
 };
 
+// Duplicar como borrador nuevo (no pisa la original). Devuelve la copia.
+export const duplicateRecipe = async (id: string) => {
+  const result = await apiFetch<RecipeFull>(`/api/recipes/${id}/duplicate`, { method: "POST" });
+  invalidate("recipes:");
+  return result;
+};
+
 // Fase 3 del Banco de Productos — el server, después de extraer la receta
 // del PDF/DOCX, corre matching contra el banco. La respuesta trae:
 //  - contentJson: shape legacy (string[] de ingredientes) — para compat.

@@ -266,6 +266,8 @@ export const es = {
   recetas_cargar_gdoc_btn: "Importar de Google Docs",
   toast_recipe_uploaded: "Receta procesada — revisá y guardá",
   btn_modificar: "Modificar",
+  btn_duplicar: "Duplicar",
+  toast_recipe_duplicated: "Receta duplicada como borrador",
   recipe_editar_title: "Modificar receta",
   recipe_editar_locked: "Solo el admin puede modificar recetas aprobadas",
   recipe_in_menus: "En menús",
