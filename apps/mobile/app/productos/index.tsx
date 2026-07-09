@@ -29,6 +29,7 @@ import { Empty } from "@/src/components/Empty";
 import { CategoryIcon } from "@/src/components/CategoryIcon";
 import { EditableCell } from "@/src/components/EditableCell";
 import { useI18n } from "@/src/hooks/useI18n";
+import { formatEuros, formatEurosPerUnit } from "@/src/lib/money";
 import { useAuth } from "@/src/hooks/useAuth";
 import {
   listProducts,
@@ -154,7 +155,7 @@ const UNIT_SHORT: Record<ProductUnit, string> = {
 };
 
 function formatRealCost(cents: number, unit: ProductUnit): string {
-  return `${(cents / 100).toFixed(2)}€/${UNIT_SHORT[unit]}`;
+  return formatEurosPerUnit(cents, UNIT_SHORT[unit]);
 }
 
 export default function ProductosScreen() {
@@ -443,7 +444,7 @@ const ProductRow = memo(function ProductRow({
       <View style={styles.priceCol}>
         <EditableCell
           value={item.precioCompra}
-          format={(c) => `${(c / 100).toFixed(2)}€`}
+          format={(c) => formatEuros(c)}
           parse={parseEurosToCents}
           onSave={handlePriceSave}
           placeholderForZero="—"

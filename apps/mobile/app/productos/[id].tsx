@@ -36,6 +36,7 @@ import { YieldTestForm } from "@/src/components/YieldTestForm";
 import { DebouncedTextInput } from "@/src/components/DebouncedTextInput";
 import { ChoiceSheet, type ChoiceOption } from "@/src/components/ChoiceSheet";
 import { useI18n, dateLocale } from "@/src/hooks/useI18n";
+import { formatEuros, formatEurosPerUnit } from "@/src/lib/money";
 import { useAuth } from "@/src/hooks/useAuth";
 import { showToast } from "@/src/components/Toast";
 import { StatusBadge } from "@/src/components/StatusBadge";
@@ -389,7 +390,7 @@ export default function ProductoDetailScreen() {
         <View style={styles.bigStatBlock}>
           <Text style={styles.eyebrow}>{t("producto_real_cost_label")}</Text>
           <Text style={styles.bigStat}>
-            {noPrice ? "—" : `${(product.realCost / 100).toFixed(2)} €`}
+            {noPrice ? "—" : formatEuros(product.realCost)}
             <Text style={styles.bigStatUnit}>{noPrice ? "" : ` / ${unitShort} útil`}</Text>
           </Text>
         </View>
@@ -401,7 +402,7 @@ export default function ProductoDetailScreen() {
           <View style={styles.fieldValueGroup}>
             <EditableCell
               value={product.precioCompra}
-              format={(c) => `${(c / 100).toFixed(2)} €`}
+              format={(c) => formatEuros(c)}
               parse={parseEurosToCents}
               onSave={handleSavePrice}
               placeholderForZero="—"
@@ -569,7 +570,7 @@ export default function ProductoDetailScreen() {
                         {new Date(row.createdAt).toLocaleDateString(dateLocale(lang))}
                       </Text>
                       <Text style={styles.historyValue}>
-                        {(row.precio / 100).toFixed(2)} € / {UNIT_SHORT[row.unidadCompra]}
+                        {formatEurosPerUnit(row.precio, UNIT_SHORT[row.unidadCompra])}
                       </Text>
                     </View>
                   ))

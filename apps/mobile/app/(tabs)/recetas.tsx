@@ -17,6 +17,7 @@ import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { SectionExplainer } from "@/src/components/SectionExplainer";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n } from "@/src/hooks/useI18n";
+import { formatEuros } from "@/src/lib/money";
 import { listRecipes, deleteRecipe, type Recipe, type ListFilters } from "@/src/api/recipes";
 import { showToast } from "@/src/components/Toast";
 import { useAuth } from "@/src/hooks/useAuth";
@@ -234,7 +235,7 @@ export default function RecetasScreen() {
 // C-06a: cents → "€3.20" (formato chico para card; sin separador de miles
 // porque los precios de plato/coste por porción no llegan a 4 cifras).
 function formatEuroFromCents(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`;
+  return formatEuros(cents);
 }
 
 type RecipeCardTFn = (

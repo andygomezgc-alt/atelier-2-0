@@ -28,6 +28,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import type { RecipeDetail } from "@atelier/shared";
 import { useI18n } from "@/src/hooks/useI18n";
+import { formatEuros } from "@/src/lib/money";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 type Props = {
@@ -41,7 +42,7 @@ type Props = {
 // por restaurante queda para Entrega B).
 function formatEuro(cents: number | null): string {
   if (cents === null) return "—";
-  return `€ ${(cents / 100).toFixed(2).replace(".", ",")}`;
+  return formatEuros(cents);
 }
 
 function RecipeCostCardImpl({
