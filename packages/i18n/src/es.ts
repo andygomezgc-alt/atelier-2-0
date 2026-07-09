@@ -280,6 +280,8 @@ export const es = {
   scale_to: "A",
   scale_confirm: "Escalar y guardar copia",
   toast_recipe_scaled: "Copia escalada creada",
+  btn_ficha_pdf: "Ficha PDF",
+  pdf_portions: "{n} porciones",
   recipe_editar_title: "Modificar receta",
   recipe_editar_locked: "Solo el admin puede modificar recetas aprobadas",
   recipe_in_menus: "En menús",

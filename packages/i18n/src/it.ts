@@ -271,6 +271,8 @@ export const it: EsDict = {
   scale_to: "A",
   scale_confirm: "Scala e salva copia",
   toast_recipe_scaled: "Copia scalata creata",
+  btn_ficha_pdf: "Scheda PDF",
+  pdf_portions: "{n} porzioni",
   recipe_editar_title: "Modifica ricetta",
   recipe_editar_locked: "Solo l'admin può modificare ricette approvate",
   recipe_in_menus: "Nei menù",

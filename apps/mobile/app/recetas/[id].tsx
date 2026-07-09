@@ -9,6 +9,10 @@ import {
 } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import * as SecureStore from "@/src/lib/secure-storage";
+import { TOKEN_KEY } from "@/src/api/client";
 import { Screen } from "@/src/components/Screen";
 import { Eyebrow } from "@/src/components/Eyebrow";
 import { Button } from "@/src/components/Button";
@@ -26,7 +30,7 @@ import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { state: authState } = useAuth();
   const router = useRouter();
 
@@ -87,6 +91,30 @@ export default function RecipeDetailScreen() {
       showToast(err instanceof Error ? err.message : t("error_network"));
     } finally {
       setDuplicating(false);
+    }
+  }
+
+  // Ficha PDF: descarga el PDF del server y abre el share-sheet del sistema
+  // (mismo patrón que el PDF de menú). Va en el idioma del chef.
+  async function handleSharePdf() {
+    if (!recipe) return;
+    try {
+      const base = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+      const token = await SecureStore.getItemAsync(TOKEN_KEY);
+      const safe = recipe.title.replace(/[^\p{L}\p{N}\s-]/gu, "").trim() || "receta";
+      const fileUri = `${FileSystem.cacheDirectory}${encodeURIComponent(safe)}.pdf`;
+      const dl = await FileSystem.downloadAsync(
+        `${base}/api/recipes/${recipe.id}/pdf?lang=${lang}`,
+        fileUri,
+        { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+      );
+      if (dl.status !== 200) throw new Error("Export failed");
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(dl.uri, { mimeType: "application/pdf" });
+        showToast(t("toast_pdf_shared"));
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
     }
   }
 
@@ -306,6 +334,12 @@ export default function RecipeDetailScreen() {
               onPress={() => setScaleOpen(true)}
             />
           ) : null}
+          <Button
+            label={t("btn_ficha_pdf")}
+            iconLeft="share-outline"
+            variant="ghost"
+            onPress={handleSharePdf}
+          />
         </View>
       </ScrollView>
 
