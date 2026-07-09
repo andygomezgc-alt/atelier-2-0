@@ -16,6 +16,7 @@ export type ListFilters = {
   state?: "draft" | "in_test" | "approved";
   priority?: boolean;
   q?: string;
+  trash?: boolean;
 };
 
 const RECIPES_TTL_MS = 30_000;
@@ -25,6 +26,7 @@ export function listRecipes(filters: ListFilters = {}): Promise<Recipe[]> {
   if (filters.state) qs.set("state", filters.state);
   if (filters.priority) qs.set("priority", "true");
   if (filters.q) qs.set("q", filters.q);
+  if (filters.trash) qs.set("trash", "true");
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   // Cuando hay búsqueda libre (q) no cacheamos: cada keystroke genera una key
   // distinta y el caché crecería sin reuso real.
@@ -61,6 +63,13 @@ export const deleteRecipe = async (id: string) => {
 // Duplicar como borrador nuevo (no pisa la original). Devuelve la copia.
 export const duplicateRecipe = async (id: string) => {
   const result = await apiFetch<RecipeFull>(`/api/recipes/${id}/duplicate`, { method: "POST" });
+  invalidate("recipes:");
+  return result;
+};
+
+// Restaurar desde la papelera. Devuelve la receta ya activa.
+export const restoreRecipe = async (id: string) => {
+  const result = await apiFetch<RecipeFull>(`/api/recipes/${id}/restore`, { method: "POST" });
   invalidate("recipes:");
   return result;
 };

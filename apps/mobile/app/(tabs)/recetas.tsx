@@ -129,7 +129,20 @@ export default function RecetasScreen() {
   const keyExtractor = useCallback((r: Recipe) => r.id, []);
 
   return (
-    <Screen title={t("header_recetas")}>
+    <Screen
+      title={t("header_recetas")}
+      right={
+        canDelete ? (
+          <Pressable
+            onPress={() => router.push("/recetas/papelera")}
+            hitSlop={8}
+            accessibilityLabel={t("papelera_title")}
+          >
+            <Ionicons name="trash-outline" size={20} color={colors.teal} />
+          </Pressable>
+        ) : undefined
+      }
+    >
       <SectionExplainer text={t("section_explainer_recetas")} />
       {canCreate ? (
         <View style={styles.createRow}>

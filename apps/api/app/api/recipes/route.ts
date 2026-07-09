@@ -42,15 +42,21 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
   const state = searchParams.get("state") as "draft" | "in_test" | "approved" | null;
   const priorityParam = searchParams.get("priority");
   const q = searchParams.get("q");
+  // Papelera: ?trash=true lista las recetas borradas (soft-delete) para poder
+  // restaurarlas. El listado normal excluye las borradas.
+  const trash = searchParams.get("trash") === "true";
 
-  const where: Prisma.RecipeWhereInput = { restaurantId: ctx.restaurantId, deletedAt: null };
+  const where: Prisma.RecipeWhereInput = {
+    restaurantId: ctx.restaurantId,
+    deletedAt: trash ? { not: null } : null,
+  };
   if (state) where.state = state;
   if (priorityParam === "true") where.priority = true;
   if (q) where.title = { contains: q, mode: "insensitive" };
 
   const recipes = await prisma.recipe.findMany({
     where,
-    orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
+    orderBy: trash ? [{ deletedAt: "desc" }] : [{ priority: "desc" }, { updatedAt: "desc" }],
     include: recipeListInclude,
     take: 200,
   });
