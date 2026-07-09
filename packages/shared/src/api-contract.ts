@@ -193,6 +193,7 @@ export const ApiErrorCodeSchema = z.enum([
   "recipe_extraction_failed",
   "file_invalid",
   "gdoc_access_denied",
+  "forbidden",
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
 

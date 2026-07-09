@@ -187,6 +187,7 @@ export const en: EsDict = {
     "That file won't work: upload a valid PDF or DOCX (max 10 MB).",
   error_gdoc_access_denied:
     'I can\'t open the document. In Google Docs: Share → "Anyone with the link".',
+  error_forbidden: "You don't have permission to do this.",
   onboard_choose_title: "How would you like to start?",
   onboard_create_title: "Create my restaurant",
   onboard_create_sub: "You'll be admin of the group",

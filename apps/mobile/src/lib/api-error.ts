@@ -25,6 +25,7 @@ const CODE_TO_KEY: Record<ApiErrorCode, TranslationKey> = {
   recipe_extraction_failed: "error_recipe_extraction_failed",
   file_invalid: "error_file_invalid",
   gdoc_access_denied: "error_gdoc_access_denied",
+  forbidden: "error_forbidden",
 };
 
 type T = (key: TranslationKey, vars?: Record<string, string | number>) => string;

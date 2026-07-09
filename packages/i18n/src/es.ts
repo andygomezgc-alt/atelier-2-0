@@ -197,6 +197,7 @@ export const es = {
     "Ese archivo no sirve: subí un PDF o DOCX válido (máx 10 MB).",
   error_gdoc_access_denied:
     'No puedo abrir el documento. En Google Docs: Compartir → "Cualquiera con el enlace".',
+  error_forbidden: "No tenés permiso para hacer esto.",
   onboard_choose_title: "¿Cómo quieres empezar?",
   onboard_create_title: "Crear mi restaurante",
   onboard_create_sub: "Serás admin del grupo",

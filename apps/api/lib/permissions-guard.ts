@@ -81,7 +81,9 @@ export async function requireAuth(
   }
 
   if (permission && user.role && !can(user.role, permission)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    // Code `forbidden` → el mobile lo traduce al idioma del chef. Cubre TODAS
+    // las rutas con permiso de una (ej. un sous_chef intentando una acción admin).
+    return NextResponse.json({ error: "Forbidden", code: "forbidden" }, { status: 403 });
   }
 
   return {

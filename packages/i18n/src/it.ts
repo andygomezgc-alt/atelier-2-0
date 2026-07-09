@@ -188,6 +188,7 @@ export const it: EsDict = {
     "Questo file non va: carica un PDF o DOCX valido (max 10 MB).",
   error_gdoc_access_denied:
     'Non riesco ad aprire il documento. In Google Docs: Condividi → "Chiunque abbia il link".',
+  error_forbidden: "Non hai i permessi per farlo.",
   onboard_choose_title: "Come vuoi iniziare?",
   onboard_create_title: "Crea il mio ristorante",
   onboard_create_sub: "Sarai admin del gruppo",
