@@ -14,9 +14,10 @@ import { Eyebrow } from "@/src/components/Eyebrow";
 import { Button } from "@/src/components/Button";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
-import { getRecipe, patchRecipe, duplicateRecipe, type RecipeFull } from "@/src/api/recipes";
+import { getRecipe, patchRecipe, duplicateRecipe, scaleRecipe, type RecipeFull } from "@/src/api/recipes";
 import { showToast } from "@/src/components/Toast";
 import { AddToMenuSheet } from "@/src/components/AddToMenuSheet";
+import { ScaleRecipeSheet } from "@/src/components/ScaleRecipeSheet";
 import { RecipeCostCard } from "@/src/components/RecipeCostCard";
 import { StatusBadge, type StatusLevel } from "@/src/components/StatusBadge";
 import { setRecipeDraft } from "@/src/lib/recipe-draft";
@@ -86,6 +87,23 @@ export default function RecipeDetailScreen() {
       showToast(err instanceof Error ? err.message : t("error_network"));
     } finally {
       setDuplicating(false);
+    }
+  }
+
+  const [scaleOpen, setScaleOpen] = useState(false);
+  const [scaling, setScaling] = useState(false);
+  async function handleScale(fromPortions: number, toPortions: number) {
+    if (!recipe || scaling) return;
+    setScaling(true);
+    try {
+      const copy = await scaleRecipe(recipe.id, fromPortions, toPortions);
+      setScaleOpen(false);
+      showToast(t("toast_recipe_scaled"));
+      router.push({ pathname: "/recetas/[id]", params: { id: copy.id } });
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setScaling(false);
     }
   }
 
@@ -280,6 +298,14 @@ export default function RecipeDetailScreen() {
               onPress={handleDuplicate}
             />
           ) : null}
+          {can(role, "edit_recipe") ? (
+            <Button
+              label={t("btn_escalar")}
+              iconLeft="resize-outline"
+              variant="ghost"
+              onPress={() => setScaleOpen(true)}
+            />
+          ) : null}
         </View>
       </ScrollView>
 
@@ -287,6 +313,13 @@ export default function RecipeDetailScreen() {
         open={addToMenuOpen}
         recipeId={recipe.id}
         onClose={() => setAddToMenuOpen(false)}
+      />
+      <ScaleRecipeSheet
+        open={scaleOpen}
+        currentPortions={recipe.portions ?? 1}
+        busy={scaling}
+        onClose={() => setScaleOpen(false)}
+        onConfirm={handleScale}
       />
     </Screen>
   );

@@ -281,6 +281,13 @@ export const PatchRecipeRequestSchema = z.object({
   removeManualAllergen: AllergenSchema.optional(),
 });
 
+// Escalar porciones: crea una copia con las cantidades reajustadas por el
+// factor toPortions/fromPortions. Ambas > 0 (portions es Int, tope 1000).
+export const ScaleRecipeRequestSchema = z.object({
+  fromPortions: z.number().int().positive().max(1000),
+  toPortions: z.number().int().positive().max(1000),
+});
+
 export const RecipeListItemSchema = z.object({
   id: z.string().max(100),
   title: z.string().max(200),
@@ -668,6 +675,7 @@ export type PatchIdeaRequest = z.infer<typeof PatchIdeaRequestSchema>;
 export type IdeaResponse = z.infer<typeof IdeaResponseSchema>;
 export type CreateRecipeRequest = z.infer<typeof CreateRecipeRequestSchema>;
 export type PatchRecipeRequest = z.infer<typeof PatchRecipeRequestSchema>;
+export type ScaleRecipeRequest = z.infer<typeof ScaleRecipeRequestSchema>;
 export type RecipeListItem = z.infer<typeof RecipeListItemSchema>;
 export type RecipeDetail = z.infer<typeof RecipeDetailSchema>;
 export type RecipeCost = z.infer<typeof RecipeCostSchema>;

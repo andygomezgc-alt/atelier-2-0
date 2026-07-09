@@ -185,3 +185,28 @@ export function parseIngredient(raw: string): ParsedIngredient {
 
   return { quantity: null, unit: null, name: trimmed, raw };
 }
+
+// Escala la CANTIDAD de una línea de ingrediente por `factor`, reemplazando el
+// número EN EL LUGAR (preserva unidad, nombre y formato: "200 g de harina" ×2 →
+// "400 g de harina"). Si la línea no tiene cantidad detectable, la devuelve
+// intacta. Solo toca ingredientes: el método/notas NO se escalan (mencionar
+// "hornear a 180°C" no debe multiplicarse). Redondeo a 2 decimales.
+export function scaleIngredientLine(raw: string, factor: number): string {
+  if (!isFinite(factor) || factor <= 0) return raw;
+  const trimmed = raw.trim();
+  const parsed = parseIngredient(trimmed);
+  if (parsed.quantity === null) return raw;
+
+  const scaled = Math.round(parsed.quantity * factor * 100) / 100;
+  const scaledStr = String(scaled);
+
+  // Caso 1: cantidad al inicio (Fase A/B/C, ej. "200g harina", "2 cebollas").
+  if (/^\d/.test(trimmed)) {
+    return trimmed.replace(/^\d+(?:[.,]\d+)?/, scaledStr);
+  }
+  // Caso 2: cantidad antes de la unidad al final (Fase D, ej. "Manteca, 30 g").
+  return trimmed.replace(
+    /(\d+(?:[.,]\d+)?)(\s*[a-záéíóúüñ]+\s*(?:\([^)]*\))?\s*)$/i,
+    `${scaledStr}$2`,
+  );
+}

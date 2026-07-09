@@ -74,6 +74,16 @@ export const restoreRecipe = async (id: string) => {
   return result;
 };
 
+// Escalar porciones → crea una copia (draft) con las cantidades reajustadas.
+export const scaleRecipe = async (id: string, fromPortions: number, toPortions: number) => {
+  const result = await apiFetch<RecipeFull>(`/api/recipes/${id}/scale`, {
+    method: "POST",
+    body: JSON.stringify({ fromPortions, toPortions }),
+  });
+  invalidate("recipes:");
+  return result;
+};
+
 // Fase 3 del Banco de Productos — el server, después de extraer la receta
 // del PDF/DOCX, corre matching contra el banco. La respuesta trae:
 //  - contentJson: shape legacy (string[] de ingredientes) — para compat.
