@@ -31,8 +31,12 @@ function bumpMenuCache(menu: MenuFull): MenuFull {
   return menu;
 }
 
-export const listMenus = () =>
-  cached("menus:list", () => apiFetch<Menu[]>("/api/menus"), MENUS_TTL_MS);
+export const listMenus = (trash = false) =>
+  cached(
+    trash ? "menus:trash" : "menus:list",
+    () => apiFetch<Menu[]>(`/api/menus${trash ? "?trash=true" : ""}`),
+    MENUS_TTL_MS,
+  );
 
 export const getMenu = (id: string) =>
   cached(`menus:detail:${id}`, () => apiFetch<MenuFull>(`/api/menus/${id}`), MENUS_TTL_MS);
@@ -57,6 +61,12 @@ export const deleteMenu = async (id: string) => {
 // Duplicar un menú como copia (variante de carta). Devuelve el menú nuevo.
 export const duplicateMenu = async (id: string) => {
   const result = await apiFetch<MenuFull>(`/api/menus/${id}/duplicate`, { method: "POST" });
+  invalidate("menus:");
+  return result;
+};
+// Restaurar un menú desde la papelera.
+export const restoreMenu = async (id: string) => {
+  const result = await apiFetch<MenuFull>(`/api/menus/${id}/restore`, { method: "POST" });
   invalidate("menus:");
   return result;
 };

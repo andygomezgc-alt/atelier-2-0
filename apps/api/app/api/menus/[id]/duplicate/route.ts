@@ -28,7 +28,7 @@ export async function POST(
       clientOverride: true,
     },
   });
-  if (!source || source.restaurantId !== ctx.restaurantId)
+  if (!source || source.restaurantId !== ctx.restaurantId || source.deletedAt !== null)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const copy = await prisma.$transaction(async (tx) => {

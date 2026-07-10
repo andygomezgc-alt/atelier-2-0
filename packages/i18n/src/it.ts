@@ -274,6 +274,8 @@ export const it: EsDict = {
   btn_ficha_pdf: "Scheda PDF",
   pdf_portions: "{n} porzioni",
   toast_menu_duplicated: "Menu duplicato",
+  toast_menu_restored: "Menu ripristinato",
+  papelera_menus_empty_sub: "I menu che elimini finiscono qui per recuperarli.",
   recipe_editar_title: "Modifica ricetta",
   recipe_editar_locked: "Solo l'admin può modificare ricette approvate",
   recipe_in_menus: "Nei menù",

@@ -266,7 +266,19 @@ export default function MenusScreen() {
   );
 
   return (
-    <Screen>
+    <Screen
+      right={
+        canDelete ? (
+          <Pressable
+            onPress={() => router.push("/menus/papelera")}
+            hitSlop={8}
+            accessibilityLabel={t("papelera_title")}
+          >
+            <Ionicons name="trash-outline" size={20} color={colors.teal} />
+          </Pressable>
+        ) : undefined
+      }
+    >
       <SectionExplainer text={t("section_explainer_menus")} />
       <FlatList
         data={others}

@@ -306,6 +306,8 @@ model MenuFolder {
   // preview chef siempre los muestra completos; este flag solo afecta
   // al render del PDF cliente (apps/api/lib/pdf).
   showAllergensInPdf Boolean   @default(true)
+  // Papelera: borrado suave. null = activo; fecha = en la papelera (restaurable).
+  deletedAt         DateTime?
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 
@@ -316,6 +318,7 @@ model MenuFolder {
   @@index([restaurantId])
   @@index([restaurantId, updatedAt])
   @@index([restaurantId, inService])
+  @@index([restaurantId, deletedAt])
 }
 
 // Capa de overrides "solo para PDF cliente" — el compositor (staff) jamás

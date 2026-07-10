@@ -283,6 +283,8 @@ export const es = {
   btn_ficha_pdf: "Ficha PDF",
   pdf_portions: "{n} porciones",
   toast_menu_duplicated: "Menú duplicado",
+  toast_menu_restored: "Menú restaurado",
+  papelera_menus_empty_sub: "Los menús que borres aparecen acá para recuperarlos.",
   recipe_editar_title: "Modificar receta",
   recipe_editar_locked: "Solo el admin puede modificar recetas aprobadas",
   recipe_in_menus: "En menús",

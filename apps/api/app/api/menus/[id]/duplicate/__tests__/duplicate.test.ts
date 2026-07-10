@@ -46,6 +46,7 @@ function post(id = "menu-1") {
 const SOURCE = {
   id: "menu-1",
   restaurantId: "r1",
+  deletedAt: null,
   name: "Primavera",
   season: "Primavera 2026",
   presentationStyle: "elegant",

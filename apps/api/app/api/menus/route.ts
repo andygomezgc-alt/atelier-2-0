@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { CreateMenuRequestSchema, type CreateMenuRequest } from "@atelier/shared";
 import { withAuth } from "@/lib/with-auth";
@@ -7,10 +7,12 @@ import { projectMenuListItem, menuListInclude } from "@/lib/projections";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withAuth({}, async (ctx) => {
+export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
+  // Papelera: ?trash=true lista los menús borrados (soft-delete) para restaurar.
+  const trash = new URL(req.url).searchParams.get("trash") === "true";
   const menus = await prisma.menuFolder.findMany({
-    where: { restaurantId: ctx.restaurantId },
-    orderBy: { updatedAt: "desc" },
+    where: { restaurantId: ctx.restaurantId, deletedAt: trash ? { not: null } : null },
+    orderBy: trash ? { deletedAt: "desc" } : { updatedAt: "desc" },
     include: menuListInclude,
   });
 

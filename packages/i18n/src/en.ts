@@ -273,6 +273,8 @@ export const en: EsDict = {
   btn_ficha_pdf: "Recipe PDF",
   pdf_portions: "{n} servings",
   toast_menu_duplicated: "Menu duplicated",
+  toast_menu_restored: "Menu restored",
+  papelera_menus_empty_sub: "Menus you delete show up here so you can recover them.",
   recipe_editar_title: "Edit recipe",
   recipe_editar_locked: "Only admin can modify approved recipes",
   recipe_in_menus: "In menus",
