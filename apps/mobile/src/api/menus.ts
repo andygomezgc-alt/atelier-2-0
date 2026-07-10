@@ -54,6 +54,12 @@ export const deleteMenu = async (id: string) => {
   invalidate("menus:");
   return result;
 };
+// Duplicar un menú como copia (variante de carta). Devuelve el menú nuevo.
+export const duplicateMenu = async (id: string) => {
+  const result = await apiFetch<MenuFull>(`/api/menus/${id}/duplicate`, { method: "POST" });
+  invalidate("menus:");
+  return result;
+};
 export const addMenuItem = async (menuId: string, data: AddMenuItemRequest) => {
   const result = await apiFetch<MenuFull>(`/api/menus/${menuId}/items`, {
     method: "POST",

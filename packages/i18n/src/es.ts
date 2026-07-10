@@ -282,6 +282,7 @@ export const es = {
   toast_recipe_scaled: "Copia escalada creada",
   btn_ficha_pdf: "Ficha PDF",
   pdf_portions: "{n} porciones",
+  toast_menu_duplicated: "Menú duplicado",
   recipe_editar_title: "Modificar receta",
   recipe_editar_locked: "Solo el admin puede modificar recetas aprobadas",
   recipe_in_menus: "En menús",

@@ -47,6 +47,7 @@ import { useAuth } from "@/src/hooks/useAuth";
 import {
   getMenu,
   patchMenu,
+  duplicateMenu,
   patchMenuItem,
   deleteMenuItem,
   addMenuItem,
@@ -329,6 +330,7 @@ export default function MenuDetailScreen() {
   const [menu, setMenu] = useState<MenuFull | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [pendingDeleteSection, setPendingDeleteSection] = useState<{ id: string; name: string } | null>(null);
   const [deletingSection, setDeletingSection] = useState(false);
@@ -369,6 +371,21 @@ export default function MenuDetailScreen() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Duplicar el menú entero como copia (variante de carta) y abrir la copia.
+  async function handleDuplicateMenu() {
+    if (!menu || duplicating) return;
+    setDuplicating(true);
+    try {
+      const copy = await duplicateMenu(menu.id);
+      showToast(t("toast_menu_duplicated"));
+      router.replace({ pathname: "/menus/[id]", params: { id: copy.id } });
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setDuplicating(false);
+    }
+  }
 
   // ───────── Handlers (stable refs para que los memo'd hijos no re-rendereen) ─────────
 
@@ -728,9 +745,22 @@ export default function MenuDetailScreen() {
     </Pressable>
   ) : null;
 
+  const duplicateHeaderBtn = canEdit ? (
+    <Pressable
+      style={styles.headerPdfBtn}
+      onPress={handleDuplicateMenu}
+      disabled={duplicating}
+      accessibilityLabel={t("btn_duplicar")}
+    >
+      <Ionicons name="copy-outline" size={12} color={colors.ink} />
+      <Text style={styles.headerPdfLabel}>{t("btn_duplicar")}</Text>
+    </Pressable>
+  ) : null;
+
   const headerRight = (
     <View style={styles.headerRightRow}>
       {inServiceToggle}
+      {duplicateHeaderBtn}
       {pdfHeaderBtn}
     </View>
   );
