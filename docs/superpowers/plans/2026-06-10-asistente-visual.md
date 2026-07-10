@@ -1,5 +1,7 @@
 # Asistente — restyle visual (cuaderno editorial + animaciones) — Plan de implementación
 
+> ✅ **HECHO (2026-07-11).** Las 7 tareas están implementadas y commiteadas en la rama `claude/lucid-haslett-9cf85d`: parser `src/lib/markdown.ts` (18 tests verde), `MarkdownText`/`TypingDots`/`SendButton`, `src/lib/haptics.ts`, y `asistente.tsx` cableado (commit `eba7ee4`). Ya entró al APK **b5f3cee7** (build desde `15b9df5`). Los checkboxes de abajo quedaron sin tildar pero el código está en HEAD. **Único pendiente: el checkpoint visual de Andy en Expo Go (Task 7 · Step 4).**
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Restyle visual de la pantalla del Asistente según el spec `docs/superpowers/specs/2026-06-10-asistente-visual-design.md`: dirección "cuaderno editorial", markdown ligero tolerante a streaming, puntitos animados, botón que despega y late, hápticas discretas. Cero cambios de comportamiento.
