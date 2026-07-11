@@ -580,4 +580,23 @@ export const en: EsDict = {
   menu_add_allergen_see_common: "See common only",
   // Phase 2 — Global PDF toggle.
   menu_show_allergens_toggle: "Show allergens on the menu",
+
+  // ─── Export recipe book / product bank (PDF + CSV) ───
+  btn_export_recipebook_pdf: "Export recipe book (PDF)",
+  export_sheet_title: "Export bank",
+  btn_export_products_pdf: "Export (PDF)",
+  btn_export_products_csv: "Export (CSV)",
+  export_a11y: "Export",
+  pdf_recipebook_eyebrow: "Recipe book",
+  pdf_recipebook_empty: "No recipes yet.",
+  pdf_products_eyebrow: "Product bank",
+  pdf_products_empty: "No products yet.",
+  pdf_products_col_name: "Product",
+  pdf_products_col_category: "Category",
+  pdf_products_col_unit: "Unit",
+  pdf_products_col_price: "Price",
+  pdf_products_col_merma: "Waste",
+  pdf_products_col_criticality: "Criticality",
+  pdf_products_col_supplier: "Supplier",
+  pdf_products_col_state: "Status",
 };

@@ -19,6 +19,7 @@ import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n } from "@/src/hooks/useI18n";
 import { formatEuros } from "@/src/lib/money";
 import { listRecipes, deleteRecipe, type Recipe, type ListFilters } from "@/src/api/recipes";
+import { downloadAndShare } from "@/src/lib/export-file";
 import { showToast } from "@/src/components/Toast";
 import { useAuth } from "@/src/hooks/useAuth";
 import { can } from "@atelier/shared";
@@ -47,7 +48,7 @@ function buildFilters(filter: FilterId, q: string): ListFilters {
 }
 
 export default function RecetasScreen() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { state: authState } = useAuth();
   const router = useRouter();
 
@@ -56,6 +57,7 @@ export default function RecetasScreen() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingDelete, setPendingDelete] = useState<Recipe | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const role =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -95,6 +97,26 @@ export default function RecetasScreen() {
     }, [reload]),
   );
 
+  // Exportar el recetario completo (PDF) — descarga del server y abre el
+  // share-sheet. Va en el idioma del chef. Disponible para cualquier rol
+  // (exportar es lectura).
+  async function handleExportRecipebook() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const ok = await downloadAndShare(
+        `/api/recipes/export/pdf?lang=${lang}`,
+        "recetario.pdf",
+        "application/pdf",
+      );
+      showToast(ok ? t("toast_pdf_shared") : t("error_network"));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function handleDelete() {
     if (!pendingDelete) return;
     const id = pendingDelete.id;
@@ -132,15 +154,25 @@ export default function RecetasScreen() {
     <Screen
       title={t("header_recetas")}
       right={
-        canDelete ? (
+        <View style={styles.headerActions}>
           <Pressable
-            onPress={() => router.push("/recetas/papelera")}
             hitSlop={8}
-            accessibilityLabel={t("papelera_title")}
+            onPress={handleExportRecipebook}
+            disabled={exporting}
+            accessibilityLabel={t("btn_export_recipebook_pdf")}
           >
-            <Ionicons name="trash-outline" size={20} color={colors.teal} />
+            <Ionicons name="share-outline" size={20} color={colors.terracota} />
           </Pressable>
-        ) : undefined
+          {canDelete ? (
+            <Pressable
+              onPress={() => router.push("/recetas/papelera")}
+              hitSlop={8}
+              accessibilityLabel={t("papelera_title")}
+            >
+              <Ionicons name="trash-outline" size={20} color={colors.teal} />
+            </Pressable>
+          ) : null}
+        </View>
       }
     >
       <SectionExplainer text={t("section_explainer_recetas")} />
@@ -337,6 +369,7 @@ function StateChip({
 }
 
 const styles = StyleSheet.create({
+  headerActions: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   createRow: {
     flexDirection: "row",
     gap: spacing.sm,

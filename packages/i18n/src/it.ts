@@ -581,4 +581,23 @@ export const it: EsDict = {
   menu_add_allergen_see_common: "Vedi solo comuni",
   // Fase 2 — Toggle globale del PDF cliente.
   menu_show_allergens_toggle: "Mostra allergeni nel menu",
+
+  // ─── Esporta ricettario / banca (PDF + CSV) ───
+  btn_export_recipebook_pdf: "Esporta ricettario (PDF)",
+  export_sheet_title: "Esporta banca",
+  btn_export_products_pdf: "Esporta (PDF)",
+  btn_export_products_csv: "Esporta (CSV)",
+  export_a11y: "Esporta",
+  pdf_recipebook_eyebrow: "Ricettario",
+  pdf_recipebook_empty: "Ancora nessuna ricetta.",
+  pdf_products_eyebrow: "Banca prodotti",
+  pdf_products_empty: "Ancora nessun prodotto.",
+  pdf_products_col_name: "Prodotto",
+  pdf_products_col_category: "Categoria",
+  pdf_products_col_unit: "Unità",
+  pdf_products_col_price: "Prezzo",
+  pdf_products_col_merma: "Scarto",
+  pdf_products_col_criticality: "Criticità",
+  pdf_products_col_supplier: "Fornitore",
+  pdf_products_col_state: "Stato",
 };

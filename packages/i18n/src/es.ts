@@ -593,6 +593,25 @@ export const es = {
   menu_add_allergen_see_common: "Ver solo comunes",
   // Fase 2 — Toggle global del PDF cliente.
   menu_show_allergens_toggle: "Mostrar alérgenos en la carta",
+
+  // ─── Exportar recetario / banco (PDF + CSV) ───
+  btn_export_recipebook_pdf: "Exportar recetario (PDF)",
+  export_sheet_title: "Exportar banco",
+  btn_export_products_pdf: "Exportar (PDF)",
+  btn_export_products_csv: "Exportar (CSV)",
+  export_a11y: "Exportar",
+  pdf_recipebook_eyebrow: "Recetario",
+  pdf_recipebook_empty: "Sin recetas todavía.",
+  pdf_products_eyebrow: "Banco de productos",
+  pdf_products_empty: "Sin productos todavía.",
+  pdf_products_col_name: "Producto",
+  pdf_products_col_category: "Categoría",
+  pdf_products_col_unit: "Unidad",
+  pdf_products_col_price: "Precio",
+  pdf_products_col_merma: "Merma",
+  pdf_products_col_criticality: "Criticidad",
+  pdf_products_col_supplier: "Proveedor",
+  pdf_products_col_state: "Estado",
 } as const;
 
 // Each translation maps a key to a string. Values are not pinned as
