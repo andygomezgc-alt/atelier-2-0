@@ -1,12 +1,15 @@
 // scripts/products-merge.mjs
 //
 // Une productos duplicados del banco en uno canónico.
-//   node scripts/products-merge.mjs --canonical <id> --dups <id,id,...> [--apply]
+//   node scripts/products-merge.mjs --canonical <id> --dups <id,id,...> \
+//        [--rename "<nombre limpio>"] [--apply]
 //
 // Sin --apply: DRY-RUN — imprime qué haría y no escribe nada.
 // Con --apply: en una transacción: re-enlaza RecipeIngredient.productId,
 // agrega nombre+aliases de los duplicados como aliases del canónico y
 // archiva los duplicados (estado=archivado; NO se borran).
+// Con --rename: además renombra el canónico y guarda su nombre viejo como
+// alias (para no perderlo del matching).
 //
 // DATABASE_URL viene del entorno (el operador decide contra qué base corre).
 // PROD solo con el OK explícito de Andy.
@@ -23,6 +26,7 @@ function arg(name) {
 
 const canonicalId = arg("canonical");
 const dupIds = (arg("dups") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+const renameTo = arg("rename");
 const apply = process.argv.includes("--apply");
 
 if (!process.env.DATABASE_URL) {
@@ -70,11 +74,20 @@ for (const d of dups) {
   }
 }
 
+// Si renombramos, el nombre viejo del canónico pasa a alias (no perderlo del
+// matching). Va primero para que quede visible.
+if (renameTo && renameTo.toLowerCase() !== canonical.name.toLowerCase()) {
+  newAliases.unshift(canonical.name);
+}
+
 const ingCounts = await Promise.all(
   dups.map((d) => prisma.recipeIngredient.count({ where: { productId: d.id } })),
 );
 
 console.log(`\nCanónico: "${canonical.name}" (${canonical.id}) estado=${canonical.estado}`);
+if (renameTo && renameTo.toLowerCase() !== canonical.name.toLowerCase()) {
+  console.log(`Renombrar canónico → "${renameTo}"`);
+}
 for (let i = 0; i < dups.length; i++) {
   console.log(`  ← "${dups[i].name}" (${dups[i].id}) — ${ingCounts[i]} ingrediente(s) a re-enlazar`);
 }
@@ -99,7 +112,10 @@ await prisma.$transaction(async (tx) => {
   }
   await tx.product.update({
     where: { id: canonical.id },
-    data: { aliases: [...canonical.aliases, ...newAliases] },
+    data: {
+      aliases: [...canonical.aliases, ...newAliases],
+      ...(renameTo ? { name: renameTo } : {}),
+    },
   });
 });
 
