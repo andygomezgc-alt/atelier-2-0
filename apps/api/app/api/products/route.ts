@@ -37,10 +37,13 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
   const pezzaturaPendiente =
     searchParams.get("pezzatura_pendiente") === "true";
   const q = searchParams.get("q");
+  // Papelera: ?trash=true lista los productos borrados (soft-delete) para
+  // poder restaurarlos. El listado normal excluye los borrados.
+  const trash = searchParams.get("trash") === "true";
 
   const where: Prisma.ProductWhereInput = {
     restaurantId: ctx.restaurantId!,
-    deletedAt: null,
+    deletedAt: trash ? { not: null } : null,
   };
   if (category) where.category = category;
   if (criticality) where.criticality = criticality;
@@ -65,8 +68,11 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
   const products = await prisma.product.findMany({
     where,
     // criticality alta primero, después por nombre. Ayuda a que los críticos
-    // pendientes salten a la vista en la pantalla principal.
-    orderBy: [{ criticality: "asc" }, { name: "asc" }],
+    // pendientes salten a la vista en la pantalla principal. En papelera,
+    // los borrados más recientes primero.
+    orderBy: trash
+      ? [{ deletedAt: "desc" }]
+      : [{ criticality: "asc" }, { name: "asc" }],
     take: 500,
   });
 

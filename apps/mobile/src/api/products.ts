@@ -36,6 +36,8 @@ export type ListProductFilters = {
   // alguna receta. Habilita el chip filtro "Pezzatura pendiente".
   pezzaturaPendiente?: boolean;
   q?: string;
+  // Papelera: lista los productos borrados (soft-delete) para restaurarlos.
+  trash?: boolean;
 };
 
 export type PriceHistoryEntry = {
@@ -71,6 +73,7 @@ function buildQuery(filters: ListProductFilters): string {
   if (filters.mermaOrigen) qs.set("mermaOrigen", filters.mermaOrigen);
   if (filters.pendientePrecio) qs.set("pendiente_precio", "true");
   if (filters.pezzaturaPendiente) qs.set("pezzatura_pendiente", "true");
+  if (filters.trash) qs.set("trash", "true");
   if (filters.q) qs.set("q", filters.q);
   return qs.toString() ? `?${qs.toString()}` : "";
 }
@@ -310,6 +313,23 @@ export const patchProduct = async (id: string, data: PatchProductRequest) => {
   const result = await apiFetch<ProductFull>(`/api/products/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),
+  });
+  return bumpProductCache(result);
+};
+
+// Duplicar como borrador nuevo (no pisa el original, sin aliases). Devuelve la
+// copia; pre-popula su caché de detalle.
+export const duplicateProduct = async (id: string) => {
+  const result = await apiFetch<ProductFull>(`/api/products/${id}/duplicate`, {
+    method: "POST",
+  });
+  return bumpProductCache(result);
+};
+
+// Restaurar desde la papelera. Devuelve el producto ya activo.
+export const restoreProduct = async (id: string) => {
+  const result = await apiFetch<ProductFull>(`/api/products/${id}/restore`, {
+    method: "POST",
   });
   return bumpProductCache(result);
 };

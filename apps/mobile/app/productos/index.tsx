@@ -292,15 +292,29 @@ export default function ProductosScreen() {
   // edit_restaurant del lado del endpoint de migración). Para roles
   // chef/sous-chef/viewer el header queda sin acción.
   const canManage = can(role, "edit_restaurant");
-  const headerRight = canManage ? (
-    <Pressable
-      hitSlop={10}
-      onPress={() => router.push("/productos/ajustes")}
-      accessibilityLabel={t("ajustes_title")}
-    >
-      <Ionicons name="settings-outline" size={20} color={colors.ink} />
-    </Pressable>
-  ) : undefined;
+  const headerRight =
+    canCreate || canManage ? (
+      <View style={styles.headerActions}>
+        {canCreate ? (
+          <Pressable
+            hitSlop={8}
+            onPress={() => router.push("/productos/papelera")}
+            accessibilityLabel={t("papelera_title")}
+          >
+            <Ionicons name="trash-outline" size={20} color={colors.teal} />
+          </Pressable>
+        ) : null}
+        {canManage ? (
+          <Pressable
+            hitSlop={10}
+            onPress={() => router.push("/productos/ajustes")}
+            accessibilityLabel={t("ajustes_title")}
+          >
+            <Ionicons name="settings-outline" size={20} color={colors.ink} />
+          </Pressable>
+        ) : null}
+      </View>
+    ) : undefined;
 
   return (
     <Screen title={t("header_productos")} right={headerRight}>
@@ -475,6 +489,7 @@ function RowSeparator() {
 }
 
 const styles = StyleSheet.create({
+  headerActions: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
