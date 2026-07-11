@@ -1,10 +1,15 @@
 // Matching fuzzy de ingredientes contra el banco de productos.
 //
-// Tres niveles según distancia de Levenshtein sobre los strings normalizados:
+// Tres niveles según distancia de Levenshtein de frase entera + solapamiento
+// de tokens significativos:
 //
 //   distancia 0 → exact:    enlace silencioso (el chef no ve nada).
 //   distancia 1-3 → probable: pedimos confirmación al chef vía ConfirmMatchSheet.
 //   distancia >3 → none:     ofrecemos crear borrador en el banco.
+//
+// `probable` también cuando los tokens significativos se solapan ≥ 0.6 (fix
+// duplicados ricciola, jul 2026): "lomo de ricciola limpio con piel" reconoce
+// a la "Ricciola" del banco y pregunta en vez de duplicar.
 //
 // Normalización: lowercase + sin acentos + colapsar espacios + plurales obvios
 // removidos (ej. "trufas" → "trufa") — la función normalizeForMatch ya hace
@@ -91,6 +96,65 @@ function normalize(s: string): string {
 const EXACT_DISTANCE = 0;
 const PROBABLE_MAX_DISTANCE = 3;
 
+// ───────── Matching por tokens (fix duplicados tipo "ricciola", jul 2026) ─────────
+//
+// La distancia de frase entera no ve que "lomo de ricciola limpio con piel"
+// habla de la "Ricciola" del banco (distancia enorme → none → duplicado).
+// Señal nueva: solapamiento de tokens significativos. Si ≥ 0.6, el match es
+// "probable" y el chef confirma en ConfirmMatchSheet (jamás enlazamos solo).
+
+// Artículos/preposiciones es+it + unidades/ruido de cantidades. Se comparan
+// DESPUÉS de quitar plural por token ("las"→"la" ya cae como stopword).
+const STOPWORDS = new Set([
+  // castellano
+  "de", "del", "la", "el", "lo", "un", "una", "uno", "y", "o", "u", "con",
+  "sin", "al", "a", "en", "para", "por", "su", "sobre", "mas", "muy",
+  // italiano
+  "di", "da", "della", "dello", "dei", "degli", "delle", "il", "gli", "le",
+  "i", "e", "ed", "ad", "in", "per", "senza", "sul", "sulla", "piu",
+  // unidades / ruido de cantidad que sobrevive al parser dentro de paréntesis
+  "aprox", "approx", "circa", "ca", "neto", "netto", "g", "gr", "kg", "ml",
+  "cl", "l", "lt", "ud", "uds", "unidad", "unidades", "pz", "pezzo", "pezzi",
+]);
+
+const FUZZY_TOKEN_MIN_LEN = 5;
+const TOKEN_OVERLAP_THRESHOLD = 0.6;
+
+// Exportada para tests. Tokens únicos, normalizados, sin plural, sin
+// stopwords, sin números puros, sin tokens de 1 char.
+export function tokenizeForMatch(s: string): string[] {
+  const out = new Set<string>();
+  for (const raw of normalizeForMatch(s).split(/[^a-z0-9]+/)) {
+    if (raw.length < 2 || /^\d+$/.test(raw)) continue;
+    if (STOPWORDS.has(raw)) continue;
+    const tok = stripPluralEs(raw);
+    if (tok.length < 2 || STOPWORDS.has(tok)) continue;
+    out.add(tok);
+  }
+  return [...out];
+}
+
+// Dos tokens "hablan de lo mismo": idénticos, o a 1 edición si ambos son
+// largos (frollata≈frollada). Cortos exactos ("piel" jamás ≈ "miel").
+function tokensMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length < FUZZY_TOKEN_MIN_LEN || b.length < FUZZY_TOKEN_MIN_LEN) return false;
+  return levenshtein(a, b) <= 1;
+}
+
+// Coeficiente de overlap: qué fracción del conjunto CHICO encuentra pareja
+// en el grande. Robusto cuando un lado es "Ricciola" y el otro una frase.
+function tokenOverlap(aTokens: string[], bTokens: string[]): number {
+  if (aTokens.length === 0 || bTokens.length === 0) return 0;
+  const [small, large] =
+    aTokens.length <= bTokens.length ? [aTokens, bTokens] : [bTokens, aTokens];
+  let matched = 0;
+  for (const t of small) {
+    if (large.some((u) => tokensMatch(t, u))) matched++;
+  }
+  return matched / small.length;
+}
+
 export function findMatch(
   query: string,
   candidates: ReadonlyArray<MatchCandidate>,
@@ -99,55 +163,78 @@ export function findMatch(
   if (!qNorm) {
     return { level: "none", productId: null, productName: null, distance: Infinity };
   }
+  const qTokens = tokenizeForMatch(query);
 
-  let bestDistance = Infinity;
-  let bestCandidate: MatchCandidate | null = null;
-  let bestMatchedOnName = false;
+  let best: {
+    candidate: MatchCandidate;
+    level: MatchLevel;
+    distance: number;
+    overlap: number;
+    matchedOnName: boolean;
+  } | null = null;
+
+  const levelRank: Record<MatchLevel, number> = { exact: 2, probable: 1, none: 0 };
 
   for (const cand of candidates) {
-    // Probamos contra el nombre y cada alias; nos quedamos con la mejor distancia.
+    // Distancia de frase entera (comportamiento histórico) y overlap de
+    // tokens, ambos contra nombre + aliases; nos quedamos con lo mejor.
     const nameNorm = normalize(cand.name);
-    const nameDist = levenshtein(qNorm, nameNorm);
-    let candBest = nameDist;
+    let candDist = levenshtein(qNorm, nameNorm);
     let candMatchedOnName = true;
+    let candOverlap = tokenOverlap(qTokens, tokenizeForMatch(cand.name));
 
     for (const alias of cand.aliases) {
       const aliasDist = levenshtein(qNorm, normalize(alias));
-      if (aliasDist < candBest) {
-        candBest = aliasDist;
+      if (aliasDist < candDist) {
+        candDist = aliasDist;
         candMatchedOnName = false;
       }
+      const aliasOverlap = tokenOverlap(qTokens, tokenizeForMatch(alias));
+      if (aliasOverlap > candOverlap) candOverlap = aliasOverlap;
     }
 
-    // Tie-break: si dos productos empatan en distancia, preferimos el que
-    // matcheó por nombre (más confiable que por alias).
+    let level: MatchLevel;
+    if (candDist === EXACT_DISTANCE) {
+      level = "exact";
+    } else if (candDist <= PROBABLE_MAX_DISTANCE || candOverlap >= TOKEN_OVERLAP_THRESHOLD) {
+      level = "probable";
+    } else {
+      level = "none";
+    }
+
+    // Mejor candidato: nivel > overlap > distancia > matcheó-por-nombre.
     if (
-      candBest < bestDistance ||
-      (candBest === bestDistance && candMatchedOnName && !bestMatchedOnName)
+      !best ||
+      levelRank[level] > levelRank[best.level] ||
+      (levelRank[level] === levelRank[best.level] &&
+        (candOverlap > best.overlap ||
+          (candOverlap === best.overlap &&
+            (candDist < best.distance ||
+              (candDist === best.distance && candMatchedOnName && !best.matchedOnName)))))
     ) {
-      bestDistance = candBest;
-      bestCandidate = cand;
-      bestMatchedOnName = candMatchedOnName;
+      best = {
+        candidate: cand,
+        level,
+        distance: candDist,
+        overlap: candOverlap,
+        matchedOnName: candMatchedOnName,
+      };
     }
   }
 
-  if (!bestCandidate) {
-    return { level: "none", productId: null, productName: null, distance: Infinity };
-  }
-
-  let level: MatchLevel;
-  if (bestDistance === EXACT_DISTANCE) {
-    level = "exact";
-  } else if (bestDistance <= PROBABLE_MAX_DISTANCE) {
-    level = "probable";
-  } else {
-    level = "none";
+  if (!best || best.level === "none") {
+    return {
+      level: "none",
+      productId: null,
+      productName: null,
+      distance: best ? best.distance : Infinity,
+    };
   }
 
   return {
-    level,
-    productId: level === "none" ? null : bestCandidate.id,
-    productName: level === "none" ? null : bestCandidate.name,
-    distance: bestDistance,
+    level: best.level,
+    productId: best.candidate.id,
+    productName: best.candidate.name,
+    distance: best.distance,
   };
 }
