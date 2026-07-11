@@ -26,9 +26,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Empty } from "@/src/components/Empty";
+import { BottomSheet } from "@/src/components/BottomSheet";
 import { CategoryIcon } from "@/src/components/CategoryIcon";
 import { EditableCell } from "@/src/components/EditableCell";
 import { useI18n } from "@/src/hooks/useI18n";
+import { downloadAndShare } from "@/src/lib/export-file";
 import { formatEuros, formatEurosPerUnit } from "@/src/lib/money";
 import { useAuth } from "@/src/hooks/useAuth";
 import {
@@ -159,9 +161,12 @@ function formatRealCost(cents: number, unit: ProductUnit): string {
 }
 
 export default function ProductosScreen() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { state: authState } = useAuth();
   const router = useRouter();
+
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Sub-paso 6: el aviso de la tarjeta de costo en la receta navega acá
   // con ?filter=sin-precio para que el chef vea de inmediato qué productos
@@ -270,6 +275,33 @@ export default function ProductosScreen() {
     [items],
   );
 
+  // Exportar el banco — PDF (idioma del chef) o CSV (para Excel). Descarga del
+  // server + share-sheet. Disponible para cualquier rol (exportar es lectura).
+  async function handleExport(kind: "pdf" | "csv") {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const ok =
+        kind === "pdf"
+          ? await downloadAndShare(
+              `/api/products/export/pdf?lang=${lang}`,
+              "productos.pdf",
+              "application/pdf",
+            )
+          : await downloadAndShare(
+              `/api/products/export/csv`,
+              "productos.csv",
+              "text/csv",
+            );
+      setExportOpen(false);
+      showToast(ok ? t("toast_pdf_shared") : t("error_network"));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const handleRowPress = useCallback(
     (id: string) => router.push({ pathname: "/productos/[id]", params: { id } }),
     [router],
@@ -292,29 +324,35 @@ export default function ProductosScreen() {
   // edit_restaurant del lado del endpoint de migración). Para roles
   // chef/sous-chef/viewer el header queda sin acción.
   const canManage = can(role, "edit_restaurant");
-  const headerRight =
-    canCreate || canManage ? (
-      <View style={styles.headerActions}>
-        {canCreate ? (
-          <Pressable
-            hitSlop={8}
-            onPress={() => router.push("/productos/papelera")}
-            accessibilityLabel={t("papelera_title")}
-          >
-            <Ionicons name="trash-outline" size={20} color={colors.teal} />
-          </Pressable>
-        ) : null}
-        {canManage ? (
-          <Pressable
-            hitSlop={10}
-            onPress={() => router.push("/productos/ajustes")}
-            accessibilityLabel={t("ajustes_title")}
-          >
-            <Ionicons name="settings-outline" size={20} color={colors.ink} />
-          </Pressable>
-        ) : null}
-      </View>
-    ) : undefined;
+  const headerRight = (
+    <View style={styles.headerActions}>
+      <Pressable
+        hitSlop={8}
+        onPress={() => setExportOpen(true)}
+        accessibilityLabel={t("export_a11y")}
+      >
+        <Ionicons name="share-outline" size={20} color={colors.terracota} />
+      </Pressable>
+      {canCreate ? (
+        <Pressable
+          hitSlop={8}
+          onPress={() => router.push("/productos/papelera")}
+          accessibilityLabel={t("papelera_title")}
+        >
+          <Ionicons name="trash-outline" size={20} color={colors.teal} />
+        </Pressable>
+      ) : null}
+      {canManage ? (
+        <Pressable
+          hitSlop={10}
+          onPress={() => router.push("/productos/ajustes")}
+          accessibilityLabel={t("ajustes_title")}
+        >
+          <Ionicons name="settings-outline" size={20} color={colors.ink} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
 
   return (
     <Screen title={t("header_productos")} right={headerRight}>
@@ -384,6 +422,28 @@ export default function ProductosScreen() {
           <Ionicons name="add" size={24} color={colors.paper} />
         </Pressable>
       ) : null}
+
+      <BottomSheet open={exportOpen} onClose={() => setExportOpen(false)}>
+        <View style={styles.exportSheet}>
+          <Text style={styles.exportTitle}>{t("export_sheet_title")}</Text>
+          <Pressable
+            style={styles.exportOption}
+            onPress={() => handleExport("pdf")}
+            disabled={exporting}
+          >
+            <Ionicons name="document-text-outline" size={20} color={colors.terracota} />
+            <Text style={styles.exportOptionLabel}>{t("btn_export_products_pdf")}</Text>
+          </Pressable>
+          <Pressable
+            style={styles.exportOption}
+            onPress={() => handleExport("csv")}
+            disabled={exporting}
+          >
+            <Ionicons name="grid-outline" size={20} color={colors.terracota} />
+            <Text style={styles.exportOptionLabel}>{t("btn_export_products_csv")}</Text>
+          </Pressable>
+        </View>
+      </BottomSheet>
     </Screen>
   );
 }
@@ -568,6 +628,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.edge,
     marginVertical: 0,
   },
+  exportSheet: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, gap: spacing.xs },
+  exportTitle: {
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifBody,
+    color: colors.ink,
+    marginBottom: spacing.sm,
+  },
+  exportOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 0.5,
+    borderBottomColor: colors.edge,
+  },
+  exportOptionLabel: { fontFamily: fonts.sans, fontSize: fontSizes.body, color: colors.ink },
   fab: {
     position: "absolute",
     right: spacing.xl,
