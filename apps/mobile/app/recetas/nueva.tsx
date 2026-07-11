@@ -341,15 +341,18 @@ export default function NuevaRecetaScreen() {
     const { workingIngredients } = flowStateRef.current;
     workingIngredients[current.ingredientIdx]!.productId = current.productId;
 
-    // Best-effort: agregar el rawText del chef como alias del producto.
-    // No bloqueamos el flujo si esto falla — el linkeo ya quedó hecho.
+    // Best-effort: agregar el nombre del ingrediente (sin cantidad) como
+    // alias del producto. No bloqueamos el flujo si esto falla — el linkeo
+    // ya quedó hecho. Se parsea para que "480 g ricciola frollata" quede
+    // como alias "ricciola frollata" y matchee exacto la próxima vez.
     void (async () => {
       try {
+        const aliasName = parseIngredient(current.rawText).name || current.rawText;
         const prod = await getProduct(current.productId);
         const existing = new Set(prod.aliases.map((a) => a.toLowerCase()));
-        if (!existing.has(current.rawText.toLowerCase())) {
+        if (!existing.has(aliasName.toLowerCase())) {
           await patchProduct(current.productId, {
-            aliases: [...prod.aliases, current.rawText],
+            aliases: [...prod.aliases, aliasName],
           });
         }
       } catch {
