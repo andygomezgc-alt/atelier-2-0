@@ -44,6 +44,7 @@ import {
   getProduct,
   getProductHistory,
   patchProduct,
+  duplicateProduct,
   type ProductFull,
   type ProductHistoryResponse,
 } from "@/src/api/products";
@@ -302,6 +303,21 @@ export default function ProductoDetailScreen() {
     },
     [product, handleInlineSave, t],
   );
+
+  const [duplicating, setDuplicating] = useState(false);
+  async function handleDuplicate() {
+    if (!product || duplicating) return;
+    setDuplicating(true);
+    try {
+      const copy = await duplicateProduct(product.id);
+      showToast(t("toast_product_duplicated"));
+      router.push({ pathname: "/productos/[id]", params: { id: copy.id } });
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setDuplicating(false);
+    }
+  }
 
   async function handleArchiveToggle() {
     if (!product) return;
@@ -576,6 +592,19 @@ export default function ProductoDetailScreen() {
                   ))
                 )}
               </View>
+            ) : null}
+
+            {/* Duplicar — crea una copia borrador (sin aliases) y navega a
+                ella para editarla. No pisa el original. */}
+            {canEdit ? (
+              <Pressable
+                style={styles.moreAction}
+                onPress={handleDuplicate}
+                disabled={duplicating}
+              >
+                <Ionicons name="copy-outline" size={14} color={colors.inkSoft} />
+                <Text style={styles.moreActionLabel}>{t("btn_duplicar")}</Text>
+              </Pressable>
             ) : null}
 
             {/* Archivar / Reactivar — ambas pasan por ConfirmSheet ahora.
