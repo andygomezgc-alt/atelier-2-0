@@ -1,5 +1,7 @@
 # Banco de Productos — matching por palabras + limpieza de duplicados — Plan de implementación
 
+> ✅ **HECHO (2026-07-11).** Tasks 1-4 ejecutadas y commiteadas en `claude/lucid-haslett-9cf85d`: matching por tokens (`ed17a8f`, 15 tests, suite api 156 verde), alias sin cantidad (`846ec5e`), script de merge con `--rename` (`632ab32`+`b365ea7`). **Limpieza de las 5 ricciolas YA APLICADA a PROD** con OK explícito de Andy: quedó 1 "Ricciola" (borrador, 5 ingredientes, 5 alias) + 4 archivadas. El código va en la horneada única pendiente.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Que al guardar una receta el sistema reconozca que "480 g ricciola frollata (lomo limpio, piel retirada)" habla del mismo producto que la "Ricciola" del banco, y le PREGUNTE al chef (ConfirmMatchSheet ya existente) en vez de crear un duplicado silencioso. Además: script guiado para unir los duplicados ya existentes (5 ricciolas reales en prod).
