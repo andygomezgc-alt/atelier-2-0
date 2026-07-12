@@ -525,8 +525,15 @@ Estas son las cuentas de las que depende Atelier. Todas están a nombre de Andy.
 - **⚠️ Retención en Neon — tarea de Andy (5 min).** En el tablero de Neon →
   proyecto → **Settings → History retention**: subirla al máximo del plan.
   Eso permite "volver la base atrás en el tiempo" si algo sale muy mal.
-- **⚠️ Sentry / alertas de errores — PENDIENTE** (necesita que Andy cree la
-  cuenta): hoy no hay aviso automático si el backend o la app fallan.
+- **✅ Sentry / alertas de errores — ACTIVO (2026-07-13).** Organización
+  **atelier-xm** (datos en la UE), proyecto **atelier-api**, cuenta de Andy
+  (login con Google). El backend reporta los errores no manejados
+  (`instrumentation.ts` + `sentry.server.config.ts`; `SENTRY_DSN` en Vercel) y
+  Sentry manda un correo a Andy en cada error nuevo de prioridad alta. Panel:
+  https://atelier-xm.sentry.io/issues/ — Para probar el circuito:
+  `GET /api/debug-sentry?secret=<CRON_SECRET>` lanza un error de prueba
+  (verificado end-to-end el 2026-07-13). La app móvil todavía NO reporta a
+  Sentry (opcional, requiere horneada).
 
 <details>
 <summary><b>Para técnicos</b></summary>
@@ -568,8 +575,8 @@ llevarse una sorpresa.
 
 - **Sin backups verificados** de la base ni copia del keystore (ver sección 7).
 
-- **Sin monitoreo/alertas** (Sentry): si algo se cae, nadie se entera
-  automáticamente; se descubre entrando a `/api/health` o cuando un chef avisa.
+- **Monitoreo del backend: ACTIVO** (Sentry, ver sección 7). La app móvil aún
+  no reporta crashes propios — se agrega en una horneada futura si hace falta.
 
 - **Trabajo hecho pero sin hornear.** Papelera y duplicar de productos, y el
   export del recetario (PDF) y del banco (PDF/CSV) ya están en la rama con sus
