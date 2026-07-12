@@ -504,17 +504,29 @@ Estas son las cuentas de las que depende Atelier. Todas están a nombre de Andy.
 | **Resend** | Correos de acceso (magic link) | remitente `onboarding@resend.dev` (provisorio) |
 | **Anthropic** | La IA (asistente, extracción) | clave `ANTHROPIC_API_KEY` en Vercel |
 
-### Lo que falta asegurar (PENDIENTE)
+### Copias de seguridad (estado 2026-07-12)
 
-- **⚠️ Backup del keystore de EAS — PENDIENTE.** El keystore es lo que "firma"
-  el APK. Si se pierde, **no se pueden publicar actualizaciones** de la app con
-  la misma identidad. Hoy vive solo en la nube de EAS, **sin copia**. Hay que
-  descargar y guardar una copia segura (`eas credentials -p android`).
-- **⚠️ Backups de la base Neon — PENDIENTE.** Falta confirmar/configurar una
-  política de backups de `atelier-pilot`. Hoy no hay copia de seguridad
-  verificada de las recetas de los chefs.
-- **Sentry / alertas de errores — PENDIENTE** (necesita crear cuenta): hoy no
-  hay aviso automático si el backend o la app fallan.
+- **✅ Keystore de EAS — RESPALDADO.** Copia local en
+  `C:\Users\Utente\Desktop\ATELIER-BACKUPS\keystore-eas\` (el `.jks` + un
+  `.txt` con sus contraseñas). **Tarea de Andy: copiar esa carpeta a 2 lugares
+  más** (Google Drive + un USB). Si el keystore se pierde, no se pueden
+  publicar actualizaciones de la app con la misma firma.
+- **✅ Backup de la base — hay copia y hay herramienta.** Primer volcado
+  completo hecho (19 tablas) en `C:\Users\Utente\Desktop\ATELIER-BACKUPS\db\`.
+  Para sacar una copia nueva cuando quieras:
+
+  ```powershell
+  # Desde la raíz del proyecto, con la URL de PROD en DATABASE_URL
+  node scripts/db-backup.mjs
+  ```
+
+  Solo LEE la base. Conviene sacar una copia antes de cada deploy grande y
+  cada tanto copiar la carpeta a Drive.
+- **⚠️ Retención en Neon — tarea de Andy (5 min).** En el tablero de Neon →
+  proyecto → **Settings → History retention**: subirla al máximo del plan.
+  Eso permite "volver la base atrás en el tiempo" si algo sale muy mal.
+- **⚠️ Sentry / alertas de errores — PENDIENTE** (necesita que Andy cree la
+  cuenta): hoy no hay aviso automático si el backend o la app fallan.
 
 <details>
 <summary><b>Para técnicos</b></summary>
