@@ -188,6 +188,7 @@ export const en: EsDict = {
   error_gdoc_access_denied:
     'I can\'t open the document. In Google Docs: Share → "Anyone with the link".',
   error_forbidden: "You don't have permission to do this.",
+  error_plan_inactive: "Your plan is inactive. Reactivate it to keep creating.",
   onboard_choose_title: "How would you like to start?",
   onboard_create_title: "Create my restaurant",
   onboard_create_sub: "You'll be admin of the group",

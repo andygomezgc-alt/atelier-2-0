@@ -194,6 +194,7 @@ export const ApiErrorCodeSchema = z.enum([
   "file_invalid",
   "gdoc_access_denied",
   "forbidden",
+  "plan_inactive",
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
 

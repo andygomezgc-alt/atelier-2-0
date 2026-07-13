@@ -6,10 +6,14 @@ const TEST_SECRET = "test-secret-do-not-use-in-prod-0123456789";
 
 // Mock @atelier/db so we never touch a real DB.
 const findUniqueMock = vi.fn();
+const restaurantFindUniqueMock = vi.fn();
 vi.mock("@atelier/db", () => ({
   prisma: {
     user: {
       findUnique: (...args: unknown[]) => findUniqueMock(...args),
+    },
+    restaurant: {
+      findUnique: (...args: unknown[]) => restaurantFindUniqueMock(...args),
     },
   },
 }));
@@ -29,10 +33,12 @@ beforeAll(async () => {
 
 beforeEach(() => {
   findUniqueMock.mockReset();
+  restaurantFindUniqueMock.mockReset();
 });
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
 });
 
 const secretKey = () => new TextEncoder().encode(TEST_SECRET);
@@ -78,6 +84,16 @@ async function makeToken(opts: {
 
 function makeReq(headers: Record<string, string> = {}) {
   return new NextRequest("https://test.local/x", { headers });
+}
+
+// Variante con método + path para probar el candado de plan (ENTITLEMENTS).
+function makeReqMP(opts: {
+  method?: string;
+  path?: string;
+  headers?: Record<string, string>;
+}) {
+  const { method = "GET", path = "/api/recipes", headers = {} } = opts;
+  return new NextRequest(`https://test.local${path}`, { method, headers });
 }
 
 describe("requireAuth (Bearer JWT path)", () => {
@@ -214,5 +230,70 @@ describe("requireAuth (Bearer JWT path)", () => {
     const res = await requireAuth(makeReq({ Authorization: `Bearer ${token}` }));
     expect(res).toBeInstanceOf(Response);
     expect((res as Response).status).toBe(401);
+  });
+});
+
+describe("requireAuth — candado de plan (ENTITLEMENTS_ENFORCED)", () => {
+  const authedUser = {
+    id: "user-1",
+    role: "chef_executive" as const,
+    restaurantId: "rest-1",
+    tokenVersion: 1,
+  };
+
+  async function callAs(method: string, path: string) {
+    findUniqueMock.mockResolvedValueOnce(authedUser);
+    const token = await makeToken({ sub: "user-1", tv: 1 });
+    return requireAuth(
+      makeReqMP({ method, path, headers: { Authorization: `Bearer ${token}` } }),
+    );
+  }
+
+  it("flag apagado: NO consulta el restaurante (comportamiento idéntico)", async () => {
+    // ENTITLEMENTS_ENFORCED sin setear → candado apagado.
+    const ctx = await callAs("POST", "/api/recipes");
+    expect(ctx).toEqual({ userId: "user-1", role: "chef_executive", restaurantId: "rest-1" });
+    expect(restaurantFindUniqueMock).not.toHaveBeenCalled();
+  });
+
+  it("flag=1 + canceled + POST → 402 plan_inactive", async () => {
+    vi.stubEnv("ENTITLEMENTS_ENFORCED", "1");
+    restaurantFindUniqueMock.mockResolvedValueOnce({
+      planStatus: "canceled",
+      graceUntil: null,
+      trialEndsAt: null,
+    });
+    const res = await callAs("POST", "/api/recipes");
+    expect(res).toBeInstanceOf(Response);
+    const r = res as Response;
+    expect(r.status).toBe(402);
+    expect(await r.json()).toEqual({ error: "Plan inactive", code: "plan_inactive" });
+  });
+
+  it("flag=1 + canceled + GET → pasa (lecturas nunca se bloquean)", async () => {
+    vi.stubEnv("ENTITLEMENTS_ENFORCED", "1");
+    const ctx = await callAs("GET", "/api/recipes");
+    expect(ctx).toEqual({ userId: "user-1", role: "chef_executive", restaurantId: "rest-1" });
+    // GET corta antes de la query (método === GET).
+    expect(restaurantFindUniqueMock).not.toHaveBeenCalled();
+  });
+
+  it("flag=1 + active + POST → pasa", async () => {
+    vi.stubEnv("ENTITLEMENTS_ENFORCED", "1");
+    restaurantFindUniqueMock.mockResolvedValueOnce({
+      planStatus: "active",
+      graceUntil: null,
+      trialEndsAt: null,
+    });
+    const ctx = await callAs("POST", "/api/recipes");
+    expect(ctx).toEqual({ userId: "user-1", role: "chef_executive", restaurantId: "rest-1" });
+    expect(restaurantFindUniqueMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("flag=1 + POST a ruta exenta → pasa sin consultar restaurante", async () => {
+    vi.stubEnv("ENTITLEMENTS_ENFORCED", "1");
+    const ctx = await callAs("POST", "/api/restaurant/join");
+    expect(ctx).toEqual({ userId: "user-1", role: "chef_executive", restaurantId: "rest-1" });
+    expect(restaurantFindUniqueMock).not.toHaveBeenCalled();
   });
 });

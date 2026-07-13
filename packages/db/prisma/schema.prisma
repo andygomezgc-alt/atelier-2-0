@@ -111,6 +111,23 @@ enum Allergen {
   molluscs      // 14
 }
 
+// Suscripción / planes. Los defaults (pilot/active) están elegidos a propósito:
+// los restaurantes EXISTENTES (el piloto "Kokoo") arrancan pilot/active y NUNCA
+// se bloquean. El candado (ENTITLEMENTS_ENFORCED) solo mira planStatus.
+enum PlanTier {
+  pilot
+  founder
+  early
+  pro
+}
+
+enum PlanStatus {
+  trial
+  active
+  past_due
+  canceled
+}
+
 model Restaurant {
   id              String   @id @default(cuid())
   name            String
@@ -120,6 +137,14 @@ model Restaurant {
   inviteCode      String   @unique
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  // ─────────── Suscripción (Stripe) ───────────
+  plan                 PlanTier   @default(pilot)
+  planStatus           PlanStatus @default(active)
+  trialEndsAt          DateTime?
+  graceUntil           DateTime?
+  stripeCustomerId     String?    @unique
+  stripeSubscriptionId String?
 
   users         User[]
   ideas         Idea[]

@@ -198,6 +198,7 @@ export const es = {
   error_gdoc_access_denied:
     'No puedo abrir el documento. En Google Docs: Compartir → "Cualquiera con el enlace".',
   error_forbidden: "No tenés permiso para hacer esto.",
+  error_plan_inactive: "Tu plan está inactivo. Activalo para seguir creando.",
   onboard_choose_title: "¿Cómo quieres empezar?",
   onboard_create_title: "Crear mi restaurante",
   onboard_create_sub: "Serás admin del grupo",

@@ -3,13 +3,35 @@ import { prisma } from "@atelier/db";
 import { can, type Permission } from "@atelier/shared";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
-import type { Role } from "@atelier/db";
+import type { Role, PlanStatus } from "@atelier/db";
 
 export type AuthedContext = {
   userId: string;
   role: Role;
   restaurantId: string;
 };
+
+// Candado de plan (entitlements). Prefijos exentos aunque la request sea de
+// escritura: auth (login), pago (Stripe) y onboarding (join/leave). Los datos
+// del chef nunca se bloquean en lectura, por eso el candado solo mira ≠ GET.
+const ENTITLEMENT_EXEMPT_PREFIXES = [
+  "/api/mobile/auth",
+  "/api/stripe",
+  "/api/restaurant/join",
+  "/api/restaurant/leave",
+];
+
+function isPlanInactive(r: {
+  planStatus: PlanStatus;
+  graceUntil: Date | null;
+  trialEndsAt: Date | null;
+}): boolean {
+  const now = Date.now();
+  if (r.planStatus === "canceled") return true;
+  if (r.planStatus === "past_due") return r.graceUntil !== null && r.graceUntil.getTime() < now;
+  if (r.planStatus === "trial") return r.trialEndsAt !== null && r.trialEndsAt.getTime() < now;
+  return false;
+}
 
 function getSecret() {
   const secret = process.env.MOBILE_JWT_SECRET ?? process.env.NEXTAUTH_SECRET;
@@ -84,6 +106,27 @@ export async function requireAuth(
     // Code `forbidden` → el mobile lo traduce al idioma del chef. Cubre TODAS
     // las rutas con permiso de una (ej. un sous_chef intentando una acción admin).
     return NextResponse.json({ error: "Forbidden", code: "forbidden" }, { status: 403 });
+  }
+
+  // Candado de plan — APAGADO por defecto. Solo con ENTITLEMENTS_ENFORCED=1
+  // hacemos la query extra al restaurante. Sin la env, cero queries y cero
+  // cambios de comportamiento. Nunca bloquea GET (lecturas/export = del chef).
+  if (
+    process.env.ENTITLEMENTS_ENFORCED === "1" &&
+    req.method !== "GET" &&
+    user.restaurantId &&
+    !ENTITLEMENT_EXEMPT_PREFIXES.some((p) => req.nextUrl.pathname.startsWith(p))
+  ) {
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: user.restaurantId },
+      select: { planStatus: true, graceUntil: true, trialEndsAt: true },
+    });
+    if (restaurant && isPlanInactive(restaurant)) {
+      return NextResponse.json(
+        { error: "Plan inactive", code: "plan_inactive" },
+        { status: 402 },
+      );
+    }
   }
 
   return {
