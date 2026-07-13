@@ -23,7 +23,7 @@ import { ProfileSheet } from "@/src/components/ProfileSheet";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n, dateLocale } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
-import { useSpeechInput } from "@/src/hooks/useSpeechInput";
+import { speechAvailable, useSpeechInput } from "@/src/hooks/useSpeechInput";
 import {
   bulkAddMessages,
   createConversation,
@@ -747,22 +747,25 @@ export default function AsistenteScreen() {
         ) : null}
 
         <View style={styles.composer}>
-          <Pressable
-            onPress={handleMic}
-            disabled={streaming}
-            style={[
-              styles.micBtn,
-              listening && styles.micBtnActive,
-              streaming && styles.micBtnDisabled,
-            ]}
-            accessibilityLabel={listening ? t("chat_mic_stop") : t("chat_mic_label")}
-          >
-            <Ionicons
-              name={listening ? "stop" : "mic-outline"}
-              size={18}
-              color={listening ? colors.paper : colors.terracota}
-            />
-          </Pressable>
+          {/* Sin el módulo nativo (Expo Go) el mic se esconde; en el APK está. */}
+          {speechAvailable ? (
+            <Pressable
+              onPress={handleMic}
+              disabled={streaming}
+              style={[
+                styles.micBtn,
+                listening && styles.micBtnActive,
+                streaming && styles.micBtnDisabled,
+              ]}
+              accessibilityLabel={listening ? t("chat_mic_stop") : t("chat_mic_label")}
+            >
+              <Ionicons
+                name={listening ? "stop" : "mic-outline"}
+                size={18}
+                color={listening ? colors.paper : colors.terracota}
+              />
+            </Pressable>
+          ) : null}
           <TextInput
             value={input}
             onChangeText={setInput}
