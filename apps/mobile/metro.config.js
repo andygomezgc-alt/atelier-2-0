@@ -21,4 +21,11 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, "node_modules"),
 ];
 
+// No crawlear/vigilar output de build (rompe el watcher de Windows sin watchman).
+config.resolver.blockList = [
+  /.*[\\/]apps[\\/]api[\\/]\.next[\\/].*/,
+  /.*[\\/]\.next[\\/].*/,
+  /.*[\\/]apps[\\/]mobile[\\/]dist[\\/].*/,
+];
+
 module.exports = config;

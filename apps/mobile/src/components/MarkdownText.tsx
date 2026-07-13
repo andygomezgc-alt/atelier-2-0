@@ -3,7 +3,7 @@
 // terracota (C-05). Reemplaza a HighlightedText + heurística isTitle de la
 // pantalla. Estilo cuaderno editorial (spec 2026-06-10).
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { parseAssistantMarkdown, type Span } from "@/src/lib/markdown";
 import { highlightQuantities } from "@/src/lib/highlight-quantities";
@@ -53,7 +53,9 @@ function Spans({ spans }: { spans: Span[] }) {
 }
 
 export const MarkdownText = memo(function MarkdownText({ text }: { text: string }) {
-  const blocks = parseAssistantMarkdown(text);
+  // El bubble en progreso re-renderiza a ~30fps durante el typewriter;
+  // sin memo se re-parsearía el markdown en cada tick.
+  const blocks = useMemo(() => parseAssistantMarkdown(text), [text]);
   return (
     <View style={styles.wrap}>
       {blocks.map((b, i) => {
