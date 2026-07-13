@@ -4,7 +4,6 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -217,6 +216,12 @@ export default function AsistenteScreen() {
   const [streamError, setStreamError] = useState<{ content: string; model: ModelKey } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+
+  // Teclado edge-to-edge (SDK 53+): el KAV empuja el composer, pero necesita
+  // saber cuánto chrome tiene encima (safe-area + header + divider). El header
+  // de prod es de alto variable, así que lo medimos en vez de hardcodear.
+  const kbWrapRef = useRef<View>(null);
+  const [kbOffset, setKbOffset] = useState(0);
 
   // Dictado por voz: el texto reconocido se vuelca en el input en vivo.
   const { listening, start: startMic, stop: stopMic } = useSpeechInput({
@@ -539,11 +544,20 @@ export default function AsistenteScreen() {
       />
       <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} />
 
-      <KeyboardAvoidingView
+      <View
+        ref={kbWrapRef}
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={80}
+        onLayout={() =>
+          kbWrapRef.current?.measureInWindow((_x, y) => {
+            if (y > 0) setKbOffset(y);
+          })
+        }
       >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior="padding"
+          keyboardVerticalOffset={kbOffset}
+        >
         {ideaText ? (
           <View style={styles.pinChip}>
             <Ionicons name="pricetag" size={12} color={colors.teal} style={styles.pinIcon} />
@@ -677,7 +691,8 @@ export default function AsistenteScreen() {
             onPress={handleSend}
           />
         </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 }
