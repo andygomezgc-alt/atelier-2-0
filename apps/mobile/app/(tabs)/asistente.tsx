@@ -212,10 +212,22 @@ export default function AsistenteScreen() {
   const [input, setInput] = useState("");
   const [structuring, setStructuring] = useState(false);
   const [streaming, setStreaming] = useState(false);
-  const [streamBuf, setStreamBuf] = useState("");
+  const [streamShown, setStreamShown] = useState("");
   const [streamError, setStreamError] = useState<{ content: string; model: ModelKey } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+
+  // Typewriter: los deltas de red se acumulan en streamTargetRef; un ticker los
+  // revela de a pocos caracteres por frame para que la respuesta se "escriba"
+  // fluida en vez de aparecer a golpes de chunk.
+  const streamTargetRef = useRef("");
+  const streamShownRef = useRef("");
+  const streamDoneRef = useRef(false);
+  const tickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const drainResolveRef = useRef<(() => void) | null>(null);
+  // Se incrementa al cambiar de idea/conversación; un runStream con generación
+  // vieja no debe commitear su respuesta en el chat nuevo ni pisar su estado.
+  const streamGenRef = useRef(0);
 
   // Teclado edge-to-edge (SDK 53+): el KAV empuja el composer, pero necesita
   // saber cuánto chrome tiene encima (safe-area + header + divider). El header
@@ -237,6 +249,53 @@ export default function AsistenteScreen() {
   // que llegan en vivo. Set de ids conocidos al momento del load.
   const preloadedIds = useRef<Set<string>>(new Set());
 
+  function stopTicker() {
+    if (tickerRef.current) {
+      clearInterval(tickerRef.current);
+      tickerRef.current = null;
+    }
+  }
+
+  // El paso escala con el backlog: nunca se atrasa más de ~medio segundo
+  // respecto de la red, pero mantiene un mínimo de ritmo "typewriter".
+  function startTicker() {
+    if (tickerRef.current) return;
+    tickerRef.current = setInterval(() => {
+      const target = streamTargetRef.current;
+      const shown = streamShownRef.current;
+      if (shown.length < target.length) {
+        const backlog = target.length - shown.length;
+        const step = Math.max(3, Math.ceil(backlog / 12));
+        let end = shown.length + step;
+        // No partir un par sustituto (emoji) en el borde del reveal.
+        const code = target.charCodeAt(end - 1);
+        if (end < target.length && code >= 0xd800 && code <= 0xdbff) end += 1;
+        const next = target.slice(0, end);
+        streamShownRef.current = next;
+        setStreamShown(next);
+      } else {
+        // Alcanzó: parar en vez de idlear; cada delta nuevo lo reinicia.
+        stopTicker();
+        if (streamDoneRef.current) {
+          drainResolveRef.current?.();
+          drainResolveRef.current = null;
+        }
+      }
+    }, 33);
+  }
+
+  function resetStream() {
+    stopTicker();
+    // Desbloquea un drain pendiente para que runStream no cuelgue si cambia la
+    // idea a mitad del reveal; el caller ya capturó su texto final.
+    drainResolveRef.current?.();
+    drainResolveRef.current = null;
+    streamTargetRef.current = "";
+    streamShownRef.current = "";
+    streamDoneRef.current = false;
+    setStreamShown("");
+  }
+
   // Initialize the model preference once.
   const initialized = useRef(false);
   useEffect(() => {
@@ -249,14 +308,21 @@ export default function AsistenteScreen() {
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      if (tickerRef.current) clearInterval(tickerRef.current);
     };
   }, []);
 
   // Reset chat state and load the right conversation when params change.
   useEffect(() => {
+    // Mata cualquier stream en vuelo de la idea anterior; sin esto su respuesta
+    // sigue escribiéndose (y se commitearía) en el chat nuevo.
+    streamGenRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStreaming(false);
     setConversationId(null);
     setMessages([]);
-    setStreamBuf("");
+    resetStream();
     setStreamError(null);
     preloadedIds.current = new Set();
 
@@ -309,8 +375,9 @@ export default function AsistenteScreen() {
   }, [conversationId, ideaId, model, hasRestaurant]);
 
   async function runStream(text: string, modelToUse: ModelKey) {
+    const gen = streamGenRef.current;
     setStreaming(true);
-    setStreamBuf("");
+    resetStream();
     setStreamError(null);
 
     abortRef.current?.abort();
@@ -319,7 +386,6 @@ export default function AsistenteScreen() {
 
     try {
       const convId = await ensureConversation();
-      let acc = "";
       const previewHistory = convId
         ? undefined
         : messages
@@ -330,19 +396,36 @@ export default function AsistenteScreen() {
         text,
         modelToUse,
         (delta) => {
-          if (acc === "") selection();
-          acc += delta;
-          setStreamBuf(acc);
+          if (streamTargetRef.current === "") selection();
+          streamTargetRef.current += delta;
+          startTicker();
         },
         ac.signal,
         previewHistory,
       );
+      if (gen !== streamGenRef.current) return;
+      const finalText = full || streamTargetRef.current;
+      streamTargetRef.current = finalText;
+      // Dejar que el typewriter alcance antes de swappear al bubble final,
+      // si no el final de la respuesta aparece de golpe.
+      streamDoneRef.current = true;
+      if (streamShownRef.current.length < finalText.length) {
+        startTicker();
+        await new Promise<void>((resolve) => {
+          drainResolveRef.current = resolve;
+        });
+        if (gen !== streamGenRef.current) return;
+      }
+      // Pre-marcar el id como "preloaded" para que el bubble commiteado NO
+      // re-corra la animación de entrada (el usuario ya lo vio escribirse).
+      const id = `assistant-${Date.now()}`;
+      preloadedIds.current.add(id);
       setMessages((prev) => [
         ...prev,
         {
-          id: `assistant-${Date.now()}`,
+          id,
           role: "assistant",
-          content: full || acc,
+          content: finalText,
           createdAt: new Date().toISOString(),
         },
       ]);
@@ -355,8 +438,12 @@ export default function AsistenteScreen() {
       }
     } finally {
       if (abortRef.current === ac) abortRef.current = null;
-      setStreaming(false);
-      setStreamBuf("");
+      // Generación vieja = la idea cambió y ya reseteó este estado para el chat
+      // nuevo; no lo pises.
+      if (gen === streamGenRef.current) {
+        setStreaming(false);
+        resetStream();
+      }
     }
   }
 
@@ -497,7 +584,7 @@ export default function AsistenteScreen() {
   // A-05 — indicador discreto cuando el modelo todavía no escupió el primer
   // delta. Aparece debajo del último mensaje del chef y desaparece apenas
   // llega texto.
-  const awaitingFirstDelta = streaming && streamBuf.length === 0;
+  const awaitingFirstDelta = streaming && streamShown.length === 0;
   const showSaveButton =
     !streaming && !streamError && messages.some((m) => m.role === "assistant");
 
@@ -602,12 +689,12 @@ export default function AsistenteScreen() {
               windowSize={11}
               removeClippedSubviews
               ListHeaderComponent={
-                streaming && streamBuf ? (
+                streaming && streamShown ? (
                   <View style={styles.assistantWrap}>
                     <Text style={styles.assistantEyebrow}>{assistantEyebrow}</Text>
                     <View style={styles.assistantRule} />
                     <View style={styles.assistantBody}>
-                      <MarkdownText text={stripRecipePayload(streamBuf)} />
+                      <MarkdownText text={stripRecipePayload(streamShown)} />
                     </View>
                   </View>
                 ) : awaitingFirstDelta ? (
