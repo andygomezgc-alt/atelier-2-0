@@ -13,8 +13,6 @@
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -96,10 +94,7 @@ export function LeaveRestaurantSheet({ open, onClose }: Props) {
 
   return (
     <BottomSheet open={open} onClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content}>
           {status.kind === "loading" ? (
             <View style={styles.loadingBox}>
               <ActivityIndicator color={colors.terracota} />
@@ -201,7 +196,6 @@ export function LeaveRestaurantSheet({ open, onClose }: Props) {
             </>
           )}
         </ScrollView>
-      </KeyboardAvoidingView>
     </BottomSheet>
   );
 }

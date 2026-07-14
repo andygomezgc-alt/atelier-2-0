@@ -43,6 +43,7 @@ import {
 import { showToast } from "@/src/components/Toast";
 import { can, resolvePezzaturaMode } from "@atelier/shared";
 import type { ProductUnit } from "@atelier/shared";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 type FilterId =
@@ -157,6 +158,7 @@ export default function ProductosScreen() {
   const { t, lang } = useI18n();
   const { state: authState } = useAuth();
   const router = useRouter();
+  const kb = useKeyboardHeight();
 
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -380,7 +382,7 @@ export default function ProductosScreen() {
         data={items}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: 96 + kb }]}
         style={styles.listScroll}
         initialNumToRender={20}
         maxToRenderPerBatch={10}

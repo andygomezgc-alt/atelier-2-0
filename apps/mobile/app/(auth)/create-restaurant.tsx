@@ -9,12 +9,14 @@ import type { CreateRestaurantResponse } from "@atelier/shared";
 import { Button } from "@/src/components/Button";
 import { showToast } from "@/src/components/Toast";
 import { apiErrorMessage } from "@/src/lib/api-error";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 export default function CreateRestaurantScreen() {
   const { refreshMe, patchLocalUser } = useAuth();
   const { t } = useI18n();
   const router = useRouter();
+  const kb = useKeyboardHeight();
 
   const [name, setName] = useState("");
   const [identityLine, setIdentityLine] = useState("");
@@ -57,7 +59,7 @@ export default function CreateRestaurantScreen() {
 
   return (
     <SafeAreaView style={styles.root}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + kb }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>{t("onboard_create_title")}</Text>
         <Text style={styles.sub}>{t("onboard_create_sub")}</Text>
 

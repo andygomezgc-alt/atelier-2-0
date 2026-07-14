@@ -9,9 +9,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -24,6 +22,7 @@ import { apiFetch, ApiError } from "@/src/api/client";
 import type { CreateRestaurantResponse } from "@atelier/shared";
 import { apiErrorMessage } from "@/src/lib/api-error";
 import { showToast } from "./Toast";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 type Pending = {
@@ -91,6 +90,7 @@ export function ensureRestaurant(): Promise<MeUser> {
 export function LazyRestaurantHost() {
   const value = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const { t } = useI18n();
+  const kb = useKeyboardHeight();
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
 
@@ -170,10 +170,7 @@ export function LazyRestaurantHost() {
       animationType="fade"
       onRequestClose={handleCancel}
     >
-      <KeyboardAvoidingView
-        style={styles.backdrop}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+      <View style={[styles.backdrop, { paddingBottom: kb }]}>
         <View style={styles.card}>
           <Text style={styles.title}>{t("lazy_modal_title")}</Text>
           <Text style={styles.sub}>{t("lazy_modal_sub")}</Text>
@@ -210,7 +207,7 @@ export function LazyRestaurantHost() {
             </Pressable>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }

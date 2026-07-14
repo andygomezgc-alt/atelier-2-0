@@ -32,6 +32,7 @@ import { useI18n } from "@/src/hooks/useI18n";
 import { patchProduct } from "@/src/api/products";
 import { showToast } from "@/src/components/Toast";
 import { StatusBadge } from "@/src/components/StatusBadge";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 type Props = {
@@ -42,6 +43,7 @@ type Props = {
 
 export function PezzaturaPendienteModal({ open, product, onClose }: Props) {
   const { t } = useI18n();
+  const kb = useKeyboardHeight();
   const inputRef = useRef<TextInput>(null);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +104,7 @@ export function PezzaturaPendienteModal({ open, product, onClose }: Props) {
       animationType="fade"
       onRequestClose={() => onClose("later")}
     >
-      <Pressable style={styles.backdrop} onPress={() => onClose("later")}>
+      <Pressable style={[styles.backdrop, { paddingBottom: kb }]} onPress={() => onClose("later")}>
         <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
           <Text style={styles.title}>
             {t("pezzatura_pendiente_title", { name: product.name })}

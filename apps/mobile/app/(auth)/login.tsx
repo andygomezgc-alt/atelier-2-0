@@ -8,6 +8,7 @@ import { showToast } from "@/src/components/Toast";
 import { verifyMagicLink } from "@/src/api/auth";
 import { ApiError, NetworkError } from "@/src/api/client";
 import { apiErrorMessage } from "@/src/lib/api-error";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 type Mode = "email" | "sent" | "paste";
@@ -15,6 +16,7 @@ type Mode = "email" | "sent" | "paste";
 export default function LoginScreen() {
   const { sendMagicLink, signInWithGoogle, signInWithToken } = useAuth();
   const { t } = useI18n();
+  const kb = useKeyboardHeight();
   const [email, setEmail] = useState("");
   const [mode, setMode] = useState<Mode>("email");
   const [loading, setLoading] = useState(false);
@@ -75,7 +77,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.root}>
-      <View style={styles.center}>
+      <View style={[styles.center, { paddingBottom: kb }]}>
         <Text style={styles.mark}>
           <Text style={styles.markGlyph}>A</Text>telier
         </Text>

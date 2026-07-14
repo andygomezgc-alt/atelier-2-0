@@ -13,8 +13,6 @@
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -183,11 +181,8 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
 
   return (
     <BottomSheet open={open} onClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        {/* Header con título según paso, y back arrow si no estamos en root */}
-        <View style={styles.header}>
+      {/* Header con título según paso, y back arrow si no estamos en root */}
+      <View style={styles.header}>
           {step !== "menu-list" ? (
             <Pressable
               hitSlop={10}
@@ -352,7 +347,6 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
             </View>
           </ScrollView>
         ) : null}
-      </KeyboardAvoidingView>
     </BottomSheet>
   );
 }

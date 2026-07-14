@@ -52,6 +52,7 @@ import {
 import { can, resolvePezzaturaMode } from "@atelier/shared";
 import type { ProductCategory, ProductUnit } from "@atelier/shared";
 import { getInitialPezzaturaInput } from "@/src/components/PezzaturaField";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 const UNIT_SHORT: Record<ProductUnit, string> = {
@@ -84,6 +85,7 @@ function realCostLocal(cents: number, mermaPct: number): number {
 export default function ProductoDetailScreen() {
   const { t, lang } = useI18n();
   const router = useRouter();
+  const kb = useKeyboardHeight();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { state: authState } = useAuth();
 
@@ -396,7 +398,7 @@ export default function ProductoDetailScreen() {
 
   return (
     <Screen title={t("header_productos")} back onBack={() => router.back()}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + kb }]}>
         {/* Banda "Archivado" — solo cuando aplica. Discreta, una línea,
             tono apagado. Sustituye al texto "· Archivado" anterior que
             iba mezclado con la categoría y se notaba poco. */}

@@ -4,15 +4,7 @@
 // dentro del menú.
 
 import { useEffect, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useI18n } from "@/src/hooks/useI18n";
 import { BottomSheet } from "./BottomSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
@@ -49,10 +41,7 @@ export function NewMenuSheet({ open, onClose, onCreate }: Props) {
 
   return (
     <BottomSheet open={open} onClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <View style={styles.body}>
+      <View style={styles.body}>
           <Text style={styles.title}>{t("menus_new_modal_title")}</Text>
           <TextInput
             autoFocus
@@ -86,8 +75,7 @@ export function NewMenuSheet({ open, onClose, onCreate }: Props) {
               </Text>
             </Pressable>
           </View>
-        </View>
-      </KeyboardAvoidingView>
+      </View>
     </BottomSheet>
   );
 }

@@ -30,6 +30,7 @@ import {
 } from "react-native";
 import type { PezzaturaMode } from "@atelier/shared";
 import { useI18n } from "@/src/hooks/useI18n";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 type Props = {
@@ -69,6 +70,7 @@ export function PesoCalculoEditor({
   onChange,
 }: Props) {
   const { t } = useI18n();
+  const kb = useKeyboardHeight();
   const [modalOpen, setModalOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +150,7 @@ export function PesoCalculoEditor({
         onRequestClose={() => setModalOpen(false)}
       >
         <Pressable
-          style={styles.modalBackdrop}
+          style={[styles.modalBackdrop, { paddingBottom: kb }]}
           onPress={() => setModalOpen(false)}
         >
           <Pressable

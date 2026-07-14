@@ -9,12 +9,14 @@ import type { JoinRestaurantResponse } from "@atelier/shared";
 import { Button } from "@/src/components/Button";
 import { showToast } from "@/src/components/Toast";
 import { apiErrorMessage } from "@/src/lib/api-error";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 export default function JoinWithCodeScreen() {
   const { refreshMe, patchLocalUser } = useAuth();
   const { t } = useI18n();
   const router = useRouter();
+  const kb = useKeyboardHeight();
 
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,7 +54,7 @@ export default function JoinWithCodeScreen() {
 
   return (
     <SafeAreaView style={styles.root}>
-      <View style={styles.center}>
+      <View style={[styles.center, { paddingBottom: kb }]}>
         <Text style={styles.title}>{t("onboard_join_title")}</Text>
         <Text style={styles.sub}>{t("onboard_join_sub")}</Text>
 

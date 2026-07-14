@@ -1,9 +1,7 @@
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -24,6 +22,7 @@ import { useAuth } from "@/src/hooks/useAuth";
 import { useOfflineQueueSize, enqueueIdea, flushQueue } from "@/src/hooks/useOfflineQueue";
 import { listIdeas, createIdea, patchIdea, deleteIdea, type Idea } from "@/src/api/ideas";
 import { showToast } from "@/src/components/Toast";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 export default function InicioScreen() {
@@ -31,6 +30,7 @@ export default function InicioScreen() {
   const { state } = useAuth();
   const router = useRouter();
   const { refresh: refreshQueue } = useOfflineQueueSize();
+  const kb = useKeyboardHeight();
 
   const [text, setText] = useState("");
   const [ideas, setIdeas] = useState<Idea[]>([]);
@@ -149,14 +149,11 @@ export default function InicioScreen() {
   return (
     <Screen>
       <SectionExplainer text={t("section_explainer_inicio")} />
-      <KeyboardAvoidingView
+      <ScrollView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
       >
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-        >
           <Text style={styles.greet}>
             {t("inicio_greet", { name: userName })}{" "}
             <Text style={styles.greetEm}>{t("inicio_greet_em")}</Text>
@@ -225,18 +222,14 @@ export default function InicioScreen() {
               </View>
             )}
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </ScrollView>
       <Modal
         visible={!!editing}
         animationType="fade"
         transparent
         onRequestClose={() => setEditing(null)}
       >
-        <KeyboardAvoidingView
-          style={styles.modalBackdrop}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
+        <View style={[styles.modalBackdrop, { paddingBottom: kb }]}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{t("inicio_idea_edit_title")}</Text>
             <TextInput
@@ -271,7 +264,7 @@ export default function InicioScreen() {
               </Pressable>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
       <ConfirmSheet
         open={!!pendingDelete}

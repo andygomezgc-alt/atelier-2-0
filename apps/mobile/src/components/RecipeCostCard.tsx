@@ -29,6 +29,7 @@ import { useRouter } from "expo-router";
 import type { RecipeDetail } from "@atelier/shared";
 import { useI18n } from "@/src/hooks/useI18n";
 import { formatEuros } from "@/src/lib/money";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 type Props = {
@@ -53,6 +54,7 @@ function RecipeCostCardImpl({
 }: Props) {
   const { t } = useI18n();
   const router = useRouter();
+  const kb = useKeyboardHeight();
   const [editing, setEditing] = useState<"portions" | "salePrice" | null>(null);
   const [editValue, setEditValue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -221,7 +223,7 @@ function RecipeCostCardImpl({
         animationType="fade"
         onRequestClose={closeEdit}
       >
-        <Pressable style={styles.modalBackdrop} onPress={closeEdit}>
+        <Pressable style={[styles.modalBackdrop, { paddingBottom: kb }]} onPress={closeEdit}>
           <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.modalTitle}>
               {editing === "portions"

@@ -31,6 +31,7 @@ import { apiErrorMessage } from "@/src/lib/api-error";
 import { setRecipeDraft } from "@/src/lib/recipe-draft";
 import { showToast } from "@/src/components/Toast";
 import { can } from "@atelier/shared";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 const PDF_MIME = "application/pdf";
@@ -44,6 +45,7 @@ export default function CargarRecetaScreen() {
   const { t } = useI18n();
   const { state: authState } = useAuth();
   const router = useRouter();
+  const kb = useKeyboardHeight();
   const [processing, setProcessing] = useState(false);
   const [gdocUrl, setGdocUrl] = useState("");
 
@@ -169,7 +171,7 @@ export default function CargarRecetaScreen() {
 
   return (
     <Screen title={t("recetas_cargar_title")} back onBack={() => router.back()}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + kb }]}>
         <View style={styles.hero}>
           <Ionicons name="document-text-outline" size={56} color={colors.terracota} />
           <Text style={styles.title}>{t("recetas_cargar_title")}</Text>

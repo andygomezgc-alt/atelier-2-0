@@ -19,8 +19,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -62,6 +60,7 @@ import type {
   ProductListItem,
   RecipeIngredientInput,
 } from "@atelier/shared";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 // Cola de probables a confirmar. Procesamos uno a uno.
@@ -76,6 +75,7 @@ export default function NuevaRecetaScreen() {
   const { t } = useI18n();
   const { state: authState } = useAuth();
   const router = useRouter();
+  const kb = useKeyboardHeight();
 
   const [title, setTitle] = useState("");
   const [ingredients, setIngredients] = useState<IngredientValue[]>([
@@ -460,14 +460,11 @@ export default function NuevaRecetaScreen() {
 
   return (
     <Screen title={screenTitle} back onBack={() => router.back()}>
-      <KeyboardAvoidingView
+      <ScrollView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + kb }]}
+        keyboardShouldPersistTaps="handled"
       >
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-        >
           <View>
             <Eyebrow>{t("recetas_form_title_label")}</Eyebrow>
             <TextInput
@@ -628,8 +625,7 @@ export default function NuevaRecetaScreen() {
             onPress={handleSave}
             disabled={!title.trim() || saving}
           />
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </ScrollView>
 
       {currentMatch ? (
         <ConfirmMatchSheet

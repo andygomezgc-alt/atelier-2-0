@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  KeyboardAvoidingView,
   Pressable,
   StyleSheet,
   Text,
@@ -40,6 +39,7 @@ import { setRecipeDraft } from "@/src/lib/recipe-draft";
 import { MarkdownText } from "@/src/components/MarkdownText";
 import { TypingDots } from "@/src/components/TypingDots";
 import { SendButton } from "@/src/components/SendButton";
+import { KeyboardSpacer } from "@/src/components/KeyboardSpacer";
 import { selection, tapLight } from "@/src/lib/haptics";
 import type { TranslationKey } from "@atelier/i18n";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
@@ -228,12 +228,6 @@ export default function AsistenteScreen() {
   // Se incrementa al cambiar de idea/conversación; un runStream con generación
   // vieja no debe commitear su respuesta en el chat nuevo ni pisar su estado.
   const streamGenRef = useRef(0);
-
-  // Teclado edge-to-edge (SDK 53+): el KAV empuja el composer, pero necesita
-  // saber cuánto chrome tiene encima (safe-area + header + divider). El header
-  // de prod es de alto variable, así que lo medimos en vez de hardcodear.
-  const kbWrapRef = useRef<View>(null);
-  const [kbOffset, setKbOffset] = useState(0);
 
   // Dictado por voz: el texto reconocido se vuelca en el input en vivo.
   const { listening, start: startMic, stop: stopMic } = useSpeechInput({
@@ -631,20 +625,7 @@ export default function AsistenteScreen() {
       />
       <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} />
 
-      <View
-        ref={kbWrapRef}
-        style={{ flex: 1 }}
-        onLayout={() =>
-          kbWrapRef.current?.measureInWindow((_x, y) => {
-            if (y > 0) setKbOffset(y);
-          })
-        }
-      >
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior="padding"
-          keyboardVerticalOffset={kbOffset}
-        >
+      <View style={{ flex: 1 }}>
         {ideaText ? (
           <View style={styles.pinChip}>
             <Ionicons name="pricetag" size={12} color={colors.teal} style={styles.pinIcon} />
@@ -781,7 +762,8 @@ export default function AsistenteScreen() {
             onPress={handleSend}
           />
         </View>
-        </KeyboardAvoidingView>
+        {/* Empuja el composer por encima del teclado (Android edge-to-edge). */}
+        <KeyboardSpacer />
       </View>
     </SafeAreaView>
   );

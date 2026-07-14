@@ -8,8 +8,6 @@
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -29,6 +27,7 @@ import type {
   ProductUnit,
   CreateProductRequest,
 } from "@atelier/shared";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 const CATEGORIES: ReadonlyArray<ProductCategory> = [
@@ -67,6 +66,7 @@ function parseMermaPct(input: string): number | null {
 export default function NuevoProductoScreen() {
   const { t } = useI18n();
   const router = useRouter();
+  const kb = useKeyboardHeight();
 
   const [name, setName] = useState("");
   const [category, setCategory] = useState<ProductCategory>("otro");
@@ -140,14 +140,11 @@ export default function NuevoProductoScreen() {
 
   return (
     <Screen title={t("producto_form_title_nuevo")}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      <ScrollView
         style={{ flex: 1 }}
+        contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + kb }]}
+        keyboardShouldPersistTaps="handled"
       >
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-        >
           {/* Nombre */}
           <Text style={styles.label}>{t("producto_form_name_label")}</Text>
           <TextInput
@@ -294,8 +291,7 @@ export default function NuevoProductoScreen() {
               </>
             )}
           </Pressable>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </ScrollView>
     </Screen>
   );
 }

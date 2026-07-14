@@ -65,6 +65,7 @@ import { SectionPresetSheet } from "@/src/components/SectionPresetSheet";
 import { RecipeBankPickerSheet } from "@/src/components/RecipeBankPickerSheet";
 import { TOKEN_KEY } from "@/src/api/client";
 import { can, type MenuStyle } from "@atelier/shared";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 const API = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
@@ -326,6 +327,7 @@ export default function MenuDetailScreen() {
   const { t } = useI18n();
   const { state: authState } = useAuth();
   const router = useRouter();
+  const kb = useKeyboardHeight();
 
   const [menu, setMenu] = useState<MenuFull | null>(null);
   const [loading, setLoading] = useState(true);
@@ -767,7 +769,7 @@ export default function MenuDetailScreen() {
 
   return (
     <Screen back onBack={() => router.back()} right={headerRight}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: spacing.xl + kb }]}>
         {/* Header editorial del mockup */}
         <View style={styles.menuHeader}>
           <Text style={styles.menuEyebrow}>

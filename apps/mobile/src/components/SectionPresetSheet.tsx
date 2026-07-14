@@ -6,8 +6,6 @@
 
 import { useState } from "react";
 import {
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -57,10 +55,7 @@ export function SectionPresetSheet({ open, onClose, onPick }: Props) {
 
   return (
     <BottomSheet open={open} onClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <Text style={styles.title}>{t("section_add")}</Text>
+      <Text style={styles.title}>{t("section_add")}</Text>
         <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
           <View style={styles.grid}>
             {PRESETS.map((name) => (
@@ -94,7 +89,6 @@ export function SectionPresetSheet({ open, onClose, onPick }: Props) {
             </Pressable>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
     </BottomSheet>
   );
 }
