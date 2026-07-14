@@ -7,7 +7,8 @@
 // Sin --apply: DRY-RUN — imprime qué haría y no escribe nada.
 // Con --apply: en una transacción: re-enlaza RecipeIngredient.productId,
 // agrega nombre+aliases de los duplicados como aliases del canónico y
-// archiva los duplicados (estado=archivado; NO se borran).
+// manda los duplicados a la papelera (deletedAt=now; soft-delete,
+// reversible desde la app — modelo nuevo: solo eliminar, no archivar).
 // Con --rename: además renombra el canónico y guarda su nombre viejo como
 // alias (para no perderlo del matching).
 //
@@ -107,7 +108,7 @@ await prisma.$transaction(async (tx) => {
     });
     await tx.product.update({
       where: { id: d.id },
-      data: { estado: "archivado" },
+      data: { deletedAt: new Date() },
     });
   }
   await tx.product.update({
