@@ -19,6 +19,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   LayoutAnimation,
   Platform,
   Pressable,
@@ -36,6 +37,7 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as FileSystem from "expo-file-system/legacy";
+import * as ImagePicker from "expo-image-picker";
 import * as Sharing from "expo-sharing";
 import * as SecureStore from "@/src/lib/secure-storage";
 import { Screen } from "@/src/components/Screen";
@@ -55,6 +57,7 @@ import {
   createSection,
   patchSection,
   deleteSection,
+  uploadMenuStyleImage,
   type MenuFull,
 } from "@/src/api/menus";
 import { showToast } from "@/src/components/Toast";
@@ -70,10 +73,14 @@ import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 const API = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 
-const STYLES: ReadonlyArray<{ id: MenuStyle; labelKey: "style_elegant" | "style_rustic" | "style_minimal" }> = [
+const STYLES: ReadonlyArray<{
+  id: MenuStyle;
+  labelKey: "style_elegant" | "style_rustic" | "style_minimal" | "style_custom";
+}> = [
   { id: "elegant", labelKey: "style_elegant" },
   { id: "rustic", labelKey: "style_rustic" },
   { id: "minimal", labelKey: "style_minimal" },
+  { id: "custom", labelKey: "style_custom" },
 ];
 
 function formatPrice(cents: number): string {
@@ -341,6 +348,8 @@ export default function MenuDetailScreen() {
   const [bankPickerForSection, setBankPickerForSection] = useState<string | null>(null);
   const [bankPickerForUnsectioned, setBankPickerForUnsectioned] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // "Tu estilo" — spinner mientras se sube la foto de la carta real.
+  const [styleUploading, setStyleUploading] = useState(false);
 
   const role =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -403,6 +412,74 @@ export default function MenuDetailScreen() {
       }
     },
     [id, t, reload],
+  );
+
+  // "Tu estilo" — sube la foto ya elegida/tomada. `activateStyle` solo aplica
+  // en la primera captura (todavía no hay hasCustomStyle): en la re-captura
+  // el menú ya está en "custom", así que solo hace falta refrescar + avisar.
+  const handleStyleCaptureUri = useCallback(
+    async (uri: string, activateStyle: boolean) => {
+      setStyleUploading(true);
+      try {
+        await uploadMenuStyleImage(uri, "image/jpeg");
+        if (activateStyle) await handleStyleChange("custom");
+        await reload({ silent: true });
+        showToast(t("toast_menu_style_created"));
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : t("error_network"));
+      } finally {
+        setStyleUploading(false);
+      }
+    },
+    [handleStyleChange, reload, t],
+  );
+
+  const handleCaptureStylePhoto = useCallback(
+    async (activateStyle: boolean) => {
+      if (styleUploading) return;
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        showToast(t("cargar_permiso_camara"));
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.6 });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset) return;
+      await handleStyleCaptureUri(asset.uri, activateStyle);
+    },
+    [styleUploading, t, handleStyleCaptureUri],
+  );
+
+  const handlePickStyleFromGallery = useCallback(
+    async (activateStyle: boolean) => {
+      if (styleUploading) return;
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        showToast(t("cargar_permiso_galeria"));
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.6 });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset) return;
+      await handleStyleCaptureUri(asset.uri, activateStyle);
+    },
+    [styleUploading, t, handleStyleCaptureUri],
+  );
+
+  // Punto de entrada del flujo: ofrece cámara/galería y, antes de abrir el
+  // picker, muestra el hint de qué hace la IA con la foto.
+  const handleStartStyleCapture = useCallback(
+    (activateStyle: boolean) => {
+      if (styleUploading) return;
+      Alert.alert(t("style_custom"), t("menu_style_hint"), [
+        { text: t("cargar_foto"), onPress: () => void handleCaptureStylePhoto(activateStyle) },
+        { text: t("cargar_galeria"), onPress: () => void handlePickStyleFromGallery(activateStyle) },
+        { text: t("confirm_cancel"), style: "cancel" },
+      ]);
+    },
+    [styleUploading, t, handleCaptureStylePhoto, handlePickStyleFromGallery],
   );
 
   // Bloque 5 (segunda tanda) — toggle "en servicio". Optimistic update +
@@ -785,26 +862,39 @@ export default function MenuDetailScreen() {
         <View style={styles.menuHeaderDivider} />
 
         <View style={styles.styleRow}>
-          {STYLES.map((s) => (
-            <Pressable
-              key={s.id}
-              style={[
-                styles.styleChip,
-                menu.presentationStyle === s.id && styles.styleChipActive,
-              ]}
-              onPress={() => canEdit && void handleStyleChange(s.id)}
-              disabled={!canEdit || menu.presentationStyle === s.id}
-            >
-              <Text
-                style={[
-                  styles.styleLabel,
-                  menu.presentationStyle === s.id && styles.styleLabelActive,
-                ]}
+          {STYLES.map((s) => {
+            const isCustom = s.id === "custom";
+            const active = menu.presentationStyle === s.id;
+            return (
+              <Pressable
+                key={s.id}
+                style={[styles.styleChip, active && styles.styleChipActive]}
+                onPress={() => {
+                  if (!canEdit) return;
+                  if (isCustom && !menu.hasCustomStyle) {
+                    handleStartStyleCapture(true);
+                    return;
+                  }
+                  void handleStyleChange(s.id);
+                }}
+                disabled={!canEdit || active || (isCustom && styleUploading)}
               >
-                {t(s.labelKey)}
-              </Text>
+                <Text style={[styles.styleLabel, active && styles.styleLabelActive]}>
+                  {t(s.labelKey)}
+                </Text>
+              </Pressable>
+            );
+          })}
+          {canEdit && menu.presentationStyle === "custom" ? (
+            <Pressable
+              style={styles.styleRecaptureBtn}
+              onPress={() => handleStartStyleCapture(false)}
+              disabled={styleUploading}
+              accessibilityLabel={t("style_custom_recapture")}
+            >
+              <Ionicons name="camera-outline" size={14} color={colors.terracota} />
             </Pressable>
-          ))}
+          ) : null}
         </View>
 
         {noContent ? (
@@ -1096,6 +1186,17 @@ const styles = StyleSheet.create({
   styleChipActive: { backgroundColor: colors.terracota, borderColor: colors.terracota },
   styleLabel: { fontFamily: fonts.sans, fontSize: fontSizes.bodySm, color: colors.inkSoft },
   styleLabelActive: { color: colors.paper, fontWeight: "600" },
+  // "Tu estilo" — mini botón de re-captura, mismo alto visual que los chips.
+  styleRecaptureBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radii.pill,
+    borderWidth: 0.5,
+    borderColor: colors.edge,
+    backgroundColor: colors.paperSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   dishCard: {
     backgroundColor: colors.paperSoft,
     borderRadius: radii.md,

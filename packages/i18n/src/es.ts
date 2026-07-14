@@ -111,6 +111,7 @@ export const es = {
   style_elegant: "Elegante",
   style_rustic: "Rústica",
   style_minimal: "Minimal",
+  style_custom: "Tu estilo",
   btn_export_pdf: "Exportar carta PDF",
   chat_idea_anclada: "Idea anclada",
   chat_placeholder: "Pregúntale al asistente…",
@@ -549,6 +550,10 @@ export const es = {
   menu_in_service_on: "EN SERVICIO",
   menu_in_service_off: "Fuera de servicio",
   menu_in_service_toggle_a11y: "Activar o desactivar servicio del menú",
+  // "Tu estilo" — captura de la carta real para extraer el estilo de la casa.
+  menu_style_hint: "Inspirado en tu carta: colores, letra y disposición.",
+  style_custom_recapture: "Actualizar tu estilo con otra foto",
+  toast_menu_style_created: "Estilo de la casa creado a partir de tu carta",
 
   // ─── A-11 · Errores de API localizados (lookup por code) ───
   error_email_invalid: "Email inválido.",

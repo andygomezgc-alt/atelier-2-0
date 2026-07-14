@@ -1,5 +1,7 @@
-import { apiFetch } from "./client";
+import { apiFetch, ApiError, NetworkError, TOKEN_KEY } from "./client";
 import { cached, invalidate, setCached } from "./cache";
+import * as FileSystem from "expo-file-system/legacy";
+import * as SecureStore from "@/src/lib/secure-storage";
 import type {
   MenuListItem,
   MenuDetail,
@@ -138,3 +140,36 @@ export const patchClientOverrides = async (
   });
   return bumpMenuCache(result);
 };
+
+// "Tu estilo" — sube una foto de la carta real; el server (visión) extrae
+// los tokens de estilo y los persiste en Restaurant.menuStyleSpec (estilo DE
+// LA CASA, no por menú). Mismo patrón de uploadAsync multipart que
+// uploadRecipeFile: fetch+FormData no sale del teléfono en builds standalone.
+export async function uploadMenuStyleImage(uri: string, mimeType: string): Promise<void> {
+  const base = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+  const token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
+
+  let res: FileSystem.FileSystemUploadResult;
+  try {
+    res = await FileSystem.uploadAsync(`${base}/api/restaurant/menu-style/from-image`, uri, {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  } catch {
+    throw new NetworkError();
+  }
+
+  if (res.status < 200 || res.status >= 300) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const json = JSON.parse(res.body);
+      message = json?.error ?? message;
+    } catch {}
+    throw new ApiError(res.status, message);
+  }
+
+  invalidate("menus:");
+}

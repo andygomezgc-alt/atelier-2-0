@@ -111,6 +111,7 @@ export const it: EsDict = {
   style_elegant: "Elegante",
   style_rustic: "Rustico",
   style_minimal: "Minimal",
+  style_custom: "Il tuo stile",
   btn_export_pdf: "Esporta carta PDF",
   chat_idea_anclada: "Idea ancorata",
   chat_placeholder: "Chiedi all'assistente…",
@@ -538,6 +539,10 @@ export const it: EsDict = {
   menu_in_service_on: "IN SERVIZIO",
   menu_in_service_off: "Fuori servizio",
   menu_in_service_toggle_a11y: "Attiva o disattiva il servizio del menù",
+  // "Il tuo stile" — cattura della carta reale per estrarre lo stile della casa.
+  menu_style_hint: "Ispirato alla tua carta: colori, carattere e disposizione.",
+  style_custom_recapture: "Aggiorna il tuo stile con un'altra foto",
+  toast_menu_style_created: "Stile della casa creato dalla tua carta",
 
   // ─── A-11 · Errori API localizzati (lookup per code) ───
   error_email_invalid: "Email non valida.",
