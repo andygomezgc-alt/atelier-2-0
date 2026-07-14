@@ -17,9 +17,11 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 import {
   extractRecipeFromFile,
+  extractRecipeFromImage,
   fileMatchesMime,
   PDF_MIME,
   DOCX_MIME,
+  IMAGE_MIMES,
   type ExtractorBYOK,
 } from "@/lib/recipe-extraction";
 import { loadUserBYOK } from "@/lib/byok-user";
@@ -31,7 +33,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const MAX_BYTES = 10 * 1024 * 1024; // 10MB
-const ALLOWED_MIMES = [PDF_MIME, DOCX_MIME];
+const ALLOWED_MIMES = [PDF_MIME, DOCX_MIME, ...IMAGE_MIMES];
 
 export async function POST(req: NextRequest) {
   const ctx = await requireAuth(req, "edit_recipe");
@@ -55,9 +57,14 @@ export async function POST(req: NextRequest) {
       { status: 415 },
     );
 
-  if (file.size > MAX_BYTES)
+  const isImage = (IMAGE_MIMES as readonly string[]).includes(mime);
+
+  // Las fotos pesan más por píxel de contenido útil: tope más bajo (6 MB) para
+  // que el base64 + la request al modelo de visión no se disparen.
+  const max = isImage ? 6 * 1024 * 1024 : MAX_BYTES;
+  if (file.size > max)
     return NextResponse.json(
-      { error: "Archivo demasiado grande", max: MAX_BYTES, code: "file_invalid" },
+      { error: "Archivo demasiado grande", max, code: "file_invalid" },
       { status: 413 },
     );
 
@@ -76,7 +83,10 @@ export async function POST(req: NextRequest) {
   const byok: ExtractorBYOK = await loadUserBYOK(ctx.userId);
 
   // Con clave del server aplica el tope diario; con BYOK (clave del chef) no.
-  if (!byok) {
+  // Las imágenes SIEMPRE van por el server (extractRecipeFromImage no usa BYOK),
+  // así que cuentan contra la cuota aunque el chef tenga clave propia.
+  const mustReserve = isImage || !byok;
+  if (mustReserve) {
     const quota = await reserveAiCall(ctx.userId);
     if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
   }
@@ -88,7 +98,9 @@ export async function POST(req: NextRequest) {
     // tener las candidatas listas y matchear sin un round-trip extra al
     // terminar el LLM.
     const [extracted, productList] = await Promise.all([
-      extractRecipeFromFile(buffer, mime, byok),
+      isImage
+        ? extractRecipeFromImage(buffer, mime)
+        : extractRecipeFromFile(buffer, mime, byok),
       ctx.restaurantId
         ? prisma.product.findMany({
             where: {

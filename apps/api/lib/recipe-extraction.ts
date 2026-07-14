@@ -21,6 +21,7 @@ import { z } from "zod";
 export const PDF_MIME = "application/pdf";
 export const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+export const IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 // Valida que el CONTENIDO real coincida con el MIME declarado. El cliente puede
 // mentir en el header/extensión; acá miramos los primeros bytes (magic number).
@@ -37,6 +38,38 @@ export function fileMatchesMime(buffer: Uint8Array, mime: string): boolean {
       buffer[0] === 0x50 &&
       buffer[1] === 0x4b &&
       (buffer[2] === 0x03 || buffer[2] === 0x05 || buffer[2] === 0x07)
+    );
+  }
+  // JPEG: SOI marker FF D8 FF.
+  if (mime === "image/jpeg") {
+    return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+  // PNG: 8-byte signature 89 50 4E 47 0D 0A 1A 0A.
+  if (mime === "image/png") {
+    if (buffer.length < 8) return false;
+    return (
+      buffer[0] === 0x89 &&
+      buffer[1] === 0x50 &&
+      buffer[2] === 0x4e &&
+      buffer[3] === 0x47 &&
+      buffer[4] === 0x0d &&
+      buffer[5] === 0x0a &&
+      buffer[6] === 0x1a &&
+      buffer[7] === 0x0a
+    );
+  }
+  // WEBP: contenedor RIFF — bytes 0-3 "RIFF" y bytes 8-11 "WEBP".
+  if (mime === "image/webp") {
+    if (buffer.length < 12) return false;
+    return (
+      buffer[0] === 0x52 &&
+      buffer[1] === 0x49 &&
+      buffer[2] === 0x46 &&
+      buffer[3] === 0x46 &&
+      buffer[8] === 0x57 &&
+      buffer[9] === 0x45 &&
+      buffer[10] === 0x42 &&
+      buffer[11] === 0x50
     );
   }
   return false;
@@ -160,6 +193,64 @@ export async function extractRecipeFromText(
     tools: [EMIT_RECIPE_TOOL as unknown as Anthropic.Tool],
     tool_choice: { type: "tool", name: "emit_recipe" },
     messages: [{ role: "user", content: truncated }],
+  });
+
+  const block = msg.content.find((b) => b.type === "tool_use");
+  if (!block || block.type !== "tool_use")
+    throw new Error("El modelo no devolvió el bloque estructurado");
+
+  const parsed = ExtractedRecipeSchema.safeParse(block.input);
+  if (!parsed.success)
+    throw new Error(
+      `Receta estructurada inválida: ${parsed.error.issues
+        .map((i) => i.message)
+        .join(", ")}`,
+    );
+  return parsed.data;
+}
+
+// --- Extracción desde IMAGEN (foto de receta, cámara o galería). ---
+// SIEMPRE server-only (clave Anthropic del server + Haiku visión, tool use
+// forzado). NO usa BYOK: los proveedores OpenAI/Google del chef no portan el
+// formato de imagen fácilmente (media_type/base64 distinto por SDK) y, como en
+// A-01, la extracción es infraestructura de la app, no el servicio personal del
+// chef. No pasa por fileToText: el modelo de visión lee la foto directamente.
+export async function extractRecipeFromImage(
+  buffer: Uint8Array,
+  mimeType: string,
+): Promise<ExtractedRecipe> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey)
+    throw new Error("ANTHROPIC_API_KEY no configurada en el servidor");
+
+  const base64 = Buffer.from(buffer).toString("base64");
+
+  const client = new Anthropic({ apiKey });
+  const msg = await client.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 4096,
+    system: EXTRACT_TEXT_SYSTEM,
+    tools: [EMIT_RECIPE_TOOL as unknown as Anthropic.Tool],
+    tool_choice: { type: "tool", name: "emit_recipe" },
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: mimeType as "image/jpeg" | "image/png" | "image/webp",
+              data: base64,
+            },
+          },
+          {
+            type: "text",
+            text: "Extraé la receta de esta foto. Si la imagen no contiene una receta legible, devolvé el título 'Sin receta' y arrays vacíos.",
+          },
+        ],
+      },
+    ],
   });
 
   const block = msg.content.find((b) => b.type === "tool_use");
