@@ -20,6 +20,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Button } from "@/src/components/Button";
@@ -52,6 +53,32 @@ export default function CargarRecetaScreen() {
       : "viewer";
   const canEdit = can(role, "edit_recipe");
 
+  // Flujo común de extracción: sube el archivo/foto, guarda el draft y navega.
+  // Lo comparten el picker de PDF/DOCX y los dos pickers de imagen.
+  async function handleFromUri(uri: string, mime: string) {
+    setProcessing(true);
+    try {
+      const extracted = await uploadRecipeFile(uri, mime);
+      // Pasamos a nueva.tsx: contentJson (legacy compat), recipeIngredients
+      // (estructurado, productIds pre-set para exact matches), y
+      // pendingMatches (probables que el chef confirma al abrir el form).
+      setRecipeDraft({
+        title: extracted.title,
+        contentJson: extracted.contentJson,
+        recipeIngredients: extracted.recipeIngredients,
+        pendingMatches: extracted.pendingMatches,
+      });
+      showToast(t("toast_recipe_uploaded"));
+      router.replace("/recetas/nueva");
+    } catch (err) {
+      // NetworkError lleva codes internos ("network_unreachable") que no son
+      // para humanos — apiErrorMessage los traduce.
+      showToast(apiErrorMessage(err, t));
+    } finally {
+      setProcessing(false);
+    }
+  }
+
   async function pickAndUpload() {
     if (processing) return;
     const result = await DocumentPicker.getDocumentAsync({
@@ -71,27 +98,41 @@ export default function CargarRecetaScreen() {
           ? DOCX_MIME
           : "application/octet-stream");
 
-    setProcessing(true);
-    try {
-      const extracted = await uploadRecipeFile(asset.uri, inferredMime);
-      // Pasamos a nueva.tsx: contentJson (legacy compat), recipeIngredients
-      // (estructurado, productIds pre-set para exact matches), y
-      // pendingMatches (probables que el chef confirma al abrir el form).
-      setRecipeDraft({
-        title: extracted.title,
-        contentJson: extracted.contentJson,
-        recipeIngredients: extracted.recipeIngredients,
-        pendingMatches: extracted.pendingMatches,
-      });
-      showToast(t("toast_recipe_uploaded"));
-      router.replace("/recetas/nueva");
-    } catch (err) {
-      // NetworkError lleva codes internos ("network_unreachable") que no son
-      // para humanos — apiErrorMessage los traduce.
-      showToast(apiErrorMessage(err, t));
-    } finally {
-      setProcessing(false);
+    await handleFromUri(asset.uri, inferredMime);
+  }
+
+  async function takePhoto() {
+    if (processing) return;
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      showToast(t("cargar_permiso_camara"));
+      return;
     }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ["images"],
+      quality: 0.6,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (!asset) return;
+    await handleFromUri(asset.uri, "image/jpeg");
+  }
+
+  async function pickFromGallery() {
+    if (processing) return;
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      showToast(t("cargar_permiso_galeria"));
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.6,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (!asset) return;
+    await handleFromUri(asset.uri, "image/jpeg");
   }
 
   async function importFromGDoc() {
@@ -147,6 +188,22 @@ export default function CargarRecetaScreen() {
               iconLeft="cloud-upload-outline"
               onPress={pickAndUpload}
             />
+
+            <View style={styles.photoCard}>
+              <Text style={styles.photoHint}>{t("cargar_foto_hint")}</Text>
+              <Button
+                label={t("cargar_foto")}
+                iconLeft="camera-outline"
+                variant="secondary"
+                onPress={takePhoto}
+              />
+              <Button
+                label={t("cargar_galeria")}
+                iconLeft="images-outline"
+                variant="secondary"
+                onPress={pickFromGallery}
+              />
+            </View>
 
             <View style={styles.gdocCard}>
               <Text style={styles.gdocHint}>{t("recetas_cargar_gdoc_hint")}</Text>
@@ -217,6 +274,20 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: fontSizes.bodySm,
     color: colors.inkSoft,
+  },
+  photoCard: {
+    backgroundColor: colors.paperSoft,
+    borderRadius: radii.md,
+    borderWidth: 0.5,
+    borderColor: colors.edge,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  photoHint: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.mute,
+    lineHeight: 18,
   },
   gdocCard: {
     backgroundColor: colors.paperSoft,
