@@ -52,8 +52,7 @@ type FilterId =
   | "verdura"
   | "seco"
   | "sin_precio"
-  | "pezzatura_pendiente"
-  | "archivados";
+  | "pezzatura_pendiente";
 
 const FILTERS: ReadonlyArray<{
   id: FilterId;
@@ -64,8 +63,7 @@ const FILTERS: ReadonlyArray<{
     | "category_verdura"
     | "category_seco"
     | "filter_productos_pendientes_precio"
-    | "filter_productos_pezzatura_pendiente"
-    | "filter_productos_archivados";
+    | "filter_productos_pezzatura_pendiente";
 }> = [
   { id: "all", labelKey: "filter_productos_all" },
   { id: "pescado", labelKey: "category_pescado" },
@@ -74,7 +72,6 @@ const FILTERS: ReadonlyArray<{
   { id: "seco", labelKey: "category_seco" },
   { id: "sin_precio", labelKey: "filter_productos_pendientes_precio" },
   { id: "pezzatura_pendiente", labelKey: "filter_productos_pezzatura_pendiente" },
-  { id: "archivados", labelKey: "filter_productos_archivados" },
 ];
 
 function buildFilters(filter: FilterId, q: string): ListProductFilters {
@@ -96,10 +93,6 @@ function buildFilters(filter: FilterId, q: string): ListProductFilters {
       // Entrega A.5 Fase 8 — productos sin pezzatura cargada que SÍ se
       // usan por unidad en alguna receta. Sesión de mantenimiento.
       return { ...base, pezzaturaPendiente: true };
-    case "archivados":
-      // Único caso donde queremos VER archivados; el server los devuelve
-      // gracias al filtro explícito estado=archivado.
-      return { ...base, estado: "archivado" };
   }
 }
 
@@ -189,15 +182,10 @@ export default function ProductosScreen() {
     setLoading(true);
     try {
       let list = await listProducts(buildFilters(filter, q));
-      // Reglas: el chip "Archivados" muestra SOLO archivados (filter ya
-      // viene desde el server). Cualquier otro chip muestra activos +
-      // borradores excluyendo archivados — el server no filtra estado
-      // automáticamente, así que descartamos client-side. Antes (bug Andy
-      // 2026-05-15) solo se aplicaba para "all"; ahora aplica para todos
-      // los filtros no-archivo.
-      if (filter !== "archivados") {
-        list = list.filter((p) => p.estado !== "archivado");
-      }
+      // El chip "Archivados" ya no existe (Andy 2026-07-14 — el modelo nuevo
+      // es solo eliminar/papelera). Los archivados legacy que queden se
+      // descartan client-side; el server no filtra estado automáticamente.
+      list = list.filter((p) => p.estado !== "archivado");
       setItems(list);
     } catch {
       // keep current items on error

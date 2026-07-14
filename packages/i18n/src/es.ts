@@ -288,6 +288,8 @@ export const es = {
   papelera_menus_empty_sub: "Los menús que borres aparecen acá para recuperarlos.",
   toast_product_duplicated: "Producto duplicado como borrador",
   toast_product_restored: "Producto restaurado",
+  btn_eliminar: "Eliminar",
+  toast_product_deleted: "Producto movido a la papelera",
   papelera_productos_empty_sub: "Los productos que borres aparecen acá para recuperarlos.",
   recipe_editar_title: "Modificar receta",
   recipe_editar_locked: "Solo el admin puede modificar recetas aprobadas",
@@ -427,7 +429,7 @@ export const es = {
   archived_banner_label: "Archivado",
   confirm_delete_producto_in_use_title: "Producto en uso",
   confirm_delete_producto_in_use_body:
-    "Este producto aparece en {count} recetas. ¿Querés archivarlo igual?",
+    "Este producto aparece en {count} recetas. ¿Querés eliminarlo (a la papelera) igual?",
 
   toast_producto_saved: "Producto guardado",
   toast_producto_archived: "Producto archivado",

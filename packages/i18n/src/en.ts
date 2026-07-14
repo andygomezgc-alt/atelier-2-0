@@ -278,6 +278,8 @@ export const en: EsDict = {
   papelera_menus_empty_sub: "Menus you delete show up here so you can recover them.",
   toast_product_duplicated: "Product duplicated as a draft",
   toast_product_restored: "Product restored",
+  btn_eliminar: "Delete",
+  toast_product_deleted: "Product moved to trash",
   papelera_productos_empty_sub: "Products you delete show up here so you can recover them.",
   recipe_editar_title: "Edit recipe",
   recipe_editar_locked: "Only admin can modify approved recipes",
@@ -417,7 +419,7 @@ export const en: EsDict = {
   archived_banner_label: "Archived",
   confirm_delete_producto_in_use_title: "Product in use",
   confirm_delete_producto_in_use_body:
-    "This product appears in {count} recipes. Archive anyway?",
+    "This product appears in {count} recipes. Delete it to the trash anyway?",
 
   toast_producto_saved: "Product saved",
   toast_producto_archived: "Product archived",

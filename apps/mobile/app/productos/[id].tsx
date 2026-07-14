@@ -15,7 +15,7 @@
 //                    - aliases (read-only)
 //                    - registrar prueba (YieldTestForm uniforme)
 //                    - histórico de precios (lista inline)
-//                    - archivar/reactivar
+//                    - eliminar (papelera)
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -45,6 +45,7 @@ import {
   getProductHistory,
   patchProduct,
   duplicateProduct,
+  deleteProduct,
   type ProductFull,
   type ProductHistoryResponse,
 } from "@/src/api/products";
@@ -95,8 +96,11 @@ export default function ProductoDetailScreen() {
   const [product, setProduct] = useState<ProductFull | null>(null);
   const [history, setHistory] = useState<ProductHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [archivePending, setArchivePending] = useState(false);
-  const [unarchivePending, setUnarchivePending] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  // Cuando el DELETE sin force vuelve 409 "product_in_use", guardamos acá
+  // la cantidad de recetas para mostrar el ConfirmSheet con el conteo.
+  // null = sheet cerrado.
+  const [deleteInUseCount, setDeleteInUseCount] = useState<number | null>(null);
   const [showMore, setShowMore] = useState(false);
   const [showYieldForm, setShowYieldForm] = useState(false);
   const [showPriceHistory, setShowPriceHistory] = useState(false);
@@ -319,15 +323,37 @@ export default function ProductoDetailScreen() {
     }
   }
 
-  async function handleArchiveToggle() {
-    if (!product) return;
-    const next = product.estado === "archivado" ? "activo" : "archivado";
+  // Eliminar (papelera) — reemplaza el viejo archivar/reactivar (Andy
+  // 2026-07-14). Primer intento sin force: si el producto está en uso el
+  // server responde 409 con la lista de recetas y acá mostramos el
+  // ConfirmSheet con el conteo antes de forzar el borrado.
+  async function handleDelete() {
+    if (!product || deleting) return;
+    setDeleting(true);
     try {
-      const updated = await patchProduct(product.id, { estado: next });
-      setProduct(updated);
-      showToast(
-        next === "archivado" ? t("toast_producto_archived") : t("toast_producto_unarchived"),
-      );
+      const result = await deleteProduct(product.id);
+      if (result.ok) {
+        showToast(t("toast_product_deleted"));
+        router.back();
+        return;
+      }
+      setDeleteInUseCount(result.recipes.length);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleDeleteForce() {
+    if (!product) return;
+    setDeleteInUseCount(null);
+    try {
+      const result = await deleteProduct(product.id, true);
+      if (result.ok) {
+        showToast(t("toast_product_deleted"));
+        router.back();
+      }
     } catch (err) {
       showToast(err instanceof Error ? err.message : t("error_network"));
     }
@@ -356,9 +382,9 @@ export default function ProductoDetailScreen() {
   const noPrice = product.precioCompra === 0;
   const isArchived = product.estado === "archivado";
   // canEditFields combina permiso del rol + estado del producto: si está
-  // archivado nadie edita inline (Andy 2026-05-15). Para volver a editar
-  // hay que desarchivar primero. La única acción que sigue activa en
-  // archivado es "Desarchivar" (vive en el acordeón).
+  // archivado (legacy — ya no hay forma de archivar desde la UI, solo
+  // sobrevive en datos viejos) nadie edita inline. La única acción
+  // disponible ahí es "Eliminar" (papelera), en el acordeón.
   const canEditFields = canEdit && !isArchived;
   const daysSincePrice = Math.floor(
     (Date.now() - new Date(product.precioActualizadoAt).getTime()) / (1000 * 60 * 60 * 24),
@@ -607,24 +633,18 @@ export default function ProductoDetailScreen() {
               </Pressable>
             ) : null}
 
-            {/* Archivar / Reactivar — ambas pasan por ConfirmSheet ahora.
-                Antes el unarchive era directo sin confirmación. */}
+            {/* Eliminar — manda a la papelera (soft-delete). Primer intento
+                sin force; si el server dice que está en uso, el ConfirmSheet
+                de abajo pide confirmación antes de forzar. */}
             {canEdit ? (
               <Pressable
                 style={styles.moreAction}
-                onPress={() =>
-                  isArchived
-                    ? setUnarchivePending(true)
-                    : setArchivePending(true)
-                }
+                onPress={handleDelete}
+                disabled={deleting}
               >
-                <Ionicons
-                  name={isArchived ? "archive" : "archive-outline"}
-                  size={14}
-                  color={colors.inkSoft}
-                />
-                <Text style={styles.moreActionLabel}>
-                  {isArchived ? t("btn_desarchivar") : t("btn_archivar")}
+                <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                <Text style={[styles.moreActionLabel, styles.moreActionDanger]}>
+                  {t("btn_eliminar")}
                 </Text>
               </Pressable>
             ) : null}
@@ -632,40 +652,20 @@ export default function ProductoDetailScreen() {
         ) : null}
       </ScrollView>
 
-      {/* ConfirmSheet de archivar — usa el conteo si > 0 para advertir
-          al chef sobre el impacto en recetas que ya usan el producto. */}
+      {/* ConfirmSheet de eliminar en uso — aparece solo cuando el primer
+          intento (sin force) volvió 409 product_in_use. Confirmar reintenta
+          con force=true. */}
       <ConfirmSheet
-        open={archivePending}
-        title={t("confirm_archive_producto_title")}
-        body={
-          product.recipesUsingCount > 0
-            ? t("confirm_archive_producto_body_with_count", {
-                count: product.recipesUsingCount,
-              })
-            : t("confirm_archive_producto_body")
-        }
-        confirmLabel={t("btn_archivar")}
+        open={deleteInUseCount !== null}
+        title={t("confirm_delete_producto_in_use_title")}
+        body={t("confirm_delete_producto_in_use_body", {
+          count: deleteInUseCount ?? 0,
+        })}
+        confirmLabel={t("btn_eliminar")}
         cancelLabel={t("confirm_cancel")}
         destructive
-        onConfirm={() => {
-          setArchivePending(false);
-          void handleArchiveToggle();
-        }}
-        onCancel={() => setArchivePending(false)}
-      />
-
-      {/* ConfirmSheet de desarchivar — texto distinto y no destructivo. */}
-      <ConfirmSheet
-        open={unarchivePending}
-        title={t("confirm_unarchive_producto_title")}
-        body={t("confirm_unarchive_producto_body")}
-        confirmLabel={t("btn_desarchivar")}
-        cancelLabel={t("confirm_cancel")}
-        onConfirm={() => {
-          setUnarchivePending(false);
-          void handleArchiveToggle();
-        }}
-        onCancel={() => setUnarchivePending(false)}
+        onConfirm={() => void handleDeleteForce()}
+        onCancel={() => setDeleteInUseCount(null)}
       />
 
       {/* Sheets de categoría y unidad (sub-paso 2b). Solo se abren cuando
@@ -896,6 +896,7 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.bodySm,
     color: colors.inkSoft,
   },
+  moreActionDanger: { color: colors.danger },
 
   yieldWrapper: { marginTop: -spacing.xs },
   historyWrapper: { paddingLeft: spacing.lg, gap: spacing.xs, marginTop: -spacing.xs },
