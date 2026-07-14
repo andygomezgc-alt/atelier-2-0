@@ -25,6 +25,9 @@ enum MenuStyle {
   elegant
   rustic
   minimal
+  // "Tu estilo" — 4ª plantilla extraída por IA de la foto de la carta real.
+  // Los tokens viven en Restaurant.menuStyleSpec (estilo DE LA CASA).
+  custom
 }
 
 enum IdeaStatus {
@@ -137,6 +140,14 @@ model Restaurant {
   inviteCode      String   @unique
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  // ─────────── "Tu estilo" (plantilla custom del PDF de menús) ───────────
+  // Tokens de estilo extraídos por IA de una foto de la carta real (shape
+  // MenuStyleSpecSchema en @atelier/shared). Es DE LA CASA: un solo estilo
+  // por restaurante, cualquier menú con presentationStyle=custom lo usa.
+  menuStyleSpec   Json?
+  // Foto de referencia subida a Blob (best-effort; puede quedar null).
+  menuStyleRefUrl String?
 
   // ─────────── Suscripción (Stripe) ───────────
   plan                 PlanTier   @default(pilot)

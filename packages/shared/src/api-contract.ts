@@ -5,7 +5,27 @@ import { AllergenSchema } from "./allergens";
 
 export const RoleSchema = z.enum(["admin", "chef_executive", "sous_chef", "viewer"]);
 export const RecipeStateSchema = z.enum(["draft", "in_test", "approved"]);
-export const MenuStyleSchema = z.enum(["elegant", "rustic", "minimal"]);
+export const MenuStyleSchema = z.enum(["elegant", "rustic", "minimal", "custom"]);
+
+// "Tu estilo" — tokens de estilo DE LA CASA extraídos por IA de una foto de
+// la carta real (viven en Restaurant.menuStyleSpec). El theme builder del PDF
+// (apps/api/lib/pdf/templates.ts) los convierte en CSS; el modelo NUNCA emite
+// HTML/CSS, solo estos tokens acotados.
+const HEX = /^#[0-9a-f]{6}$/i;
+export const MenuStyleSpecSchema = z.object({
+  fontCategory: z.enum(["serif", "sans"]),
+  bgColor: z.string().regex(HEX),
+  inkColor: z.string().regex(HEX),
+  accentColor: z.string().regex(HEX),
+  headingColor: z.string().regex(HEX),
+  frame: z.enum(["none", "single", "double"]),
+  titleAlign: z.enum(["center", "left"]),
+  titleItalic: z.boolean(),
+  titleSizePt: z.number().int().min(22).max(34),
+  dividerStyle: z.enum(["accent-rule", "full-hairline", "underline", "none"]),
+  sectionCase: z.enum(["uppercase", "smallcaps"]),
+  dishLayout: z.enum(["row", "stack", "grid"]),
+});
 export const IdeaStatusSchema = z.enum(["open", "in_chat", "archived"]);
 export const LanguageSchema = z.enum(["es", "it", "en"]);
 export const ModelSchema = z.enum(["haiku", "sonnet", "opus"]);
@@ -520,6 +540,9 @@ export const MenuDetailSchema = z.object({
   // Fase 2 alérgenos — toggle WYSIWYG. ON = iconos + leyenda en PDF cliente
   // y en preview. OFF = nada. `.default(true)` evita A-01.
   showAllergensInPdf: z.boolean().default(true),
+  // "Tu estilo" — true si el restaurante ya tiene menuStyleSpec extraído.
+  // La UI lo usa para habilitar/mostrar la 4ª plantilla (custom).
+  hasCustomStyle: z.boolean(),
 });
 
 export const AddMenuItemRequestSchema = z.object({
@@ -691,6 +714,7 @@ export type MenuSection = z.infer<typeof MenuSectionSchema>;
 export type CreateMenuSectionRequest = z.infer<typeof CreateMenuSectionRequestSchema>;
 export type PatchMenuSectionRequest = z.infer<typeof PatchMenuSectionRequestSchema>;
 export type MenuDetail = z.infer<typeof MenuDetailSchema>;
+export type MenuStyleSpec = z.infer<typeof MenuStyleSpecSchema>;
 export type AddMenuItemRequest = z.infer<typeof AddMenuItemRequestSchema>;
 export type PatchMenuItemRequest = z.infer<typeof PatchMenuItemRequestSchema>;
 export type ReorderItemsRequest = z.infer<typeof ReorderItemsRequestSchema>;

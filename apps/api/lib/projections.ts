@@ -104,6 +104,10 @@ export const menuDetailInclude = {
     select: { id: true, name: true, order: true },
   },
   clientOverride: { select: { overrides: true } },
+  // "Tu estilo" — el detalle expone hasCustomStyle derivado del restaurante
+  // (menuStyleSpec != null). El spec completo no viaja en el detail: el PDF
+  // lo lee server-side y la UI solo necesita saber si existe.
+  restaurant: { select: { menuStyleSpec: true } },
 } as const;
 
 export const ideaInclude = {
@@ -405,6 +409,8 @@ type MenuDetailRow = {
   }>;
   // 1:1 nullable — null si nunca se editó la vista cliente.
   clientOverride: { overrides: unknown } | null;
+  // "Tu estilo" — solo necesitamos saber si el spec existe.
+  restaurant: { menuStyleSpec: unknown } | null;
 };
 
 export function projectMenuDetail(m: MenuDetailRow): MenuDetail {
@@ -423,6 +429,7 @@ export function projectMenuDetail(m: MenuDetailRow): MenuDetail {
     presentationStyle: m.presentationStyle as MenuDetail["presentationStyle"],
     inService: m.inService,
     showAllergensInPdf: m.showAllergensInPdf,
+    hasCustomStyle: m.restaurant?.menuStyleSpec != null,
     sections: m.sections.map((s) => ({ id: s.id, name: s.name, order: s.order })),
     items: m.items.map((it) => {
       // Fase 2 alérgenos — unión heredados (de los productos enlazados a

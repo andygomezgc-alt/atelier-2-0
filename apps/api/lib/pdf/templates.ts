@@ -16,7 +16,7 @@
 //     al fondo de la última página vía `margin-top: auto`. La preview chef
 //     y el PDF deben verse iguales conceptualmente.
 
-import type { Allergen } from "@atelier/shared";
+import type { Allergen, MenuStyleSpec } from "@atelier/shared";
 
 type Dish = {
   name: string;
@@ -48,7 +48,7 @@ type RenderInput = {
   allergenLabels: Record<Allergen, string>;
 };
 
-type Theme = {
+export type Theme = {
   css: string;
   frame?: (inner: string) => string;
   header: (restaurantName: string, menuName: string, seasonHtml: string) => string;
@@ -336,9 +336,147 @@ const THEME_MINIMAL: Theme = {
         </div>`,
 };
 
+// ───── "Tu estilo" — theme builder desde MenuStyleSpec ─────
+// El spec (tokens extraídos por IA de la foto de la carta) se convierte acá
+// en un Theme completo reusando los patrones de los 3 templates fijos. El
+// modelo NUNCA emite HTML/CSS: solo tokens acotados → CSS armado en código
+// (el escape() de datos queda intacto, mismo render pipeline).
+
+// Stacks EXISTENTES de los themes fijos — solo system fonts (render.ts
+// bloquea cualquier request externa, incluidas webfonts).
+const SERIF_STACK = "'Iowan Old Style', 'Hoefler Text', 'Times New Roman', serif";
+const SANS_STACK = "-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif";
+
+// Luminancia relativa WCAG (sRGB → lineal). Base del guard de contraste.
+function relativeLuminance(hex: string): number {
+  const n = parseInt(hex.slice(1), 16);
+  const chan = (v: number) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return (
+    0.2126 * chan((n >> 16) & 0xff) +
+    0.7152 * chan((n >> 8) & 0xff) +
+    0.0722 * chan(n & 0xff)
+  );
+}
+
+function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+// Guard de contraste: el modelo puede leer mal una foto (sombras, papel
+// texturado) y emitir tinta casi del color del papel → PDF ilegible. Si el
+// ratio bg↔color queda por debajo de ~2.5 (umbral bajo; WCAG pide 3+ hasta
+// para texto grande), forzamos una tinta neutra de la casa según la
+// luminancia del fondo. Preferimos aproximar la carta con texto legible a
+// clavar el color exacto con texto invisible.
+function legibleOn(bg: string, color: string): string {
+  if (contrastRatio(bg, color) >= 2.5) return color;
+  return relativeLuminance(bg) > 0.5 ? "#2a2520" : "#f9f7f2";
+}
+
+export function themeFromSpec(spec: MenuStyleSpec): Theme {
+  const font = spec.fontCategory === "serif" ? SERIF_STACK : SANS_STACK;
+  const bg = spec.bgColor;
+  const ink = legibleOn(bg, spec.inkColor);
+  const heading = legibleOn(bg, spec.headingColor);
+  const accent = spec.accentColor;
+
+  const alignMargin = spec.titleAlign === "center" ? "0 auto" : "0";
+
+  // Divisor bajo el título — variantes de .rule de los themes fijos con el
+  // acento del spec. "none" no emite el div en el header.
+  const rules: Record<MenuStyleSpec["dividerStyle"], string> = {
+    "accent-rule": `.rule { width: 24mm; height: 0.5pt; background: ${accent}; margin: ${alignMargin}; margin-bottom: 14mm; }`,
+    "full-hairline": `.rule { height: 0.4pt; background: ${accent}; margin: 6mm 0 10mm; }`,
+    underline: `.rule { width: 36mm; height: 1pt; background: ${accent}; margin: ${alignMargin}; margin-bottom: 12mm; }`,
+    none: "",
+  };
+
+  // Encabezado de sección: uppercase con tracking (como ELEGANT) o
+  // versalitas (como RUSTIC). Color: accent — generaliza mejor que heading
+  // (en cartas reales el adorno tipográfico suele compartir el acento).
+  const sectCase =
+    spec.sectionCase === "uppercase"
+      ? "text-transform: uppercase; letter-spacing: 0.3em;"
+      : "font-variant: small-caps; letter-spacing: 0.25em;";
+  const sectAlign = spec.titleAlign === "center" ? "center" : "left";
+
+  // Layout del plato: row = flex de ELEGANT; stack = bloque punteado de
+  // RUSTIC; grid = grid de MINIMAL. dish-name en heading, precio en accent.
+  const dishCss: Record<MenuStyleSpec["dishLayout"], string> = {
+    row: `
+    .dish { display: flex; justify-content: space-between; align-items: baseline; gap: 8mm; margin-bottom: 8mm; page-break-inside: avoid; }
+    .dish-text { flex: 1; }
+    .dish-name { font-size: 13pt; color: ${heading}; margin: 0 0 1.5mm; }
+    .dish-desc { font-size: 10pt; color: ${ink}; line-height: 1.5; margin: 0; }
+    .dish-price { font-size: 13pt; color: ${accent}; flex-shrink: 0; }`,
+    stack: `
+    .dish { margin-bottom: 7mm; padding-bottom: 5mm; border-bottom: 0.4pt dotted ${accent}; page-break-inside: avoid; }
+    .dish:last-child { border-bottom: none; }
+    .dish-text { display: block; }
+    .dish-name { font-size: 13pt; color: ${heading}; margin: 0 0 1.5mm; }
+    .dish-desc { font-size: 10pt; color: ${ink}; line-height: 1.6; margin: 0 0 2mm; }
+    .dish-price { font-size: 11pt; color: ${accent}; font-weight: 600; }`,
+    grid: `
+    .dish { display: grid; grid-template-columns: 1fr auto; gap: 6mm; align-items: baseline; page-break-inside: avoid; margin-bottom: 7mm; }
+    .dish-text { display: flex; flex-direction: column; gap: 1.5mm; }
+    .dish-name { font-size: 11pt; font-weight: 500; color: ${heading}; margin: 0; }
+    .dish-desc { font-size: 9.5pt; color: ${ink}; line-height: 1.5; margin: 0; }
+    .dish-price { font-variant-numeric: tabular-nums; color: ${accent}; font-weight: 500; }`,
+  };
+
+  // Marco de página: single = borde fino con el acento; double = como
+  // RUSTIC con el acento del spec; none = sin frame.
+  const frameCss =
+    spec.frame === "none"
+      ? ""
+      : `.frame { border: ${spec.frame === "double" ? `1.5pt double ${accent}` : `1pt solid ${accent}`}; padding: 14mm 12mm; flex: 1; display: flex; flex-direction: column; }`;
+
+  const css = `<style>
+    body { font-family: ${font}; color: ${ink}; background: ${bg}; }
+    ${frameCss}
+    h1 { text-align: ${spec.titleAlign}; ${spec.titleItalic ? "font-style: italic; " : ""}font-weight: 400; font-size: ${spec.titleSizePt}pt; color: ${heading}; margin: 0 0 2mm; }
+    .season { text-align: ${spec.titleAlign}; font-size: 10.5pt; color: ${ink}; margin-bottom: 12mm; }
+    ${rules[spec.dividerStyle]}
+    .sect-h { text-align: ${sectAlign}; font-size: 11pt; ${sectCase} color: ${accent}; margin: 10mm 0 6mm; }
+    ${dishCss[spec.dishLayout]}
+    ${ALLERGENS_CSS}
+  </style>`;
+
+  return {
+    css,
+    ...(spec.frame !== "none"
+      ? { frame: (inner: string) => `<div class="frame">${inner}</div>` }
+      : {}),
+    header: (_restaurantName, menuName, seasonHtml) => `<h1>${escape(menuName)}</h1>
+      ${seasonHtml}
+      ${spec.dividerStyle !== "none" ? '<div class="rule"></div>' : ""}
+      `,
+    sectionHeader: (name) => `<div class="sect-h">${escape(name)}</div>`,
+    // Mismo markup del dish de ELEGANT (dish-text + dish-price hermanos):
+    // funciona igual para flex (row), bloque (stack) y grid (columnas).
+    dish: (d, price) => `
+      <div class="dish">
+        <div class="dish-text">
+          <div class="dish-name">${escape(d.name)}</div>
+          ${d.description ? `<div class="dish-desc">${escape(d.description)}</div>` : ""}
+          ${d.allergens.length > 0 ? `<div class="dish-allergens">${d.allergens.map((a) => allergenIconSvg(a, 14)).join("")}</div>` : ""}
+        </div>
+        <div class="dish-price">${price}</div>
+      </div>`,
+  };
+}
+
 export const renderElegant = (input: RenderInput) => renderMenu(input, THEME_ELEGANT);
 export const renderRustic = (input: RenderInput) => renderMenu(input, THEME_RUSTIC);
 export const renderMinimal = (input: RenderInput) => renderMenu(input, THEME_MINIMAL);
+// "Tu estilo": render con el theme derivado del spec de la casa.
+export const renderCustom = (input: RenderInput, spec: MenuStyleSpec) =>
+  renderMenu(input, themeFromSpec(spec));
 
 export const TEMPLATES = {
   elegant: renderElegant,

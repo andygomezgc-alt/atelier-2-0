@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@atelier/db";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
-import { TEMPLATES } from "@/lib/pdf/templates";
+import { TEMPLATES, renderCustom } from "@/lib/pdf/templates";
 import { renderHtmlToPdf } from "@/lib/pdf/render";
 import { computeRecipeAllergens } from "@/lib/products/allergens-recipe";
 import { logger } from "@/lib/logger";
 import type { ClientOverrides, Allergen } from "@atelier/shared";
-import { ALLERGEN_ORDER } from "@atelier/shared";
+import { ALLERGEN_ORDER, MenuStyleSpecSchema } from "@atelier/shared";
 import { t, type Language } from "@atelier/i18n";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +28,8 @@ export async function GET(
   const menu = await prisma.menuFolder.findUnique({
     where: { id },
     include: {
-      restaurant: { select: { name: true, languageDefault: true } },
+      // menuStyleSpec: "Tu estilo" de la casa (para presentationStyle=custom).
+      restaurant: { select: { name: true, languageDefault: true, menuStyleSpec: true } },
       sections: { orderBy: { order: "asc" }, select: { id: true, name: true } },
       items: {
         orderBy: { order: "asc" },
@@ -55,8 +56,16 @@ export async function GET(
   if (!menu || menu.restaurantId !== ctx.restaurantId)
     return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
 
-  const style = (styleParam ?? menu.presentationStyle) as keyof typeof TEMPLATES;
-  const renderer = TEMPLATES[style] ?? TEMPLATES.elegant;
+  const style = (styleParam ?? menu.presentationStyle) as string;
+  // "Tu estilo": si el estilo efectivo es custom, el theme se construye del
+  // spec de la casa. Sin spec (o spec corrupto) → fallback elegant, nunca 500.
+  const customSpec =
+    style === "custom"
+      ? MenuStyleSpecSchema.safeParse(menu.restaurant?.menuStyleSpec)
+      : null;
+  const renderer = customSpec?.success
+    ? (input: Parameters<typeof renderCustom>[0]) => renderCustom(input, customSpec.data)
+    : (TEMPLATES[style as keyof typeof TEMPLATES] ?? TEMPLATES.elegant);
 
   // Cliente overrides: JSON validado por Zod arriba; acá lo tratamos como
   // partial deep. Cada campo: override > canonical-staff > fallback.
