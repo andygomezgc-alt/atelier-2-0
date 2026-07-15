@@ -36,6 +36,7 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 }
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
 import * as Sharing from "expo-sharing";
@@ -57,7 +58,7 @@ import {
   createSection,
   patchSection,
   deleteSection,
-  uploadMenuStyleImage,
+  uploadMenuStyleFile,
   type MenuFull,
 } from "@/src/api/menus";
 import { showToast } from "@/src/components/Toast";
@@ -418,10 +419,10 @@ export default function MenuDetailScreen() {
   // en la primera captura (todavía no hay hasCustomStyle): en la re-captura
   // el menú ya está en "custom", así que solo hace falta refrescar + avisar.
   const handleStyleCaptureUri = useCallback(
-    async (uri: string, activateStyle: boolean) => {
+    async (uri: string, mime: string, activateStyle: boolean) => {
       setStyleUploading(true);
       try {
-        await uploadMenuStyleImage(uri, "image/jpeg");
+        await uploadMenuStyleFile(uri, mime);
         if (activateStyle) await handleStyleChange("custom");
         await reload({ silent: true });
         showToast(t("toast_menu_style_created"));
@@ -446,7 +447,7 @@ export default function MenuDetailScreen() {
       if (result.canceled) return;
       const asset = result.assets[0];
       if (!asset) return;
-      await handleStyleCaptureUri(asset.uri, activateStyle);
+      await handleStyleCaptureUri(asset.uri, "image/jpeg", activateStyle);
     },
     [styleUploading, t, handleStyleCaptureUri],
   );
@@ -463,23 +464,57 @@ export default function MenuDetailScreen() {
       if (result.canceled) return;
       const asset = result.assets[0];
       if (!asset) return;
-      await handleStyleCaptureUri(asset.uri, activateStyle);
+      await handleStyleCaptureUri(asset.uri, "image/jpeg", activateStyle);
     },
     [styleUploading, t, handleStyleCaptureUri],
   );
 
-  // Punto de entrada del flujo: ofrece cámara/galería y, antes de abrir el
-  // picker, muestra el hint de qué hace la IA con la foto.
+  // PDF de la carta: sin permisos runtime (el document picker no los necesita).
+  const handlePickStylePdf = useCallback(
+    async (activateStyle: boolean) => {
+      if (styleUploading) return;
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf"],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset) return;
+      await handleStyleCaptureUri(asset.uri, "application/pdf", activateStyle);
+    },
+    [styleUploading, handleStyleCaptureUri],
+  );
+
+  // Punto de entrada del flujo: ofrece cámara/galería/PDF y, antes de abrir el
+  // picker, muestra el hint de qué hace la IA con la carta.
+  // Android limita Alert a 3 botones: se omite "Cancelar" (cancelable: true
+  // permite cerrar tocando fuera); iOS conserva los 4 botones.
   const handleStartStyleCapture = useCallback(
     (activateStyle: boolean) => {
       if (styleUploading) return;
-      Alert.alert(t("style_custom"), t("menu_style_hint"), [
-        { text: t("cargar_foto"), onPress: () => void handleCaptureStylePhoto(activateStyle) },
-        { text: t("cargar_galeria"), onPress: () => void handlePickStyleFromGallery(activateStyle) },
-        { text: t("confirm_cancel"), style: "cancel" },
-      ]);
+      const buttons =
+        Platform.OS === "android"
+          ? [
+              { text: t("cargar_foto"), onPress: () => void handleCaptureStylePhoto(activateStyle) },
+              { text: t("cargar_galeria"), onPress: () => void handlePickStyleFromGallery(activateStyle) },
+              { text: t("menu_style_pdf"), onPress: () => void handlePickStylePdf(activateStyle) },
+            ]
+          : [
+              { text: t("cargar_foto"), onPress: () => void handleCaptureStylePhoto(activateStyle) },
+              { text: t("cargar_galeria"), onPress: () => void handlePickStyleFromGallery(activateStyle) },
+              { text: t("menu_style_pdf"), onPress: () => void handlePickStylePdf(activateStyle) },
+              { text: t("confirm_cancel"), style: "cancel" as const },
+            ];
+      Alert.alert(t("style_custom"), t("menu_style_hint"), buttons, { cancelable: true });
     },
-    [styleUploading, t, handleCaptureStylePhoto, handlePickStyleFromGallery],
+    [
+      styleUploading,
+      t,
+      handleCaptureStylePhoto,
+      handlePickStyleFromGallery,
+      handlePickStylePdf,
+    ],
   );
 
   // Bloque 5 (segunda tanda) — toggle "en servicio". Optimistic update +

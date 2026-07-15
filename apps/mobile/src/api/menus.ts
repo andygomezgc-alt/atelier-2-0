@@ -141,11 +141,11 @@ export const patchClientOverrides = async (
   return bumpMenuCache(result);
 };
 
-// "Tu estilo" — sube una foto de la carta real; el server (visión) extrae
-// los tokens de estilo y los persiste en Restaurant.menuStyleSpec (estilo DE
-// LA CASA, no por menú). Mismo patrón de uploadAsync multipart que
+// "Tu estilo" — sube una foto o PDF de la carta real; el server (visión)
+// extrae los tokens de estilo y los persiste en Restaurant.menuStyleSpec
+// (estilo DE LA CASA, no por menú). Mismo patrón de uploadAsync multipart que
 // uploadRecipeFile: fetch+FormData no sale del teléfono en builds standalone.
-export async function uploadMenuStyleImage(uri: string, mimeType: string): Promise<void> {
+export async function uploadMenuStyleFile(uri: string, mimeType: string): Promise<void> {
   const base = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
   const token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
 

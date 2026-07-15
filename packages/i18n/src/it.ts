@@ -541,6 +541,7 @@ export const it: EsDict = {
   menu_in_service_toggle_a11y: "Attiva o disattiva il servizio del menù",
   // "Il tuo stile" — cattura della carta reale per estrarre lo stile della casa.
   menu_style_hint: "Ispirato alla tua carta: colori, carattere e disposizione.",
+  menu_style_pdf: "Carica il PDF del menù",
   style_custom_recapture: "Aggiorna il tuo stile con un'altra foto",
   toast_menu_style_created: "Stile della casa creato dalla tua carta",
 

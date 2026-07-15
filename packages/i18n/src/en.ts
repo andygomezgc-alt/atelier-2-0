@@ -540,6 +540,7 @@ export const en: EsDict = {
   menu_in_service_toggle_a11y: "Turn menu service on or off",
   // "Your style" — capture the real menu card to extract the house style.
   menu_style_hint: "Inspired by your menu card: colors, type, and layout.",
+  menu_style_pdf: "Upload menu PDF",
   style_custom_recapture: "Update your style with another photo",
   toast_menu_style_created: "House style created from your menu card",
 

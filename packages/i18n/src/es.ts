@@ -552,6 +552,7 @@ export const es = {
   menu_in_service_toggle_a11y: "Activar o desactivar servicio del menú",
   // "Tu estilo" — captura de la carta real para extraer el estilo de la casa.
   menu_style_hint: "Inspirado en tu carta: colores, letra y disposición.",
+  menu_style_pdf: "Subir PDF de la carta",
   style_custom_recapture: "Actualizar tu estilo con otra foto",
   toast_menu_style_created: "Estilo de la casa creado a partir de tu carta",
 
