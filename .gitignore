@@ -6,6 +6,9 @@ build/
 *.log
 *.tsbuildinfo
 
+# graphify: grafo generado, se reconstruye solo (config sí va en git)
+graphify-out/
+
 .DS_Store
 Thumbs.db
 

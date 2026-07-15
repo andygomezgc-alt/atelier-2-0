@@ -1,0 +1,22 @@
+# Git worktrees: near-duplicate copies of the whole monorepo (~4x the real codebase).
+# graphify's defaults skip ".worktrees" but not ".claude/worktrees", so without this
+# the graph is dominated by stale duplicates.
+.claude/worktrees/
+
+# Explicit even though graphify already skips these by default (_SKIP_DIRS) and via
+# .gitignore — kept so the intent survives a change to those defaults.
+node_modules/
+.next/
+dist/
+build/
+.venv/
+
+# Binary images with no architectural meaning; each one otherwise costs a vision subagent.
+expo-qr.png
+apps/mobile/assets/*.png
+
+# Secrets sitting untracked in the tree (graphify's secret scanner also catches these).
+.env*
+
+# Test fixtures: truncated recipe text for parser tests, no architectural meaning.
+__fixtures__/
