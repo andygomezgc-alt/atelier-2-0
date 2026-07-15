@@ -1,5 +1,5 @@
-// "Tu estilo" — extrae los tokens de estilo (MenuStyleSpec) de una FOTO de
-// la carta real del restaurante. Mismo patrón que extractRecipeFromImage
+// "Tu estilo" — extrae los tokens de estilo (MenuStyleSpec) de una FOTO o un
+// PDF de la carta real del restaurante. Mismo patrón que extractRecipeFromImage
 // (lib/recipe-extraction.ts): SIEMPRE server-only (clave Anthropic del
 // server, SIN BYOK — es infraestructura de la app, no el servicio personal
 // del chef), tool use FORZADO para garantizar JSON parseable, y validación
@@ -51,9 +51,13 @@ const EMIT_STYLE_TOOL = {
   },
 } as const;
 
-const PROMPT = `Analizá la foto de esta carta/menú de restaurante y emití los tokens de estilo que mejor la aproximen.
+const PROMPT_INTRO = `Analizá esta carta/menú de restaurante (foto o PDF) y emití los tokens de estilo que mejor la aproximen.`;
 
-Guía por token:
+// SOLO para PDF: el documento puede traer portada/contraportada con un diseño
+// distinto al interior — le decimos al modelo en qué página apoyarse.
+const PDF_MULTIPAGE_NOTE = `El documento puede tener varias páginas: basá los tokens en la página más representativa del diseño interior (donde se listan los platos), ignorando portada/contraportada si difieren del resto.`;
+
+const PROMPT_GUIDE = `Guía por token:
 - fontCategory: ¿la carta usa letra con serifas (serif) o palo seco (sans)?
 - bgColor: color de papel/fondo dominante, hex de 6 dígitos.
 - inkColor: color del texto corriente (descripciones de platos).
@@ -67,7 +71,11 @@ Guía por token:
 - sectionCase: ¿los encabezados de sección van en MAYÚSCULAS (uppercase) o en versalitas (smallcaps)?
 - dishLayout: ¿nombre y precio en la misma línea (row), en bloque con el precio debajo (stack) o en columnas alineadas (grid)?`;
 
-export async function extractMenuStyleFromImage(
+function buildPrompt(isPdf: boolean): string {
+  return [PROMPT_INTRO, ...(isPdf ? [PDF_MULTIPAGE_NOTE] : []), PROMPT_GUIDE].join("\n\n");
+}
+
+export async function extractMenuStyle(
   buffer: Uint8Array,
   mimeType: string,
 ): Promise<MenuStyleSpec> {
@@ -75,7 +83,24 @@ export async function extractMenuStyleFromImage(
   if (!apiKey)
     throw new Error("ANTHROPIC_API_KEY no configurada en el servidor");
 
+  const isPdf = mimeType === "application/pdf";
   const base64 = Buffer.from(buffer).toString("base64");
+
+  // PDF → bloque `document` (visión de páginas renderizadas, soportado nativo
+  // por el SDK); cualquier otro mime → bloque `image` como antes.
+  const fileBlock: Anthropic.ContentBlockParam = isPdf
+    ? {
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data: base64 },
+      }
+    : {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: mimeType as "image/jpeg" | "image/png" | "image/webp",
+          data: base64,
+        },
+      };
 
   const client = new Anthropic({ apiKey });
   const msg = await client.messages.create({
@@ -86,17 +111,7 @@ export async function extractMenuStyleFromImage(
     messages: [
       {
         role: "user",
-        content: [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: mimeType as "image/jpeg" | "image/png" | "image/webp",
-              data: base64,
-            },
-          },
-          { type: "text", text: PROMPT },
-        ],
+        content: [fileBlock, { type: "text", text: buildPrompt(isPdf) }],
       },
     ],
   });
