@@ -543,6 +543,20 @@ export const en: EsDict = {
   menu_style_pdf: "Upload menu PDF",
   style_custom_recapture: "Update your style with another photo",
   toast_menu_style_created: "House style created from your menu card",
+  // "Your style" — progress feedback + native preview after extraction.
+  menu_style_processing: "Reading your menu card and extracting its style… this can take up to a minute.",
+  style_preview_title: "Here's your style",
+  style_preview_note: "Approximate preview — the exported PDF is the real result.",
+  style_preview_view_pdf: "View real PDF",
+  style_preview_close: "Close",
+  style_preview_sample_menu: "House menu",
+  style_preview_sample_section: "Antipasti",
+  style_preview_dish1_name: "Burrata di Puglia",
+  style_preview_dish1_desc: "Confit tomatoes and basil",
+  style_preview_dish2_name: "Tagliatelle al ragù",
+  style_preview_dish2_desc: "Slow-cooked house ragù",
+  style_preview_dish3_name: "Tiramisù classico",
+  style_preview_dish3_desc: "Mascarpone and coffee",
 
   // ─── A-11 · Localized API errors (lookup by code) ───
   error_email_invalid: "Invalid email.",

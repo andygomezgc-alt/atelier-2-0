@@ -2,19 +2,22 @@ import { apiFetch, ApiError, NetworkError, TOKEN_KEY } from "./client";
 import { cached, invalidate, setCached } from "./cache";
 import * as FileSystem from "expo-file-system/legacy";
 import * as SecureStore from "@/src/lib/secure-storage";
-import type {
-  MenuListItem,
-  MenuDetail,
-  CreateMenuRequest,
-  PatchMenuRequest,
-  AddMenuItemRequest,
-  PatchMenuItemRequest,
-  MenuDish,
-  MenuSection,
-  CreateMenuSectionRequest,
-  PatchMenuSectionRequest,
-  ClientOverrides,
-  PatchClientOverridesRequest,
+import {
+  MenuStyleSpecSchema,
+  type MenuListItem,
+  type MenuDetail,
+  type CreateMenuRequest,
+  type PatchMenuRequest,
+  type AddMenuItemRequest,
+  type PatchMenuItemRequest,
+  type MenuDish,
+  type MenuSection,
+  type CreateMenuSectionRequest,
+  type PatchMenuSectionRequest,
+  type ClientOverrides,
+  type PatchClientOverridesRequest,
+  type MenuStyleSpec,
+  type ApiErrorCode,
 } from "@atelier/shared";
 
 export type { ClientOverrides };
@@ -141,35 +144,69 @@ export const patchClientOverrides = async (
   return bumpMenuCache(result);
 };
 
+// La extracción visión del server tarda 10-40s; 90s da margen de sobra antes
+// de cancelar la tarea y devolver un timeout accionable (el chef puede
+// reintentar en vez de esperar indefinidamente).
+const STYLE_UPLOAD_TIMEOUT_MS = 90_000;
+
 // "Tu estilo" — sube una foto o PDF de la carta real; el server (visión)
 // extrae los tokens de estilo y los persiste en Restaurant.menuStyleSpec
-// (estilo DE LA CASA, no por menú). Mismo patrón de uploadAsync multipart que
-// uploadRecipeFile: fetch+FormData no sale del teléfono en builds standalone.
-export async function uploadMenuStyleFile(uri: string, mimeType: string): Promise<void> {
+// (estilo DE LA CASA, no por menú). createUploadTask (en vez de uploadAsync)
+// da una tarea cancelable: así el timeout de arriba puede cortar el upload
+// en vez de dejarlo colgado si el server nunca responde.
+export async function uploadMenuStyleFile(
+  uri: string,
+  mimeType: string,
+): Promise<MenuStyleSpec | null> {
   const base = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
   const token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
 
-  let res: FileSystem.FileSystemUploadResult;
-  try {
-    res = await FileSystem.uploadAsync(`${base}/api/restaurant/menu-style/from-image`, uri, {
+  const task = FileSystem.createUploadTask(
+    `${base}/api/restaurant/menu-style/from-image`,
+    uri,
+    {
       httpMethod: "POST",
       uploadType: FileSystem.FileSystemUploadType.MULTIPART,
       fieldName: "file",
       mimeType,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
+    },
+  );
+
+  let res: FileSystem.FileSystemUploadResult | undefined | null;
+  const timer = setTimeout(() => void task.cancelAsync(), STYLE_UPLOAD_TIMEOUT_MS);
+  try {
+    res = await task.uploadAsync();
   } catch {
-    throw new NetworkError();
+    throw new NetworkError("request_timeout");
+  } finally {
+    clearTimeout(timer);
   }
+
+  // `undefined`/`null` = la tarea fue cancelada (timeout de arriba u otra
+  // cancelación externa) sin llegar a resolver con una respuesta HTTP.
+  if (!res) throw new NetworkError("request_timeout");
 
   if (res.status < 200 || res.status >= 300) {
     let message = `HTTP ${res.status}`;
+    let code: ApiErrorCode | undefined;
     try {
       const json = JSON.parse(res.body);
       message = json?.error ?? message;
+      if (typeof json?.code === "string") code = json.code as ApiErrorCode;
     } catch {}
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, code);
   }
 
   invalidate("menus:");
+
+  const parsed = MenuStyleSpecSchema.safeParse(JSON.parse(res.body)?.spec);
+  if (!parsed.success) {
+    // El server ya valida el spec antes de persistirlo — esto no debería
+    // pasar nunca. Si pasa, no rompemos el flujo (el estilo ya quedó
+    // guardado): solo perdemos la preview inmediata.
+    console.warn("menu_style_spec_unparseable", parsed.error);
+    return null;
+  }
+  return parsed.data;
 }

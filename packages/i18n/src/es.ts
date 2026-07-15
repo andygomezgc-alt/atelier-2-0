@@ -555,6 +555,20 @@ export const es = {
   menu_style_pdf: "Subir PDF de la carta",
   style_custom_recapture: "Actualizar tu estilo con otra foto",
   toast_menu_style_created: "Estilo de la casa creado a partir de tu carta",
+  // "Tu estilo" — feedback de progreso + preview nativa tras la extracción.
+  menu_style_processing: "Leyendo tu carta y extrayendo el estilo… puede tardar hasta un minuto.",
+  style_preview_title: "Así quedó tu estilo",
+  style_preview_note: "Vista aproximada — el PDF exportado es el resultado real.",
+  style_preview_view_pdf: "Ver PDF real",
+  style_preview_close: "Cerrar",
+  style_preview_sample_menu: "Menú de la casa",
+  style_preview_sample_section: "Antipasti",
+  style_preview_dish1_name: "Burrata di Puglia",
+  style_preview_dish1_desc: "Tomates confitados y albahaca",
+  style_preview_dish2_name: "Tagliatelle al ragù",
+  style_preview_dish2_desc: "Ragú de la casa, cocción lenta",
+  style_preview_dish3_name: "Tiramisù classico",
+  style_preview_dish3_desc: "Mascarpone y café",
 
   // ─── A-11 · Errores de API localizados (lookup por code) ───
   error_email_invalid: "Email inválido.",

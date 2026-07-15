@@ -67,9 +67,11 @@ import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { SectionPickerSheet } from "@/src/components/SectionPickerSheet";
 import { SectionPresetSheet } from "@/src/components/SectionPresetSheet";
 import { RecipeBankPickerSheet } from "@/src/components/RecipeBankPickerSheet";
+import { StylePreviewSheet } from "@/src/components/StylePreviewSheet";
 import { TOKEN_KEY } from "@/src/api/client";
-import { can, type MenuStyle } from "@atelier/shared";
+import { can, type MenuStyle, type MenuStyleSpec } from "@atelier/shared";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
+import { apiErrorMessage } from "@/src/lib/api-error";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 const API = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
@@ -351,6 +353,9 @@ export default function MenuDetailScreen() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   // "Tu estilo" — spinner mientras se sube la foto de la carta real.
   const [styleUploading, setStyleUploading] = useState(false);
+  // "Tu estilo" — spec a previsualizar en el sheet "Así quedó tu estilo".
+  // Se llena tras una extracción exitosa, o al reabrir el chip custom activo.
+  const [stylePreview, setStylePreview] = useState<MenuStyleSpec | null>(null);
 
   const role =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -401,15 +406,19 @@ export default function MenuDetailScreen() {
 
   // ───────── Handlers (stable refs para que los memo'd hijos no re-rendereen) ─────────
 
+  // Devuelve un Promise<boolean> — true en éxito, false si falla (ya avisado
+  // por toast + reload). handleStyleCaptureUri lo usa para saber si la
+  // activación del estilo custom salió bien antes de abrir la preview.
   const handleStyleChange = useCallback(
-    async (style: MenuStyle) => {
+    async (style: MenuStyle): Promise<boolean> => {
       setMenu((m) => (m ? { ...m, presentationStyle: style } : m));
       try {
-        const current = await getMenu(id);
-        await patchMenu(current.id, { presentationStyle: style });
+        await patchMenu(id, { presentationStyle: style });
+        return true;
       } catch {
         showToast(t("error_network"));
         void reload();
+        return false;
       }
     },
     [id, t, reload],
@@ -418,16 +427,22 @@ export default function MenuDetailScreen() {
   // "Tu estilo" — sube la foto ya elegida/tomada. `activateStyle` solo aplica
   // en la primera captura (todavía no hay hasCustomStyle): en la re-captura
   // el menú ya está en "custom", así que solo hace falta refrescar + avisar.
+  // Éxito con spec en mano → abre el sheet de preview en vez del toast de
+  // siempre (el toast queda como fallback si no hay spec o falló la activación).
   const handleStyleCaptureUri = useCallback(
     async (uri: string, mime: string, activateStyle: boolean) => {
       setStyleUploading(true);
       try {
-        await uploadMenuStyleFile(uri, mime);
-        if (activateStyle) await handleStyleChange("custom");
+        const spec = await uploadMenuStyleFile(uri, mime);
+        const activated = activateStyle ? await handleStyleChange("custom") : true;
         await reload({ silent: true });
-        showToast(t("toast_menu_style_created"));
+        if (spec && activated) {
+          setStylePreview(spec);
+        } else {
+          showToast(t("toast_menu_style_created"));
+        }
       } catch (err) {
-        showToast(err instanceof Error ? err.message : t("error_network"));
+        showToast(apiErrorMessage(err, t));
       } finally {
         setStyleUploading(false);
       }
@@ -761,12 +776,14 @@ export default function MenuDetailScreen() {
   );
 
   // Bug #3: filename preserva acentos / ñ.
-  const exportPdf = useCallback(async () => {
+  // styleOverride — el sheet de preview de "Tu estilo" fuerza "custom" al
+  // pedir el PDF real, sin depender de que el menú ya haya cambiado de estilo.
+  const exportPdf = useCallback(async (styleOverride?: MenuStyle) => {
     if (!menu || exporting) return;
     setExporting(true);
     try {
       const token = await SecureStore.getItemAsync(TOKEN_KEY);
-      const url = `${API}/api/menus/${menu.id}/pdf?style=${menu.presentationStyle}`;
+      const url = `${API}/api/menus/${menu.id}/pdf?style=${styleOverride ?? menu.presentationStyle}`;
       const fileUri = `${FileSystem.cacheDirectory}${encodeURIComponent(sanitizeFilename(menu.name))}.pdf`;
       const dl = await FileSystem.downloadAsync(url, fileUri, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -906,13 +923,18 @@ export default function MenuDetailScreen() {
                 style={[styles.styleChip, active && styles.styleChipActive]}
                 onPress={() => {
                   if (!canEdit) return;
+                  // Chip custom ya activo → reabre la preview en vez de no-opear.
+                  if (isCustom && active) {
+                    if (menu.menuStyleSpec) setStylePreview(menu.menuStyleSpec);
+                    return;
+                  }
                   if (isCustom && !menu.hasCustomStyle) {
                     handleStartStyleCapture(true);
                     return;
                   }
                   void handleStyleChange(s.id);
                 }}
-                disabled={!canEdit || active || (isCustom && styleUploading)}
+                disabled={!canEdit || (active && !isCustom) || (isCustom && styleUploading)}
               >
                 <Text style={[styles.styleLabel, active && styles.styleLabelActive]}>
                   {t(s.labelKey)}
@@ -931,6 +953,16 @@ export default function MenuDetailScreen() {
             </Pressable>
           ) : null}
         </View>
+
+        {/* "Tu estilo" — card de progreso mientras dura la extracción visión
+            (10-40s, hasta 90s con el timeout). Sin esto el chef no tenía
+            ninguna señal de que la subida seguía viva. */}
+        {styleUploading ? (
+          <View style={styles.styleProcessingCard}>
+            <ActivityIndicator color={colors.terracota} size="small" />
+            <Text style={styles.styleProcessingLabel}>{t("menu_style_processing")}</Text>
+          </View>
+        ) : null}
 
         {noContent ? (
           <View style={styles.emptyMenuState}>
@@ -1082,6 +1114,14 @@ export default function MenuDetailScreen() {
         }}
       />
 
+      <StylePreviewSheet
+        open={stylePreview !== null}
+        spec={stylePreview}
+        exporting={exporting}
+        onClose={() => setStylePreview(null)}
+        onViewPdf={() => void exportPdf("custom")}
+      />
+
       <SectionPickerSheet
         open={sectionPickerForItem !== null}
         sections={menu.sections}
@@ -1231,6 +1271,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paperSoft,
     alignItems: "center",
     justifyContent: "center",
+  },
+  // "Tu estilo" — card compacta de progreso mientras dura la extracción.
+  styleProcessingCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.paperSoft,
+    borderWidth: 0.5,
+    borderColor: colors.edge,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  styleProcessingLabel: {
+    flex: 1,
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.inkSoft,
   },
   dishCard: {
     backgroundColor: colors.paperSoft,

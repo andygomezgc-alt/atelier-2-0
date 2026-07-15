@@ -544,6 +544,20 @@ export const it: EsDict = {
   menu_style_pdf: "Carica il PDF del menù",
   style_custom_recapture: "Aggiorna il tuo stile con un'altra foto",
   toast_menu_style_created: "Stile della casa creato dalla tua carta",
+  // "Il tuo stile" — feedback di progresso + anteprima nativa dopo l'estrazione.
+  menu_style_processing: "Stiamo leggendo la tua carta ed estraendo lo stile… può richiedere fino a un minuto.",
+  style_preview_title: "Ecco il tuo stile",
+  style_preview_note: "Anteprima indicativa — il PDF esportato è il risultato reale.",
+  style_preview_view_pdf: "Vedi il PDF reale",
+  style_preview_close: "Chiudi",
+  style_preview_sample_menu: "Menù della casa",
+  style_preview_sample_section: "Antipasti",
+  style_preview_dish1_name: "Burrata di Puglia",
+  style_preview_dish1_desc: "Pomodorini confit e basilico",
+  style_preview_dish2_name: "Tagliatelle al ragù",
+  style_preview_dish2_desc: "Ragù della casa a cottura lenta",
+  style_preview_dish3_name: "Tiramisù classico",
+  style_preview_dish3_desc: "Mascarpone e caffè",
 
   // ─── A-11 · Errori API localizzati (lookup per code) ───
   error_email_invalid: "Email non valida.",
