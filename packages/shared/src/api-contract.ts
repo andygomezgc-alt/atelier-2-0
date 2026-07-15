@@ -543,6 +543,10 @@ export const MenuDetailSchema = z.object({
   // "Tu estilo" — true si el restaurante ya tiene menuStyleSpec extraído.
   // La UI lo usa para habilitar/mostrar la 4ª plantilla (custom).
   hasCustomStyle: z.boolean(),
+  // "Tu estilo" — el spec completo viaja en el detail para que el móvil pueda
+  // dibujar la preview sin otro round-trip. null si no hay spec o si el JSON
+  // en DB no valida (la projection hace safeParse server-side).
+  menuStyleSpec: MenuStyleSpecSchema.nullable(),
 });
 
 export const AddMenuItemRequestSchema = z.object({

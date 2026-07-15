@@ -13,6 +13,7 @@ import type {
 import { computeRecipeCost } from "./products/cost";
 import { computeRecipeAllergens } from "./products/allergens-recipe";
 import type { Allergen } from "@atelier/shared";
+import { MenuStyleSpecSchema } from "@atelier/shared";
 
 // ─────────── Includes (re-use in Prisma queries) ───────────
 
@@ -104,9 +105,9 @@ export const menuDetailInclude = {
     select: { id: true, name: true, order: true },
   },
   clientOverride: { select: { overrides: true } },
-  // "Tu estilo" — el detalle expone hasCustomStyle derivado del restaurante
-  // (menuStyleSpec != null). El spec completo no viaja en el detail: el PDF
-  // lo lee server-side y la UI solo necesita saber si existe.
+  // "Tu estilo" — el detalle expone hasCustomStyle + el spec completo
+  // (validado con safeParse en la projection) para que el móvil pueda
+  // dibujar la preview sin otro round-trip.
   restaurant: { select: { menuStyleSpec: true } },
 } as const;
 
@@ -422,6 +423,7 @@ export function projectMenuDetail(m: MenuDetailRow): MenuDetail {
     rawOverrides && typeof rawOverrides === "object" && !Array.isArray(rawOverrides)
       ? (rawOverrides as ClientOverrides)
       : null;
+  const specParse = MenuStyleSpecSchema.safeParse(m.restaurant?.menuStyleSpec ?? null);
   return {
     id: m.id,
     name: m.name,
@@ -429,7 +431,10 @@ export function projectMenuDetail(m: MenuDetailRow): MenuDetail {
     presentationStyle: m.presentationStyle as MenuDetail["presentationStyle"],
     inService: m.inService,
     showAllergensInPdf: m.showAllergensInPdf,
-    hasCustomStyle: m.restaurant?.menuStyleSpec != null,
+    // "Tu estilo" — spec corrupto en DB ⇒ se comporta como "sin estilo" (el
+    // chip vuelve al flujo de captura), coherente con el fallback del PDF.
+    hasCustomStyle: specParse.success,
+    menuStyleSpec: specParse.success ? specParse.data : null,
     sections: m.sections.map((s) => ({ id: s.id, name: s.name, order: s.order })),
     items: m.items.map((it) => {
       // Fase 2 alérgenos — unión heredados (de los productos enlazados a
