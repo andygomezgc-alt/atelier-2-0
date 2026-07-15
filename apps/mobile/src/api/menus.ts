@@ -174,18 +174,25 @@ export async function uploadMenuStyleFile(
   );
 
   let res: FileSystem.FileSystemUploadResult | undefined | null;
-  const timer = setTimeout(() => void task.cancelAsync(), STYLE_UPLOAD_TIMEOUT_MS);
+  // Flag para distinguir el timeout de una falla de red genérica: solo si
+  // NUESTRO setTimeout canceló la tarea etiquetamos "request_timeout"; el
+  // resto cae al default de NetworkError ("network_unreachable").
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    void task.cancelAsync();
+  }, STYLE_UPLOAD_TIMEOUT_MS);
   try {
     res = await task.uploadAsync();
   } catch {
-    throw new NetworkError("request_timeout");
+    throw new NetworkError(timedOut ? "request_timeout" : undefined);
   } finally {
     clearTimeout(timer);
   }
 
   // `undefined`/`null` = la tarea fue cancelada (timeout de arriba u otra
   // cancelación externa) sin llegar a resolver con una respuesta HTTP.
-  if (!res) throw new NetworkError("request_timeout");
+  if (!res) throw new NetworkError(timedOut ? "request_timeout" : undefined);
 
   if (res.status < 200 || res.status >= 300) {
     let message = `HTTP ${res.status}`;
@@ -200,7 +207,15 @@ export async function uploadMenuStyleFile(
 
   invalidate("menus:");
 
-  const parsed = MenuStyleSpecSchema.safeParse(JSON.parse(res.body)?.spec);
+  // Guard del JSON en el camino de éxito: con un 2xx el estilo YA quedó
+  // persistido en el server — un body malformado no debe lanzar (el caller
+  // mostraría toast de error sobre una operación que salió bien).
+  let rawSpec: unknown = null;
+  try {
+    rawSpec = JSON.parse(res.body)?.spec;
+  } catch {}
+
+  const parsed = MenuStyleSpecSchema.safeParse(rawSpec);
   if (!parsed.success) {
     // El server ya valida el spec antes de persistirlo — esto no debería
     // pasar nunca. Si pasa, no rompemos el flujo (el estilo ya quedó
