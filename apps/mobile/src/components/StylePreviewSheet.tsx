@@ -7,7 +7,7 @@
 // CSS exacto del PDF) — por eso el aviso "Vista aproximada" y el botón para
 // ver el PDF real.
 
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import type { MenuStyleSpec } from "@atelier/shared";
 import { useI18n } from "@/src/hooks/useI18n";
 import { BottomSheet } from "./BottomSheet";
@@ -175,7 +175,7 @@ export function StylePreviewSheet({ open, spec, exporting, onClose, onViewPdf }:
   return (
     <BottomSheet open={open} onClose={onClose}>
       <Text style={styles.title}>{t("style_preview_title")}</Text>
-      <View style={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
         {spec.frame === "double" ? (
           <View style={[styles.doubleFrameOuter, { borderColor: spec.accentColor }]}>
             <View style={[styles.doubleFrameInner, { borderColor: spec.accentColor }]}>{miniCarta}</View>
@@ -186,7 +186,7 @@ export function StylePreviewSheet({ open, spec, exporting, onClose, onViewPdf }:
           miniCarta
         )}
         <Text style={styles.note}>{t("style_preview_note")}</Text>
-      </View>
+      </ScrollView>
       <View style={styles.footer}>
         <Button
           label={exporting ? "…" : t("style_preview_view_pdf")}
