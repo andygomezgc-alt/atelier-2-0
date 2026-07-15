@@ -72,7 +72,10 @@ export async function POST(req: NextRequest) {
   if (isPdf) {
     let numPages: number;
     try {
-      const doc = await getDocumentProxy(buffer);
+      // pdf.js DETACHA el typed array que recibe (transfer al worker): tras la
+      // llamada `buffer` quedaría vacío. Le pasamos una copia para poder seguir
+      // usando `buffer` en extractMenuStyle y uploadPhoto.
+      const doc = await getDocumentProxy(new Uint8Array(buffer));
       numPages = doc.numPages;
     } catch {
       return NextResponse.json(

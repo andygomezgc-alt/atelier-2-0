@@ -78,7 +78,12 @@ beforeEach(() => {
   extract.extractMenuStyle.mockReset().mockResolvedValue(SPEC);
   blob.uploadPhoto.mockReset().mockResolvedValue("https://blob.local/menu-style/r1/x.jpg");
   quota.reserveAiCall.mockReset().mockResolvedValue({ ok: true, used: 1, limit: 120 });
-  pdf.getDocumentProxy.mockReset().mockResolvedValue({ numPages: 3 });
+  // Como pdf.js real: DETACHA el typed array recibido (transfer al worker)
+  // antes de resolver. Regresión: la ruta debe pasarle una COPIA a unpdf.
+  pdf.getDocumentProxy.mockReset().mockImplementation(async (input: Uint8Array) => {
+    (input.buffer as ArrayBuffer).transfer?.();
+    return { numPages: 3 };
+  });
 });
 
 describe("POST /api/restaurant/menu-style/from-image", () => {
@@ -121,12 +126,14 @@ describe("POST /api/restaurant/menu-style/from-image", () => {
   });
 
   it("PDF happy path: extrae con mime pdf respetando el cap de páginas y persiste el spec", async () => {
-    pdf.getDocumentProxy.mockResolvedValue({ numPages: 3 });
     const res = await postWithFile(PDF_BYTES, "application/pdf");
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.spec).toEqual(SPEC);
     expect(extract.extractMenuStyle).toHaveBeenCalledWith(expect.any(Uint8Array), "application/pdf");
+    // Regresión: pdf.js detacha el array que se le pasa — el extractor debe
+    // recibir el buffer ORIGINAL con sus bytes, no uno vaciado por unpdf.
+    expect(extract.extractMenuStyle.mock.calls[0]![0].byteLength).toBeGreaterThan(0);
     const updateArg = db.restaurant.update.mock.calls[0]![0];
     expect(updateArg.data.menuStyleSpec).toEqual(SPEC);
   });
