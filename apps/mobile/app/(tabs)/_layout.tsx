@@ -5,7 +5,7 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "@/src/hooks/useI18n";
-import { colors, fontSizes, fonts } from "@/src/theme";
+import { colors, fontSizes, fonts, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
 
 const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   inicio: "create-outline",
@@ -34,7 +34,7 @@ export default function TabsLayout() {
             backgroundColor: colors.paper,
             borderTopWidth: 0.5,
             borderTopColor: colors.edge,
-            height: 58 + insets.bottom,
+            height: TAB_BAR_BASE_HEIGHT + insets.bottom,
             paddingTop: 6,
             paddingBottom: 6 + insets.bottom,
           },

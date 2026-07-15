@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { Easing, withSpring, withTiming } from "react-native-reanimated";
 import type { EntryExitAnimationFunction } from "react-native-reanimated";
 
@@ -39,10 +39,10 @@ import { setRecipeDraft } from "@/src/lib/recipe-draft";
 import { MarkdownText } from "@/src/components/MarkdownText";
 import { TypingDots } from "@/src/components/TypingDots";
 import { SendButton } from "@/src/components/SendButton";
-import { KeyboardSpacer } from "@/src/components/KeyboardSpacer";
+import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { selection, tapLight } from "@/src/lib/haptics";
 import type { TranslationKey } from "@atelier/i18n";
-import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { colors, fonts, fontSizes, radii, spacing, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
 
 type ModelKey = "haiku" | "sonnet" | "opus";
 
@@ -182,6 +182,11 @@ export default function AsistenteScreen() {
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+
+  const kb = useKeyboardHeight();
+  const insets = useSafeAreaInsets();
+  // El teclado cubre la tab bar: solo hay que compensar lo que sobresale de ella.
+  const kbPad = Math.max(0, kb - (TAB_BAR_BASE_HEIGHT + insets.bottom));
 
   const userModel: ModelKey =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -763,7 +768,7 @@ export default function AsistenteScreen() {
           />
         </View>
         {/* Empuja el composer por encima del teclado (Android edge-to-edge). */}
-        <KeyboardSpacer />
+        <View style={{ height: kbPad }} />
       </View>
     </SafeAreaView>
   );

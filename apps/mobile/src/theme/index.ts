@@ -91,6 +91,9 @@ export const letterSpacing = {
   caps: 0.6,
 } as const;
 
+// Altura base de la tab bar SIN insets (ver app/(tabs)/_layout.tsx).
+export const TAB_BAR_BASE_HEIGHT = 58;
+
 export type Theme = {
   colors: typeof colors;
   fonts: typeof fonts;
