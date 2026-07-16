@@ -60,7 +60,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const ctx = await requireAuth(req);
+  const ctx = await requireAuth(req, "edit_recipe");
   if (isNextResponse(ctx)) return ctx;
   if (!ctx.restaurantId)
     return NextResponse.json({ error: "Not in a restaurant" }, { status: 403 });
@@ -75,23 +75,30 @@ export async function PATCH(
   if (!existing || existing.restaurantId !== ctx.restaurantId || existing.deletedAt !== null)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Permission gating per state transition
-  if (parse.data.state === "in_test" && !can(ctx.role, "advance_to_test"))
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  if (parse.data.state === "approved" && !can(ctx.role, "approve_recipe"))
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  if ((parse.data.title || parse.data.contentJson) && !can(ctx.role, "edit_recipe"))
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Permission gating per state transition. edit_recipe (ya exigido arriba
+  // por requireAuth) alcanza para volver a "draft" — es edición normal — pero
+  // avanzar a in_test/approved exige su propio permiso.
+  if (parse.data.state !== undefined) {
+    if (parse.data.state === "in_test" && !can(ctx.role, "advance_to_test"))
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (parse.data.state === "approved" && !can(ctx.role, "approve_recipe"))
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
-  // Editing content of an approved recipe is admin-only: the team has signed
-  // off on this version, so changes need a stricter sign-off than the normal
-  // edit_recipe permission. State transitions (priority, etc.) still go
-  // through the per-action checks above.
-  if (
-    existing.state === "approved" &&
-    (parse.data.title !== undefined || parse.data.contentJson !== undefined) &&
-    ctx.role !== "admin"
-  ) {
+  // Editing content/cost/composition of an APPROVED recipe is admin-only: el
+  // equipo ya dio el visto bueno a esta versión, así que tocar su contenido,
+  // costo o alérgenos exige un sign-off más estricto que edit_recipe normal.
+  // `priority` (fijado) no es contenido, así que queda bajo edit_recipe aunque
+  // la receta esté aprobada.
+  const touchesApprovedContent =
+    parse.data.title !== undefined ||
+    parse.data.contentJson !== undefined ||
+    parse.data.recipeIngredients !== undefined ||
+    parse.data.portions !== undefined ||
+    parse.data.salePrice !== undefined ||
+    parse.data.addManualAllergen !== undefined ||
+    parse.data.removeManualAllergen !== undefined;
+  if (existing.state === "approved" && touchesApprovedContent && ctx.role !== "admin") {
     return NextResponse.json(
       { error: "Solo el admin puede modificar recetas aprobadas" },
       { status: 403 },
