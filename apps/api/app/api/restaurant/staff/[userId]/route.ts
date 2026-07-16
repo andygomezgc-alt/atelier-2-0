@@ -6,6 +6,11 @@ import { audit } from "@/lib/audit-log";
 
 export const dynamic = "force-dynamic";
 
+// P2-5 (auditoría jul 2026): invariante "último admin" — un restaurante nunca
+// debe quedarse sin ningún admin. Se usa para abortar la transacción desde
+// dentro del callback y distinguirlo de cualquier otro error inesperado.
+class LastAdminError extends Error {}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ userId: string }> },
@@ -28,11 +33,30 @@ export async function PATCH(
   const oldRole = target.role;
   const newRole = parse.data.role;
 
-  const updated = await prisma.user.update({
-    where: { id: userId },
-    data: { role: newRole },
-    select: { id: true, role: true },
-  });
+  let updated: { id: string; role: (typeof target)["role"] };
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      // Si esto degrada a un admin, contamos DENTRO de la transacción (no
+      // antes) para cerrar el TOCTOU: dos PATCH concurrentes sobre dos admins
+      // distintos podrían leer count=2 cada uno fuera de una transacción y
+      // dejar el restaurante con 0 admins.
+      if (oldRole === "admin" && newRole !== "admin") {
+        const adminCount = await tx.user.count({
+          where: { restaurantId: ctx.restaurantId, role: "admin" },
+        });
+        if (adminCount <= 1) throw new LastAdminError();
+      }
+      return tx.user.update({
+        where: { id: userId },
+        data: { role: newRole },
+        select: { id: true, role: true },
+      });
+    });
+  } catch (err) {
+    if (err instanceof LastAdminError)
+      return NextResponse.json({ error: "last_admin", code: "last_admin" }, { status: 409 });
+    throw err;
+  }
 
   await audit({
     restaurantId: ctx.restaurantId,
@@ -60,10 +84,28 @@ export async function DELETE(
   if (target.id === ctx.userId)
     return NextResponse.json({ error: "Cannot remove yourself" }, { status: 400 });
 
-  await prisma.user.update({
-    where: { id: userId },
-    data: { restaurantId: null },
-  });
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Mismo invariante que el PATCH: expulsar al último admin dejaría el
+      // restaurante sin nadie que administre. Contamos dentro de la
+      // transacción para cerrar el TOCTOU con expulsiones/degradaciones
+      // concurrentes de admins distintos.
+      if (target.role === "admin") {
+        const adminCount = await tx.user.count({
+          where: { restaurantId: ctx.restaurantId, role: "admin" },
+        });
+        if (adminCount <= 1) throw new LastAdminError();
+      }
+      await tx.user.update({
+        where: { id: userId },
+        data: { restaurantId: null },
+      });
+    });
+  } catch (err) {
+    if (err instanceof LastAdminError)
+      return NextResponse.json({ error: "last_admin", code: "last_admin" }, { status: 409 });
+    throw err;
+  }
 
   await audit({
     restaurantId: ctx.restaurantId,
