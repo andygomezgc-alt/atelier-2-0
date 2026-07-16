@@ -906,7 +906,7 @@ export default function MenuDetailScreen() {
       style={refreshing ? styles.refreshBtnDisabled : undefined}
       accessibilityLabel={t("refresh_label")}
     >
-      <Ionicons name="refresh-outline" size={18} color={colors.ink} />
+      <Ionicons name="refresh-outline" size={20} color={colors.ink} />
     </Pressable>
   );
 
