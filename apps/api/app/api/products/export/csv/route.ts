@@ -15,8 +15,14 @@ export const dynamic = "force-dynamic";
 
 // Cada campo se envuelve en comillas dobles y las comillas internas se duplican.
 // Envolver SIEMPRE es válido y cubre `;`, `"`, saltos de línea sin casos borde.
-function csvField(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
+//
+// P2-2 (auditoría jul 2026): si el valor empieza por =, +, -, @, tab o CR,
+// Excel/Sheets pueden interpretarlo como el inicio de una fórmula al abrir el
+// CSV (CSV formula injection). Anteponemos un apóstrofo para forzarlo a texto
+// literal antes de entrecomillar.
+export function csvField(value: string): string {
+  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return `"${safe.replace(/"/g, '""')}"`;
 }
 
 // centavos → euros con coma decimal (Excel es/it lo interpreta como número).
@@ -25,7 +31,11 @@ function formatEuro(cents: number): string {
 }
 
 export async function GET(req: NextRequest) {
-  const ctx = await requireAuth(req);
+  // P2-3 (auditoría jul 2026): candado de permiso explícito — export_pdf ya
+  // incluye a todos los roles (admin/chef_executive/sous_chef/viewer), así que
+  // esto no cambia quién puede exportar; solo centraliza el rechazo de
+  // usuarios sin restaurante en requireAuth.
+  const ctx = await requireAuth(req, "export_pdf");
   if (isNextResponse(ctx)) return ctx;
   if (!ctx.restaurantId)
     return new Response(JSON.stringify({ error: "Not in a restaurant" }), { status: 403 });

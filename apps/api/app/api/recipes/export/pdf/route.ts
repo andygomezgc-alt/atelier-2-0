@@ -112,7 +112,11 @@ function buildHtml(
 }
 
 export async function GET(req: NextRequest) {
-  const ctx = await requireAuth(req);
+  // P2-3 (auditoría jul 2026): candado de permiso explícito — export_pdf ya
+  // incluye a todos los roles (admin/chef_executive/sous_chef/viewer), así que
+  // esto no cambia quién puede exportar; solo centraliza el rechazo de
+  // usuarios sin restaurante en requireAuth.
+  const ctx = await requireAuth(req, "export_pdf");
   if (isNextResponse(ctx)) return ctx;
   if (!ctx.restaurantId)
     return new Response(JSON.stringify({ error: "Not in a restaurant" }), { status: 403 });

@@ -18,6 +18,7 @@ vi.mock("@/lib/permissions-guard", () => ({
 vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 import * as route from "../route";
+import { csvField } from "../route";
 
 function get() {
   return route.GET(new NextRequest("https://t.local/api/products/export/csv"));
@@ -89,5 +90,25 @@ describe("GET /api/products/export/csv", () => {
     // solo header (una línea de datos = ninguna)
     const dataLines = body.replace(/^﻿/, "").trim().split("\r\n");
     expect(dataLines).toHaveLength(1);
+  });
+});
+
+describe("csvField (P2-2: CSV formula injection)", () => {
+  it("antepone apóstrofo cuando el valor empieza por =, +, -, @, tab o CR", () => {
+    expect(csvField("=SUM(A1:A9)")).toBe(`"'=SUM(A1:A9)"`);
+    expect(csvField("+1234")).toBe(`"'+1234"`);
+    expect(csvField("-1234")).toBe(`"'-1234"`);
+    expect(csvField("@cmd")).toBe(`"'@cmd"`);
+    expect(csvField("\tsneaky")).toBe(`"'\tsneaky"`);
+    expect(csvField("\rsneaky")).toBe(`"'\rsneaky"`);
+  });
+
+  it("no toca valores normales (sin prefijo peligroso)", () => {
+    expect(csvField("Aceite de oliva")).toBe(`"Aceite de oliva"`);
+    expect(csvField("")).toBe(`""`);
+  });
+
+  it("sigue escapando comillas internas tras anteponer el apóstrofo", () => {
+    expect(csvField('=HYPERLINK("http://evil")')).toBe(`"'=HYPERLINK(""http://evil"")"`);
   });
 });

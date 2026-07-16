@@ -25,6 +25,11 @@ export async function POST(req: NextRequest) {
         { error: "Tipo de imagen no soportado", allowed: ALLOWED_PHOTO_MIMES },
         { status: 415 },
       );
+    if (valid.reason === "content")
+      return NextResponse.json(
+        { error: "El archivo no coincide con su tipo", code: "file_invalid" },
+        { status: 415 },
+      );
     return NextResponse.json(
       { error: "Imagen demasiado grande", max: MAX_PHOTO_BYTES },
       { status: 413 },

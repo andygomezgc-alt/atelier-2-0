@@ -1,12 +1,14 @@
 import { put } from "@vercel/blob";
 import { logger } from "./logger";
+import { fileMatchesMime } from "./recipe-extraction";
 
 export const ALLOWED_PHOTO_MIMES = ["image/jpeg", "image/png", "image/webp"] as const;
 export const MAX_PHOTO_BYTES = 8 * 1024 * 1024; // 8 MB
 
 export type PhotoValidationError =
   | { ok: false; reason: "mime"; allowed: readonly string[] }
-  | { ok: false; reason: "size"; max: number };
+  | { ok: false; reason: "size"; max: number }
+  | { ok: false; reason: "content" };
 
 export function validatePhoto(
   buffer: Buffer,
@@ -17,6 +19,12 @@ export function validatePhoto(
   }
   if (buffer.byteLength > MAX_PHOTO_BYTES) {
     return { ok: false, reason: "size", max: MAX_PHOTO_BYTES };
+  }
+  // P2-1 (auditoría jul 2026): el contenido real debe coincidir con el MIME
+  // declarado (magic bytes). El content-type del form es lo que el cliente
+  // dice que es, no lo que el archivo realmente es.
+  if (!fileMatchesMime(buffer, contentType)) {
+    return { ok: false, reason: "content" };
   }
   return { ok: true };
 }

@@ -93,6 +93,15 @@ export async function requireAuth(
     return NextResponse.json({ error: "User not found" }, { status: 401 });
   }
 
+  // P2-4 (auditoría jul 2026): un Bearer sin claim `tv` esquivaba la revocación
+  // (el chequeo de abajo solo compara cuando tv !== null). Hoy TODOS los
+  // emisores (verify/google/dev-login) firman el token con tv, así que ningún
+  // token legítimo carece de él — un Bearer sin tv es o un token viejo
+  // pre-revocación o uno manipulado. Cerramos esa vía rechazándolo directo.
+  if (bearer && bearer.tv === null) {
+    return unauthorizedRevoked();
+  }
+
   // For Bearer-authenticated requests, enforce tokenVersion match.
   if (bearer && bearer.tv !== null && user.tokenVersion !== bearer.tv) {
     return unauthorizedRevoked();
