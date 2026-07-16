@@ -73,7 +73,9 @@ export const recipeDetailInclude = {
   author: { select: { name: true, email: true } },
   approvedBy: { select: { name: true, email: true } },
   // For the "in which menus is this recipe?" badge on the recipe detail.
+  // Los menús en papelera no cuentan como "en el menú" (bug chips fantasma).
   menuItems: {
+    where: { menuFolder: { deletedAt: null } },
     include: { menuFolder: { select: { id: true, name: true } } },
   },
   recipeIngredients: recipeIngredientsForCostInclude,
@@ -85,6 +87,8 @@ export const menuListInclude = {
 
 export const menuDetailInclude = {
   items: {
+    // Caso simétrico: una receta en papelera queda fuera del detalle del menú.
+    where: { recipe: { deletedAt: null } },
     orderBy: { order: "asc" },
     include: {
       // Fase 2 alérgenos — para que cada item del menú llegue con

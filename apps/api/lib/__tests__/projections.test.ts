@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { MenuDetailSchema } from "@atelier/shared";
-import { projectMenuDetail } from "../projections";
+import {
+  menuDetailInclude,
+  projectMenuDetail,
+  recipeDetailInclude,
+} from "../projections";
 
 // Fixture SPEC válido — copiado de
 // apps/api/app/api/restaurant/menu-style/from-image/__tests__/from-image.test.ts
@@ -69,5 +73,19 @@ describe("projectMenuDetail — Tu estilo (menuStyleSpec)", () => {
     const result = projectMenuDetail(baseRow({ menuStyleSpec: SPEC }));
     const parsed = MenuDetailSchema.safeParse(result);
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe("etiquetas fantasma — includes filtran soft-deletes cruzados", () => {
+  it("recipeDetailInclude.menuItems excluye menús en papelera", () => {
+    expect(recipeDetailInclude.menuItems.where).toEqual({
+      menuFolder: { deletedAt: null },
+    });
+  });
+
+  it("menuDetailInclude.items excluye recetas en papelera", () => {
+    expect(menuDetailInclude.items.where).toEqual({
+      recipe: { deletedAt: null },
+    });
   });
 });
