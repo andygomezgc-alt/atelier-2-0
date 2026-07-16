@@ -45,18 +45,24 @@ export default function RecipeDetailScreen() {
       ? authState.user.role
       : "viewer";
 
-  const reload = useCallback(async () => {
-    if (!id) return;
-    setLoading(true);
-    try {
-      const r = await getRecipe(id);
-      setRecipe(r);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
-    } finally {
-      setLoading(false);
-    }
-  }, [id, t]);
+  // { silent: true } no toca `loading` (patrón de menus/[id].tsx) — el
+  // pull-to-refresh usa este modo para que la única señal sea el spinner
+  // del gesto, sin flash a la pantalla de carga completa.
+  const reload = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!id) return;
+      if (!opts?.silent) setLoading(true);
+      try {
+        const r = await getRecipe(id);
+        setRecipe(r);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : t("error_network"));
+      } finally {
+        if (!opts?.silent) setLoading(false);
+      }
+    },
+    [id, t],
+  );
 
   // useFocusEffect en vez de useEffect: cuando el chef vuelve a esta
   // pantalla desde el banco (después de cargar/editar un precio), la
@@ -70,8 +76,11 @@ export default function RecipeDetailScreen() {
     }, [reload]),
   );
 
+  // El pull-to-refresh recarga en silencio: su única señal visual es el
+  // spinner del gesto (refreshing), no la pantalla de carga completa.
+  const silentReload = useCallback(() => reload({ silent: true }), [reload]);
   const refreshPrefixes = id ? [`recipes:detail:${id}`] : [];
-  const { refreshing, onRefresh } = useRefresh(refreshPrefixes, reload);
+  const { refreshing, onRefresh } = useRefresh(refreshPrefixes, silentReload);
 
   async function togglePriority() {
     if (!recipe) return;

@@ -142,19 +142,25 @@ export default function ProductoDetailScreen() {
     [t],
   );
 
-  const reload = useCallback(async () => {
-    if (!id) return;
-    setLoading(true);
-    try {
-      const [p, h] = await Promise.all([getProduct(id), getProductHistory(id)]);
-      setProduct(p);
-      setHistory(h);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
-    } finally {
-      setLoading(false);
-    }
-  }, [id, t]);
+  // { silent: true } no toca `loading` (patrón de menus/[id].tsx) — el
+  // pull-to-refresh usa este modo para que la única señal sea el spinner
+  // del gesto, sin flash a la pantalla de carga completa.
+  const reload = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!id) return;
+      if (!opts?.silent) setLoading(true);
+      try {
+        const [p, h] = await Promise.all([getProduct(id), getProductHistory(id)]);
+        setProduct(p);
+        setHistory(h);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : t("error_network"));
+      } finally {
+        if (!opts?.silent) setLoading(false);
+      }
+    },
+    [id, t],
+  );
 
   useEffect(() => {
     void reload();
@@ -166,10 +172,13 @@ export default function ProductoDetailScreen() {
     }, [reload]),
   );
 
+  // El pull-to-refresh recarga en silencio: su única señal visual es el
+  // spinner del gesto (refreshing), no la pantalla de carga completa.
+  const silentReload = useCallback(() => reload({ silent: true }), [reload]);
   const refreshPrefixes = id
     ? [`products:detail:${id}`, `products:history:${id}`]
     : [];
-  const { refreshing, onRefresh } = useRefresh(refreshPrefixes, reload);
+  const { refreshing, onRefresh } = useRefresh(refreshPrefixes, silentReload);
 
   // Inline save helper genérico — para cualquier patch parcial. Optimistic
   // update + revert en error. Reusa el patrón del listado.

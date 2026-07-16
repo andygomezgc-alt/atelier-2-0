@@ -396,8 +396,12 @@ export default function MenuDetailScreen() {
     }, [reload]),
   );
 
+  // El pull-to-refresh recarga en silencio (reload ya soportaba el modo):
+  // su única señal visual es el spinner del gesto, no el spinner full-screen
+  // que desmontaría el ScrollView.
+  const silentReload = useCallback(() => reload({ silent: true }), [reload]);
   const refreshPrefixes = id ? [`menus:detail:${id}`] : [];
-  const { refreshing, onRefresh } = useRefresh(refreshPrefixes, reload);
+  const { refreshing, onRefresh } = useRefresh(refreshPrefixes, silentReload);
 
   // Duplicar el menú entero como copia (variante de carta) y abrir la copia.
   async function handleDuplicateMenu() {
