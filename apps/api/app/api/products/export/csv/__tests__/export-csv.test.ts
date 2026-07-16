@@ -18,7 +18,7 @@ vi.mock("@/lib/permissions-guard", () => ({
 vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 import * as route from "../route";
-import { csvField } from "../route";
+import { csvField } from "@/lib/csv";
 
 function get() {
   return route.GET(new NextRequest("https://t.local/api/products/export/csv"));

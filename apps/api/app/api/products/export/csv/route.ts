@@ -9,21 +9,10 @@ import { NextRequest } from "next/server";
 import { prisma } from "@atelier/db";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
+import { csvField } from "@/lib/csv";
 import { t, type TranslationKey } from "@atelier/i18n";
 
 export const dynamic = "force-dynamic";
-
-// Cada campo se envuelve en comillas dobles y las comillas internas se duplican.
-// Envolver SIEMPRE es válido y cubre `;`, `"`, saltos de línea sin casos borde.
-//
-// P2-2 (auditoría jul 2026): si el valor empieza por =, +, -, @, tab o CR,
-// Excel/Sheets pueden interpretarlo como el inicio de una fórmula al abrir el
-// CSV (CSV formula injection). Anteponemos un apóstrofo para forzarlo a texto
-// literal antes de entrecomillar.
-export function csvField(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return `"${safe.replace(/"/g, '""')}"`;
-}
 
 // centavos → euros con coma decimal (Excel es/it lo interpreta como número).
 function formatEuro(cents: number): string {
