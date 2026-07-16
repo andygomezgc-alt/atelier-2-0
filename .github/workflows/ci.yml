@@ -63,3 +63,61 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+  # P1-3 (auditoría jul 2026): sustituye a `pnpm audit`, roto localmente porque
+  # el endpoint que usaba fue retirado. osv-scanner lee pnpm-lock.yaml directo
+  # contra la base de datos de OSV/GHSA — no depende de ese endpoint.
+  dependency-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Binario oficial de la release (no hay Action first-party con un input
+      # de "solo HIGH/CRITICAL" — el filtro de severidad lo hacemos nosotros
+      # en el paso siguiente, así que aquí solo instalamos la CLI).
+      - name: Install osv-scanner
+        run: |
+          curl -sSL -o osv-scanner \
+            https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64
+          chmod +x osv-scanner
+
+      # osv-scanner devuelve exit code != 0 en cuanto encuentra CUALQUIER
+      # vulnerabilidad (sin importar severidad) — el `|| true` evita que este
+      # paso corte el job; el gate real de severidad va en el paso de abajo.
+      - name: Run osv-scanner against pnpm-lock.yaml
+        run: |
+          ./osv-scanner scan source --lockfile=pnpm-lock.yaml --format=json --output-file=osv-results.json || true
+
+      # Solo bloqueamos CI por HIGH/CRITICAL: low/moderate son ruido constante
+      # en cualquier monorepo JS y no ameritan romper el build. Node ya viene
+      # preinstalado en los runners de GitHub, así que no hace falta setup-node.
+      - name: Fail only on HIGH/CRITICAL vulnerabilities
+        run: |
+          node -e '
+            const fs = require("fs");
+            let data;
+            try {
+              data = JSON.parse(fs.readFileSync("osv-results.json", "utf8"));
+            } catch (err) {
+              console.error("No se pudo leer/parsear osv-results.json: " + err.message);
+              process.exit(1);
+            }
+            const bad = [];
+            for (const r of data.results ?? []) {
+              for (const p of r.packages ?? []) {
+                for (const v of p.vulnerabilities ?? []) {
+                  const sev = (v.database_specific?.severity || "").toUpperCase();
+                  if (sev === "HIGH" || sev === "CRITICAL") {
+                    bad.push(v.id + " (" + sev + ") - " + p.package.name + "@" + p.package.version);
+                  }
+                }
+              }
+            }
+            if (bad.length) {
+              console.error("Vulnerabilidades HIGH/CRITICAL encontradas:");
+              bad.forEach((b) => console.error(" - " + b));
+              process.exit(1);
+            }
+            console.log("Sin vulnerabilidades HIGH/CRITICAL en pnpm-lock.yaml.");
+          '
