@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -33,6 +34,7 @@ import { useI18n } from "@/src/hooks/useI18n";
 import { downloadAndShare } from "@/src/lib/export-file";
 import { formatEuros, formatEurosPerUnit } from "@/src/lib/money";
 import { useAuth } from "@/src/hooks/useAuth";
+import { useRefresh } from "@/src/hooks/useRefresh";
 import {
   listProducts,
   patchProduct,
@@ -205,6 +207,8 @@ export default function ProductosScreen() {
       void reload();
     }, [reload]),
   );
+
+  const { refreshing, onRefresh } = useRefresh(["products:list:"], reload);
 
   // Inline edit handlers. Optimistic update + revert on error. La EditableCell
   // re-throwea para mostrar borde rojo + retener el input.
@@ -388,6 +392,15 @@ export default function ProductosScreen() {
         maxToRenderPerBatch={10}
         windowSize={11}
         removeClippedSubviews
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.terracota}
+            colors={[colors.terracota]}
+            progressBackgroundColor={colors.paper}
+          />
+        }
         ItemSeparatorComponent={RowSeparator}
         ListEmptyComponent={
           loading ? (

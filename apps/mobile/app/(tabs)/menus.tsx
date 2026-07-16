@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   View,
@@ -27,6 +28,7 @@ import { NewMenuSheet } from "@/src/components/NewMenuSheet";
 import { ExportPreviewSheet } from "@/src/components/ExportPreviewSheet";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
+import { useRefresh } from "@/src/hooks/useRefresh";
 import { createMenu, listMenus, deleteMenu, getMenu, type Menu, type MenuFull } from "@/src/api/menus";
 import { showToast } from "@/src/components/Toast";
 import { TOKEN_KEY } from "@/src/api/client";
@@ -84,6 +86,8 @@ export default function MenusScreen() {
       void reload();
     }, [reload]),
   );
+
+  const { refreshing, onRefresh } = useRefresh(["menus:list", "menus:trash"], reload);
 
   async function handleCreate(name: string) {
     try {
@@ -292,6 +296,15 @@ export default function MenusScreen() {
         maxToRenderPerBatch={5}
         windowSize={11}
         removeClippedSubviews
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.terracota}
+            colors={[colors.terracota]}
+            progressBackgroundColor={colors.paper}
+          />
+        }
         ListEmptyComponent={
           loading ? (
             <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,6 +21,7 @@ import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import { useOfflineQueueSize, enqueueIdea, flushQueue } from "@/src/hooks/useOfflineQueue";
+import { useRefresh } from "@/src/hooks/useRefresh";
 import { listIdeas, createIdea, patchIdea, deleteIdea, type Idea } from "@/src/api/ideas";
 import { showToast } from "@/src/components/Toast";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
@@ -68,6 +70,10 @@ export default function InicioScreen() {
       void reload();
     }, [reload]),
   );
+
+  // Este dominio (ideas) no pasa por la caché en memoria — prefixes vacío,
+  // el pull-to-refresh solo vuelve a llamar reload().
+  const { refreshing, onRefresh } = useRefresh([], reload);
 
   async function handleSave() {
     if (!text.trim() || saving) return;
@@ -153,6 +159,15 @@ export default function InicioScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.terracota}
+            colors={[colors.terracota]}
+            progressBackgroundColor={colors.paper}
+          />
+        }
       >
           <Text style={styles.greet}>
             {t("inicio_greet", { name: userName })}{" "}

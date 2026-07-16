@@ -51,35 +51,51 @@ export const createMenu = async (data: CreateMenuRequest) => {
   invalidate("menus:");
   return result;
 };
+// Bug chips fantasma: recipe.menus (el chip "en qué carta está" del detalle
+// de receta) embebe id+name del menú. Renombrar/editar el menú deja ese
+// embed viejo en el caché de recetas hasta 30s. Invalidamos recipes: acá.
 export const patchMenu = async (id: string, data: PatchMenuRequest) => {
   const result = await apiFetch<MenuFull>(`/api/menus/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  invalidate("recipes:");
   return bumpMenuCache(result);
 };
+// Bug chips fantasma: borrar el menú saca las recetas que tenía de sus
+// chips "en qué carta está" — sin esto, esas recetas seguían mostrando el
+// menú borrado hasta que expirara el caché.
 export const deleteMenu = async (id: string) => {
   const result = await apiFetch<null>(`/api/menus/${id}`, { method: "DELETE" });
   invalidate("menus:");
+  invalidate("recipes:");
   return result;
 };
 // Duplicar un menú como copia (variante de carta). Devuelve el menú nuevo.
+// Bug chips fantasma: la copia trae los mismos platos → las recetas
+// correspondientes ahora están también en este menú nuevo.
 export const duplicateMenu = async (id: string) => {
   const result = await apiFetch<MenuFull>(`/api/menus/${id}/duplicate`, { method: "POST" });
   invalidate("menus:");
+  invalidate("recipes:");
   return result;
 };
 // Restaurar un menú desde la papelera.
+// Bug chips fantasma: sus recetas vuelven a estar "en carta" — refrescar.
 export const restoreMenu = async (id: string) => {
   const result = await apiFetch<MenuFull>(`/api/menus/${id}/restore`, { method: "POST" });
   invalidate("menus:");
+  invalidate("recipes:");
   return result;
 };
+// Bug chips fantasma: agregar un plato mete la receta en este menú — su
+// chip "en qué carta está" queda desactualizado sin este invalidate.
 export const addMenuItem = async (menuId: string, data: AddMenuItemRequest) => {
   const result = await apiFetch<MenuFull>(`/api/menus/${menuId}/items`, {
     method: "POST",
     body: JSON.stringify(data),
   });
+  invalidate("recipes:");
   return bumpMenuCache(result);
 };
 export const patchMenuItem = async (menuId: string, itemId: string, data: PatchMenuItemRequest) => {
@@ -89,11 +105,14 @@ export const patchMenuItem = async (menuId: string, itemId: string, data: PatchM
   });
   return bumpMenuCache(result);
 };
+// Bug chips fantasma: borrar un plato saca la receta de este menú — su
+// chip "en qué carta está" queda desactualizado sin este invalidate.
 export const deleteMenuItem = async (menuId: string, itemId: string) => {
   const result = await apiFetch<{ ok: boolean }>(`/api/menus/${menuId}/items/${itemId}`, {
     method: "DELETE",
   });
   invalidate("menus:");
+  invalidate("recipes:");
   return result;
 };
 

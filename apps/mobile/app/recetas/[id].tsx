@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,6 +19,7 @@ import { Eyebrow } from "@/src/components/Eyebrow";
 import { Button } from "@/src/components/Button";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
+import { useRefresh } from "@/src/hooks/useRefresh";
 import { getRecipe, patchRecipe, duplicateRecipe, scaleRecipe, type RecipeFull } from "@/src/api/recipes";
 import { showToast } from "@/src/components/Toast";
 import { AddToMenuSheet } from "@/src/components/AddToMenuSheet";
@@ -67,6 +69,9 @@ export default function RecipeDetailScreen() {
       void reload();
     }, [reload]),
   );
+
+  const refreshPrefixes = id ? [`recipes:detail:${id}`] : [];
+  const { refreshing, onRefresh } = useRefresh(refreshPrefixes, reload);
 
   async function togglePriority() {
     if (!recipe) return;
@@ -200,8 +205,34 @@ export default function RecipeDetailScreen() {
     recipe.state === "approved" ? role === "admin" : canEdit;
 
   return (
-    <Screen title={t("header_receta")} back onBack={() => router.back()}>
-      <ScrollView contentContainerStyle={styles.content}>
+    <Screen
+      title={t("header_receta")}
+      back
+      onBack={() => router.back()}
+      right={
+        <Pressable
+          hitSlop={12}
+          onPress={onRefresh}
+          disabled={refreshing}
+          style={refreshing ? styles.refreshBtnDisabled : undefined}
+          accessibilityLabel={t("refresh_label")}
+        >
+          <Ionicons name="refresh-outline" size={20} color={colors.terracota} />
+        </Pressable>
+      }
+    >
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.terracota}
+            colors={[colors.terracota]}
+            progressBackgroundColor={colors.paper}
+          />
+        }
+      >
         <View style={styles.hero}>
           <View style={styles.heroTop}>
             <StateLabel state={recipe.state} t={t} />
@@ -386,6 +417,7 @@ function StateLabel({
 }
 
 const styles = StyleSheet.create({
+  refreshBtnDisabled: { opacity: 0.4 },
   content: { paddingHorizontal: spacing.xl, paddingVertical: spacing.xl, gap: spacing.xl },
   hero: { gap: spacing.xs },
   heroTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },

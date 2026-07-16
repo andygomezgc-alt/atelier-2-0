@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -38,6 +39,7 @@ import { ChoiceSheet, type ChoiceOption } from "@/src/components/ChoiceSheet";
 import { useI18n, dateLocale } from "@/src/hooks/useI18n";
 import { formatEuros, formatEurosPerUnit } from "@/src/lib/money";
 import { useAuth } from "@/src/hooks/useAuth";
+import { useRefresh } from "@/src/hooks/useRefresh";
 import { showToast } from "@/src/components/Toast";
 import { StatusBadge } from "@/src/components/StatusBadge";
 import {
@@ -163,6 +165,11 @@ export default function ProductoDetailScreen() {
       void reload();
     }, [reload]),
   );
+
+  const refreshPrefixes = id
+    ? [`products:detail:${id}`, `products:history:${id}`]
+    : [];
+  const { refreshing, onRefresh } = useRefresh(refreshPrefixes, reload);
 
   // Inline save helper genérico — para cualquier patch parcial. Optimistic
   // update + revert en error. Reusa el patrón del listado.
@@ -398,7 +405,18 @@ export default function ProductoDetailScreen() {
 
   return (
     <Screen title={t("header_productos")} back onBack={() => router.back()}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + kb }]}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + kb }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.terracota}
+            colors={[colors.terracota]}
+            progressBackgroundColor={colors.paper}
+          />
+        }
+      >
         {/* Banda "Archivado" — solo cuando aplica. Discreta, una línea,
             tono apagado. Sustituye al texto "· Archivado" anterior que
             iba mezclado con la categoría y se notaba poco. */}

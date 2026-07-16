@@ -278,6 +278,7 @@ export const en: EsDict = {
   scale_confirm: "Scale and save copy",
   toast_recipe_scaled: "Scaled copy created",
   btn_ficha_pdf: "Recipe PDF",
+  refresh_label: "Refresh",
   pdf_portions: "{n} servings",
   toast_menu_duplicated: "Menu duplicated",
   toast_menu_restored: "Menu restored",

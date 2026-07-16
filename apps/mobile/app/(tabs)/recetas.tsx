@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,6 +23,7 @@ import { listRecipes, deleteRecipe, type Recipe, type ListFilters } from "@/src/
 import { downloadAndShare } from "@/src/lib/export-file";
 import { showToast } from "@/src/components/Toast";
 import { useAuth } from "@/src/hooks/useAuth";
+import { useRefresh } from "@/src/hooks/useRefresh";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
@@ -96,6 +98,8 @@ export default function RecetasScreen() {
       void reload();
     }, [reload]),
   );
+
+  const { refreshing, onRefresh } = useRefresh(["recipes:list:"], reload);
 
   // Exportar el recetario completo (PDF) — descarga del server y abre el
   // share-sheet. Va en el idioma del chef. Disponible para cualquier rol
@@ -243,6 +247,15 @@ export default function RecetasScreen() {
         maxToRenderPerBatch={5}
         windowSize={11}
         removeClippedSubviews
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.terracota}
+            colors={[colors.terracota]}
+            progressBackgroundColor={colors.paper}
+          />
+        }
         ListEmptyComponent={
           loading ? (
             <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />

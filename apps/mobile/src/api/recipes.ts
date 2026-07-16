@@ -45,18 +45,27 @@ export const createRecipe = async (data: CreateRecipeRequest) => {
   return result;
 };
 
+// Bug chips fantasma: el detalle de menú embebe título/alérgenos/ingredientes
+// de cada receta que trae (para el nombre por defecto del plato y los iconos
+// de alérgeno del PDF). Editar la receta deja ese embed viejo en el caché de
+// menús hasta 30s.
 export const patchRecipe = async (id: string, data: PatchRecipeRequest) => {
   const result = await apiFetch<RecipeFull>(`/api/recipes/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
   invalidate("recipes:");
+  invalidate("menus:");
   return result;
 };
 
+// Bug chips fantasma: borrar la receta deja huérfano el embed en cualquier
+// menú que la tuviera — refrescamos menus: para que no siga mostrando datos
+// de una receta que ya no existe.
 export const deleteRecipe = async (id: string) => {
   const result = await apiFetch<{ ok: boolean }>(`/api/recipes/${id}`, { method: "DELETE" });
   invalidate("recipes:");
+  invalidate("menus:");
   return result;
 };
 
@@ -68,9 +77,12 @@ export const duplicateRecipe = async (id: string) => {
 };
 
 // Restaurar desde la papelera. Devuelve la receta ya activa.
+// Bug chips fantasma: la receta vuelve a existir con sus datos actuales —
+// cualquier menú que la referenciaba necesita el embed fresco.
 export const restoreRecipe = async (id: string) => {
   const result = await apiFetch<RecipeFull>(`/api/recipes/${id}/restore`, { method: "POST" });
   invalidate("recipes:");
+  invalidate("menus:");
   return result;
 };
 

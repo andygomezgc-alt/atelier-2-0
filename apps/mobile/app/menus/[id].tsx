@@ -16,13 +16,14 @@
 // plato (staff-only); pegan a MenuItem.customName/customDesc, que es lo
 // canónico para cocina. La vista cliente sigue independiente vía overrides.
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   LayoutAnimation,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -35,7 +36,7 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
@@ -47,6 +48,7 @@ import { Button } from "@/src/components/Button";
 import { DebouncedTextInput } from "@/src/components/DebouncedTextInput";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
+import { useRefresh } from "@/src/hooks/useRefresh";
 import {
   getMenu,
   patchMenu,
@@ -385,9 +387,17 @@ export default function MenuDetailScreen() {
     [id, t],
   );
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  // useFocusEffect (no useEffect): faltaba refetchear al volver de otra
+  // pantalla (ej. tras editar una receta que este menú embebe) — mismo
+  // patrón que recetas/[id].tsx.
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload]),
+  );
+
+  const refreshPrefixes = id ? [`menus:detail:${id}`] : [];
+  const { refreshing, onRefresh } = useRefresh(refreshPrefixes, reload);
 
   // Duplicar el menú entero como copia (variante de carta) y abrir la copia.
   async function handleDuplicateMenu() {
@@ -888,17 +898,41 @@ export default function MenuDetailScreen() {
     </Pressable>
   ) : null;
 
+  const refreshHeaderBtn = (
+    <Pressable
+      hitSlop={12}
+      onPress={onRefresh}
+      disabled={refreshing}
+      style={refreshing ? styles.refreshBtnDisabled : undefined}
+      accessibilityLabel={t("refresh_label")}
+    >
+      <Ionicons name="refresh-outline" size={18} color={colors.ink} />
+    </Pressable>
+  );
+
   const headerRight = (
     <View style={styles.headerRightRow}>
       {inServiceToggle}
       {duplicateHeaderBtn}
       {pdfHeaderBtn}
+      {refreshHeaderBtn}
     </View>
   );
 
   return (
     <Screen back onBack={() => router.back()} right={headerRight}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: spacing.xl + kb }]}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: spacing.xl + kb }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.terracota}
+            colors={[colors.terracota]}
+            progressBackgroundColor={colors.paper}
+          />
+        }
+      >
         {/* Header editorial del mockup */}
         <View style={styles.menuHeader}>
           <Text style={styles.menuEyebrow}>
@@ -1172,6 +1206,7 @@ export default function MenuDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  refreshBtnDisabled: { opacity: 0.4 },
   content: { paddingHorizontal: spacing.xl, paddingVertical: spacing.xl, gap: spacing.lg },
   // Bloque 5 — header editorial del menú: eyebrow caps + título serif italic.
   menuHeader: { gap: 4 },

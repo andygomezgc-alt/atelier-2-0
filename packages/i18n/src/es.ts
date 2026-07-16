@@ -288,6 +288,7 @@ export const es = {
   scale_confirm: "Escalar y guardar copia",
   toast_recipe_scaled: "Copia escalada creada",
   btn_ficha_pdf: "Ficha PDF",
+  refresh_label: "Actualizar",
   pdf_portions: "{n} porciones",
   toast_menu_duplicated: "Menú duplicado",
   toast_menu_restored: "Menú restaurado",

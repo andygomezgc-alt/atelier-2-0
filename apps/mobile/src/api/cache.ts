@@ -48,9 +48,17 @@ export async function cached<T>(
 
 // Invalida todas las entradas cuya clave empiece con el prefix dado.
 // Útil para tirar caches de lista después de una mutación.
+//
+// También limpia `inflight`: un refresh forzado (pull-to-refresh) debe
+// refetchear de verdad, no colgarse de una promesa vieja ya en curso. La
+// promesa vieja sigue resolviendo con su resultado para quien ya la estaba
+// esperando — solo dejamos de servirla a callers nuevos.
 export function invalidate(prefix: string): void {
   for (const k of cache.keys()) {
     if (k.startsWith(prefix)) cache.delete(k);
+  }
+  for (const k of inflight.keys()) {
+    if (k.startsWith(prefix)) inflight.delete(k);
   }
 }
 
