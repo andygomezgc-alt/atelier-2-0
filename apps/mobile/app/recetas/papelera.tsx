@@ -9,6 +9,7 @@ import { useI18n } from "@/src/hooks/useI18n";
 import { useRefresh } from "@/src/hooks/useRefresh";
 import { listRecipes, restoreRecipe, type Recipe } from "@/src/api/recipes";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 // Papelera de recetas (auditoría jul 2026): el borrado es soft-delete, así que
 // acá el chef recupera lo que borró por error.
@@ -24,7 +25,7 @@ export default function PapeleraScreen() {
     try {
       setItems(await listRecipes({ trash: true }));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       if (!opts?.silent) setLoading(false);
     }
@@ -48,7 +49,7 @@ export default function PapeleraScreen() {
         showToast(t("toast_recipe_restored"));
         setItems((prev) => prev.filter((r) => r.id !== id));
       } catch (err) {
-        showToast(err instanceof Error ? err.message : t("error_network"));
+        showToast(apiErrorMessage(err, t));
       } finally {
         setRestoringId(null);
       }

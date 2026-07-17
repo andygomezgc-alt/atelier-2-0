@@ -42,6 +42,7 @@ import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { selection, tapLight } from "@/src/lib/haptics";
 import type { TranslationKey } from "@atelier/i18n";
 import { colors, fonts, fontSizes, radii, spacing, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 type ModelKey = "haiku" | "sonnet" | "opus";
 
@@ -336,7 +337,7 @@ export default function AsistenteScreen() {
           setMessages(msgs);
         } catch (err) {
           if (cancelled) return;
-          showToast(err instanceof Error ? err.message : t("error_network"));
+          showToast(apiErrorMessage(err, t));
         }
       })();
       return () => {
@@ -354,7 +355,7 @@ export default function AsistenteScreen() {
           setMessages(conv.messages);
         } catch (err) {
           if (cancelled) return;
-          showToast(err instanceof Error ? err.message : t("error_network"));
+          showToast(apiErrorMessage(err, t));
         }
       })();
     }

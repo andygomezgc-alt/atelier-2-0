@@ -62,6 +62,7 @@ import type {
 } from "@atelier/shared";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 // Cola de probables a confirmar. Procesamos uno a uno.
 type PendingMatch = {
@@ -330,7 +331,7 @@ export default function NuevaRecetaScreen() {
         await finalize();
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
       setSaving(false);
     }
   }
@@ -436,7 +437,7 @@ export default function NuevaRecetaScreen() {
         router.replace("/(tabs)/recetas");
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       flowStateRef.current = null;
       setSaving(false);

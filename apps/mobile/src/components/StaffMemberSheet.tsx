@@ -8,6 +8,7 @@ import { Button } from "./Button";
 import { BottomSheet } from "./BottomSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import type { Role } from "@atelier/shared";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 type Member = {
   id: string;
@@ -48,7 +49,7 @@ export function StaffMemberSheet({ open, member, onClose, onChanged }: Props) {
       onChanged();
       onClose();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setSaving(false);
     }
@@ -66,7 +67,7 @@ export function StaffMemberSheet({ open, member, onClose, onChanged }: Props) {
       onChanged();
       onClose();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setRemoving(false);
     }

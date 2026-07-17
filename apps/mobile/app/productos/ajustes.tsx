@@ -36,6 +36,7 @@ import {
 } from "@/src/api/products";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 // "hace X" formatter — i18n-aware, usa keys relative_*_ago. Mantengo
 // granularidad simple: minutos / horas / días / semanas / meses. Más
@@ -132,14 +133,14 @@ export default function AjustesBancoScreen() {
                   }),
                 );
               } catch (err) {
-                showToast(err instanceof Error ? err.message : t("error_network"));
+                showToast(apiErrorMessage(err, t));
               }
             },
           },
         ],
       );
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setChecking(false);
     }

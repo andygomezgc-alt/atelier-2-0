@@ -29,6 +29,7 @@ import { showToast } from "./Toast";
 import { getLeavePreflight, leaveRestaurant, type LeavePreflight } from "@/src/api/auth";
 import { ApiError } from "@/src/api/client";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 type Props = {
   open: boolean;
@@ -61,7 +62,7 @@ export function LeaveRestaurantSheet({ open, onClose }: Props) {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        const message = err instanceof Error ? err.message : t("error_network");
+        const message = apiErrorMessage(err, t);
         setStatus({ kind: "error", message });
       });
     return () => {
@@ -100,14 +101,14 @@ export function LeaveRestaurantSheet({ open, onClose }: Props) {
         } catch (e) {
           setStatus({
             kind: "error",
-            message: e instanceof Error ? e.message : t("error_network"),
+            message: apiErrorMessage(e, t),
           });
         } finally {
           setSubmitting(false);
         }
         return;
       }
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
       setSubmitting(false);
     }
   }

@@ -34,6 +34,7 @@ import { showToast } from "@/src/components/Toast";
 import { StatusBadge } from "@/src/components/StatusBadge";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 type Props = {
   open: boolean;
@@ -92,7 +93,7 @@ export function PezzaturaPendienteModal({ open, product, onClose }: Props) {
       await patchProduct(product.id, { pezzaturaInput: trimmed });
       onClose("saved");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
       setSaving(false);
     }
   };

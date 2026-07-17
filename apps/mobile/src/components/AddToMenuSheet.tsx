@@ -35,6 +35,7 @@ import { showToast } from "./Toast";
 import { Button } from "./Button";
 import { BottomSheet } from "./BottomSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 type Props = {
   open: boolean;
@@ -100,7 +101,7 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
       setSelectedMenu(full);
       setStep("section-list");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setLoadingMenu(false);
     }
@@ -132,7 +133,7 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
       showToast(t("toast_added_to_menu"));
       onClose();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setAdding(false);
     }
@@ -153,7 +154,7 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
       setSelectedMenu(full);
       setStep("section-list");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setCreating(false);
     }
@@ -177,7 +178,7 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
       showToast(t("toast_added_to_menu"));
       onClose();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
       setCreating(false);
     }
   }

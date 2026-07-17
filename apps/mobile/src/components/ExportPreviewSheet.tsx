@@ -36,6 +36,7 @@ import { MenuAllergenPickerSheet } from "./MenuAllergenPickerSheet";
 import { patchRecipe } from "@/src/api/recipes";
 import { ALLERGEN_ORDER, type Allergen } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 function centsFromInput(raw: string): number {
   const cleaned = raw.replace(/[^0-9.,]/g, "").replace(",", ".");
@@ -161,7 +162,7 @@ export function ExportPreviewSheet({
       // Revert: volvemos a la lista anterior (si existía override) o salimos
       // del override (volvemos al snapshot del server).
       setManualOverrides((prev) => ({ ...prev, [d.recipeId]: currentManual }));
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     }
   }
   async function handleRemoveManualAllergen(d: MenuFull["items"][number], allergen: Allergen) {
@@ -174,7 +175,7 @@ export function ExportPreviewSheet({
       onChanged();
     } catch (err) {
       setManualOverrides((prev) => ({ ...prev, [d.recipeId]: currentManual }));
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     }
   }
 
@@ -194,7 +195,7 @@ export function ExportPreviewSheet({
       await patchMenu(menu.id, { showAllergensInPdf: next });
       onChanged();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     }
   }
   // WYSIWYG: si toggle OFF, ni iconos por plato ni leyenda al pie. El "+"
@@ -219,7 +220,7 @@ export function ExportPreviewSheet({
       await patchClientOverrides(menu.id, next);
       onChanged();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     }
   }
 
@@ -234,7 +235,7 @@ export function ExportPreviewSheet({
       await patchRestaurant({ name: cleaned });
       patchLocalUser({ restaurantName: cleaned });
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     }
   }
 

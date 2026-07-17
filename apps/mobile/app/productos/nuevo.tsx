@@ -29,6 +29,7 @@ import type {
 } from "@atelier/shared";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 const CATEGORIES: ReadonlyArray<ProductCategory> = [
   "pescado",
@@ -119,7 +120,7 @@ export default function NuevoProductoScreen() {
       showToast(t("toast_producto_saved"));
       router.replace({ pathname: "/productos/[id]", params: { id: created.id } });
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setSaving(false);
     }

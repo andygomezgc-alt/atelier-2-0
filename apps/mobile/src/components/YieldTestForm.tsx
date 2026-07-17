@@ -28,7 +28,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { createYieldTest, type ProductFull } from "@/src/api/products";
 import { showToast } from "@/src/components/Toast";
+import { useI18n } from "@/src/hooks/useI18n";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 type Props = {
   productId: string;
@@ -57,6 +59,7 @@ function parseGrams(input: string): number | null {
 }
 
 export function YieldTestForm({ productId, prominent, labels, onSuccess }: Props) {
+  const { t } = useI18n();
   const [pesoBrutoInput, setPesoBrutoInput] = useState("");
   const [pesoUtilInput, setPesoUtilInput] = useState("");
   const [notas, setNotas] = useState("");
@@ -99,7 +102,7 @@ export function YieldTestForm({ productId, prominent, labels, onSuccess }: Props
       setNotas("");
       onSuccess(result.product);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : labels.errorInvalid);
+      showToast(apiErrorMessage(err, t));
     } finally {
       setSaving(false);
     }

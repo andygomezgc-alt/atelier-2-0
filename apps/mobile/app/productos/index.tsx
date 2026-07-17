@@ -48,6 +48,7 @@ import { can, resolvePezzaturaMode } from "@atelier/shared";
 import type { ProductUnit } from "@atelier/shared";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 type FilterId =
   | "all"
@@ -301,7 +302,7 @@ export default function ProductosScreen() {
       setExportOpen(false);
       showToast(ok ? t("toast_pdf_shared") : t("error_network"));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setExporting(false);
     }

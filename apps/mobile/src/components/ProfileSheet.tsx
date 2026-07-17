@@ -112,7 +112,7 @@ export function ProfileSheet({ open, onClose }: Props) {
       await refreshMe();
       showToast(t("byok_back_to_app_models_toast"));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "Error");
+      showToast(apiErrorMessage(err, t));
     }
   }
 
@@ -154,7 +154,7 @@ export function ProfileSheet({ open, onClose }: Props) {
     } catch (err) {
       setNameOverride(null);
       setBioOverride(null);
-      showToast(err instanceof Error ? err.message : "Error");
+      showToast(apiErrorMessage(err, t));
     }
   }
 
@@ -401,7 +401,7 @@ function BYOKSection({ user, onSaved }: { user: MeUser; onSaved: () => Promise<v
       await onSaved();
       showToast("Guardado");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "Error guardando");
+      showToast(apiErrorMessage(err, t));
     } finally {
       setSaving(false);
     }

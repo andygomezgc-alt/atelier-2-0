@@ -58,6 +58,7 @@ import type { ProductCategory, ProductUnit } from "@atelier/shared";
 import { getInitialPezzaturaInput } from "@/src/components/PezzaturaField";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 const UNIT_SHORT: Record<ProductUnit, string> = {
   kg: "kg",
@@ -162,7 +163,7 @@ export default function ProductoDetailScreen() {
         setHistory(h);
         setLoadError(null);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : t("error_network"));
+        showToast(apiErrorMessage(err, t));
         setLoadError(err instanceof ApiError && err.status === 404 ? "not_found" : "network");
       } finally {
         if (!opts?.silent) setLoading(false);
@@ -265,7 +266,7 @@ export default function ProductoDetailScreen() {
       const trimmed = next.trim();
       if (!trimmed || !product || trimmed === product.name) return;
       void handleInlineSave("name", trimmed).catch((err) => {
-        showToast(err instanceof Error ? err.message : t("error_network"));
+        showToast(apiErrorMessage(err, t));
       });
     },
     [product, handleInlineSave, t],
@@ -278,7 +279,7 @@ export default function ProductoDetailScreen() {
       const nextValue = trimmed.length === 0 ? null : trimmed;
       if (nextValue === product[field]) return;
       void handleInlineSave(field, nextValue).catch((err) => {
-        showToast(err instanceof Error ? err.message : t("error_network"));
+        showToast(apiErrorMessage(err, t));
       });
     },
     [product, handleInlineSave, t],
@@ -303,7 +304,7 @@ export default function ProductoDetailScreen() {
         setProduct(updated);
       } catch (err) {
         setProduct(before);
-        showToast(err instanceof Error ? err.message : t("error_network"));
+        showToast(apiErrorMessage(err, t));
       }
     },
     [product, t],
@@ -316,7 +317,7 @@ export default function ProductoDetailScreen() {
       try {
         await handleInlineSave("category", next);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : t("error_network"));
+        showToast(apiErrorMessage(err, t));
       }
     },
     [product, handleInlineSave, t],
@@ -329,7 +330,7 @@ export default function ProductoDetailScreen() {
       try {
         await handleInlineSave("unidadCompra", next);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : t("error_network"));
+        showToast(apiErrorMessage(err, t));
       }
     },
     [product, handleInlineSave, t],
@@ -344,7 +345,7 @@ export default function ProductoDetailScreen() {
       showToast(t("toast_product_duplicated"));
       router.push({ pathname: "/productos/[id]", params: { id: copy.id } });
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setDuplicating(false);
     }
@@ -366,7 +367,7 @@ export default function ProductoDetailScreen() {
       }
       setDeleteInUseCount(result.recipes.length);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setDeleting(false);
     }
@@ -386,7 +387,7 @@ export default function ProductoDetailScreen() {
         router.back();
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setForceDeleting(false);
     }

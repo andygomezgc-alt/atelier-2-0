@@ -35,6 +35,7 @@ import { showToast } from "@/src/components/Toast";
 import { TOKEN_KEY } from "@/src/api/client";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 const API = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 
@@ -112,7 +113,7 @@ export default function MenusScreen() {
       const menu = await createMenu({ name });
       setMenus((prev) => [menu, ...prev]);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     }
   }
 
@@ -126,7 +127,7 @@ export default function MenusScreen() {
       await deleteMenu(id);
     } catch (err) {
       setMenus(prev);
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     }
   }
 
@@ -148,7 +149,7 @@ export default function MenusScreen() {
         showToast(t("toast_pdf_shared"));
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     }
   }
 
@@ -161,7 +162,7 @@ export default function MenusScreen() {
       setPreviewMenu(detail);
       setPreviewOpen(true);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     }
   }
 
@@ -173,7 +174,7 @@ export default function MenusScreen() {
     try {
       setPreviewMenu(await getMenu(previewMenu.id));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     }
   }
 

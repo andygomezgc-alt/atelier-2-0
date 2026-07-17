@@ -27,6 +27,7 @@ import { listIdeas, createIdea, patchIdea, deleteIdea, type Idea } from "@/src/a
 import { showToast } from "@/src/components/Toast";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 export default function InicioScreen() {
   const { t } = useI18n();
@@ -120,7 +121,7 @@ export default function InicioScreen() {
       await deleteIdea(id);
       setIdeas((prev) => prev.filter((i) => i.id !== id));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     }
   }
 
@@ -157,7 +158,7 @@ export default function InicioScreen() {
       );
       setEditing(null);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setSavingEdit(false);
     }

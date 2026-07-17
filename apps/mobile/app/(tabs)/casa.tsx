@@ -27,11 +27,12 @@ import { apiFetch } from "@/src/api/client";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import type { Role } from "@atelier/shared";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 export default function CasaScreen() {
   const { t } = useI18n();
   const router = useRouter();
-  const { state, refreshMe } = useAuth();
+  const { state, refreshMe, patchLocalUser } = useAuth();
   const { rs, reload } = useRestaurant();
   const [selectedMember, setSelectedMember] = useState<StaffMember | null>(null);
   const [editNameOpen, setEditNameOpen] = useState(false);
@@ -123,7 +124,7 @@ export default function CasaScreen() {
       reload();
       showToast(t("toast_regenerado"));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setRegenerating(false);
     }
@@ -135,10 +136,11 @@ export default function CasaScreen() {
         method: "PATCH",
         body: JSON.stringify({ name }),
       });
+      patchLocalUser({ restaurantName: name });
       reload();
       showToast(t("toast_edit_mode"));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
       throw err; // re-throw para que el sheet no cierre con el dato perdido
     }
   }

@@ -27,6 +27,7 @@ import { useAuth } from "@/src/hooks/useAuth";
 import { useRefresh } from "@/src/hooks/useRefresh";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 type FilterId = "in_progress" | "priority" | "approved" | "all";
 
@@ -126,7 +127,7 @@ export default function RecetasScreen() {
       );
       showToast(ok ? t("toast_pdf_shared") : t("error_network"));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setExporting(false);
     }
@@ -140,7 +141,7 @@ export default function RecetasScreen() {
       await deleteRecipe(id);
       setRecipes((prev) => prev.filter((r) => r.id !== id));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     }
   }
 

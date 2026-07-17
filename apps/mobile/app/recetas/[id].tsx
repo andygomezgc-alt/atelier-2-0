@@ -30,6 +30,7 @@ import { StatusBadge, type StatusLevel } from "@/src/components/StatusBadge";
 import { setRecipeDraft } from "@/src/lib/recipe-draft";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+import { apiErrorMessage } from "@/src/lib/api-error";
 
 export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -63,7 +64,7 @@ export default function RecipeDetailScreen() {
         // P1-5 — ya no basta con el toast fugaz: `recipe` se queda en null
         // y la rama `!recipe` de abajo (separada de `loading`) es el
         // "estado de error" persistente que dispara NetworkError + reintento.
-        showToast(err instanceof Error ? err.message : t("error_network"));
+        showToast(apiErrorMessage(err, t));
       } finally {
         if (!opts?.silent) setLoading(false);
       }
@@ -97,7 +98,7 @@ export default function RecipeDetailScreen() {
       setRecipe(updated);
       showToast(updated.priority ? t("toast_priority_on") : t("toast_priority_off"));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setTogglingPriority(false);
     }
@@ -112,7 +113,7 @@ export default function RecipeDetailScreen() {
       showToast(t("toast_recipe_duplicated"));
       router.push({ pathname: "/recetas/[id]", params: { id: copy.id } });
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setDuplicating(false);
     }
@@ -138,7 +139,7 @@ export default function RecipeDetailScreen() {
         showToast(t("toast_pdf_shared"));
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     }
   }
 
@@ -153,7 +154,7 @@ export default function RecipeDetailScreen() {
       showToast(t("toast_recipe_scaled"));
       router.push({ pathname: "/recetas/[id]", params: { id: copy.id } });
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setScaling(false);
     }
@@ -167,7 +168,7 @@ export default function RecipeDetailScreen() {
       setRecipe(updated);
       showToast(t("toast_advanced_to_test"));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setAdvancing(false);
     }
@@ -183,7 +184,7 @@ export default function RecipeDetailScreen() {
       // 600ms delay matches the prototype micro-interaction
       setTimeout(() => setAddToMenuOpen(true), 600);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setApproving(false);
     }
@@ -289,7 +290,7 @@ export default function RecipeDetailScreen() {
               const updated = await patchRecipe(recipe.id, { portions });
               setRecipe(updated);
             } catch (err) {
-              showToast(err instanceof Error ? err.message : t("error_network"));
+              showToast(apiErrorMessage(err, t));
             }
           }}
           onPatchSalePrice={async (salePrice) => {
@@ -297,7 +298,7 @@ export default function RecipeDetailScreen() {
               const updated = await patchRecipe(recipe.id, { salePrice });
               setRecipe(updated);
             } catch (err) {
-              showToast(err instanceof Error ? err.message : t("error_network"));
+              showToast(apiErrorMessage(err, t));
             }
           }}
         />

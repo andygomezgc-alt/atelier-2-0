@@ -399,7 +399,7 @@ export default function MenuDetailScreen() {
         setLoadError(false);
       } catch (err) {
         setLoadError(true);
-        showToast(err instanceof Error ? err.message : t("error_network"));
+        showToast(apiErrorMessage(err, t));
       } finally {
         if (!opts?.silent) setLoading(false);
       }
@@ -432,7 +432,7 @@ export default function MenuDetailScreen() {
       showToast(t("toast_menu_duplicated"));
       router.replace({ pathname: "/menus/[id]", params: { id: copy.id } });
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setDuplicating(false);
     }
@@ -692,7 +692,7 @@ export default function MenuDetailScreen() {
         const updated = await createSection(menu.id, { name });
         setMenu(updated);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : t("error_network"));
+        showToast(apiErrorMessage(err, t));
       }
     },
     [menu, t],
@@ -707,7 +707,7 @@ export default function MenuDetailScreen() {
         const updated = await patchSection(menu.id, sectionId, { name: cleaned });
         setMenu(updated);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : t("error_network"));
+        showToast(apiErrorMessage(err, t));
       }
     },
     [menu, t],
@@ -723,7 +723,7 @@ export default function MenuDetailScreen() {
       setMenu(updated);
       setPendingDeleteSection(null);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setDeletingSection(false);
     }
@@ -744,7 +744,7 @@ export default function MenuDetailScreen() {
         });
         setMenu(updated);
       } catch (err) {
-        showToast(err instanceof Error ? err.message : t("error_network"));
+        showToast(apiErrorMessage(err, t));
       }
     },
     [menu, t],
@@ -850,7 +850,7 @@ export default function MenuDetailScreen() {
         showToast(t("toast_pdf_shared"));
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("error_network"));
+      showToast(apiErrorMessage(err, t));
     } finally {
       setExporting(false);
     }

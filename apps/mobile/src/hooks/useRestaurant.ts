@@ -43,7 +43,10 @@ export function useRestaurant() {
     } catch (err) {
       setRs({
         status: "error",
-        message: err instanceof Error ? err.message : "network_unreachable",
+        // Código interno (network_unreachable/…) — la UI ya no lo muestra:
+        // Casa renderiza NetworkError con texto traducido (P1-6). Se conserva
+        // solo para debugging.
+        message: err instanceof Error ? err.message : "request_failed",
       });
     }
   }, [hasRestaurant]);
