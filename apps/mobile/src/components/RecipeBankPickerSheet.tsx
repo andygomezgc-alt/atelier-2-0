@@ -56,8 +56,8 @@ export function RecipeBankPickerSheet({
 
   useEffect(() => {
     if (!open) return;
-      .finally(() => setLoading(false));
-  }, [open]);
+    void loadRecipes();
+  }, [open, loadRecipes]);
 
   return (
     <BottomSheet open={open} onClose={onClose}>

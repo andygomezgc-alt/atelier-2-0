@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
-import { uploadPhoto, validatePhoto, ALLOWED_PHOTO_MIMES, MAX_PHOTO_BYTES } from "@/lib/blob";
+import { deleteBlobs, uploadPhoto, validatePhoto, ALLOWED_PHOTO_MIMES, MAX_PHOTO_BYTES } from "@/lib/blob";
 import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +45,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const previous = await prisma.user.findUnique({
+    where: { id: ctx.userId },
+    select: { photoUrl: true },
+  });
+  const oldUrl = previous?.photoUrl;
+
   await prisma.user.update({ where: { id: ctx.userId }, data: { photoUrl: url } });
+  if (oldUrl && oldUrl !== url) await deleteBlobs([oldUrl]);
   logger.info("photo_updated", { userId: ctx.userId });
   return NextResponse.json({ photoUrl: url });
 }

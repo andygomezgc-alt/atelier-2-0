@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const { db, guard, extract, blob, quota, pdf } = vi.hoisted(() => ({
-  db: { restaurant: { update: vi.fn() } },
+  db: { restaurant: { update: vi.fn(), findUnique: vi.fn() } },
   guard: {
     requireAuth: vi.fn(),
     isNextResponse: (v: unknown) =>
@@ -22,7 +22,10 @@ vi.mock("@/lib/permissions-guard", () => ({
 vi.mock("@/lib/pdf/style-extract", () => ({
   extractMenuStyle: extract.extractMenuStyle,
 }));
-vi.mock("@/lib/blob", () => ({ uploadPhoto: blob.uploadPhoto }));
+vi.mock("@/lib/blob", () => ({
+  uploadPhoto: blob.uploadPhoto,
+  deleteBlobs: vi.fn(async () => {}),
+}));
 vi.mock("@/lib/ai-quota", () => ({
   reserveAiCall: quota.reserveAiCall,
   aiQuotaExceededResponse: (retryAfter: number) =>
@@ -72,6 +75,7 @@ function postWithFile(bytes: Uint8Array<ArrayBuffer>, mime = "image/jpeg") {
 
 beforeEach(() => {
   db.restaurant.update.mockReset().mockResolvedValue({ id: "r1" });
+  db.restaurant.findUnique.mockReset().mockResolvedValue({ menuStyleRefUrl: null });
   guard.requireAuth
     .mockReset()
     .mockResolvedValue({ userId: "u1", restaurantId: "r1", role: "chef_executive" });

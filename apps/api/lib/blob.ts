@@ -1,9 +1,39 @@
-import { put } from "@vercel/blob";
+import { del, put } from "@vercel/blob";
 import { logger } from "./logger";
 import { fileMatchesMime } from "./recipe-extraction";
 
 export const ALLOWED_PHOTO_MIMES = ["image/jpeg", "image/png", "image/webp"] as const;
 export const MAX_PHOTO_BYTES = 8 * 1024 * 1024; // 8 MB
+
+function isVercelBlobUrl(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname;
+    return (
+      hostname === "blob.vercel-storage.com" ||
+      hostname.endsWith(".blob.vercel-storage.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteBlobs(
+  urls: Array<string | null | undefined>,
+): Promise<void> {
+  const blobUrls = urls.filter(
+    (url): url is string => typeof url === "string" && isVercelBlobUrl(url),
+  );
+  if (blobUrls.length === 0) return;
+
+  try {
+    await del(blobUrls);
+  } catch (err) {
+    logger.warn("blob_delete_failed", {
+      error: err instanceof Error ? err.message : String(err),
+      count: blobUrls.length,
+    });
+  }
+}
 
 export type PhotoValidationError =
   | { ok: false; reason: "mime"; allowed: readonly string[] }

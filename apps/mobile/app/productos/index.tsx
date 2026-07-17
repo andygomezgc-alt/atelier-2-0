@@ -169,12 +169,6 @@ export default function ProductosScreen() {
   // Sub-paso 6: el aviso de la tarjeta de costo en la receta navega acá
   // con ?filter=sin-precio para que el chef vea de inmediato qué productos
   // faltan precificar. Si llega ese query param, lo usamos como filtro inicial.
-  const [loadError, setLoadError] = useState(false);
-
-  const itemsRef = useRef(items);
-  useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
   const params = useLocalSearchParams<{ filter?: string }>();
   const initialFilter: FilterId =
     params.filter === "sin-precio" ? "sin_precio" : "all";
@@ -182,6 +176,12 @@ export default function ProductosScreen() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   const role =
     authState.status === "signed-in" || authState.status === "needs-restaurant"

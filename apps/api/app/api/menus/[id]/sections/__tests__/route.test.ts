@@ -14,7 +14,12 @@ const { db, guard, FakePrismaError } = vi.hoisted(() => {
   }
   const menuFolder = { findUnique: vi.fn() };
   const menuSection = { aggregate: vi.fn(), create: vi.fn() };
-  const $transaction = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+  const $transaction = vi.fn<
+    (
+      cb: (tx: unknown) => Promise<unknown>,
+      _options?: { isolationLevel: string },
+    ) => Promise<unknown>
+  >(async (cb) =>
     cb({ menuSection: { aggregate: menuSection.aggregate, create: menuSection.create } }),
   );
   return {
@@ -75,8 +80,8 @@ describe("POST /api/menus/[id]/sections", () => {
 
     expect(res.status).toBe(200);
     expect(db.menuSection.create.mock.calls[0]![0].data.order).toBe(3);
-    const txOpts = db.$transaction.mock.calls[0]![1] as { isolationLevel: string };
-    expect(txOpts.isolationLevel).toBe("Serializable");
+    const txOpts = db.$transaction.mock.calls[0]![1];
+    expect(txOpts?.isolationLevel).toBe("Serializable");
   });
 
   it("404 si el menú no existe o es de otro restaurante", async () => {

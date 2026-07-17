@@ -1,6 +1,8 @@
 // Structured JSON logger. One line per call. Vercel parses JSON automatically.
 // info/debug -> stdout; warn/error -> stderr.
 
+import * as Sentry from "@sentry/nextjs";
+
 type Ctx = Record<string, unknown>;
 type Level = "info" | "warn" | "error" | "debug";
 
@@ -8,6 +10,16 @@ function emit(level: Level, msg: string, ctx?: Ctx) {
   const line = JSON.stringify({ ts: new Date().toISOString(), level, msg, ...(ctx ?? {}) });
   if (level === "warn" || level === "error") process.stderr.write(line + "\n");
   else process.stdout.write(line + "\n");
+
+  if (level === "error") {
+    try {
+      const meta: Ctx = ctx ?? {};
+      const { error, ...extra } = meta;
+      Sentry.captureException(error instanceof Error ? error : new Error(msg), { extra });
+    } catch {
+      // Sentry nunca debe romper el logger ni la respuesta del request.
+    }
+  }
 }
 
 export const logger = {

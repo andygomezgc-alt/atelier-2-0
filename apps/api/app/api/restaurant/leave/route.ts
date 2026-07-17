@@ -21,6 +21,7 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { computeLeaveCase } from "@/lib/leave-cases";
 import { audit } from "@/lib/audit-log";
 import { logger } from "@/lib/logger";
+import { deleteBlobs } from "@/lib/blob";
 
 export const dynamic = "force-dynamic";
 
@@ -116,7 +117,12 @@ export async function POST(req: NextRequest) {
   // ─────────────────────── Caso C: borrar el restaurante ───────────────────
   const restaurant = await prisma.restaurant.findUnique({
     where: { id: restaurantId },
-    select: { name: true, stripeSubscriptionId: true },
+    select: {
+      name: true,
+      stripeSubscriptionId: true,
+      photoUrl: true,
+      menuStyleRefUrl: true,
+    },
   });
   if (!restaurant) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -193,6 +199,8 @@ export async function POST(req: NextRequest) {
     { timeout: 30_000 },
   );
   if (mismatch) return caseChanged(mismatch);
+
+  await deleteBlobs([restaurant.photoUrl, restaurant.menuStyleRefUrl]);
 
   logger.info("restaurant_deleted", { restaurantId, actorId: ctx.userId });
   return NextResponse.json({ action: "deleted" });

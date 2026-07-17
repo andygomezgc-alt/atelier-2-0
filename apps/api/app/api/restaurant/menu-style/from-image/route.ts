@@ -11,7 +11,7 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 import { fileMatchesMime, IMAGE_MIMES, PDF_MIME } from "@/lib/recipe-extraction";
 import { extractMenuStyle } from "@/lib/pdf/style-extract";
-import { uploadPhoto } from "@/lib/blob";
+import { deleteBlobs, uploadPhoto } from "@/lib/blob";
 import { reserveAiCall, aiQuotaExceededResponse } from "@/lib/ai-quota";
 
 export const dynamic = "force-dynamic";
@@ -107,10 +107,20 @@ export async function POST(req: NextRequest) {
       refUrl = null;
     }
 
+    const previousRestaurant = await prisma.restaurant.findUnique({
+      where: { id: ctx.restaurantId },
+      select: { menuStyleRefUrl: true },
+    });
+    const oldRefUrl = previousRestaurant?.menuStyleRefUrl;
+
     await prisma.restaurant.update({
       where: { id: ctx.restaurantId },
       data: { menuStyleSpec: spec, ...(refUrl ? { menuStyleRefUrl: refUrl } : {}) },
     });
+
+    if (refUrl && oldRefUrl && oldRefUrl !== refUrl) {
+      await deleteBlobs([oldRefUrl]);
+    }
 
     logger.info("menu_style_extracted", {
       userId: ctx.userId,

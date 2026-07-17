@@ -638,6 +638,4 @@ export const it: EsDict = {
   pdf_products_col_supplier: "Fornitore",
   pdf_products_col_state: "Stato",
   toast_offline_stale: "Senza connessione — mostro gli ultimi dati caricati.",
-  confirm_delete_dish_title: "Rimuovere il piatto dal menu?",
-  confirm_delete_dish_body: "«{name}» verrà rimosso dal menu. Questa azione non può essere annullata.",
 };

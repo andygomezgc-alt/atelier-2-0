@@ -71,6 +71,7 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
 
   // Estados de creación.
   const [creating, setCreating] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [newSeason, setNewSeason] = useState("");
   const [customSectionName, setCustomSectionName] = useState("");
@@ -120,6 +121,8 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
   // ─────────── Add actions ───────────
 
   async function addToSection(menuId: string, sectionId: string | null) {
+    if (adding) return;
+    setAdding(true);
     try {
       await addMenuItem(menuId, {
         recipeId,
@@ -130,6 +133,8 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
       onClose();
     } catch (err) {
       showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setAdding(false);
     }
   }
 

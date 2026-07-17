@@ -64,8 +64,8 @@ export function PreviousChatsSheet({ open, onClose, onPick }: Props) {
 
   useEffect(() => {
     if (!open) return;
-      .finally(() => setLoading(false));
-  }, [open]);
+    void loadConversations();
+  }, [open, loadConversations]);
 
   return (
     <BottomSheet open={open} onClose={onClose}>

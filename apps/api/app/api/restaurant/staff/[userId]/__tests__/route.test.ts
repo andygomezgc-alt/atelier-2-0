@@ -223,7 +223,7 @@ describe("DELETE /api/restaurant/staff/[userId]", () => {
     expect(res.status).toBe(200);
     // Se rota el código: update sobre el restaurante con un inviteCode nuevo.
     expect(db.restaurant.update).toHaveBeenCalledTimes(1);
-    const call = db.restaurant.update.mock.calls[0][0];
+    const call = db.restaurant.update.mock.calls[0]![0];
     expect(call.where).toEqual({ id: "r1" });
     expect(typeof call.data.inviteCode).toBe("string");
     expect(call.data.inviteCode.length).toBeGreaterThan(0);
