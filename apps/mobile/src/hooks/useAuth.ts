@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useRef, useSyncExternalStore } from "react";
 import * as SecureStore from "@/src/lib/secure-storage";
 import { TOKEN_KEY, setUnauthorizedHandler, ApiError } from "@/src/api/client";
 import { devLogin, fetchMe, loginWithGoogle, requestMagicLink, type MeUser } from "@/src/api/auth";

@@ -10,33 +10,11 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { renderHtmlToPdf } from "@/lib/pdf/render";
 import { logger } from "@/lib/logger";
 import { t, type Language } from "@atelier/i18n";
+import { escapeHtml as esc } from "@/lib/html";
+import { LANGS, formatDate } from "@/lib/pdf/format";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const LANGS: readonly Language[] = ["es", "it", "en"];
-
-function esc(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function formatDate(lang: Language): string {
-  const locale = lang === "es" ? "es-ES" : lang === "it" ? "it-IT" : "en-GB";
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 10);
-  }
-}
 
 function recipeCard(
   recipe: { title: string; portions: number | null; contentJson: unknown },

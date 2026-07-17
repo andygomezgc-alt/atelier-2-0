@@ -9,20 +9,11 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { renderHtmlToPdf } from "@/lib/pdf/render";
 import { logger } from "@/lib/logger";
 import { t, type Language } from "@atelier/i18n";
+import { escapeHtml as esc } from "@/lib/html";
+import { LANGS } from "@/lib/pdf/format";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const LANGS: readonly Language[] = ["es", "it", "en"];
-
-function esc(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 function buildHtml(
   recipe: { title: string; portions: number | null; contentJson: unknown },

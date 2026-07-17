@@ -21,8 +21,28 @@ function computeRealCost(precioCompraCents: number, mermaPct: number): number {
   return Math.ceil(precioCompraCents / yieldRatio);
 }
 
+// Subconjunto de campos que projectProductListItem realmente lee. Permite que
+// GET /api/products use un `select` mínimo en vez de traer la fila completa.
+type ProductListSource = Pick<
+  Product,
+  | "id"
+  | "name"
+  | "category"
+  | "pezzatura"
+  | "pezzaturaMode"
+  | "pezzaturaMin"
+  | "pezzaturaMax"
+  | "unidadCompra"
+  | "precioCompra"
+  | "mermaPct"
+  | "mermaOrigen"
+  | "criticality"
+  | "estado"
+  | "precioActualizadoAt"
+>;
+
 export function projectProductListItem(
-  p: Product,
+  p: ProductListSource,
   usedByUnitCount = 0,
 ): ProductListItem {
   const mermaPctNum = Number(p.mermaPct);

@@ -33,7 +33,7 @@ import { CategoryIcon } from "@/src/components/CategoryIcon";
 import { EditableCell } from "@/src/components/EditableCell";
 import { useI18n } from "@/src/hooks/useI18n";
 import { downloadAndShare } from "@/src/lib/export-file";
-import { formatEuros, formatEurosPerUnit } from "@/src/lib/money";
+import { formatEuros, formatEurosPerUnit, parseEurosToCents } from "@/src/lib/money";
 import { useAuth } from "@/src/hooks/useAuth";
 import { useRefresh } from "@/src/hooks/useRefresh";
 import {
@@ -132,12 +132,6 @@ function detailToListItem(d: ProductFull): Product {
   };
 }
 
-function parseEurosToCents(input: string): number | null {
-  if (!input.trim()) return null;
-  const n = Number(input.replace(",", ".").trim());
-  if (!Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 100);
-}
 function parseMermaPct(input: string): number | null {
   if (!input.trim()) return null;
   const n = Number(input.replace(",", ".").trim());
@@ -176,13 +170,21 @@ export default function ProductosScreen() {
   const [filter, setFilter] = useState<FilterId>(initialFilter);
   const [q, setQ] = useState("");
   const [items, setItems] = useState<Product[]>([]);
+  // itemsRef: fuente síncrona de `items` para callbacks estables (P0-1 limpieza)
+  // y para leer el nº de items en el catch offline (P2 bugs). updateItems lo
+  // mantiene sincronizado en cada cambio — no hace falta un useEffect aparte.
+  const itemsRef = useRef<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
-  const itemsRef = useRef(items);
-  useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
+  // Fuente sincronica para que los callbacks inline permanezcan estables sin
+  // cerrar sobre `items`. Cada updater parte del array mas reciente, incluso
+  // cuando React agrupa dos ediciones optimistas de filas distintas.
+  const updateItems = useCallback((updater: (prev: Product[]) => Product[]) => {
+    const next = updater(itemsRef.current);
+    itemsRef.current = next;
+    setItems(next);
+  }, []);
 
   const role =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -198,7 +200,7 @@ export default function ProductosScreen() {
       // es solo eliminar/papelera). Los archivados legacy que queden se
       // descartan client-side; el server no filtra estado automáticamente.
       list = list.filter((p) => p.estado !== "archivado");
-      setItems(list);
+      updateItems(() => list);
       setLoadError(false);
     } catch {
       setLoadError(true);
@@ -208,7 +210,7 @@ export default function ProductosScreen() {
     } finally {
       setLoading(false);
     }
-  }, [filter, q, t]);
+  }, [filter, q, t, updateItems]);
 
   useEffect(() => {
     void reload();
@@ -226,10 +228,10 @@ export default function ProductosScreen() {
   // re-throwea para mostrar borde rojo + retener el input.
   const handleSavePrice = useCallback(
     async (id: string, cents: number) => {
-      const before = items.find((p) => p.id === id);
+      const before = itemsRef.current.find((p) => p.id === id);
       if (!before) return;
       // Optimistic: actualizamos local antes del round-trip.
-      setItems((prev) =>
+      updateItems((prev) =>
         prev.map((p) =>
           p.id === id
             ? {
@@ -243,21 +245,23 @@ export default function ProductosScreen() {
       );
       try {
         const updated = await patchProduct(id, { precioCompra: cents });
-        setItems((prev) => prev.map((p) => (p.id === id ? detailToListItem(updated) : p)));
+        updateItems((prev) =>
+          prev.map((p) => (p.id === id ? detailToListItem(updated) : p)),
+        );
       } catch (err) {
         // Revert
-        setItems((prev) => prev.map((p) => (p.id === id ? before : p)));
+        updateItems((prev) => prev.map((p) => (p.id === id ? before : p)));
         throw err;
       }
     },
-    [items],
+    [updateItems],
   );
 
   const handleSaveMerma = useCallback(
     async (id: string, pct: number) => {
-      const before = items.find((p) => p.id === id);
+      const before = itemsRef.current.find((p) => p.id === id);
       if (!before) return;
-      setItems((prev) =>
+      updateItems((prev) =>
         prev.map((p) =>
           p.id === id
             ? {
@@ -272,13 +276,15 @@ export default function ProductosScreen() {
       );
       try {
         const updated = await patchProduct(id, { mermaPct: pct });
-        setItems((prev) => prev.map((p) => (p.id === id ? detailToListItem(updated) : p)));
+        updateItems((prev) =>
+          prev.map((p) => (p.id === id ? detailToListItem(updated) : p)),
+        );
       } catch (err) {
-        setItems((prev) => prev.map((p) => (p.id === id ? before : p)));
+        updateItems((prev) => prev.map((p) => (p.id === id ? before : p)));
         throw err;
       }
     },
-    [items],
+    [updateItems],
   );
 
   // Exportar el banco — PDF (idioma del chef) o CSV (para Excel). Descarga del

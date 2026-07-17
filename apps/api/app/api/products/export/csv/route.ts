@@ -11,13 +11,9 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 import { csvField } from "@/lib/csv";
 import { t, type TranslationKey } from "@atelier/i18n";
+import { formatEuro } from "@/lib/pdf/format";
 
 export const dynamic = "force-dynamic";
-
-// centavos → euros con coma decimal (Excel es/it lo interpreta como número).
-function formatEuro(cents: number): string {
-  return (cents / 100).toFixed(2).replace(".", ",");
-}
 
 export async function GET(req: NextRequest) {
   // P2-3 (auditoría jul 2026): candado de permiso explícito — export_pdf ya

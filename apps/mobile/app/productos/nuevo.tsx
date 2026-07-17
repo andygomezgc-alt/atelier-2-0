@@ -28,6 +28,7 @@ import type {
   CreateProductRequest,
 } from "@atelier/shared";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
+import { parseEurosToCents } from "@/src/lib/money";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
 
@@ -46,15 +47,6 @@ const CATEGORIES: ReadonlyArray<ProductCategory> = [
 ];
 
 const UNITS: ReadonlyArray<ProductUnit> = ["kg", "g", "l", "ml", "unidad", "caja"];
-
-// Parsea "12,50" o "12.50" → 1250 centavos. Devuelve null si no es número válido.
-function parseEurosToCents(input: string): number | null {
-  if (!input.trim()) return null;
-  const normalized = input.replace(",", ".").trim();
-  const n = Number(normalized);
-  if (!Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 100);
-}
 
 function parseMermaPct(input: string): number | null {
   if (!input.trim()) return null;

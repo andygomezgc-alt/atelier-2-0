@@ -16,9 +16,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
-import * as SecureStore from "@/src/lib/secure-storage";
 import { Screen } from "@/src/components/Screen";
 import { Empty } from "@/src/components/Empty";
 import { NetworkError } from "@/src/components/NetworkError";
@@ -32,17 +29,10 @@ import { useAuth } from "@/src/hooks/useAuth";
 import { useRefresh } from "@/src/hooks/useRefresh";
 import { createMenu, listMenus, deleteMenu, getMenu, type Menu, type MenuFull } from "@/src/api/menus";
 import { showToast } from "@/src/components/Toast";
-import { TOKEN_KEY } from "@/src/api/client";
+import { downloadAndShare, sanitizeFilename } from "@/src/lib/export-file";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
-
-const API = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
-
-function sanitizeFilename(name: string): string {
-  const cleaned = name.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim();
-  return cleaned || "menu";
-}
 
 export default function MenusScreen() {
   const { t } = useI18n();
@@ -131,23 +121,17 @@ export default function MenusScreen() {
     }
   }
 
-  // Descarga el PDF y dispara share-sheet. Toma `{id, name}` para servir
-  // tanto al Menu de la lista (legacy) como al MenuFull del preview (nuevo
-  // flujo unificado). El botón de la card ya no llama esto directo — pasa
-  // por el preview, y el preview llama `downloadAndShare` vía onDownload.
-  async function downloadAndShare(menu: { id: string; name: string }) {
+  // Descarga el PDF del menú y dispara share-sheet, vía el helper compartido
+  // de src/lib/export-file. El botón de la card ya no llama esto directo —
+  // pasa por el preview, y el preview llama esto vía onDownload.
+  async function downloadMenuPdf(menu: { id: string; name: string }) {
     try {
-      const token = await SecureStore.getItemAsync(TOKEN_KEY);
-      const url = `${API}/api/menus/${menu.id}/pdf`;
-      const fileUri = `${FileSystem.cacheDirectory}${encodeURIComponent(sanitizeFilename(menu.name))}.pdf`;
-      const dl = await FileSystem.downloadAsync(url, fileUri, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (dl.status !== 200) throw new Error("Export failed");
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(dl.uri, { mimeType: "application/pdf" });
-        showToast(t("toast_pdf_shared"));
-      }
+      const ok = await downloadAndShare(
+        `/api/menus/${menu.id}/pdf`,
+        `${sanitizeFilename(menu.name)}.pdf`,
+        "application/pdf",
+      );
+      showToast(ok ? t("toast_pdf_shared") : t("error_network"));
     } catch (err) {
       showToast(apiErrorMessage(err, t));
     }
@@ -368,7 +352,7 @@ export default function MenusScreen() {
             if (!previewMenu) return;
             setPreviewExporting(true);
             try {
-              await downloadAndShare(previewMenu);
+              await downloadMenuPdf(previewMenu);
               setPreviewOpen(false);
             } finally {
               setPreviewExporting(false);

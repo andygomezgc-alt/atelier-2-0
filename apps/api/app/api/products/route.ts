@@ -74,6 +74,23 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
       ? [{ deletedAt: "desc" }]
       : [{ criticality: "asc" }, { name: "asc" }],
     take: 500,
+    // Select mínimo: exactamente los campos que consume projectProductListItem.
+    select: {
+      id: true,
+      name: true,
+      category: true,
+      pezzatura: true,
+      pezzaturaMode: true,
+      pezzaturaMin: true,
+      pezzaturaMax: true,
+      unidadCompra: true,
+      precioCompra: true,
+      mermaPct: true,
+      mermaOrigen: true,
+      criticality: true,
+      estado: true,
+      precioActualizadoAt: true,
+    },
   });
 
   // Entrega A.5 Fase 8 — count distinct de recetas por producto que lo

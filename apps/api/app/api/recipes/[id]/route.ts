@@ -77,7 +77,15 @@ export async function PATCH(
   if (!parse.success)
     return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
 
-  const existing = await prisma.recipe.findUnique({ where: { id } });
+  const existing = await prisma.recipe.findUnique({
+    where: { id },
+    select: {
+      restaurantId: true,
+      deletedAt: true,
+      state: true,
+      manualAllergens: true,
+    },
+  });
   if (!existing || existing.restaurantId !== ctx.restaurantId || existing.deletedAt !== null)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -124,7 +132,7 @@ export async function PATCH(
     );
   }
 
-  const data: Prisma.RecipeUpdateInput = {};
+  const data: Prisma.RecipeUncheckedUpdateManyInput = {};
   if (parse.data.title !== undefined) data.title = parse.data.title;
   if (parse.data.contentJson !== undefined) data.contentJson = parse.data.contentJson;
   if (parse.data.priority !== undefined) data.priority = parse.data.priority;
@@ -133,7 +141,7 @@ export async function PATCH(
   if (parse.data.state !== undefined) {
     data.state = parse.data.state;
     if (parse.data.state === "approved") {
-      data.approvedBy = { connect: { id: ctx.userId } };
+      data.approvedById = ctx.userId;
       data.approvedAt = new Date();
     }
   }
@@ -188,16 +196,21 @@ export async function PATCH(
     let updated;
     try {
       updated = await prisma.$transaction(async (tx) => {
-        // P2-1: releer `state` DENTRO de la transacción. El gate de arriba
-        // (L101-106) vio el snapshot de antes del parseo; si otra request
-        // aprobó la receta en el medio, esta relectura es la vinculante.
-        // recipeIngredients !== undefined ya implica touchesApprovedContent,
-        // así que el chequeo no necesita repetir esa condición.
+        // P2-1 (bugs): releer `state` DENTRO de la transacción. El gate de
+        // arriba vio el snapshot de antes del parseo; si otra request aprobó
+        // la receta en el medio, esta relectura es la vinculante.
         const fresh = await tx.recipe.findUnique({ where: { id }, select: { state: true } });
         if (fresh?.state === "approved" && ctx.role !== "admin") {
           throw new ApprovedConflictError();
         }
-        await tx.recipe.update({ where: { id }, data });
+        // limpieza: escritura atómica tenant-scoped (cierra el TOCTOU de
+        // borrado/otro restaurante; count===0 => no había receta mutable).
+        const result = await tx.recipe.updateMany({
+          where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
+          data,
+        });
+        if (result.count === 0) return null;
+
         await tx.recipeIngredient.deleteMany({ where: { recipeId: id } });
         if (parse.data.recipeIngredients!.length > 0) {
           await tx.recipeIngredient.createMany({
@@ -218,7 +231,10 @@ export async function PATCH(
             }),
           });
         }
-        return tx.recipe.findUnique({ where: { id }, include: recipeDetailInclude });
+        return tx.recipe.findUnique({
+          where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
+          include: recipeDetailInclude,
+        });
       });
     } catch (err) {
       if (err instanceof ApprovedConflictError) {
@@ -230,7 +246,8 @@ export async function PATCH(
       throw err;
     }
 
-    if (!updated) throw new Error("recipe_update_lost");
+    if (!updated)
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     if (parse.data.state) {
       logger.info("recipe_state_changed", {
@@ -243,10 +260,11 @@ export async function PATCH(
     return NextResponse.json(projectRecipeDetail(updated));
   }
 
-  // Path sin ingredientes estructurados (legacy). Si el body toca contenido
-  // gateado (touchesApprovedContent), releemos `state` dentro de una
-  // transacción — misma ventana TOCTOU que arriba (P2-1). Si no toca nada
-  // gateado (ej. solo state/priority) no hay carrera que cerrar: update directo.
+  // Path sin ingredientes estructurados (legacy). Combina ambas defensas:
+  // si toca contenido gateado (touchesApprovedContent) releemos `state` en una
+  // transacción (P2-1, cierra la carrera de aprobación concurrente); en ambos
+  // caminos la escritura es atómica tenant-scoped (updateMany, cierra el TOCTOU
+  // de borrado/otro restaurante).
   let updated;
   if (touchesApprovedContent) {
     try {
@@ -255,7 +273,15 @@ export async function PATCH(
         if (fresh?.state === "approved" && ctx.role !== "admin") {
           throw new ApprovedConflictError();
         }
-        return tx.recipe.update({ where: { id }, data, include: recipeDetailInclude });
+        const result = await tx.recipe.updateMany({
+          where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
+          data,
+        });
+        if (result.count === 0) return null;
+        return tx.recipe.findUnique({
+          where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
+          include: recipeDetailInclude,
+        });
       });
     } catch (err) {
       if (err instanceof ApprovedConflictError) {
@@ -267,12 +293,19 @@ export async function PATCH(
       throw err;
     }
   } else {
-    updated = await prisma.recipe.update({
-      where: { id },
+    const result = await prisma.recipe.updateMany({
+      where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
       data,
+    });
+    if (result.count === 0)
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    updated = await prisma.recipe.findUnique({
+      where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
       include: recipeDetailInclude,
     });
   }
+  if (!updated)
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   if (parse.data.state) {
     logger.info("recipe_state_changed", {
@@ -293,11 +326,13 @@ export async function DELETE(
   if (isNextResponse(ctx)) return ctx;
   const { id } = await params;
 
-  const existing = await prisma.recipe.findUnique({ where: { id } });
-  if (!existing || existing.restaurantId !== ctx.restaurantId || existing.deletedAt !== null)
+  const result = await prisma.recipe.updateMany({
+    where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
+    data: { deletedAt: new Date() },
+  });
+  if (result.count === 0)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await prisma.recipe.update({ where: { id }, data: { deletedAt: new Date() } });
   logger.info("recipe_deleted", { recipeId: id, userId: ctx.userId });
   return NextResponse.json({ ok: true });
 }

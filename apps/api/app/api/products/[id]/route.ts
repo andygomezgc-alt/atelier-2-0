@@ -144,8 +144,8 @@ export const PATCH = withAuth(
       }
     }
 
-    const updated = await prisma.product.update({
-      where: { id },
+    const result = await prisma.product.updateMany({
+      where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
       data: {
         name: body.name ?? undefined,
         category: body.category ?? undefined,
@@ -166,6 +166,14 @@ export const PATCH = withAuth(
         criticalityManual: nextCriticalityManual,
       },
     });
+    if (result.count === 0)
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const updated = await prisma.product.findUnique({
+      where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
+    });
+    if (!updated)
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     if (priceChanged) {
       await prisma.productPriceHistory.create({
@@ -245,10 +253,12 @@ export const DELETE = withAuth(
       }
     }
 
-    await prisma.product.update({
-      where: { id },
+    const result = await prisma.product.updateMany({
+      where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
       data: { deletedAt: new Date() },
     });
+    if (result.count === 0)
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     logger.info("product_deleted", {
       productId: id,
