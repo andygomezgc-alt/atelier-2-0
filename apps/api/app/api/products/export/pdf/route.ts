@@ -10,38 +10,11 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { renderHtmlToPdf } from "@/lib/pdf/render";
 import { logger } from "@/lib/logger";
 import { t, type Language, type TranslationKey } from "@atelier/i18n";
+import { escapeHtml as esc } from "@/lib/html";
+import { LANGS, formatEuro, formatDate } from "@/lib/pdf/format";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const LANGS: readonly Language[] = ["es", "it", "en"];
-
-function esc(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-// Precio en centavos → euros con coma decimal (formato es/it): 3200 → "32,00".
-function formatEuro(cents: number): string {
-  return (cents / 100).toFixed(2).replace(".", ",");
-}
-
-function formatDate(lang: Language): string {
-  const locale = lang === "es" ? "es-ES" : lang === "it" ? "it-IT" : "en-GB";
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 10);
-  }
-}
 
 type ProductRow = {
   name: string;
