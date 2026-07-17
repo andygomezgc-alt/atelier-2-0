@@ -69,6 +69,7 @@ export default function AjustesBancoScreen() {
 
   const [recalcStatus, setRecalcStatus] = useState<RecalcStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
+  const [checking, setChecking] = useState(false);
   // Migration status: null mientras carga. Cuando carga, si pendingCount>0
   // mostramos la sección de migración; si =0, la ocultamos completa (no hay
   // nada que hacer; el chef no debería tropezarse con una acción inútil).
@@ -98,6 +99,8 @@ export default function AjustesBancoScreen() {
   // Alert con summary → confirm → apply → toast con resultado. Movido acá
   // para limpiar la lista principal.
   const handleMigrateLegacy = useCallback(async () => {
+    if (checking) return;
+    setChecking(true);
     try {
       const dryRun = await migrateLegacyRecipes("dry-run");
       const s = dryRun.summary;
@@ -137,8 +140,10 @@ export default function AjustesBancoScreen() {
       );
     } catch (err) {
       showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setChecking(false);
     }
-  }, [t]);
+  }, [checking, t]);
 
   return (
     <Screen title={t("ajustes_title")} back onBack={() => router.back()}>
@@ -149,7 +154,11 @@ export default function AjustesBancoScreen() {
         {showMigration && migrationStatus && (
           <View style={styles.section}>
             <Text style={styles.eyebrow}>{t("ajustes_section_migration")}</Text>
-            <Pressable style={styles.entry} onPress={handleMigrateLegacy}>
+            <Pressable
+              style={styles.entry}
+              onPress={handleMigrateLegacy}
+              disabled={checking}
+            >
               <View style={{ flex: 1 }}>
                 <Text style={styles.entryTitle}>{t("btn_migrate_legacy")}</Text>
                 <Text style={styles.entrySub}>

@@ -1,11 +1,12 @@
 import { useCallback, useState } from "react";
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Empty } from "@/src/components/Empty";
 import { Button } from "@/src/components/Button";
 import { showToast } from "@/src/components/Toast";
 import { useI18n } from "@/src/hooks/useI18n";
+import { useRefresh } from "@/src/hooks/useRefresh";
 import { listProducts, restoreProduct, type Product } from "@/src/api/products";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
@@ -18,14 +19,14 @@ export default function PapeleraProductosScreen() {
   const [loading, setLoading] = useState(true);
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
+  const reload = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       setItems(await listProducts({ trash: true }));
     } catch (err) {
       showToast(err instanceof Error ? err.message : t("error_network"));
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, [t]);
 
@@ -34,6 +35,9 @@ export default function PapeleraProductosScreen() {
       void reload();
     }, [reload]),
   );
+
+  const silentReload = useCallback(() => reload({ silent: true }), [reload]);
+  const { refreshing, onRefresh } = useRefresh(["products:"], silentReload);
 
   const handleRestore = useCallback(
     async (id: string) => {
@@ -58,6 +62,15 @@ export default function PapeleraProductosScreen() {
         data={items}
         keyExtractor={(p) => p.id}
         contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.terracota}
+            colors={[colors.terracota]}
+            progressBackgroundColor={colors.paper}
+          />
+        }
         renderItem={({ item }) => (
           <View style={styles.row}>
             <Text style={styles.title} numberOfLines={2}>
@@ -66,6 +79,7 @@ export default function PapeleraProductosScreen() {
             <Button
               label={t("btn_restaurar")}
               variant="secondary"
+              disabled={restoringId === item.id}
               onPress={() => handleRestore(item.id)}
             />
           </View>
