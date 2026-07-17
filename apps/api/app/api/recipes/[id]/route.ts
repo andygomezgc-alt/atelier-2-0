@@ -71,7 +71,15 @@ export async function PATCH(
   if (!parse.success)
     return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
 
-  const existing = await prisma.recipe.findUnique({ where: { id } });
+  const existing = await prisma.recipe.findUnique({
+    where: { id },
+    select: {
+      restaurantId: true,
+      deletedAt: true,
+      state: true,
+      manualAllergens: true,
+    },
+  });
   if (!existing || existing.restaurantId !== ctx.restaurantId || existing.deletedAt !== null)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
