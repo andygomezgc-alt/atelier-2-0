@@ -6,6 +6,18 @@
 
 ---
 
+## ⚡ REMEDIACIÓN (17-jul-2026, misma rama)
+
+**Estado: TODO arreglado salvo 3 excepciones anotadas.** Autoría del código: **Codex** (GPT-5.6) en todos los commits de fix — diseño, diffs y codemod — con Claude como manos (prompts con código inline vía `--prompt-file`, aplicación de parches, tests) por orden de Andy. Verificación final: **597 tests verdes** (api 280 — antes 264, mobile 74 — antes 68, shared 238, i18n 5) y typecheck limpio en todo lo tocado.
+
+- ✅ **P1-1 a P1-10 — los diez arreglados.** Destacados: `leave` ahora exige `{expectedCase, confirmName}` y recomputa el caso dentro de transacción Serializable con 409 `case_changed` (P1-1); staff PATCH/DELETE con `Serializable` + retry P2034 + re-filtro por restaurante en el write, y `leave` dentro de la misma disciplina — la carrera cruzada de "último admin" queda cerrada de verdad (P1-2); el código de invitación **rota al expulsar** (P1-3); el bootstrap distingue 401 de fallo de red y ya no borra el token (estado `offline` con reintento) (P1-4).
+- ✅ **P2 — todos arreglados** excepto los anotados abajo: TOCTOU de receta aprobada re-verificado dentro de la tx (P2-1), creación de restaurante transaccional (P2-2), orden de cartas serializable (P2-4/5), webhook Stripe idempotente por `event.id` — **con migración `20260717000000_stripe_webhook_idempotency` generada pero SIN aplicar: aplicarla en el próximo deploy** (P2-6), cancelación de Stripe antes del caso C (P2-7), timeout 30 s (P2-8), cron sin pisar overrides (P2-9), `deleteBlobs` best-effort en re-subidas y caso C (P2-10), ProfileSheet con toast+revert (P2-11), rename propaga a perfil/PDF (P2-12), refreshMe en cambios de staff + fila propia protegida (P2-13), guards de doble-tap en todo el grupo + ConfirmSheet con `busy` (P2-14), 70 mensajes de error crudos → `apiErrorMessage` traducido (P2-15), Sentry ve los errores manejados del servidor (P2-16-server), ErrorBoundary global móvil (P2-17), pull-to-refresh en Casa y papeleras (P2-18), productos distingue 404 de red (P2-19).
+- ✅ **P3-1, P3-2, P3-3** arreglados. **P3-4: wontfix** (ventana de milisegundos, sin arreglo razonable).
+- ⏸️ **Excepciones (3):** P2-16-móvil (Sentry nativo en la app exige dependencia nativa → APK nuevo; decisión de Andy pendiente) · exposición del `inviteCode` a todos los roles (defensa en profundidad; la re-entrada del expulsado ya quedó cerrada por la rotación) · 5 errores de typecheck móvil **pre-existentes en main** (StatusBar ×2, absoluteFillObject ×3), fuera del alcance de esta auditoría.
+- ⚠️ **Para el deploy:** aplicar la migración de P2-6 (`pnpm prisma migrate deploy` según el flujo del repo) y verificar en Vercel que `SENTRY_*` sigue configurado (el logger ahora reporta).
+
+---
+
 ## Resumen para el chef (sin tecnicismos)
 
 La app está **bien construida por dentro**: casi todas las operaciones que tocan varias tablas a la vez son atómicas (o salen bien o no pasa nada), las pantallas se refrescan correctamente después de crear/editar/borrar en el 92% de los casos, y el aislamiento entre restaurantes ya quedó validado en la auditoría de seguridad.
