@@ -15,7 +15,7 @@
 // PATCH/POST lo arma el padre con el valor crudo del input — el server hace
 // el parse definitivo. Esta validación es feedback inmediato, no autoridad.
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   Pressable,
   StyleSheet,

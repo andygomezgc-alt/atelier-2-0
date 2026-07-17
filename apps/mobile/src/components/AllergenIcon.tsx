@@ -13,8 +13,7 @@
 // para coherencia app↔PDF.
 
 import { Ionicons, MaterialCommunityIcons, FontAwesome6 } from "@expo/vector-icons";
-import { View } from "react-native";
-import Svg, { Path, Circle, Ellipse } from "react-native-svg";
+import Svg, { Path, Ellipse } from "react-native-svg";
 import type { ComponentProps } from "react";
 import type { Allergen } from "@atelier/shared";
 import { colors } from "@/src/theme";
@@ -105,14 +104,4 @@ export function AllergenIcon({ allergen, size = 14, color }: AllergenIconProps) 
   // svg: render custom monocromo. El render callback recibe size + color
   // resueltos. Mismo símbolo conceptual que el SVG del PDF.
   return spec.render(size, c);
-}
-
-// Versión envuelta en View con padding mínimo. Útil cuando hay que medir el
-// hit-area por separado.
-export function AllergenIconBox({ allergen, size = 14, color }: AllergenIconProps) {
-  return (
-    <View style={{ paddingHorizontal: 2 }}>
-      <AllergenIcon allergen={allergen} size={size} color={color} />
-    </View>
-  );
 }

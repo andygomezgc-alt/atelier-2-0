@@ -9,7 +9,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useI18n } from "@/src/hooks/useI18n";

@@ -39,8 +39,3 @@ export function CategoryIcon({ category, size = 14 }: Props) {
   const spec = SPEC[category];
   return <Ionicons name={spec.icon} size={size} color={spec.color} />;
 }
-
-// Exportado para casos donde solo querés el color (por ej. un dot fallback).
-export function categoryColor(category: ProductCategory): string {
-  return SPEC[category].color;
-}
