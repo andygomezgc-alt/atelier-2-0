@@ -9,7 +9,10 @@
     "icon": "./assets/icon.png",
     "ios": {
       "bundleIdentifier": "com.atelier.app",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.atelier.app",
@@ -52,9 +55,12 @@
         {
           "microphonePermission": "Atelier usa el micrófono para que dictes tus ideas al asistente.",
           "speechRecognitionPermission": "Atelier convierte tu voz en texto para el asistente.",
-          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
         }
-      ]
+      ],
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true

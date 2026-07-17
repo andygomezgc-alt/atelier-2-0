@@ -17,6 +17,9 @@ import { ToastHost } from "@/src/components/Toast";
 import { Button } from "@/src/components/Button";
 import { LazyRestaurantHost } from "@/src/components/LazyRestaurantHost";
 import { colors, fonts, fontSizes, spacing } from "@/src/theme";
+import { captureException, initSentry } from "@/src/lib/sentry";
+
+initSentry();
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { state } = useAuth();
@@ -112,7 +115,8 @@ export default function RootLayout() {
 // cualquier excepción de render tumbaba la app a la pantalla roja nativa sin
 // fallback ni salida. Ahora: pantalla traducida + reintento (retry re-monta la
 // ruta que falló, del propio router). Sin dependencias nuevas.
-export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  captureException(error);
   const { t } = useI18n();
   return (
     <SafeAreaProvider>
