@@ -4,11 +4,14 @@ import { can } from "@atelier/shared";
 import type { Role } from "@atelier/db";
 
 const { db, guard } = vi.hoisted(() => {
-  const recipe = { findUnique: vi.fn(), update: vi.fn() };
+  const recipe = { findUnique: vi.fn(), updateMany: vi.fn() };
   const recipeIngredient = { deleteMany: vi.fn(), createMany: vi.fn() };
   const product = { count: vi.fn() };
   const $transaction = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
-    cb({ recipe: { update: recipe.update, findUnique: recipe.findUnique }, recipeIngredient }),
+    cb({
+      recipe: { updateMany: recipe.updateMany, findUnique: recipe.findUnique },
+      recipeIngredient,
+    }),
   );
   return {
     db: { recipe, recipeIngredient, product, $transaction },
@@ -54,6 +57,13 @@ function patch(bodyObj: unknown, id = "rec-1") {
   return route.PATCH(req, { params: Promise.resolve({ id }) });
 }
 
+function del(id = "rec-1") {
+  const req = new NextRequest(`https://t.local/api/recipes/${id}`, {
+    method: "DELETE",
+  });
+  return route.DELETE(req, { params: Promise.resolve({ id }) });
+}
+
 const DRAFT = {
   id: "rec-1",
   restaurantId: "r1",
@@ -70,8 +80,8 @@ const DRAFT = {
 const APPROVED = { ...DRAFT, state: "approved" };
 
 beforeEach(() => {
-  db.recipe.findUnique.mockReset();
-  db.recipe.update.mockReset().mockResolvedValue({ id: "rec-1" });
+  db.recipe.findUnique.mockReset().mockResolvedValue(DRAFT);
+  db.recipe.updateMany.mockReset().mockResolvedValue({ count: 1 });
   db.recipeIngredient.deleteMany.mockReset().mockResolvedValue({ count: 0 });
   db.recipeIngredient.createMany.mockReset().mockResolvedValue({ count: 1 });
   db.product.count.mockReset().mockResolvedValue(0);
@@ -100,7 +110,12 @@ describe("PATCH /api/recipes/[id]", () => {
     });
 
     expect(res.status).toBe(200);
-    const updateArg = db.recipe.update.mock.calls[0]![0];
+    const updateArg = db.recipe.updateMany.mock.calls[0]![0];
+    expect(updateArg.where).toEqual({
+      id: "rec-1",
+      restaurantId: "r1",
+      deletedAt: null,
+    });
     expect(updateArg.data.salePrice).toBe(2500);
     expect(updateArg.data.portions).toBe(6);
   });
@@ -110,7 +125,7 @@ describe("PATCH /api/recipes/[id]", () => {
     db.recipe.findUnique.mockResolvedValueOnce(APPROVED);
     const res = await patch({ salePrice: 3000 });
     expect(res.status).toBe(403);
-    expect(db.recipe.update).not.toHaveBeenCalled();
+    expect(db.recipe.updateMany).not.toHaveBeenCalled();
   });
 
   it("403 sous_chef no puede tocar recipeIngredients de una receta aprobada", async () => {
@@ -126,7 +141,7 @@ describe("PATCH /api/recipes/[id]", () => {
     db.recipe.findUnique.mockResolvedValueOnce(APPROVED);
     const res = await patch({ addManualAllergen: "gluten" });
     expect(res.status).toBe(403);
-    expect(db.recipe.update).not.toHaveBeenCalled();
+    expect(db.recipe.updateMany).not.toHaveBeenCalled();
   });
 
   it("403 sous_chef no puede aprobar una receta (approve_recipe requiere admin/chef_executive)", async () => {
@@ -134,7 +149,7 @@ describe("PATCH /api/recipes/[id]", () => {
     db.recipe.findUnique.mockResolvedValueOnce(DRAFT);
     const res = await patch({ state: "approved" });
     expect(res.status).toBe(403);
-    expect(db.recipe.update).not.toHaveBeenCalled();
+    expect(db.recipe.updateMany).not.toHaveBeenCalled();
   });
 
   it("200 chef_executive aprueba una receta", async () => {
@@ -142,8 +157,10 @@ describe("PATCH /api/recipes/[id]", () => {
     db.recipe.findUnique.mockResolvedValueOnce(DRAFT);
     const res = await patch({ state: "approved" });
     expect(res.status).toBe(200);
-    const updateArg = db.recipe.update.mock.calls[0]![0];
+    const updateArg = db.recipe.updateMany.mock.calls[0]![0];
     expect(updateArg.data.state).toBe("approved");
+    expect(updateArg.data.approvedById).toBe("u1");
+    expect(updateArg.data).not.toHaveProperty("approvedBy");
   });
 
   it("200 admin edita título, precio e ingredientes de una receta aprobada", async () => {
@@ -159,7 +176,7 @@ describe("PATCH /api/recipes/[id]", () => {
     });
 
     expect(res.status).toBe(200);
-    const updateArg = db.recipe.update.mock.calls[0]![0];
+    const updateArg = db.recipe.updateMany.mock.calls[0]![0];
     expect(updateArg.data.title).toBe("Risotto v2");
     expect(updateArg.data.salePrice).toBe(4000);
   });
@@ -169,7 +186,7 @@ describe("PATCH /api/recipes/[id]", () => {
     db.recipe.findUnique.mockResolvedValueOnce(APPROVED);
     const res = await patch({ priority: true });
     expect(res.status).toBe(200);
-    const updateArg = db.recipe.update.mock.calls[0]![0];
+    const updateArg = db.recipe.updateMany.mock.calls[0]![0];
     expect(updateArg.data.priority).toBe(true);
   });
 
@@ -178,6 +195,60 @@ describe("PATCH /api/recipes/[id]", () => {
     db.recipe.findUnique.mockResolvedValueOnce({ ...DRAFT, restaurantId: "otro" });
     const res = await patch({ title: "Hack" });
     expect(res.status).toBe(404);
-    expect(db.recipe.update).not.toHaveBeenCalled();
+    expect(db.recipe.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("404 si la receta deja de ser mutable antes del update legacy", async () => {
+    authAs("admin");
+    db.recipe.findUnique.mockResolvedValueOnce(DRAFT);
+    db.recipe.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    const res = await patch({ priority: true });
+
+    expect(res.status).toBe(404);
+    expect(db.recipe.updateMany).toHaveBeenCalledWith({
+      where: { id: "rec-1", restaurantId: "r1", deletedAt: null },
+      data: expect.objectContaining({ priority: true }),
+    });
+  });
+
+  it("404 atomico no reemplaza ingredientes si la receta deja de ser mutable", async () => {
+    authAs("admin");
+    db.recipe.findUnique.mockResolvedValueOnce(DRAFT);
+    db.recipe.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    const res = await patch({ recipeIngredients: [{ rawText: "sal" }] });
+
+    expect(res.status).toBe(404);
+    expect(db.recipeIngredient.deleteMany).not.toHaveBeenCalled();
+    expect(db.recipeIngredient.createMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("DELETE /api/recipes/[id]", () => {
+  it("hace soft-delete atomico tenant-scoped", async () => {
+    authAs("admin");
+
+    const res = await del();
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    const arg = db.recipe.updateMany.mock.calls[0]![0];
+    expect(arg.where).toEqual({
+      id: "rec-1",
+      restaurantId: "r1",
+      deletedAt: null,
+    });
+    expect(arg.data.deletedAt).toBeInstanceOf(Date);
+    expect(db.recipe.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("404 si no hay receta activa del tenant", async () => {
+    authAs("admin");
+    db.recipe.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    const res = await del();
+
+    expect(res.status).toBe(404);
   });
 });

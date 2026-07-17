@@ -118,7 +118,7 @@ export async function PATCH(
     );
   }
 
-  const data: Prisma.RecipeUpdateInput = {};
+  const data: Prisma.RecipeUncheckedUpdateManyInput = {};
   if (parse.data.title !== undefined) data.title = parse.data.title;
   if (parse.data.contentJson !== undefined) data.contentJson = parse.data.contentJson;
   if (parse.data.priority !== undefined) data.priority = parse.data.priority;
@@ -127,7 +127,7 @@ export async function PATCH(
   if (parse.data.state !== undefined) {
     data.state = parse.data.state;
     if (parse.data.state === "approved") {
-      data.approvedBy = { connect: { id: ctx.userId } };
+      data.approvedById = ctx.userId;
       data.approvedAt = new Date();
     }
   }
@@ -180,7 +180,12 @@ export async function PATCH(
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.recipe.update({ where: { id }, data });
+      const result = await tx.recipe.updateMany({
+        where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
+        data,
+      });
+      if (result.count === 0) return null;
+
       await tx.recipeIngredient.deleteMany({ where: { recipeId: id } });
       if (parse.data.recipeIngredients!.length > 0) {
         await tx.recipeIngredient.createMany({
@@ -201,10 +206,14 @@ export async function PATCH(
           }),
         });
       }
-      return tx.recipe.findUnique({ where: { id }, include: recipeDetailInclude });
+      return tx.recipe.findUnique({
+        where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
+        include: recipeDetailInclude,
+      });
     });
 
-    if (!updated) throw new Error("recipe_update_lost");
+    if (!updated)
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     if (parse.data.state) {
       logger.info("recipe_state_changed", {
@@ -218,11 +227,19 @@ export async function PATCH(
   }
 
   // Path sin ingredientes estructurados (legacy).
-  const updated = await prisma.recipe.update({
-    where: { id },
+  const result = await prisma.recipe.updateMany({
+    where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
     data,
+  });
+  if (result.count === 0)
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const updated = await prisma.recipe.findUnique({
+    where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
     include: recipeDetailInclude,
   });
+  if (!updated)
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   if (parse.data.state) {
     logger.info("recipe_state_changed", {
@@ -243,11 +260,13 @@ export async function DELETE(
   if (isNextResponse(ctx)) return ctx;
   const { id } = await params;
 
-  const existing = await prisma.recipe.findUnique({ where: { id } });
-  if (!existing || existing.restaurantId !== ctx.restaurantId || existing.deletedAt !== null)
+  const result = await prisma.recipe.updateMany({
+    where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
+    data: { deletedAt: new Date() },
+  });
+  if (result.count === 0)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await prisma.recipe.update({ where: { id }, data: { deletedAt: new Date() } });
   logger.info("recipe_deleted", { recipeId: id, userId: ctx.userId });
   return NextResponse.json({ ok: true });
 }
