@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import { patchMe, type CustomProvider, type MeUser } from "@/src/api/auth";
+import { apiErrorMessage } from "@/src/lib/api-error";
 import { showToast } from "./Toast";
 import { BottomSheet } from "./BottomSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
@@ -72,13 +73,29 @@ export function ProfileSheet({ open, onClose }: Props) {
   };
 
   async function handleLangChange(l: Language) {
+    // P2-11 — antes: `.catch(() => null)`. El idioma se aplicaba en pantalla pero
+    // podía no guardarse NUNCA sin avisar. Ahora avisamos y revertimos el
+    // optimista si el PATCH falla (espejo de handleReturnToAppModels).
+    const prev = lang;
     setLang(l);
-    await patchMe({ languagePref: l }).catch(() => null);
+    try {
+      await patchMe({ languagePref: l });
+    } catch (err) {
+      setLang(prev);
+      showToast(apiErrorMessage(err, t));
+    }
   }
 
   async function handleModelChange(model: "haiku" | "sonnet" | "opus") {
-    await patchMe({ defaultModel: model }).catch(() => null);
-    await refreshMe();
+    // P2-11 — antes: `.catch(() => null)`, fallo silencioso total. El modelo
+    // visible sale de user.defaultModel (se actualiza con refreshMe), así que si
+    // el PATCH falla no hay optimista que revertir: basta avisar.
+    try {
+      await patchMe({ defaultModel: model });
+      await refreshMe();
+    } catch (err) {
+      showToast(apiErrorMessage(err, t));
+    }
   }
 
   // BYOK pausa — espejo exacto del criterio de `loadUserBYOK` en

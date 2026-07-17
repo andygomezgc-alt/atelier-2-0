@@ -3,24 +3,43 @@ import { NextRequest } from "next/server";
 
 // constructEvent controlado + prisma.restaurant mockeado. No tocamos DB ni la
 // API de Stripe: solo verificamos la lógica del handler.
-const { constructEvent, db, log } = vi.hoisted(() => ({
-  constructEvent: vi.fn(),
-  db: {
-    restaurant: {
-      updateMany: vi.fn(),
-      findFirst: vi.fn(),
-      update: vi.fn(),
+// FakePrismaKnownRequestError vive DENTRO de vi.hoisted a propósito: vi.mock
+// se hoistea al tope del archivo, así que solo puede referenciar bindings
+// creados también vía vi.hoisted (si no, TDZ al evaluar la factory).
+const { constructEvent, db, log, FakePrismaKnownRequestError } = vi.hoisted(() => {
+  class FakePrismaKnownRequestError extends Error {
+    code: string;
+    constructor(message: string, code: string) {
+      super(message);
+      this.code = code;
+    }
+  }
+  return {
+    constructEvent: vi.fn(),
+    db: {
+      restaurant: {
+        updateMany: vi.fn(),
+        findFirst: vi.fn(),
+        update: vi.fn(),
+      },
+      processedStripeEvent: {
+        create: vi.fn(),
+      },
     },
-  },
-  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-}));
+    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    FakePrismaKnownRequestError,
+  };
+});
 
 // `new Stripe()` devuelve el objeto con nuestro constructEvent (un constructor
 // que retorna un objeto hace que `new` devuelva ese objeto).
 vi.mock("stripe", () => ({
   default: vi.fn(() => ({ webhooks: { constructEvent } })),
 }));
-vi.mock("@atelier/db", () => ({ prisma: db }));
+vi.mock("@atelier/db", () => ({
+  prisma: db,
+  Prisma: { PrismaClientKnownRequestError: FakePrismaKnownRequestError },
+}));
 vi.mock("@/lib/logger", () => ({ logger: log }));
 
 import * as route from "../route";
@@ -40,6 +59,9 @@ beforeEach(() => {
   db.restaurant.updateMany.mockReset();
   db.restaurant.findFirst.mockReset();
   db.restaurant.update.mockReset();
+  // Por defecto el evento nunca se vio: create() pega y el handler sigue al
+  // switch. Los tests de idempotencia lo pisan con un reject puntual.
+  db.processedStripeEvent.create.mockReset().mockResolvedValue({ id: "evt_x" });
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test");
 });
 
@@ -140,5 +162,43 @@ describe("POST /api/stripe/webhook", () => {
     const res = await post();
     expect(res.status).toBe(200);
     expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+
+  // P2-6 (auditoría jul 2026) — idempotencia por event.id.
+  it("event.id repetido (P2002 en processedStripeEvent) → 200 already processed, sin tocar el switch", async () => {
+    constructEvent.mockReturnValue({
+      id: "evt_dup",
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          client_reference_id: "rest-1",
+          customer: "cus_123",
+          subscription: "sub_123",
+          metadata: { plan: "founder" },
+        },
+      },
+    });
+    db.processedStripeEvent.create.mockRejectedValueOnce(
+      new FakePrismaKnownRequestError("Unique constraint failed", "P2002"),
+    );
+
+    const res = await post();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.alreadyProcessed).toBe(true);
+    expect(db.restaurant.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("error real (no P2002) al insertar processedStripeEvent → 500, sin tocar el switch", async () => {
+    constructEvent.mockReturnValue({
+      id: "evt_err",
+      type: "checkout.session.completed",
+      data: { object: { client_reference_id: "rest-1", customer: "cus_123", subscription: "sub_123" } },
+    });
+    db.processedStripeEvent.create.mockRejectedValueOnce(new Error("connection lost"));
+
+    const res = await post();
+    expect(res.status).toBe(500);
+    expect(db.restaurant.updateMany).not.toHaveBeenCalled();
   });
 });

@@ -27,6 +27,7 @@ import { BottomSheet } from "./BottomSheet";
 import { StatusBadge } from "./StatusBadge";
 import { showToast } from "./Toast";
 import { getLeavePreflight, leaveRestaurant, type LeavePreflight } from "@/src/api/auth";
+import { ApiError } from "@/src/api/client";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 type Props = {
@@ -70,13 +71,42 @@ export function LeaveRestaurantSheet({ open, onClose }: Props) {
 
   async function handleLeaveOrDelete() {
     if (submitting) return;
+    if (status.kind !== "ready") return;
+    // Solo A y C ejecutan un POST; el caso B no tiene botón de acción.
+    const expectedCase = status.preflight.case;
+    if (expectedCase !== "A" && expectedCase !== "C") return;
+
     setSubmitting(true);
     try {
-      await leaveRestaurant();
+      // P1-1: mandamos el caso que confirmamos y (en C) el nombre exacto. El
+      // server los re-valida dentro de una tx serializable.
+      await leaveRestaurant({
+        expectedCase,
+        confirmName: expectedCase === "C" ? typedName.trim() : undefined,
+      });
       onClose();
       await signOut();
       router.replace("/(auth)/login");
     } catch (err) {
+      // P1-1: 409 case_changed → la situación cambió mientras teníamos la hoja
+      // abierta (otro miembro salió/entró). NO ejecutamos nada: re-pedimos el
+      // preflight y re-mostramos el caso nuevo para que el chef vuelva a decidir.
+      if (err instanceof ApiError && err.status === 409) {
+        showToast(err.message || t("error_network"));
+        setTypedName("");
+        try {
+          const preflight = await getLeavePreflight();
+          setStatus({ kind: "ready", preflight });
+        } catch (e) {
+          setStatus({
+            kind: "error",
+            message: e instanceof Error ? e.message : t("error_network"),
+          });
+        } finally {
+          setSubmitting(false);
+        }
+        return;
+      }
       showToast(err instanceof Error ? err.message : t("error_network"));
       setSubmitting(false);
     }

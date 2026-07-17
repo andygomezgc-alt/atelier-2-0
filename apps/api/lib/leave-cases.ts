@@ -3,7 +3,7 @@
 // vive sola acá para que el preflight (read-only) y el POST (que actúa)
 // nunca diverjan en el case que devuelven.
 
-import { prisma } from "@atelier/db";
+import { prisma, Prisma } from "@atelier/db";
 import type { Role } from "@atelier/db";
 import type { LeaveCase } from "@atelier/shared";
 
@@ -14,11 +14,17 @@ export type LeaveCaseResult = {
   otherMembers: Array<{ id: string; name: string; role: Role }>;
 };
 
+// `client` opcional: por defecto usa el `prisma` global (preflight read-only).
+// El POST /leave lo llama con el cliente de su transacción serializable para
+// que el recompute del caso vea el mismo snapshot que el update/borrado y la
+// carrera (un miembro que sale/entra a la vez) provoque un conflicto de
+// serialización en vez de un caso mal calculado (P1-1 / P1-2).
 export async function computeLeaveCase(
   userId: string,
   restaurantId: string,
+  client: Prisma.TransactionClient = prisma,
 ): Promise<LeaveCaseResult> {
-  const members = await prisma.user.findMany({
+  const members = await client.user.findMany({
     where: { restaurantId },
     select: { id: true, name: true, role: true },
   });

@@ -10,6 +10,10 @@ type Props = {
   confirmLabel: string;
   cancelLabel: string;
   destructive?: boolean;
+  // P2-14 — cuando el caller tiene un request en vuelo, `busy` deshabilita
+  // el botón de confirmar. Antes la única protección contra doble-tap era
+  // que el caller cerrara el modal a tiempo (carrera).
+  busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -21,6 +25,7 @@ export function ConfirmSheet({
   confirmLabel,
   cancelLabel,
   destructive,
+  busy,
   onConfirm,
   onCancel,
 }: Props) {
@@ -42,8 +47,9 @@ export function ConfirmSheet({
               <Text style={styles.btnGhostLabel}>{cancelLabel}</Text>
             </Pressable>
             <Pressable
-              style={[styles.btnSolid, destructive && styles.btnDanger]}
+              style={[styles.btnSolid, destructive && styles.btnDanger, busy && styles.btnDisabled]}
               onPress={onConfirm}
+              disabled={busy}
             >
               <Text style={styles.btnSolidLabel}>{confirmLabel}</Text>
             </Pressable>
@@ -86,6 +92,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
   },
   btnDanger: { backgroundColor: colors.danger },
+  btnDisabled: { opacity: 0.5 },
   btnSolidLabel: {
     fontFamily: fonts.sans,
     fontSize: fontSizes.body,

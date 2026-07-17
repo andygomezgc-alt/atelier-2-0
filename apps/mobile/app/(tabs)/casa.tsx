@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   Share,
   StyleSheet,
@@ -12,9 +13,11 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
+import { NetworkError } from "@/src/components/NetworkError";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
+import { useRefresh } from "@/src/hooks/useRefresh";
 import { useRestaurant, type StaffMember } from "@/src/hooks/useRestaurant";
 import { StaffMemberSheet } from "@/src/components/StaffMemberSheet";
 import { EditRestaurantNameSheet } from "@/src/components/EditRestaurantNameSheet";
@@ -28,11 +31,13 @@ import type { Role } from "@atelier/shared";
 export default function CasaScreen() {
   const { t } = useI18n();
   const router = useRouter();
-  const { state } = useAuth();
+  const { state, refreshMe } = useAuth();
   const { rs, reload } = useRestaurant();
   const [selectedMember, setSelectedMember] = useState<StaffMember | null>(null);
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
+  // P2-14 (Casa) — guard anti doble-tap del regenerar código.
+  const [regenerating, setRegenerating] = useState(false);
   // A-12 — el bloque del código de invitación se muestra colapsado por default
   // cuando el chef todavía cocina solo (staff.length === 1). Discreto sin
   // perder utilidad: tocás para expandir cuando querés invitar a alguien.
@@ -60,6 +65,11 @@ export default function CasaScreen() {
     await Clipboard.setStringAsync(rs.data.inviteCode);
     showToast(t("toast_copiado"));
   }, [rs, t]);
+
+  // P2-18 (Casa) — pull-to-refresh. Declarado ANTES del early return del lobby
+  // para no romper la Rule of Hooks (mismo motivo que handleCopyCode). Casa no
+  // usa la caché en memoria → prefixes vacío, solo re-llama reload().
+  const { refreshing, onRefresh } = useRefresh([], reload);
 
   async function handleLobbyCreate() {
     // Reutiliza el mismo modal del lazy create; al confirmar el estado pasa a
@@ -106,12 +116,16 @@ export default function CasaScreen() {
   };
 
   async function handleRegen() {
+    if (regenerating) return;
+    setRegenerating(true);
     try {
       await apiFetch("/api/restaurant/invite", { method: "POST" });
       reload();
       showToast(t("toast_regenerado"));
     } catch (err) {
       showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setRegenerating(false);
     }
   }
 
@@ -154,11 +168,12 @@ export default function CasaScreen() {
   }
 
   if (rs.status === "error") {
+    // P1-6 — antes mostraba el string interno crudo (`network_unreachable`) sin
+    // reintento y quedaba muerta el resto de la sesión (las tabs no se
+    // remontan). Ahora NetworkError con reintento traducido.
     return (
       <Screen>
-        <View style={styles.center}>
-          <Text style={styles.errorText}>{rs.message}</Text>
-        </View>
+        <NetworkError sub={t("error_offline_generic_sub")} onRetry={reload} />
       </Screen>
     );
   }
@@ -171,7 +186,18 @@ export default function CasaScreen() {
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.terracota}
+            colors={[colors.terracota]}
+            progressBackgroundColor={colors.paper}
+          />
+        }
+      >
         <View style={styles.heroRow}>
           <View style={styles.heroPhoto}>
             <Text style={styles.heroPhotoText}>{restaurantInitial}</Text>
@@ -223,7 +249,12 @@ export default function CasaScreen() {
                 <Ionicons name="share-outline" size={18} color={colors.terracota} />
               </Pressable>
               {canManage ? (
-                <Pressable hitSlop={8} onPress={handleRegen} style={styles.iconBtn}>
+                <Pressable
+                  hitSlop={8}
+                  onPress={handleRegen}
+                  disabled={regenerating}
+                  style={[styles.iconBtn, regenerating && styles.iconBtnDisabled]}
+                >
                   <Ionicons name="refresh-outline" size={18} color={colors.terracota} />
                 </Pressable>
               ) : null}
@@ -265,12 +296,17 @@ export default function CasaScreen() {
               .join("")
               .slice(0, 2)
               .toUpperCase();
+            // P2-13 — mi propia fila no abre el sheet: tocarte a ti mismo el rol
+            // o expulsarte devuelve un 400 del server (bloqueado a propósito),
+            // así que ni ofrecemos la acción. Deshabilitada y sin chevron.
+            const isSelf = s.id === user?.id;
+            const rowActionable = canManage && !isSelf;
             return (
               <Pressable
                 key={s.id}
                 style={styles.staffRow}
-                onPress={() => canManage && setSelectedMember(s)}
-                disabled={!canManage}
+                onPress={() => rowActionable && setSelectedMember(s)}
+                disabled={!rowActionable}
               >
                 <View
                   style={[
@@ -285,7 +321,7 @@ export default function CasaScreen() {
                   <Text style={styles.staffName}>{s.name}</Text>
                   <Text style={styles.staffRole}>{roleLabel[s.role]}</Text>
                 </View>
-                {canManage ? (
+                {rowActionable ? (
                   <Ionicons name="chevron-forward" size={16} color={colors.mute} />
                 ) : null}
               </Pressable>
@@ -310,6 +346,10 @@ export default function CasaScreen() {
         member={selectedMember}
         onClose={() => setSelectedMember(null)}
         onChanged={() => {
+          // P2-13 — refreshMe() SIEMPRE: si me cambian mi propio rol desde otro
+          // móvil, los gates de permisos leen useAuth y quedarían viejos (botones
+          // que fallan con 403) hasta reiniciar. reload() refresca la lista.
+          void refreshMe();
           reload();
           showToast(t("toast_edit_mode"));
         }}
@@ -338,7 +378,6 @@ const styles = StyleSheet.create({
     gap: spacing.xl,
   },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  errorText: { fontFamily: fonts.sans, fontSize: fontSizes.bodySm, color: colors.mute },
   heroRow: { flexDirection: "row", gap: spacing.lg, alignItems: "center" },
   heroPhoto: {
     width: 56,
@@ -489,6 +528,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   iconBtn: { padding: 4 },
+  iconBtnDisabled: { opacity: 0.4 },
   section: { gap: spacing.sm },
   sectionHead: {
     flexDirection: "row",

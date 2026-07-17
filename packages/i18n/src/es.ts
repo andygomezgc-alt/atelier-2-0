@@ -72,6 +72,9 @@ export const es = {
   confirm_delete_section_title: "¿Eliminar sección?",
   confirm_delete_section_body:
     "Los platos de «{name}» quedarán sin sección. La acción no se puede deshacer.",
+  confirm_delete_dish_title: "¿Eliminar este plato?",
+  confirm_delete_dish_body:
+    "«{name}» se quitará del menú. Esta acción no se puede deshacer.",
   recipe_bank_title: "Desde el banco",
   recipe_bank_subtitle: "Elegí una receta aprobada para añadir como plato.",
   recipe_bank_empty_title: "Sin recetas aprobadas",
@@ -184,6 +187,12 @@ export const es = {
   error_offline_title: "Sin conexión",
   error_offline_sub: "Tu última idea se guardó localmente y se sincronizará cuando vuelva la red.",
   error_retry: "Reintentar",
+  // P1-4 / P1-6 — sub genérico para NetworkError cuando el de ideas no aplica
+  // (fallo de sesión al arrancar, o carga de Casa).
+  error_offline_generic_sub: "Revisa tu conexión e inténtalo de nuevo.",
+  // P2-17 — ErrorBoundary global (pantalla de fallback ante un crash de render).
+  error_boundary_title: "Algo salió mal",
+  error_boundary_sub: "La app tuvo un problema inesperado. Vuelve a intentarlo.",
   onboard_tag: "Cuaderno creativo del chef",
   onboard_email_placeholder: "tu@email.com",
   onboard_btn_magic_link: "Recibir enlace mágico",
@@ -240,6 +249,7 @@ export const es = {
   onboard_verifying: "Verificando enlace…",
   error_invalid_link: "Enlace no válido. Pide un nuevo enlace.",
   error_network: "Error de red. Inténtalo de nuevo.",
+  toast_stale_data: "Sin conexión — mostrando lo último cargado",
   btn_back: "Volver",
   add_to_menu_season_placeholder: "Otoño 2026",
   casa_share_message: "Únete a {restaurantName} en Atelier con el código {code}.",
@@ -437,6 +447,7 @@ export const es = {
   confirm_delete_producto_in_use_title: "Producto en uso",
   confirm_delete_producto_in_use_body:
     "Este producto aparece en {count} recetas. ¿Querés eliminarlo (a la papelera) igual?",
+  producto_not_found: "Producto no encontrado.",
 
   toast_producto_saved: "Producto guardado",
   toast_producto_archived: "Producto archivado",

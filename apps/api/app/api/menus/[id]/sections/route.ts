@@ -5,12 +5,20 @@
 // PATCH a /[sectionId] que acepta `order`.
 
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@atelier/db";
+import { prisma, Prisma } from "@atelier/db";
 import { CreateMenuSectionRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { projectMenuDetail, menuDetailInclude } from "@/lib/projections";
 
 export const dynamic = "force-dynamic";
+
+// P2-4 (auditoría jul 2026): mismo fix que items/route.ts — nextOrder y el
+// create van dentro de una transacción Serializable con retry ante P2034.
+const MAX_ORDER_RETRIES = 3;
+
+function isSerializationConflict(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034";
+}
 
 export async function POST(
   req: NextRequest,
@@ -31,19 +39,30 @@ export async function POST(
   if (!menu || menu.restaurantId !== ctx.restaurantId)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const max = await prisma.menuSection.aggregate({
-    where: { menuFolderId: menuId },
-    _max: { order: true },
-  });
-  const nextOrder = (max._max.order ?? -1) + 1;
-
-  await prisma.menuSection.create({
-    data: {
-      menuFolderId: menuId,
-      name: parse.data.name,
-      order: nextOrder,
-    },
-  });
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await prisma.$transaction(
+        async (tx) => {
+          const max = await tx.menuSection.aggregate({
+            where: { menuFolderId: menuId },
+            _max: { order: true },
+          });
+          const nextOrder = (max._max.order ?? -1) + 1;
+          await tx.menuSection.create({
+            data: {
+              menuFolderId: menuId,
+              name: parse.data.name,
+              order: nextOrder,
+            },
+          });
+        },
+        { isolationLevel: "Serializable" },
+      );
+      break;
+    } catch (err) {
+      if (!isSerializationConflict(err) || attempt >= MAX_ORDER_RETRIES) throw err;
+    }
+  }
 
   const full = await prisma.menuFolder.findUnique({
     where: { id: menuId },

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/src/api/client";
 import { useAuth } from "./useAuth";
 
@@ -31,21 +31,28 @@ export function useRestaurant() {
     (state.status === "signed-in" || state.status === "needs-restaurant") &&
     state.user.restaurantId != null;
 
-  useEffect(() => {
+  // reload NO pisa a "loading" a propósito: el pull-to-refresh de Casa (P2-18)
+  // mantiene visible el contenido actual mientras el RefreshControl gira. La
+  // transición a "loading" (spinner de pantalla completa) la hace solo el
+  // efecto inicial de abajo. Devuelve Promise para encajar con useRefresh.
+  const load = useCallback(async (): Promise<void> => {
     if (!hasRestaurant) return;
-
-    setRs({ status: "loading" });
-    apiFetch<Restaurant>("/api/restaurant")
-      .then((data) => setRs({ status: "ok", data }))
-      .catch((err: Error) => setRs({ status: "error", message: err.message }));
+    try {
+      const data = await apiFetch<Restaurant>("/api/restaurant");
+      setRs({ status: "ok", data });
+    } catch (err) {
+      setRs({
+        status: "error",
+        message: err instanceof Error ? err.message : "network_unreachable",
+      });
+    }
   }, [hasRestaurant]);
 
-  function reload() {
+  useEffect(() => {
     if (!hasRestaurant) return;
-    apiFetch<Restaurant>("/api/restaurant")
-      .then((data) => setRs({ status: "ok", data }))
-      .catch((err: Error) => setRs({ status: "error", message: err.message }));
-  }
+    setRs({ status: "loading" });
+    void load();
+  }, [hasRestaurant, load]);
 
-  return { rs, reload };
+  return { rs, reload: load };
 }

@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // --- Prisma mock (vi.hoisted: el factory de vi.mock se eleva). ---
 const { db } = vi.hoisted(() => {
-  const product = { findMany: vi.fn(), update: vi.fn() };
+  const product = { findMany: vi.fn(), updateMany: vi.fn() };
   const recipeIngredient = { findMany: vi.fn() };
   const auditLog = { create: vi.fn() };
   const $transaction = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
-    cb({ product: { update: product.update }, auditLog: { create: auditLog.create } }),
+    cb({ product: { updateMany: product.updateMany }, auditLog: { create: auditLog.create } }),
   );
   return { db: { product, recipeIngredient, auditLog, $transaction } };
 });
@@ -18,7 +18,8 @@ import { defaultCriticality } from "./criticality";
 
 beforeEach(() => {
   db.product.findMany.mockReset();
-  db.product.update.mockReset();
+  // P2-9: default = nunca choca con el guard criticalityManual:false.
+  db.product.updateMany.mockReset().mockResolvedValue({ count: 1 });
   db.recipeIngredient.findMany.mockReset();
   db.auditLog.create.mockReset();
   db.$transaction.mockClear();
@@ -101,7 +102,7 @@ describe("recalcCriticalityForRestaurant", () => {
     seedR1();
     const rep = await recalcCriticalityForRestaurant("r1", "actor1", { dryRun: true });
     expect(rep.applied).toBe(false);
-    expect(db.product.update).not.toHaveBeenCalled();
+    expect(db.product.updateMany).not.toHaveBeenCalled();
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 
@@ -109,8 +110,38 @@ describe("recalcCriticalityForRestaurant", () => {
     seedR1();
     const rep = await recalcCriticalityForRestaurant("r1", "actor1");
     expect(rep.applied).toBe(true);
-    expect(db.product.update).toHaveBeenCalled();
+    expect(db.product.updateMany).toHaveBeenCalled();
     expect(db.auditLog.create).toHaveBeenCalledOnce();
+  });
+
+  // P2-9 (auditoría jul 2026) — el cron no debe pisar un producto que el chef
+  // marcó manual DESPUÉS de la lectura inicial (carrera). El guard
+  // `criticalityManual: false` en el updateMany hace que ese write sea
+  // count===0; el fix lo recuenta como skippedManual en vez de aplicarlo.
+  it("no pisa un producto vuelto manual entre la lectura y el write (P2-9)", async () => {
+    seedR1();
+    // A es el que sube a "alta" por peso económico (ver seedR1). Simulamos
+    // que se volvió manual justo antes de que el cron lo escribiera.
+    db.product.updateMany.mockImplementation(
+      async ({ where }: { where: { id: string; criticalityManual: boolean } }) => {
+        expect(where.criticalityManual).toBe(false);
+        return where.id === "A" ? { count: 0 } : { count: 1 };
+      },
+    );
+
+    const rep = await recalcCriticalityForRestaurant("r1", "actor1");
+
+    expect(rep.changes.find((c) => c.productId === "A")).toBeUndefined();
+    expect(rep.changes.find((c) => c.productId === "B")).toBeDefined();
+    // skippedManual: C (ya era manual en la lectura) + A (se volvió manual
+    // en la carrera) = 2.
+    expect(rep.summary.skippedManual).toBe(2);
+    expect(rep.summary.changes).toBe(1);
+
+    const auditPayload = db.auditLog.create.mock.calls[0]![0].data.payload as {
+      skippedManual: string[];
+    };
+    expect(auditPayload.skippedManual).toContain("A");
   });
 
   it("sin recetas no rompe y no propone cambios económicos", async () => {

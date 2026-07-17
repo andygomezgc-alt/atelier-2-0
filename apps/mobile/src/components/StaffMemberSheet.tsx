@@ -33,6 +33,7 @@ export function StaffMemberSheet({ open, member, onClose, onChanged }: Props) {
   const { t } = useI18n();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   if (!member) return null;
 
@@ -54,7 +55,11 @@ export function StaffMemberSheet({ open, member, onClose, onChanged }: Props) {
   }
 
   async function handleRemove() {
-    if (!member) return;
+    // P2-13 — guard `removing` + disabled, espejo de handleRoleChange. Sin él, un
+    // doble-tap en el confirm del ConfirmSheet (que no tiene prop `busy`) dispara
+    // dos DELETE y dos toasts de error confusos.
+    if (!member || removing) return;
+    setRemoving(true);
     setConfirmDelete(false);
     try {
       await apiFetch(`/api/restaurant/staff/${member.id}`, { method: "DELETE" });
@@ -62,6 +67,8 @@ export function StaffMemberSheet({ open, member, onClose, onChanged }: Props) {
       onClose();
     } catch (err) {
       showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setRemoving(false);
     }
   }
 
@@ -112,6 +119,7 @@ export function StaffMemberSheet({ open, member, onClose, onChanged }: Props) {
               variant="danger"
               onPress={() => setConfirmDelete(true)}
               style={styles.removeBtn}
+              disabled={saving || removing}
             />
           </ScrollView>
       </BottomSheet>

@@ -72,6 +72,9 @@ export const it: EsDict = {
   confirm_delete_section_title: "Eliminare la sezione?",
   confirm_delete_section_body:
     "I piatti di «{name}» rimarranno senza sezione. Questa azione non si può annullare.",
+  confirm_delete_dish_title: "Eliminare questo piatto?",
+  confirm_delete_dish_body:
+    "«{name}» verrà rimosso dal menù. Questa azione non si può annullare.",
   recipe_bank_title: "Dal banco",
   recipe_bank_subtitle: "Scegli una ricetta approvata da aggiungere come piatto.",
   recipe_bank_empty_title: "Nessuna ricetta approvata",
@@ -175,6 +178,9 @@ export const it: EsDict = {
   error_offline_title: "Senza connessione",
   error_offline_sub: "L'ultima idea è salvata localmente e verrà sincronizzata al ritorno della rete.",
   error_retry: "Riprova",
+  error_offline_generic_sub: "Controlla la connessione e riprova.",
+  error_boundary_title: "Qualcosa è andato storto",
+  error_boundary_sub: "L'app ha avuto un problema imprevisto. Riprova.",
   onboard_tag: "Quaderno creativo dello chef",
   onboard_email_placeholder: "tu@email.com",
   onboard_btn_magic_link: "Ricevi link magico",
@@ -231,6 +237,7 @@ export const it: EsDict = {
   onboard_verifying: "Verifica del link…",
   error_invalid_link: "Link non valido. Richiedi un nuovo link.",
   error_network: "Errore di rete. Riprova.",
+  toast_stale_data: "Nessuna connessione — mostro l'ultimo caricato",
   btn_back: "Indietro",
   add_to_menu_season_placeholder: "Autunno 2026",
   casa_share_message: "Unisciti a {restaurantName} su Atelier con il codice {code}.",
@@ -428,6 +435,7 @@ export const it: EsDict = {
   confirm_delete_producto_in_use_title: "Prodotto in uso",
   confirm_delete_producto_in_use_body:
     "Questo prodotto compare in {count} ricette. Eliminarlo (nel cestino) lo stesso?",
+  producto_not_found: "Prodotto non trovato.",
 
   toast_producto_saved: "Prodotto salvato",
   toast_producto_archived: "Prodotto archiviato",

@@ -167,6 +167,16 @@ model Restaurant {
   yieldTests    YieldTest[]
 }
 
+// Idempotencia del webhook de Stripe (P2-6, auditoría jul 2026). Un evento
+// reentregado (Stripe reintenta si no respondemos 200 a tiempo, o llega fuera
+// de orden) no debe reprocesarse — podría pisar planStatus con un estado
+// viejo. `id` = event.id de Stripe; el segundo insert del mismo evento choca
+// con la unique del @id y el handler lo trata como "ya visto".
+model ProcessedStripeEvent {
+  id        String   @id
+  createdAt DateTime @default(now())
+}
+
 model User {
   id           String  @id @default(cuid())
   email        String  @unique

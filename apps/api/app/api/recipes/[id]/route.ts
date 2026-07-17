@@ -33,6 +33,12 @@ function autoEnrich(ing: {
   };
 }
 
+// P2-1 (auditoría jul 2026): señal tipada para abortar el PATCH desde dentro
+// de la transacción cuando la relectura de `state` revela que la receta se
+// aprobó justo en el medio (TOCTOU sobre el gate de contenido aprobado). El
+// catch del call-site la traduce a 409 approved_conflict.
+class ApprovedConflictError extends Error {}
+
 export const dynamic = "force-dynamic";
 
 export async function GET(
@@ -179,30 +185,50 @@ export async function PATCH(
       }
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
-      await tx.recipe.update({ where: { id }, data });
-      await tx.recipeIngredient.deleteMany({ where: { recipeId: id } });
-      if (parse.data.recipeIngredients!.length > 0) {
-        await tx.recipeIngredient.createMany({
-          data: parse.data.recipeIngredients!.map((ing, idx) => {
-            const enriched = autoEnrich(ing);
-            return {
-              recipeId: id,
-              productId: ing.productId ?? null,
-              position: idx,
-              rawText: ing.rawText,
-              qty: enriched.qty,
-              unit: enriched.unit,
-              pezzatura: enriched.pezzatura,
-              mermaOverridePct: ing.mermaOverridePct ?? null,
-              // Entrega A.5, Fase 7 — override del peso por pieza.
-              pesoCalculoG: ing.pesoCalculoG ?? null,
-            };
-          }),
-        });
+    let updated;
+    try {
+      updated = await prisma.$transaction(async (tx) => {
+        // P2-1: releer `state` DENTRO de la transacción. El gate de arriba
+        // (L101-106) vio el snapshot de antes del parseo; si otra request
+        // aprobó la receta en el medio, esta relectura es la vinculante.
+        // recipeIngredients !== undefined ya implica touchesApprovedContent,
+        // así que el chequeo no necesita repetir esa condición.
+        const fresh = await tx.recipe.findUnique({ where: { id }, select: { state: true } });
+        if (fresh?.state === "approved" && ctx.role !== "admin") {
+          throw new ApprovedConflictError();
+        }
+        await tx.recipe.update({ where: { id }, data });
+        await tx.recipeIngredient.deleteMany({ where: { recipeId: id } });
+        if (parse.data.recipeIngredients!.length > 0) {
+          await tx.recipeIngredient.createMany({
+            data: parse.data.recipeIngredients!.map((ing, idx) => {
+              const enriched = autoEnrich(ing);
+              return {
+                recipeId: id,
+                productId: ing.productId ?? null,
+                position: idx,
+                rawText: ing.rawText,
+                qty: enriched.qty,
+                unit: enriched.unit,
+                pezzatura: enriched.pezzatura,
+                mermaOverridePct: ing.mermaOverridePct ?? null,
+                // Entrega A.5, Fase 7 — override del peso por pieza.
+                pesoCalculoG: ing.pesoCalculoG ?? null,
+              };
+            }),
+          });
+        }
+        return tx.recipe.findUnique({ where: { id }, include: recipeDetailInclude });
+      });
+    } catch (err) {
+      if (err instanceof ApprovedConflictError) {
+        return NextResponse.json(
+          { error: "Solo el admin puede modificar recetas aprobadas", code: "approved_conflict" },
+          { status: 409 },
+        );
       }
-      return tx.recipe.findUnique({ where: { id }, include: recipeDetailInclude });
-    });
+      throw err;
+    }
 
     if (!updated) throw new Error("recipe_update_lost");
 
@@ -217,12 +243,36 @@ export async function PATCH(
     return NextResponse.json(projectRecipeDetail(updated));
   }
 
-  // Path sin ingredientes estructurados (legacy).
-  const updated = await prisma.recipe.update({
-    where: { id },
-    data,
-    include: recipeDetailInclude,
-  });
+  // Path sin ingredientes estructurados (legacy). Si el body toca contenido
+  // gateado (touchesApprovedContent), releemos `state` dentro de una
+  // transacción — misma ventana TOCTOU que arriba (P2-1). Si no toca nada
+  // gateado (ej. solo state/priority) no hay carrera que cerrar: update directo.
+  let updated;
+  if (touchesApprovedContent) {
+    try {
+      updated = await prisma.$transaction(async (tx) => {
+        const fresh = await tx.recipe.findUnique({ where: { id }, select: { state: true } });
+        if (fresh?.state === "approved" && ctx.role !== "admin") {
+          throw new ApprovedConflictError();
+        }
+        return tx.recipe.update({ where: { id }, data, include: recipeDetailInclude });
+      });
+    } catch (err) {
+      if (err instanceof ApprovedConflictError) {
+        return NextResponse.json(
+          { error: "Solo el admin puede modificar recetas aprobadas", code: "approved_conflict" },
+          { status: 409 },
+        );
+      }
+      throw err;
+    }
+  } else {
+    updated = await prisma.recipe.update({
+      where: { id },
+      data,
+      include: recipeDetailInclude,
+    });
+  }
 
   if (parse.data.state) {
     logger.info("recipe_state_changed", {

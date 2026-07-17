@@ -17,6 +17,7 @@ import { TOKEN_KEY } from "@/src/api/client";
 import { Screen } from "@/src/components/Screen";
 import { Eyebrow } from "@/src/components/Eyebrow";
 import { Button } from "@/src/components/Button";
+import { NetworkError } from "@/src/components/NetworkError";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import { useRefresh } from "@/src/hooks/useRefresh";
@@ -39,6 +40,9 @@ export default function RecipeDetailScreen() {
   const [recipe, setRecipe] = useState<RecipeFull | null>(null);
   const [loading, setLoading] = useState(true);
   const [addToMenuOpen, setAddToMenuOpen] = useState(false);
+  const [togglingPriority, setTogglingPriority] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
+  const [approving, setApproving] = useState(false);
 
   const role =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -56,6 +60,9 @@ export default function RecipeDetailScreen() {
         const r = await getRecipe(id);
         setRecipe(r);
       } catch (err) {
+        // P1-5 — ya no basta con el toast fugaz: `recipe` se queda en null
+        // y la rama `!recipe` de abajo (separada de `loading`) es el
+        // "estado de error" persistente que dispara NetworkError + reintento.
         showToast(err instanceof Error ? err.message : t("error_network"));
       } finally {
         if (!opts?.silent) setLoading(false);
@@ -83,13 +90,16 @@ export default function RecipeDetailScreen() {
   const { refreshing, onRefresh } = useRefresh(refreshPrefixes, silentReload);
 
   async function togglePriority() {
-    if (!recipe) return;
+    if (!recipe || togglingPriority) return;
+    setTogglingPriority(true);
     try {
       const updated = await patchRecipe(recipe.id, { priority: !recipe.priority });
       setRecipe(updated);
       showToast(updated.priority ? t("toast_priority_on") : t("toast_priority_off"));
     } catch (err) {
       showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setTogglingPriority(false);
     }
   }
 
@@ -150,18 +160,22 @@ export default function RecipeDetailScreen() {
   }
 
   async function advanceToTest() {
-    if (!recipe) return;
+    if (!recipe || advancing) return;
+    setAdvancing(true);
     try {
       const updated = await patchRecipe(recipe.id, { state: "in_test" });
       setRecipe(updated);
       showToast(t("toast_advanced_to_test"));
     } catch (err) {
       showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setAdvancing(false);
     }
   }
 
   async function approve() {
-    if (!recipe) return;
+    if (!recipe || approving) return;
+    setApproving(true);
     try {
       const updated = await patchRecipe(recipe.id, { state: "approved" });
       setRecipe(updated);
@@ -170,6 +184,8 @@ export default function RecipeDetailScreen() {
       setTimeout(() => setAddToMenuOpen(true), 600);
     } catch (err) {
       showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setApproving(false);
     }
   }
 
@@ -198,10 +214,18 @@ export default function RecipeDetailScreen() {
     router.push("/recetas/nueva");
   }
 
-  if (loading || !recipe) {
+  if (loading && !recipe) {
     return (
       <Screen title={t("header_receta")} back onBack={() => router.back()}>
         <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xxl }} />
+      </Screen>
+    );
+  }
+
+  if (!recipe) {
+    return (
+      <Screen title={t("header_receta")} back onBack={() => router.back()}>
+        <NetworkError onRetry={() => void reload()} />
       </Screen>
     );
   }

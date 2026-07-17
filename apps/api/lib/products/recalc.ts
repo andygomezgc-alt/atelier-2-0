@@ -155,20 +155,47 @@ export async function recalcCriticalityForRestaurant(
     return { applied: false, summary, changes };
   }
 
+  // P2-9 (auditoría jul 2026): entre la lectura de arriba y este write, el
+  // chef puede haber marcado el producto como criticalityManual=true a mano
+  // (carrera con el cron). updateMany con el guard `criticalityManual: false`
+  // hace que ese update sea un no-op (count===0) en vez de pisarlo; lo
+  // recontamos como skippedManual para que el reporte quede coherente con lo
+  // que realmente se escribió.
+  let finalSummary = summary;
+  let appliedChanges = changes;
+
   if (changes.length > 0) {
+    const applied: RecalcChange[] = [];
+    const raceSkippedIds: string[] = [];
     await prisma.$transaction(async (tx) => {
       for (const c of changes) {
-        await tx.product.update({
-          where: { id: c.productId },
+        const res = await tx.product.updateMany({
+          where: { id: c.productId, criticalityManual: false },
           data: { criticality: c.to },
         });
+        if (res.count > 0) {
+          applied.push(c);
+        } else {
+          raceSkippedIds.push(c.productId);
+        }
       }
+      finalSummary = {
+        totalProducts: products.length,
+        skippedManual: skippedManual.length + raceSkippedIds.length,
+        changes: applied.length,
+        timestamp: new Date().toISOString(),
+      };
+      appliedChanges = applied;
       await tx.auditLog.create({
         data: {
           restaurantId,
           actorId,
           action: "criticality_recalc",
-          payload: { summary, changes, skippedManual },
+          payload: {
+            summary: finalSummary,
+            changes: applied,
+            skippedManual: [...skippedManual, ...raceSkippedIds],
+          },
         },
       });
     });
@@ -186,5 +213,5 @@ export async function recalcCriticalityForRestaurant(
     });
   }
 
-  return { applied: true, summary, changes };
+  return { applied: true, summary: finalSummary, changes: appliedChanges };
 }

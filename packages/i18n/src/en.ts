@@ -71,6 +71,9 @@ export const en: EsDict = {
   confirm_delete_section_title: "Delete section?",
   confirm_delete_section_body:
     "Dishes in \"{name}\" will become unsectioned. This action cannot be undone.",
+  confirm_delete_dish_title: "Delete this dish?",
+  confirm_delete_dish_body:
+    "\"{name}\" will be removed from the menu. This action cannot be undone.",
   recipe_bank_title: "From the bank",
   recipe_bank_subtitle: "Pick an approved recipe to add as a dish.",
   recipe_bank_empty_title: "No approved recipes",
@@ -174,6 +177,9 @@ export const en: EsDict = {
   error_offline_title: "No connection",
   error_offline_sub: "Your last idea is saved locally and will sync when the network returns.",
   error_retry: "Retry",
+  error_offline_generic_sub: "Check your connection and try again.",
+  error_boundary_title: "Something went wrong",
+  error_boundary_sub: "The app hit an unexpected problem. Please try again.",
   onboard_tag: "Chef's creative notebook",
   onboard_email_placeholder: "you@email.com",
   onboard_btn_magic_link: "Send magic link",
@@ -230,6 +236,7 @@ export const en: EsDict = {
   onboard_verifying: "Verifying link…",
   error_invalid_link: "Invalid link. Please request a new one.",
   error_network: "Network error. Please try again.",
+  toast_stale_data: "Offline — showing the last loaded data",
   btn_back: "Back",
   add_to_menu_season_placeholder: "Autumn 2026",
   casa_share_message: "Join {restaurantName} on Atelier with the code {code}.",
@@ -427,6 +434,7 @@ export const en: EsDict = {
   confirm_delete_producto_in_use_title: "Product in use",
   confirm_delete_producto_in_use_body:
     "This product appears in {count} recipes. Delete it to the trash anyway?",
+  producto_not_found: "Product not found.",
 
   toast_producto_saved: "Product saved",
   toast_producto_archived: "Product archived",

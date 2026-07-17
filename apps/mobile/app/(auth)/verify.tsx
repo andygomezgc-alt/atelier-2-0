@@ -33,18 +33,30 @@ export default function VerifyScreen() {
     }
     inFlight.current = true;
 
+    // A-11 — usa code para localizar (token_invalid/expired/missing).
+    const fail = (err: unknown) => {
+      inFlight.current = false;
+      const msg = apiErrorMessage(err, t);
+      showToast(msg);
+      setError(msg);
+      setTimeout(() => router.replace("/(auth)/login"), 2000);
+    };
+
     verifyMagicLink(token, email)
-      .then(({ accessToken, user }) => {
-        signInWithToken(accessToken, user);
+      .then(async ({ accessToken, user }) => {
+        // P1-9 — antes signInWithToken se llamaba SIN await ni catch: el
+        // `.catch()` de la cadena no cubre la promesa porque el callback no la
+        // retornaba. Si SecureStore.setItemAsync fallaba (keychain lleno/ocupado
+        // en dispositivos reales) el rechazo quedaba huérfano y la pantalla se
+        // congelaba en "Verificando…" para siempre. Ahora lo await-eamos y su
+        // fallo cae al mismo tratamiento visual (toast + error + redirect).
+        try {
+          await signInWithToken(accessToken, user);
+        } catch (err) {
+          fail(err);
+        }
       })
-      .catch((err: Error) => {
-        inFlight.current = false;
-        // A-11 — usa code para localizar (token_invalid/expired/missing).
-        const msg = apiErrorMessage(err, t);
-        showToast(msg);
-        setError(msg);
-        setTimeout(() => router.replace("/(auth)/login"), 2000);
-      });
+      .catch(fail);
   }, [token, email, signInWithToken, router, t]);
 
   return (

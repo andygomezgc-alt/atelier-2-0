@@ -90,7 +90,8 @@ describe("PATCH /api/recipes/[id]", () => {
   it("200 sous_chef edita salePrice/portions/recipeIngredients de una receta draft", async () => {
     authAs("sous_chef");
     db.recipe.findUnique
-      .mockResolvedValueOnce(DRAFT)
+      .mockResolvedValueOnce(DRAFT) // lectura de fuera (gate temprano)
+      .mockResolvedValueOnce({ state: "draft" }) // P2-1: relectura dentro de la tx
       .mockResolvedValueOnce({ ...DRAFT, salePrice: 2500, portions: 6 });
 
     const res = await patch({
@@ -149,7 +150,8 @@ describe("PATCH /api/recipes/[id]", () => {
   it("200 admin edita título, precio e ingredientes de una receta aprobada", async () => {
     authAs("admin");
     db.recipe.findUnique
-      .mockResolvedValueOnce(APPROVED)
+      .mockResolvedValueOnce(APPROVED) // lectura de fuera (gate temprano, admin pasa)
+      .mockResolvedValueOnce({ state: "approved" }) // P2-1: relectura dentro de la tx, admin pasa igual
       .mockResolvedValueOnce({ ...APPROVED, title: "Risotto v2" });
 
     const res = await patch({
@@ -178,6 +180,33 @@ describe("PATCH /api/recipes/[id]", () => {
     db.recipe.findUnique.mockResolvedValueOnce({ ...DRAFT, restaurantId: "otro" });
     const res = await patch({ title: "Hack" });
     expect(res.status).toBe(404);
+    expect(db.recipe.update).not.toHaveBeenCalled();
+  });
+
+  // P2-1 (auditoría jul 2026) — TOCTOU: otra request aprueba la receta entre
+  // el gate temprano (fuera de la tx) y el update. La relectura DENTRO de la
+  // transacción debe ser la vinculante y abortar con 409.
+  it("409 approved_conflict: se aprueba entre el gate temprano y el update (path recipeIngredients)", async () => {
+    authAs("sous_chef");
+    db.recipe.findUnique
+      .mockResolvedValueOnce(DRAFT) // gate temprano: todavía draft, pasa
+      .mockResolvedValueOnce({ state: "approved" }); // relectura dentro de la tx: ya aprobada
+    const res = await patch({ recipeIngredients: [{ rawText: "sal" }] });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("approved_conflict");
+    expect(db.recipe.update).not.toHaveBeenCalled();
+  });
+
+  it("409 approved_conflict: se aprueba entre el gate temprano y el update (path legacy, solo título)", async () => {
+    authAs("sous_chef");
+    db.recipe.findUnique
+      .mockResolvedValueOnce(DRAFT)
+      .mockResolvedValueOnce({ state: "approved" });
+    const res = await patch({ title: "Nuevo título" });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("approved_conflict");
     expect(db.recipe.update).not.toHaveBeenCalled();
   });
 });

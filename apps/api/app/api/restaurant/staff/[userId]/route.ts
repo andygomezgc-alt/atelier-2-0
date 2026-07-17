@@ -1,15 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@atelier/db";
+import { prisma, Prisma } from "@atelier/db";
 import { PatchStaffMemberRequestSchema } from "@atelier/shared";
+import { generateInviteCode } from "@atelier/shared/invite-code";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { audit } from "@/lib/audit-log";
 
 export const dynamic = "force-dynamic";
 
-// P2-5 (auditoría jul 2026): invariante "último admin" — un restaurante nunca
-// debe quedarse sin ningún admin. Se usa para abortar la transacción desde
-// dentro del callback y distinguirlo de cualquier otro error inesperado.
+// P2-5 (auditoría seguridad) + P1-2 (auditoría bugs): invariante "último admin"
+// — un restaurante nunca debe quedarse sin ningún admin. Se lanza desde dentro
+// de la transacción para abortarla y distinguirla de un error inesperado.
 class LastAdminError extends Error {}
+// P2-3 (auditoría bugs): el target cambió de restaurante entre la lectura y la
+// escritura → el updateMany filtrado por restaurantId no toca ninguna fila.
+// Abortamos en vez de escribir a alguien de otro restaurante.
+class TargetMovedError extends Error {}
+
+// P1-2: reintenta la transacción ante un conflicto de serialización (P2034).
+// Serializable cierra el write-skew de "dos degradaciones/expulsiones
+// concurrentes sobre admins distintos dejan 0 admins" (bajo READ COMMITTED cada
+// una contaría 2 sin ver la escritura de la otra y ambas commitearían).
+async function withSerializableRetry<T>(
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await prisma.$transaction(fn, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2034" &&
+        attempt < MAX_ATTEMPTS
+      ) {
+        await new Promise((r) => setTimeout(r, 10 * attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -33,41 +65,47 @@ export async function PATCH(
   const oldRole = target.role;
   const newRole = parse.data.role;
 
-  let updated: { id: string; role: (typeof target)["role"] };
   try {
-    updated = await prisma.$transaction(async (tx) => {
-      // Si esto degrada a un admin, contamos DENTRO de la transacción (no
-      // antes) para cerrar el TOCTOU: dos PATCH concurrentes sobre dos admins
-      // distintos podrían leer count=2 cada uno fuera de una transacción y
-      // dejar el restaurante con 0 admins.
+    await withSerializableRetry(async (tx) => {
+      // Contar admins DENTRO de la tx serializable (no antes) cierra el TOCTOU:
+      // dos PATCH concurrentes sobre dos admins distintos se serializan.
       if (oldRole === "admin" && newRole !== "admin") {
         const adminCount = await tx.user.count({
           where: { restaurantId: ctx.restaurantId, role: "admin" },
         });
         if (adminCount <= 1) throw new LastAdminError();
       }
-      return tx.user.update({
-        where: { id: userId },
+      // P2-3: filtramos por restaurantId además del id y verificamos que se
+      // tocó exactamente 1 fila (si el target migró de restaurante entre la
+      // lectura y aquí, count=0 → no escribimos a nadie de otro restaurante).
+      const res = await tx.user.updateMany({
+        where: { id: userId, restaurantId: ctx.restaurantId },
         data: { role: newRole },
-        select: { id: true, role: true },
       });
+      if (res.count !== 1) throw new TargetMovedError();
+
+      // P3-3: el audit va dentro de la tx → atómico con la mutación.
+      await audit(
+        {
+          restaurantId: ctx.restaurantId,
+          actorId: ctx.userId,
+          action: "staff_role_changed",
+          targetType: "User",
+          targetId: userId,
+          payload: { from: oldRole, to: newRole },
+        },
+        tx,
+      );
     });
   } catch (err) {
     if (err instanceof LastAdminError)
       return NextResponse.json({ error: "last_admin", code: "last_admin" }, { status: 409 });
+    if (err instanceof TargetMovedError)
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     throw err;
   }
 
-  await audit({
-    restaurantId: ctx.restaurantId,
-    actorId: ctx.userId,
-    action: "staff_role_changed",
-    targetType: "User",
-    targetId: userId,
-    payload: { from: oldRole, to: newRole },
-  });
-
-  return NextResponse.json({ id: updated.id, role: updated.role });
+  return NextResponse.json({ id: userId, role: newRole });
 }
 
 export async function DELETE(
@@ -85,36 +123,54 @@ export async function DELETE(
     return NextResponse.json({ error: "Cannot remove yourself" }, { status: 400 });
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await withSerializableRetry(async (tx) => {
       // Mismo invariante que el PATCH: expulsar al último admin dejaría el
-      // restaurante sin nadie que administre. Contamos dentro de la
-      // transacción para cerrar el TOCTOU con expulsiones/degradaciones
-      // concurrentes de admins distintos.
+      // restaurante sin nadie que administre.
       if (target.role === "admin") {
         const adminCount = await tx.user.count({
           where: { restaurantId: ctx.restaurantId, role: "admin" },
         });
         if (adminCount <= 1) throw new LastAdminError();
       }
-      await tx.user.update({
-        where: { id: userId },
+      // P2-3: guard por restaurantId + verificación de count.
+      const res = await tx.user.updateMany({
+        where: { id: userId, restaurantId: ctx.restaurantId },
         data: { restaurantId: null },
       });
+      if (res.count !== 1) throw new TargetMovedError();
+
+      // P1-3: rotar el código de invitación en la MISMA tx que la expulsión,
+      // para que el código que el expulsado pudo memorizar/capturar deje de
+      // servir de inmediato. Necesitamos el nombre para el slug del código.
+      const r = await tx.restaurant.findUnique({
+        where: { id: ctx.restaurantId },
+        select: { name: true },
+      });
+      await tx.restaurant.update({
+        where: { id: ctx.restaurantId },
+        data: { inviteCode: generateInviteCode(r?.name ?? null) },
+      });
+
+      // P3-3: audit dentro de la tx.
+      await audit(
+        {
+          restaurantId: ctx.restaurantId,
+          actorId: ctx.userId,
+          action: "staff_removed",
+          targetType: "User",
+          targetId: userId,
+          payload: { previousRole: target.role },
+        },
+        tx,
+      );
     });
   } catch (err) {
     if (err instanceof LastAdminError)
       return NextResponse.json({ error: "last_admin", code: "last_admin" }, { status: 409 });
+    if (err instanceof TargetMovedError)
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     throw err;
   }
-
-  await audit({
-    restaurantId: ctx.restaurantId,
-    actorId: ctx.userId,
-    action: "staff_removed",
-    targetType: "User",
-    targetId: userId,
-    payload: { previousRole: target.role },
-  });
 
   return NextResponse.json({ ok: true });
 }

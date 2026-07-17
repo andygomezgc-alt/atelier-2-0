@@ -29,7 +29,6 @@ import {
   getConversationByIdea,
   listMessages,
   streamMessage,
-  StreamTimeoutError,
   type ChatMessage,
 } from "@/src/api/conversations";
 import { extractRecipeFromAssistant } from "@/src/api/recipes";
@@ -430,11 +429,12 @@ export default function AsistenteScreen() {
       ]);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
-      if (err instanceof StreamTimeoutError) {
-        setStreamError({ content: text, model: modelToUse });
-      } else {
-        showToast(err instanceof Error ? err.message : t("error_network"));
-      }
+      // P1-8 — CUALQUIER error del stream que no sea un abort (corte de red real,
+      // error del server a mitad, o el timeout de inactividad) va al banner con
+      // reintento, conservando el texto del chef. Antes solo StreamTimeoutError
+      // lo hacía; el resto caía a un toast fugaz y el mensaje ya se había borrado
+      // del input — había que recordarlo y reescribirlo.
+      setStreamError({ content: text, model: modelToUse });
     } finally {
       if (abortRef.current === ac) abortRef.current = null;
       // Generación vieja = la idea cambió y ya reseteó este estado para el chat

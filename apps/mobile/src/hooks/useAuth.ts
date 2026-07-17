@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as SecureStore from "@/src/lib/secure-storage";
-import { TOKEN_KEY, setUnauthorizedHandler } from "@/src/api/client";
+import { TOKEN_KEY, setUnauthorizedHandler, ApiError } from "@/src/api/client";
 import { devLogin, fetchMe, loginWithGoogle, requestMagicLink, type MeUser } from "@/src/api/auth";
 import { clearAll as clearApiCache } from "@/src/api/cache";
 import { setLang } from "@/src/hooks/useI18n";
 
 export type AuthState =
   | { status: "loading" }
+  // P1-4 — el bootstrap falló por RED (no por sesión inválida): conservamos el
+  // token y mostramos "sin conexión" con reintento en vez de desloguear.
+  | { status: "offline" }
   | { status: "signed-out" }
   | { status: "needs-restaurant"; user: MeUser }
   | { status: "signed-in"; user: MeUser };
@@ -123,7 +126,9 @@ async function signInWithGoogleImpl(): Promise<void> {
 // Re-exportamos MeUser para los consumidores no-hook (ej. LazyRestaurantHost).
 export type { MeUser };
 
-async function bootstrap() {
+// Exportada para el reintento manual (`retryBootstrap`) y para los tests
+// unitarios de P1-4 (fetchMe que rechaza NetworkError vs ApiError 401).
+export async function bootstrap() {
   // DEV: if the dev-auth env var is set, skip every login flow and sign in
   // with a fixed test user that auto-gets a Dev Kitchen restaurant. We do this
   // BEFORE checking any stored token so stale sessions from previous magic-link
@@ -161,10 +166,28 @@ async function bootstrap() {
         ? { status: "signed-in", user }
         : { status: "needs-restaurant", user },
     );
-  } catch {
-    await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => null);
-    setState({ status: "signed-out" });
+  } catch (err) {
+    // P1-4 — antes CUALQUIER fallo de fetchMe borraba el token y deslogueaba,
+    // así que un hipo de red al arrancar (wifi de cocina, 500 de Vercel,
+    // timeout) echaba al chef a login. Ahora solo un 401 REAL (token vencido a
+    // los 30d o tokenVersion revocado) destruye la sesión; NetworkError,
+    // timeout u otro error conservan el token y pasan a "offline" (el usuario
+    // reintenta sin perder la sesión). El 401 de un request en vivo ya tiene su
+    // vía por `setUnauthorizedHandler`; esto cubre el 401 del bootstrap.
+    if (err instanceof ApiError && err.status === 401) {
+      await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => null);
+      setState({ status: "signed-out" });
+    } else {
+      setState({ status: "offline" });
+    }
   }
+}
+
+// P1-4 — reintento manual desde la pantalla "sin conexión": vuelve a loading y
+// relanza el bootstrap (que decide signed-in / needs-restaurant / offline).
+async function retryBootstrapImpl(): Promise<void> {
+  setState({ status: "loading" });
+  await bootstrap();
 }
 
 let bootstrapped = false;
@@ -216,5 +239,7 @@ export function useAuth() {
 
   const signOut = useCallback(signOutImpl, []);
 
-  return { state, sendMagicLink, signInWithGoogle, signInWithToken, refreshMe, patchLocalUser, signOut };
+  const retryBootstrap = useCallback(retryBootstrapImpl, []);
+
+  return { state, sendMagicLink, signInWithGoogle, signInWithToken, refreshMe, patchLocalUser, signOut, retryBootstrap };
 }

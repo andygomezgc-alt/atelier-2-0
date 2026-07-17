@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { prisma } from "@atelier/db";
+import { prisma, Prisma } from "@atelier/db";
 import type { PlanTier, PlanStatus } from "@atelier/db";
 import { logger } from "@/lib/logger";
 
@@ -93,6 +93,30 @@ export async function POST(req: NextRequest) {
       error: err instanceof Error ? err.message : String(err),
     });
     return NextResponse.json({ error: "invalid_signature" }, { status: 400 });
+  }
+
+  // P2-6 (auditoría jul 2026): idempotencia por event.id. Un evento
+  // reentregado no debe reprocesarse — podría pisar planStatus con un estado
+  // viejo. `id` es unique: el segundo insert del mismo evento falla con
+  // P2002 y ahí cortamos sin tocar el switch de abajo.
+  try {
+    await prisma.processedStripeEvent.create({ data: { id: event.id } });
+  } catch (err) {
+    const isDuplicate =
+      err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+    if (isDuplicate) {
+      logger.info("stripe_webhook_already_processed", {
+        eventId: event.id,
+        eventType: event.type,
+      });
+      return NextResponse.json({ received: true, alreadyProcessed: true });
+    }
+    logger.error("stripe_webhook_dedup_error", {
+      eventId: event.id,
+      eventType: event.type,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json({ error: "handler_error" }, { status: 500 });
   }
 
   try {

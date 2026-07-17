@@ -448,6 +448,19 @@ export const LeavePreflightResponseSchema = z.object({
   restaurantName: z.string().max(120).optional(),
 });
 
+// P1-1 (auditoría bugs jul 2026): el POST /leave ahora exige un body con el
+// caso que el usuario CONFIRMÓ en el preflight. El server recomputa el caso
+// dentro de una transacción serializable y, si difiere del `expectedCase`,
+// responde 409 `case_changed` sin tocar nada (cierra la carrera "salir se
+// convierte en borrar todo sin confirmación"). El cliente solo puede pedir
+// A (salir) o C (borrar): el caso B está bloqueado en el preflight y nunca
+// hace POST. `confirmName` es obligatorio en C (nombre exacto del restaurante).
+export const LeaveRequestSchema = z.object({
+  expectedCase: z.enum(["A", "C"]),
+  confirmName: z.string().max(120).optional(),
+});
+export type LeaveRequest = z.infer<typeof LeaveRequestSchema>;
+
 export const LeaveResponseSchema = z.object({
   action: z.enum(["left", "deleted"]),
 });

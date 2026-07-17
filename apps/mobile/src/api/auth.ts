@@ -103,9 +103,17 @@ export function getLeavePreflight(): Promise<LeavePreflight> {
   return apiFetch("/api/restaurant/leave/preflight");
 }
 
-// POST /api/restaurant/leave — la respuesta exitosa es solo {action} para
-// caso A; los casos B y C llegan como ApiError con el `code` correspondiente
-// y el caller decide qué rendear.
-export function leaveRestaurant(): Promise<{ action: "left" | "deleted" }> {
-  return apiFetch("/api/restaurant/leave", { method: "POST" });
+// POST /api/restaurant/leave — el body lleva el caso que el usuario confirmó en
+// el preflight; el server lo recomputa dentro de una tx serializable (P1-1). Si
+// la situación cambió responde 409 `case_changed` (ApiError) y el caller
+// re-pide el preflight sin ejecutar nada. En caso C `confirmName` debe ser el
+// nombre exacto del restaurante (el server lo re-valida, no confía en la UI).
+export function leaveRestaurant(body: {
+  expectedCase: "A" | "C";
+  confirmName?: string;
+}): Promise<{ action: "left" | "deleted" }> {
+  return apiFetch("/api/restaurant/leave", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }

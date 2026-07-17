@@ -1,6 +1,7 @@
-import { Stack, useRouter, useSegments } from "expo-router";
+import { Stack, useRouter, useSegments, type ErrorBoundaryProps } from "expo-router";
 import { useEffect } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
@@ -11,9 +12,11 @@ import {
   CrimsonPro_500Medium_Italic,
 } from "@expo-google-fonts/crimson-pro";
 import { useAuth } from "@/src/hooks/useAuth";
+import { useI18n } from "@/src/hooks/useI18n";
 import { ToastHost } from "@/src/components/Toast";
+import { Button } from "@/src/components/Button";
 import { LazyRestaurantHost } from "@/src/components/LazyRestaurantHost";
-import { colors } from "@/src/theme";
+import { colors, fonts, fontSizes, spacing } from "@/src/theme";
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { state } = useAuth();
@@ -103,3 +106,56 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
+
+// P2-17 — ErrorBoundary global (convención de Expo Router: exportar un
+// `ErrorBoundary` desde el layout raíz lo instala para todo el árbol). Antes,
+// cualquier excepción de render tumbaba la app a la pantalla roja nativa sin
+// fallback ni salida. Ahora: pantalla traducida + reintento (retry re-monta la
+// ruta que falló, del propio router). Sin dependencias nuevas.
+export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
+  const { t } = useI18n();
+  return (
+    <SafeAreaProvider>
+      {/* style="dark" basta acá; el backgroundColor lo aporta el View de fondo.
+          (Los StatusBar de arriba lo pasan por convención del archivo.) */}
+      <StatusBar style="dark" />
+      <View style={boundaryStyles.root}>
+        <Ionicons name="alert-circle-outline" size={40} color={colors.terracota} />
+        <Text style={boundaryStyles.title}>{t("error_boundary_title")}</Text>
+        <Text style={boundaryStyles.sub}>{t("error_boundary_sub")}</Text>
+        <Button
+          label={t("error_retry")}
+          variant="secondary"
+          onPress={retry}
+          style={boundaryStyles.btn}
+        />
+      </View>
+    </SafeAreaProvider>
+  );
+}
+
+const boundaryStyles = StyleSheet.create({
+  root: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.paper,
+    paddingHorizontal: spacing.xxl,
+    gap: spacing.sm,
+  },
+  title: {
+    fontFamily: fonts.serifItalic,
+    fontSize: fontSizes.serifLg,
+    color: colors.ink,
+    textAlign: "center",
+    marginTop: spacing.sm,
+  },
+  sub: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.mute,
+    textAlign: "center",
+    lineHeight: fontSizes.bodySm * 1.5,
+  },
+  btn: { marginTop: spacing.md, alignSelf: "center" },
+});

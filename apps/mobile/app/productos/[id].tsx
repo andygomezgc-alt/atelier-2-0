@@ -32,6 +32,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
+import { NetworkError } from "@/src/components/NetworkError";
 import { EditableCell } from "@/src/components/EditableCell";
 import { YieldTestForm } from "@/src/components/YieldTestForm";
 import { DebouncedTextInput } from "@/src/components/DebouncedTextInput";
@@ -42,6 +43,7 @@ import { useAuth } from "@/src/hooks/useAuth";
 import { useRefresh } from "@/src/hooks/useRefresh";
 import { showToast } from "@/src/components/Toast";
 import { StatusBadge } from "@/src/components/StatusBadge";
+import { ApiError } from "@/src/api/client";
 import {
   getProduct,
   getProductHistory,
@@ -100,7 +102,12 @@ export default function ProductoDetailScreen() {
   const [product, setProduct] = useState<ProductFull | null>(null);
   const [history, setHistory] = useState<ProductHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  // P2-19 — distingue 404 real (id no existe) de fallo de red, para no
+  // etiquetar cualquier error como "404" y para poder ofrecer reintento
+  // solo cuando tiene sentido (red).
+  const [loadError, setLoadError] = useState<"not_found" | "network" | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [forceDeleting, setForceDeleting] = useState(false);
   // Cuando el DELETE sin force vuelve 409 "product_in_use", guardamos acá
   // la cantidad de recetas para mostrar el ConfirmSheet con el conteo.
   // null = sheet cerrado.
@@ -153,8 +160,10 @@ export default function ProductoDetailScreen() {
         const [p, h] = await Promise.all([getProduct(id), getProductHistory(id)]);
         setProduct(p);
         setHistory(h);
+        setLoadError(null);
       } catch (err) {
         showToast(err instanceof Error ? err.message : t("error_network"));
+        setLoadError(err instanceof ApiError && err.status === 404 ? "not_found" : "network");
       } finally {
         if (!opts?.silent) setLoading(false);
       }
@@ -364,16 +373,22 @@ export default function ProductoDetailScreen() {
   }
 
   async function handleDeleteForce() {
-    if (!product) return;
-    setDeleteInUseCount(null);
+    // P2-14 — antes cerraba el sheet ANTES de esperar el request; la única
+    // protección contra doble-tap era esa carrera. Ahora el sheet queda
+    // abierto (busy) hasta que el delete resuelve.
+    if (!product || forceDeleting) return;
+    setForceDeleting(true);
     try {
       const result = await deleteProduct(product.id, true);
       if (result.ok) {
         showToast(t("toast_product_deleted"));
+        setDeleteInUseCount(null);
         router.back();
       }
     } catch (err) {
       showToast(err instanceof Error ? err.message : t("error_network"));
+    } finally {
+      setForceDeleting(false);
     }
   }
 
@@ -390,9 +405,13 @@ export default function ProductoDetailScreen() {
   if (!product) {
     return (
       <Screen title={t("header_productos")} back onBack={() => router.back()}>
-        <View style={styles.center}>
-          <Text style={styles.errorText}>404</Text>
-        </View>
+        {loadError === "not_found" ? (
+          <View style={styles.center}>
+            <Text style={styles.errorText}>{t("producto_not_found")}</Text>
+          </View>
+        ) : (
+          <NetworkError onRetry={() => void reload()} />
+        )}
       </Screen>
     );
   }
@@ -693,8 +712,11 @@ export default function ProductoDetailScreen() {
         confirmLabel={t("btn_eliminar")}
         cancelLabel={t("confirm_cancel")}
         destructive
+        busy={forceDeleting}
         onConfirm={() => void handleDeleteForce()}
-        onCancel={() => setDeleteInUseCount(null)}
+        onCancel={() => {
+          if (!forceDeleting) setDeleteInUseCount(null);
+        }}
       />
 
       {/* Sheets de categoría y unidad (sub-paso 2b). Solo se abren cuando

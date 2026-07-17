@@ -7,6 +7,10 @@ import { projectRestaurant, restaurantInclude } from "@/lib/projections";
 
 export const dynamic = "force-dynamic";
 
+// P2-2: se lanza dentro de la tx de creación para revertir el restaurante si el
+// usuario ya estaba en uno (el guard `restaurantId: null` no reclamó su fila).
+class AlreadyInRestaurantError extends Error {}
+
 // TODO: dedupe with restaurant/join/route.ts if a 3rd usage appears.
 function validateOrigin(req: NextRequest): NextResponse | null {
   // Skip for Bearer auth (mobile) — no same-origin Origin header expected.
@@ -61,18 +65,37 @@ export async function POST(req: NextRequest) {
 
   const inviteCode = generateInviteCode(parse.data.name);
 
-  const restaurant = await prisma.restaurant.create({
-    data: {
-      name: parse.data.name,
-      identityLine: parse.data.identityLine,
-      inviteCode,
-    },
-  });
-
-  await prisma.user.update({
-    where: { id: ctx.userId },
-    data: { restaurantId: restaurant.id, role: "admin" },
-  });
+  // P2-2 (auditoría bugs jul 2026): crear el restaurante y reclamar al usuario
+  // van en UNA transacción. El `updateMany` con guard `restaurantId: null`
+  // reevaluado dentro de la tx cierra la carrera del doble-POST: el segundo
+  // toca 0 filas (el usuario ya tiene restaurante) → `throw` → rollback → el
+  // restaurante recién creado NO queda huérfano con código válido y 0 miembros.
+  let restaurant: { id: string; name: string; inviteCode: string };
+  try {
+    restaurant = await prisma.$transaction(async (tx) => {
+      const created = await tx.restaurant.create({
+        data: {
+          name: parse.data.name,
+          identityLine: parse.data.identityLine,
+          inviteCode,
+        },
+      });
+      const claim = await tx.user.updateMany({
+        where: { id: ctx.userId, restaurantId: null },
+        data: { restaurantId: created.id, role: "admin" },
+      });
+      if (claim.count === 0) throw new AlreadyInRestaurantError();
+      return created;
+    });
+  } catch (err) {
+    if (err instanceof AlreadyInRestaurantError) {
+      return NextResponse.json(
+        { error: "Already in a restaurant", code: "already_in_restaurant" },
+        { status: 409 },
+      );
+    }
+    throw err;
+  }
 
   // Devolvemos `role` también: el cliente lo usa con patchLocalUser para
   // actualizar auth-state sin un GET /me extra (A-10 / Ola 0 0.2).
