@@ -652,6 +652,8 @@ export const es = {
   pdf_products_col_criticality: "Criticidad",
   pdf_products_col_supplier: "Proveedor",
   pdf_products_col_state: "Estado",
+  confirm_delete_dish_title: "¿Quitar plato del menú?",
+  confirm_delete_dish_body: "Se quitará «{name}» del menú. Esta acción no se puede deshacer.",
 } as const;
 
 // Each translation maps a key to a string. Values are not pinned as

@@ -45,6 +45,7 @@ import * as SecureStore from "@/src/lib/secure-storage";
 import { Screen } from "@/src/components/Screen";
 import { Eyebrow } from "@/src/components/Eyebrow";
 import { Button } from "@/src/components/Button";
+import { NetworkError } from "@/src/components/NetworkError";
 import { DebouncedTextInput } from "@/src/components/DebouncedTextInput";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
@@ -189,6 +190,8 @@ type DishCardProps = {
   canViewStaffRecipe: boolean;
   isFirst: boolean;
   isLast: boolean;
+  isDeleting: boolean;
+  isReordering: boolean;
   namePlaceholder: string;
   descPlaceholder: string;
   viewRecipeLabel: string;
@@ -200,7 +203,7 @@ type DishCardProps = {
   onClearCustomName: (itemId: string) => void;
   onOpenSectionPicker: (itemId: string) => void;
   onReorder: (itemId: string, dir: "up" | "down") => void;
-  onDelete: (itemId: string) => void;
+  onDelete: (itemId: string, name: string) => void;
   onViewRecipe: (recipeId: string) => void;
 };
 
@@ -211,6 +214,8 @@ const DishCard = memo(function DishCard({
   canViewStaffRecipe,
   isFirst,
   isLast,
+  isDeleting,
+  isReordering,
   namePlaceholder,
   descPlaceholder,
   viewRecipeLabel,
@@ -236,24 +241,24 @@ const DishCard = memo(function DishCard({
           <View style={styles.reorderBox}>
             <Pressable
               hitSlop={6}
-              disabled={isFirst}
+              disabled={isFirst || isReordering}
               onPress={() => onReorder(dish.id, "up")}
             >
               <Ionicons
                 name="chevron-up"
                 size={14}
-                color={isFirst ? colors.edge : colors.mute}
+                color={isFirst || isReordering ? colors.edge : colors.mute}
               />
             </Pressable>
             <Pressable
               hitSlop={6}
-              disabled={isLast}
+              disabled={isLast || isReordering}
               onPress={() => onReorder(dish.id, "down")}
             >
               <Ionicons
                 name="chevron-down"
                 size={14}
-                color={isLast ? colors.edge : colors.mute}
+                color={isLast || isReordering ? colors.edge : colors.mute}
               />
             </Pressable>
           </View>
@@ -323,8 +328,12 @@ const DishCard = memo(function DishCard({
           ) : null}
         </View>
         {canEdit ? (
-          <Pressable hitSlop={10} onPress={() => onDelete(dish.id)}>
-            <Ionicons name="trash-outline" size={16} color={colors.mute} />
+          <Pressable
+            hitSlop={10}
+            disabled={isDeleting}
+            onPress={() => onDelete(dish.id, dish.name)}
+          >
+            <Ionicons name="trash-outline" size={16} color={isDeleting ? colors.edge : colors.mute} />
           </Pressable>
         ) : null}
       </View>
@@ -343,9 +352,17 @@ export default function MenuDetailScreen() {
 
   const [menu, setMenu] = useState<MenuFull | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [togglingInService, setTogglingInService] = useState(false);
+  const togglingInServiceRef = useRef(false);
   const [exporting, setExporting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [pendingDeleteItem, setPendingDeleteItem] = useState<{ id: string; name: string } | null>(null);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+  const deletingItemIdRef = useRef<string | null>(null);
+  const [reorderingItemId, setReorderingItemId] = useState<string | null>(null);
+  const reorderingItemIdRef = useRef<string | null>(null);
   const [pendingDeleteSection, setPendingDeleteSection] = useState<{ id: string; name: string } | null>(null);
   const [deletingSection, setDeletingSection] = useState(false);
   const [sectionPickerForItem, setSectionPickerForItem] = useState<string | null>(null);
@@ -376,9 +393,12 @@ export default function MenuDetailScreen() {
     async (opts?: { silent?: boolean }) => {
       if (!id) return;
       if (!opts?.silent) setLoading(true);
+      setLoadError(false);
       try {
         setMenu(await getMenu(id));
+        setLoadError(false);
       } catch (err) {
+        setLoadError(true);
         showToast(err instanceof Error ? err.message : t("error_network"));
       } finally {
         if (!opts?.silent) setLoading(false);
@@ -549,7 +569,9 @@ export default function MenuDetailScreen() {
   // Bloque 5 (segunda tanda) — toggle "en servicio". Optimistic update +
   // revert al error. Mismo patrón que handleStyleChange.
   const handleToggleInService = useCallback(async () => {
-    if (!menu) return;
+    if (!menu || togglingInServiceRef.current) return;
+    togglingInServiceRef.current = true;
+    setTogglingInService(true);
     const next = !menu.inService;
     setMenu((m) => (m ? { ...m, inService: next } : m));
     try {
@@ -558,6 +580,9 @@ export default function MenuDetailScreen() {
     } catch {
       showToast(t("error_network"));
       void reload();
+    } finally {
+      togglingInServiceRef.current = false;
+      setTogglingInService(false);
     }
   }, [menu, t, reload]);
 
@@ -620,19 +645,31 @@ export default function MenuDetailScreen() {
     [menu, t, reload],
   );
 
-  const handleDeleteItem = useCallback(
-    async (itemId: string) => {
-      if (!menu) return;
-      setMenu((m) => (m ? { ...m, items: m.items.filter((it) => it.id !== itemId) } : m));
+  const handleConfirmDeleteItem = useCallback(
+    async () => {
+      if (!menu || !pendingDeleteItem || deletingItemIdRef.current) return;
+      const itemId = pendingDeleteItem.id;
+      deletingItemIdRef.current = itemId;
+      setDeletingItemId(itemId);
       try {
         await deleteMenuItem(menu.id, itemId);
+        setMenu((m) => (m ? { ...m, items: m.items.filter((it) => it.id !== itemId) } : m));
+        setPendingDeleteItem(null);
       } catch {
         showToast(t("error_network"));
         void reload();
+      } finally {
+        deletingItemIdRef.current = null;
+        setDeletingItemId(null);
       }
     },
-    [menu, t, reload],
+    [menu, pendingDeleteItem, t, reload],
   );
+
+  const handleOpenDeleteItem = useCallback((itemId: string, name: string) => {
+    if (deletingItemIdRef.current) return;
+    setPendingDeleteItem({ id: itemId, name });
+  }, []);
 
   const handleClearCustomName = useCallback(
     async (itemId: string) => {
@@ -716,7 +753,7 @@ export default function MenuDetailScreen() {
   // Bug #4: ahora un solo POST transaccional. El server hace $transaction.
   const handleReorderItem = useCallback(
     async (itemId: string, direction: "up" | "down") => {
-      if (!menu) return;
+      if (!menu || reorderingItemIdRef.current) return;
       const item = menu.items.find((it) => it.id === itemId);
       if (!item) return;
       const siblings = menu.items
@@ -726,6 +763,8 @@ export default function MenuDetailScreen() {
       const swapIdx = direction === "up" ? idx - 1 : idx + 1;
       const target = siblings[swapIdx];
       if (!target) return;
+      reorderingItemIdRef.current = itemId;
+      setReorderingItemId(itemId);
       // Optimistic UI primero
       setMenu((m) =>
         m
@@ -747,6 +786,9 @@ export default function MenuDetailScreen() {
       } catch {
         showToast(t("error_network"));
         void reload();
+      } finally {
+        reorderingItemIdRef.current = null;
+        setReorderingItemId(null);
       }
     },
     [menu, t, reload],
@@ -836,13 +878,23 @@ export default function MenuDetailScreen() {
 
   // ───────── Render ─────────
 
-  if (loading || !menu) {
+  if (loading && !menu) {
     return (
       <Screen title={t("header_menus")} back onBack={() => router.back()}>
         <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xxl }} />
       </Screen>
     );
   }
+
+  if (!menu && loadError) {
+    return (
+      <Screen title={t("header_menus")} back onBack={() => router.back()}>
+        <NetworkError onRetry={() => void reload()} />
+      </Screen>
+    );
+  }
+
+  if (!menu) return null;
 
   const noContent = menu.items.length === 0 && partition.sections.length === 0;
 
@@ -871,6 +923,7 @@ export default function MenuDetailScreen() {
         menu.inService ? styles.inServicePillOn : styles.inServicePillOff,
       ]}
       onPress={handleToggleInService}
+      disabled={togglingInService}
       accessibilityLabel={t("menu_in_service_toggle_a11y")}
     >
       <View
@@ -1057,6 +1110,8 @@ export default function MenuDetailScreen() {
                           canViewStaffRecipe={canViewStaffRecipe}
                           isFirst={i === 0}
                           isLast={i === items.length - 1}
+                          isDeleting={deletingItemId === d.id}
+                          isReordering={reorderingItemId === d.id}
                           namePlaceholder={t("recetas_form_title_placeholder")}
                           descPlaceholder={t("recetas_form_notes_placeholder")}
                           viewRecipeLabel={t("dish_view_recipe")}
@@ -1068,7 +1123,7 @@ export default function MenuDetailScreen() {
                           onClearCustomName={handleClearCustomName}
                           onOpenSectionPicker={handleOpenSectionPickerForItem}
                           onReorder={handleReorderItem}
-                          onDelete={handleDeleteItem}
+                          onDelete={handleOpenDeleteItem}
                           onViewRecipe={handleViewRecipe}
                         />
                       ))}
@@ -1099,6 +1154,8 @@ export default function MenuDetailScreen() {
                     canViewStaffRecipe={canViewStaffRecipe}
                     isFirst={i === 0}
                     isLast={i === partition.unsectioned.length - 1}
+                    isDeleting={deletingItemId === d.id}
+                    isReordering={reorderingItemId === d.id}
                     namePlaceholder={t("recetas_form_title_placeholder")}
                     descPlaceholder={t("recetas_form_notes_placeholder")}
                     viewRecipeLabel={t("dish_view_recipe")}
@@ -1110,7 +1167,7 @@ export default function MenuDetailScreen() {
                     onClearCustomName={handleClearCustomName}
                     onOpenSectionPicker={handleOpenSectionPickerForItem}
                     onReorder={handleReorderItem}
-                    onDelete={handleDeleteItem}
+                    onDelete={handleOpenDeleteItem}
                     onViewRecipe={handleViewRecipe}
                   />
                 ))}
@@ -1188,6 +1245,22 @@ export default function MenuDetailScreen() {
         onPick={(recipeId) => {
           const targetSectionId = bankPickerForUnsectioned ? null : bankPickerForSection;
           void handleAddDishFromBank(targetSectionId, recipeId);
+        }}
+      />
+
+      <ConfirmSheet
+        open={!!pendingDeleteItem}
+        title={t("confirm_delete_dish_title")}
+        body={t("confirm_delete_dish_body", {
+          name: pendingDeleteItem?.name ?? "",
+        })}
+        confirmLabel={deletingItemId ? "…" : t("confirm_delete")}
+        cancelLabel={t("confirm_cancel")}
+        destructive
+        busy={deletingItemId !== null}
+        onConfirm={handleConfirmDeleteItem}
+        onCancel={() => {
+          if (!deletingItemId) setPendingDeleteItem(null);
         }}
       />
 

@@ -636,4 +636,6 @@ export const en: EsDict = {
   pdf_products_col_criticality: "Criticality",
   pdf_products_col_supplier: "Supplier",
   pdf_products_col_state: "Status",
+  confirm_delete_dish_title: "Remove dish from the menu?",
+  confirm_delete_dish_body: "“{name}” will be removed from the menu. This action cannot be undone.",
 };
