@@ -4,7 +4,7 @@
 // updatedAt, no toca schema. Botón "+" arriba abre NewMenuSheet (reemplaza el
 // input inline anterior).
 
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -21,6 +21,7 @@ import * as Sharing from "expo-sharing";
 import * as SecureStore from "@/src/lib/secure-storage";
 import { Screen } from "@/src/components/Screen";
 import { Empty } from "@/src/components/Empty";
+import { NetworkError } from "@/src/components/NetworkError";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { SectionExplainer } from "@/src/components/SectionExplainer";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
@@ -49,6 +50,12 @@ export default function MenusScreen() {
 
   const [menus, setMenus] = useState<Menu[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
+  const menusRef = useRef(menus);
+  useEffect(() => {
+    menusRef.current = menus;
+  }, [menus]);
   const [newSheetOpen, setNewSheetOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Menu | null>(null);
   // El botón PDF de la card abre la previsualización (no descarga directo).
@@ -73,13 +80,18 @@ export default function MenusScreen() {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      setMenus(await listMenus());
+      const list = await listMenus();
+      setMenus(list);
+      setLoadError(false);
     } catch {
-      // keep
+      setLoadError(true);
+      if (menusRef.current.length > 0) {
+        showToast(t("toast_offline_stale"));
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useFocusEffect(
     useCallback(() => {
@@ -308,6 +320,8 @@ export default function MenusScreen() {
         ListEmptyComponent={
           loading ? (
             <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
+          ) : loadError && menus.length === 0 ? (
+            <NetworkError onRetry={() => void reload()} />
           ) : inService.length === 0 ? (
             // Bug de lógica (auditoría jul 2026): antes `!inService`, pero
             // inService es un array — un array vacío es truthy, así que la guía

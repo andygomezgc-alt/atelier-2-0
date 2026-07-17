@@ -6,7 +6,7 @@
 // `ideaText: string | null` and we show a muted "Sin idea anclada" line when
 // it's missing.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -22,6 +22,7 @@ import {
   type ConversationSummary,
 } from "@/src/api/conversations";
 import { Empty } from "./Empty";
+import { NetworkError } from "./NetworkError";
 import { BottomSheet } from "./BottomSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
@@ -47,13 +48,22 @@ export function PreviousChatsSheet({ open, onClose, onPick }: Props) {
   const { t } = useI18n();
   const [items, setItems] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+
+  const loadConversations = useCallback(async () => {
+    setLoading(true);
+    setLoadError(false);
+    try {
+      setItems(await listConversations());
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
-    listConversations()
-      .then(setItems)
-      .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, [open]);
 

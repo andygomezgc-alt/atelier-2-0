@@ -284,6 +284,7 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
                   key={s.id}
                   style={styles.menuRow}
                   onPress={() => void addToSection(selectedMenu.id, s.id)}
+                  disabled={adding}
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={styles.menuName}>{s.name}</Text>
@@ -294,6 +295,7 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
             <Pressable
               style={[styles.menuRow, styles.menuRowMute]}
               onPress={() => void addToSection(selectedMenu.id, null)}
+              disabled={adding}
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.menuNameMute}>{t("section_unassigned")}</Text>

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Empty } from "@/src/components/Empty";
+import { NetworkError } from "@/src/components/NetworkError";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { SectionExplainer } from "@/src/components/SectionExplainer";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
@@ -58,6 +59,12 @@ export default function RecetasScreen() {
   const [q, setQ] = useState("");
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
+  const recipesRef = useRef(recipes);
+  useEffect(() => {
+    recipesRef.current = recipes;
+  }, [recipes]);
   const [pendingDelete, setPendingDelete] = useState<Recipe | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -82,12 +89,16 @@ export default function RecetasScreen() {
         list = list.filter((r) => r.state !== "approved");
       }
       setRecipes(list);
+      setLoadError(false);
     } catch {
-      // keep current
+      setLoadError(true);
+      if (recipesRef.current.length > 0) {
+        showToast(t("toast_offline_stale"));
+      }
     } finally {
       setLoading(false);
     }
-  }, [filter, q]);
+  }, [filter, q, t]);
 
   useEffect(() => {
     void reload();
@@ -259,6 +270,8 @@ export default function RecetasScreen() {
         ListEmptyComponent={
           loading ? (
             <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
+          ) : loadError && recipes.length === 0 ? (
+            <NetworkError onRetry={() => void reload()} />
           ) : (
             <Empty
               icon="book-outline"

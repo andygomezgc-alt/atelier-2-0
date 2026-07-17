@@ -6,7 +6,7 @@
 // sección. Tap a una receta → POST /api/menus/[id]/items con recipeId +
 // sectionId, después cierra.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -19,6 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useI18n } from "@/src/hooks/useI18n";
 import { listRecipes, type Recipe } from "@/src/api/recipes";
 import { Empty } from "./Empty";
+import { NetworkError } from "./NetworkError";
 import { BottomSheet } from "./BottomSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
@@ -39,13 +40,22 @@ export function RecipeBankPickerSheet({
   const { t } = useI18n();
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+
+  const loadRecipes = useCallback(async () => {
+    setLoading(true);
+    setLoadError(false);
+    try {
+      setRecipes(await listRecipes({ state: "approved" }));
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
-    listRecipes({ state: "approved" })
-      .then(setRecipes)
-      .catch(() => setRecipes([]))
       .finally(() => setLoading(false));
   }, [open]);
 

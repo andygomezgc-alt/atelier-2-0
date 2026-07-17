@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -15,6 +15,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Eyebrow } from "@/src/components/Eyebrow";
 import { Empty } from "@/src/components/Empty";
+import { NetworkError } from "@/src/components/NetworkError";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { SectionExplainer } from "@/src/components/SectionExplainer";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
@@ -37,6 +38,12 @@ export default function InicioScreen() {
   const [text, setText] = useState("");
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
+  const ideasRef = useRef(ideas);
+  useEffect(() => {
+    ideasRef.current = ideas;
+  }, [ideas]);
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Idea | null>(null);
   const [editing, setEditing] = useState<Idea | null>(null);
@@ -54,8 +61,12 @@ export default function InicioScreen() {
       if (flushed.length > 0) showToast(t("toast_idea_saved"));
       const data = await listIdeas();
       setIdeas(data);
+      setLoadError(false);
     } catch {
-      // keep current list
+      setLoadError(true);
+      if (ideasRef.current.length > 0) {
+        showToast(t("toast_offline_stale"));
+      }
     } finally {
       setLoading(false);
       void refreshQueue();
@@ -201,6 +212,8 @@ export default function InicioScreen() {
             <Eyebrow>{t("eyebrow_ultimas_ideas")}</Eyebrow>
             {loading ? (
               <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.md }} />
+            ) : loadError && ideas.length === 0 ? (
+              <NetworkError onRetry={() => void reload()} />
             ) : ideas.length === 0 ? (
               <Empty icon="bulb-outline" title={t("empty_inicio_title")} sub={t("empty_inicio_sub")} />
             ) : (

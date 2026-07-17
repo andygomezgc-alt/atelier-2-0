@@ -11,7 +11,7 @@
 // Acciones administrativas (migrar recetas, info de criticidad auto) viven
 // en /productos/ajustes — se llega ahí desde el ícono ⚙ en el header.
 
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -27,6 +27,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Empty } from "@/src/components/Empty";
+import { NetworkError } from "@/src/components/NetworkError";
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { CategoryIcon } from "@/src/components/CategoryIcon";
 import { EditableCell } from "@/src/components/EditableCell";
@@ -168,6 +169,12 @@ export default function ProductosScreen() {
   // Sub-paso 6: el aviso de la tarjeta de costo en la receta navega acá
   // con ?filter=sin-precio para que el chef vea de inmediato qué productos
   // faltan precificar. Si llega ese query param, lo usamos como filtro inicial.
+  const [loadError, setLoadError] = useState(false);
+
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
   const params = useLocalSearchParams<{ filter?: string }>();
   const initialFilter: FilterId =
     params.filter === "sin-precio" ? "sin_precio" : "all";
@@ -191,12 +198,16 @@ export default function ProductosScreen() {
       // descartan client-side; el server no filtra estado automáticamente.
       list = list.filter((p) => p.estado !== "archivado");
       setItems(list);
+      setLoadError(false);
     } catch {
-      // keep current items on error
+      setLoadError(true);
+      if (itemsRef.current.length > 0) {
+        showToast(t("toast_offline_stale"));
+      }
     } finally {
       setLoading(false);
     }
-  }, [filter, q]);
+  }, [filter, q, t]);
 
   useEffect(() => {
     void reload();
@@ -405,6 +416,8 @@ export default function ProductosScreen() {
         ListEmptyComponent={
           loading ? (
             <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
+          ) : loadError && items.length === 0 ? (
+            <NetworkError onRetry={() => void reload()} />
           ) : (
             <Empty
               icon="archive-outline"
