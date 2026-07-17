@@ -397,6 +397,9 @@ model MenuItem {
 
   @@index([menuFolderId, order])
   @@index([sectionId, order])
+  // "En qué menús está esta receta" (recipeDetailInclude) hace reverse-lookup
+  // por recipeId en cada detalle de receta — sin este índice era scan de tabla.
+  @@index([recipeId])
 }
 
 // ─────────── Auth.js (NextAuth) tables ───────────
