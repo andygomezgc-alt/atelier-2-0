@@ -63,6 +63,17 @@ vi.mock("@atelier/db", () => ({
     restaurant,
     $transaction: (cb: (tx: unknown) => Promise<unknown>) => transactionMock(cb),
   },
+  Prisma: {
+    TransactionIsolationLevel: { Serializable: "Serializable" },
+    PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {
+      code: string;
+
+      constructor(message: string, { code }: { code: string }) {
+        super(message);
+        this.code = code;
+      }
+    },
+  },
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => null) }));
@@ -116,10 +127,14 @@ async function makeToken(userId: string, tv = 0) {
     .sign(secret);
 }
 
-function makeReq(url: string, method: "GET" | "POST", token: string) {
+function makeReq(url: string, method: "GET" | "POST", token: string, body?: unknown) {
   return new NextRequest(url, {
     method,
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 }
 
@@ -222,7 +237,7 @@ describe("POST /api/restaurant/leave", () => {
 
     const token = await makeToken("u1");
     const res = await postRoute.POST(
-      makeReq("https://test.local/api/restaurant/leave", "POST", token),
+      makeReq("https://test.local/api/restaurant/leave", "POST", token, { expectedCase: "A" }),
     );
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -245,7 +260,7 @@ describe("POST /api/restaurant/leave", () => {
     );
   });
 
-  it("case B: 409 admin_handoff_required + otherMembers, no DB write", async () => {
+  it("case B: 409 case_changed with actualCase B, no DB write", async () => {
     mockAuthedUser({ userId: "u1", restaurantId: "r1", role: "admin" });
     user.findMany.mockResolvedValue([
       { id: "u1", name: "Only Admin", role: "admin" },
@@ -254,13 +269,12 @@ describe("POST /api/restaurant/leave", () => {
 
     const token = await makeToken("u1");
     const res = await postRoute.POST(
-      makeReq("https://test.local/api/restaurant/leave", "POST", token),
+      makeReq("https://test.local/api/restaurant/leave", "POST", token, { expectedCase: "A" }),
     );
     expect(res.status).toBe(409);
     const body = await res.json();
-    expect(body.code).toBe("admin_handoff_required");
-    expect(body.otherMembers).toHaveLength(1);
-    expect(body.otherMembers[0].id).toBe("u2");
+    expect(body.code).toBe("case_changed");
+    expect(body.actualCase).toBe("B");
 
     expect(user.update).not.toHaveBeenCalled();
     expect(auditLog.create).not.toHaveBeenCalled();
@@ -271,6 +285,7 @@ describe("POST /api/restaurant/leave", () => {
     user.findMany.mockResolvedValue([
       { id: "u1", name: "Solo", role: "admin" },
     ]);
+    restaurant.findUnique.mockResolvedValue({ name: "Solo Kitchen", stripeSubscriptionId: null });
     // Cada deleteMany devuelve un count — el handler no lo lee pero el mock
     // necesita resolver con algo válido.
     const ok = (count: number) => ({ count });
@@ -292,7 +307,10 @@ describe("POST /api/restaurant/leave", () => {
 
     const token = await makeToken("u1");
     const res = await postRoute.POST(
-      makeReq("https://test.local/api/restaurant/leave", "POST", token),
+      makeReq("https://test.local/api/restaurant/leave", "POST", token, {
+        expectedCase: "C",
+        confirmName: "Solo Kitchen",
+      }),
     );
     expect(res.status).toBe(200);
     const body = await res.json();
