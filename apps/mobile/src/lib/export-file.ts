@@ -27,3 +27,11 @@ export async function downloadAndShare(
   }
   return true;
 }
+
+// Limpia solo los caracteres ilegales en filesystems mainstream
+// (Windows/macOS/Linux). Preserva acentos, ñ, espacios, etc. — el resultado
+// es legible cuando el chef comparte el PDF desde mobile.
+export function sanitizeFilename(name: string): string {
+  const cleaned = name.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim();
+  return cleaned || "menu";
+}

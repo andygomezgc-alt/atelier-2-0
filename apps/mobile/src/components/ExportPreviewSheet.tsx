@@ -35,17 +35,8 @@ import { AllergenIcon } from "./AllergenIcon";
 import { MenuAllergenPickerSheet } from "./MenuAllergenPickerSheet";
 import { patchRecipe } from "@/src/api/recipes";
 import { ALLERGEN_ORDER, type Allergen } from "@atelier/shared";
+import { centsFromInput, formatPrice } from "@/src/lib/money";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
-
-function centsFromInput(raw: string): number {
-  const cleaned = raw.replace(/[^0-9.,]/g, "").replace(",", ".");
-  const n = parseFloat(cleaned || "0");
-  return Math.max(0, Math.round(n * 100));
-}
-
-function formatPrice(cents: number): string {
-  return (cents / 100).toFixed(0);
-}
 
 /**
  * Sets `current[key] = value` unless the value equals `canonical` or is

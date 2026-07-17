@@ -25,7 +25,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -37,7 +36,7 @@ import { YieldTestForm } from "@/src/components/YieldTestForm";
 import { DebouncedTextInput } from "@/src/components/DebouncedTextInput";
 import { ChoiceSheet, type ChoiceOption } from "@/src/components/ChoiceSheet";
 import { useI18n, dateLocale } from "@/src/hooks/useI18n";
-import { formatEuros, formatEurosPerUnit } from "@/src/lib/money";
+import { formatEuros, formatEurosPerUnit, parseEurosToCents } from "@/src/lib/money";
 import { useAuth } from "@/src/hooks/useAuth";
 import { useRefresh } from "@/src/hooks/useRefresh";
 import { showToast } from "@/src/components/Toast";
@@ -66,12 +65,6 @@ const UNIT_SHORT: Record<ProductUnit, string> = {
   caja: "caja",
 };
 
-function parseEurosToCents(input: string): number | null {
-  if (!input.trim()) return null;
-  const n = Number(input.replace(",", ".").trim());
-  if (!Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 100);
-}
 function parseMermaPct(input: string): number | null {
   if (!input.trim()) return null;
   const n = Number(input.replace(",", ".").trim());

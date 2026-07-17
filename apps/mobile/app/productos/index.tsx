@@ -32,7 +32,7 @@ import { CategoryIcon } from "@/src/components/CategoryIcon";
 import { EditableCell } from "@/src/components/EditableCell";
 import { useI18n } from "@/src/hooks/useI18n";
 import { downloadAndShare } from "@/src/lib/export-file";
-import { formatEuros, formatEurosPerUnit } from "@/src/lib/money";
+import { formatEuros, formatEurosPerUnit, parseEurosToCents } from "@/src/lib/money";
 import { useAuth } from "@/src/hooks/useAuth";
 import { useRefresh } from "@/src/hooks/useRefresh";
 import {
@@ -130,12 +130,6 @@ function detailToListItem(d: ProductFull): Product {
   };
 }
 
-function parseEurosToCents(input: string): number | null {
-  if (!input.trim()) return null;
-  const n = Number(input.replace(",", ".").trim());
-  if (!Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 100);
-}
 function parseMermaPct(input: string): number | null {
   if (!input.trim()) return null;
   const n = Number(input.replace(",", ".").trim());

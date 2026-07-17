@@ -16,7 +16,7 @@
 // plato (staff-only); pegan a MenuItem.customName/customDesc, que es lo
 // canónico para cocina. La vista cliente sigue independiente vía overrides.
 
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -74,6 +74,8 @@ import { TOKEN_KEY } from "@/src/api/client";
 import { can, type MenuStyle, type MenuStyleSpec } from "@atelier/shared";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { apiErrorMessage } from "@/src/lib/api-error";
+import { centsFromInput, formatPrice } from "@/src/lib/money";
+import { sanitizeFilename } from "@/src/lib/export-file";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 const API = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
@@ -87,26 +89,6 @@ const STYLES: ReadonlyArray<{
   { id: "minimal", labelKey: "style_minimal" },
   { id: "custom", labelKey: "style_custom" },
 ];
-
-function formatPrice(cents: number): string {
-  return (cents / 100).toFixed(0);
-}
-
-function centsFromInput(raw: string): number {
-  const cleaned = raw.replace(/[^0-9.,]/g, "").replace(",", ".");
-  const n = parseFloat(cleaned || "0");
-  return Math.max(0, Math.round(n * 100));
-}
-
-/**
- * Limpia solo los caracteres ilegales en filesystems mainstream
- * (Windows/macOS/Linux). Preserva acentos, ñ, espacios, etc. — el resultado
- * es legible cuando el chef comparte el PDF desde mobile.
- */
-function sanitizeFilename(name: string): string {
-  const cleaned = name.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim();
-  return cleaned || "menu";
-}
 
 type MenuItem = MenuFull["items"][number];
 type MenuSection = MenuFull["sections"][number];
