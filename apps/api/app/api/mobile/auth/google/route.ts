@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
       languagePref: true,
       defaultModel: true,
       tokenVersion: true,
-      restaurant: { select: { name: true } },
+      restaurant: { select: { name: true, plan: true, planStatus: true } },
     },
   });
 
@@ -82,6 +82,8 @@ export async function POST(req: NextRequest) {
       role: user.role ?? "viewer",
       restaurantId: user.restaurantId,
       restaurantName: user.restaurant?.name ?? null,
+      plan: user.restaurant?.plan ?? null,
+      planStatus: user.restaurant?.planStatus ?? null,
       languagePref: user.languagePref ?? "es",
       defaultModel: user.defaultModel ?? "sonnet",
     },

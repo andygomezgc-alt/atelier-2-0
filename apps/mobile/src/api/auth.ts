@@ -1,4 +1,6 @@
-import { apiFetch } from "./client";
+import { apiFetch, BASE, TOKEN_KEY, ApiError, NetworkError } from "./client";
+import * as SecureStore from "@/src/lib/secure-storage";
+import * as FileSystem from "expo-file-system/legacy";
 
 export type MeUser = {
   id: string;
@@ -11,6 +13,8 @@ export type MeUser = {
   defaultModel: "haiku" | "sonnet" | "opus";
   restaurantId: string | null;
   restaurantName: string | null;
+  plan: "pilot" | "founder" | "early" | "pro" | null;
+  planStatus: "trial" | "active" | "past_due" | "canceled" | null;
 };
 
 export function requestMagicLink(email: string): Promise<{ ok: boolean }> {
@@ -52,6 +56,40 @@ export function devLogin(email: string): Promise<{ accessToken: string; user: Me
     method: "POST",
     body: JSON.stringify({ email }),
   });
+}
+
+// Foto de perfil — multipart nativo (FileSystem.uploadAsync), mismo patrón que
+// uploadRecipeFile: RN fetch + FormData({uri}) lanza "Network request failed"
+// en builds standalone. Campo "photo" según el contrato de POST /api/me/photo.
+export async function uploadMePhoto(
+  uri: string,
+  mimeType: string,
+): Promise<{ photoUrl: string }> {
+  const token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
+
+  let res: FileSystem.FileSystemUploadResult;
+  try {
+    res = await FileSystem.uploadAsync(`${BASE}/api/me/photo`, uri, {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "photo",
+      mimeType,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  } catch {
+    throw new NetworkError();
+  }
+
+  if (res.status < 200 || res.status >= 300) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const json = JSON.parse(res.body);
+      message = json?.error ?? message;
+    } catch {}
+    throw new ApiError(res.status, message);
+  }
+
+  return JSON.parse(res.body) as { photoUrl: string };
 }
 
 export function patchMe(data: {

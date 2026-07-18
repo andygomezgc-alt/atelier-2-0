@@ -29,6 +29,9 @@ export const MenuStyleSpecSchema = z.object({
 export const IdeaStatusSchema = z.enum(["open", "in_chat", "archived"]);
 export const LanguageSchema = z.enum(["es", "it", "en"]);
 export const ModelSchema = z.enum(["haiku", "sonnet", "opus"]);
+// Plan del restaurante (Restaurant.plan / Restaurant.planStatus en Prisma).
+export const PlanTierSchema = z.enum(["pilot", "founder", "early", "pro"]);
+export const PlanStatusSchema = z.enum(["trial", "active", "past_due", "canceled"]);
 
 // Banco de Productos — los enums declarados acá arriba para que las recetas
 // (que ahora referencian estructura de producto en RecipeIngredientResponse)
@@ -75,6 +78,9 @@ export const MeResponseSchema = z.object({
   defaultModel: ModelSchema,
   restaurantId: z.string().max(100).nullable(),
   restaurantName: z.string().max(100).nullable(),
+  // Plan del restaurante — null cuando el usuario no tiene restaurante.
+  plan: PlanTierSchema.nullable(),
+  planStatus: PlanStatusSchema.nullable(),
 });
 
 export const PatchMeRequestSchema = z.object({

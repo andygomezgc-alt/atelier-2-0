@@ -27,7 +27,7 @@ export const meSelect = {
   languagePref: true,
   defaultModel: true,
   restaurantId: true,
-  restaurant: { select: { name: true } },
+  restaurant: { select: { name: true, plan: true, planStatus: true } },
 } as const;
 
 // Include compartido lista/detalle de receta. C-06a: la lista también
@@ -139,7 +139,7 @@ type MeUser = {
   languagePref: string | null;
   defaultModel: string | null;
   restaurantId: string | null;
-  restaurant: { name: string } | null;
+  restaurant: { name: string; plan: string; planStatus: string } | null;
 };
 
 export function projectMe(user: MeUser): MeResponse {
@@ -154,6 +154,9 @@ export function projectMe(user: MeUser): MeResponse {
     defaultModel: (user.defaultModel ?? "sonnet") as MeResponse["defaultModel"],
     restaurantId: user.restaurantId,
     restaurantName: user.restaurant?.name ?? null,
+    // Plan del restaurante — null sin restaurante.
+    plan: (user.restaurant?.plan ?? null) as MeResponse["plan"],
+    planStatus: (user.restaurant?.planStatus ?? null) as MeResponse["planStatus"],
   };
 }
 

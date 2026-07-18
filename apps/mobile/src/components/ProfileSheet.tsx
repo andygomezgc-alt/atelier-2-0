@@ -1,13 +1,27 @@
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  Image,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import * as Linking from "expo-linking";
+import * as ImagePicker from "expo-image-picker";
+import Constants from "expo-constants";
 import { Ionicons } from "@expo/vector-icons";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
-import { patchMe } from "@/src/api/auth";
+import { patchMe, uploadMePhoto } from "@/src/api/auth";
+import { BASE } from "@/src/api/client";
 import { apiErrorMessage } from "@/src/lib/api-error";
 import { showToast } from "./Toast";
 import { BottomSheet } from "./BottomSheet";
 import { DeleteAccountSheet } from "./DeleteAccountSheet";
+import { LeaveRestaurantSheet } from "./LeaveRestaurantSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import type { Language } from "@atelier/i18n";
 import type { Role } from "@atelier/shared";
@@ -29,6 +43,38 @@ export function ProfileSheet({ open, onClose }: Props) {
     sous_chef: t("role_sous_chef"),
     viewer: t("role_viewer"),
   };
+
+  // Plan del restaurante — etiqueta del tier + sufijo de estado solo cuando el
+  // estado NO es "active" (active es lo normal, no hace falta decirlo).
+  const planLabel: Record<string, string> = {
+    pilot: t("plan_pilot"),
+    founder: t("plan_founder"),
+    early: t("plan_early"),
+    pro: t("plan_pro"),
+  };
+  const planStatusLabel: Record<string, string> = {
+    trial: t("plan_status_trial"),
+    past_due: t("plan_status_past_due"),
+    canceled: t("plan_status_canceled"),
+  };
+  const planValue = (() => {
+    if (!user) return "";
+    const tier = user.plan ? planLabel[user.plan] : "—";
+    const status =
+      user.planStatus && user.planStatus !== "active"
+        ? planStatusLabel[user.planStatus]
+        : null;
+    return status ? `${tier} · ${status}` : tier;
+  })();
+  // CTA "Hacete Pro": el checkout Stripe vive en la web. Solo Android (Apple
+  // prohíbe linkear a compras externas), solo admin, y no para quien ya paga.
+  const showGoPro =
+    Platform.OS === "android" &&
+    user?.role === "admin" &&
+    !(
+      (user.plan === "founder" || user.plan === "pro") &&
+      user.planStatus === "active"
+    );
 
   async function handleLangChange(l: Language) {
     // P2-11 — antes: `.catch(() => null)`. El idioma se aplicaba en pantalla pero
@@ -63,6 +109,9 @@ export function ProfileSheet({ open, onClose }: Props) {
   // Eliminar cuenta — sheet propio apilado sobre este (patrón StaffMemberSheet
   // + ConfirmSheet: modal hermano, el perfil queda abierto debajo).
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // Salir del restaurante — mismo patrón de modal hermano.
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [bioInput, setBioInput] = useState("");
   const [nameOverride, setNameOverride] = useState<string | null>(null);
@@ -101,6 +150,33 @@ export function ProfileSheet({ open, onClose }: Props) {
     }
   }
 
+  // Foto de perfil: tap en el círculo → galería → POST /api/me/photo →
+  // refreshMe trae el photoUrl nuevo. Mismo flujo de permisos que foto-receta.
+  async function handleChangePhoto() {
+    if (photoUploading) return;
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      showToast(t("cargar_permiso_galeria"));
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.6,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (!asset) return;
+    setPhotoUploading(true);
+    try {
+      await uploadMePhoto(asset.uri, asset.mimeType ?? "image/jpeg");
+      await refreshMe();
+    } catch (err) {
+      showToast(apiErrorMessage(err, t));
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
+
   // Cuando refreshMe trae los valores nuevos del server, limpiar overrides.
   useEffect(() => {
     if (!user) return;
@@ -115,16 +191,24 @@ export function ProfileSheet({ open, onClose }: Props) {
           {user ? (
             <>
               <View style={styles.hero}>
-                <View style={styles.heroPhoto}>
-                  <Text style={styles.heroPhotoText}>
-                    {displayName
-                      .split(" ")
-                      .map((w) => w[0])
-                      .join("")
-                      .slice(0, 2)
-                      .toUpperCase()}
-                  </Text>
-                </View>
+                <Pressable
+                  style={[styles.heroPhoto, photoUploading && styles.heroPhotoUploading]}
+                  onPress={handleChangePhoto}
+                  disabled={photoUploading}
+                >
+                  {user.photoUrl ? (
+                    <Image source={{ uri: user.photoUrl }} style={styles.heroPhotoImg} />
+                  ) : (
+                    <Text style={styles.heroPhotoText}>
+                      {displayName
+                        .split(" ")
+                        .map((w) => w[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase()}
+                    </Text>
+                  )}
+                </Pressable>
                 {editing ? (
                   <>
                     <TextInput
@@ -171,6 +255,21 @@ export function ProfileSheet({ open, onClose }: Props) {
               <Row label={t("profile_role")} value={roleLabel[user.role]} />
               {user.restaurantName ? (
                 <Row label={t("profile_restaurant")} value={user.restaurantName} />
+              ) : null}
+              {user.restaurantId ? (
+                <>
+                  <Row label={t("profile_plan")} value={planValue} />
+                  {showGoPro ? (
+                    <Pressable
+                      style={styles.goProBtn}
+                      onPress={() =>
+                        Linking.openURL(`${BASE}/pro?r=${user.restaurantId}`)
+                      }
+                    >
+                      <Text style={styles.goProLabel}>{t("profile_go_pro")}</Text>
+                    </Pressable>
+                  ) : null}
+                </>
               ) : null}
 
               <Section label={t("profile_language")}>
@@ -220,14 +319,54 @@ export function ProfileSheet({ open, onClose }: Props) {
             <Ionicons name="log-out-outline" size={18} color={colors.danger} />
           </Pressable>
 
+          {user?.restaurantId ? (
+            <Pressable style={styles.dangerRow} onPress={() => setLeaveOpen(true)}>
+              <Text style={styles.dangerLabel}>{t("profile_leave_restaurant")}</Text>
+              <Ionicons name="exit-outline" size={18} color={colors.danger} />
+            </Pressable>
+          ) : null}
+
           <Pressable style={styles.dangerRow} onPress={() => setDeleteOpen(true)}>
             <Text style={styles.dangerLabel}>{t("profile_delete_account")}</Text>
             <Ionicons name="trash-outline" size={18} color={colors.danger} />
           </Pressable>
+
+          <Pressable
+            style={styles.footRow}
+            onPress={() =>
+              Linking.openURL(
+                "mailto:andygomezgc@gmail.com?subject=Atelier%20—%20Soporte",
+              )
+            }
+          >
+            <Text style={styles.footLabel}>{t("profile_support")}</Text>
+            <Ionicons name="mail-outline" size={18} color={colors.mute} />
+          </Pressable>
+
+          <View style={styles.legalRow}>
+            <Text
+              style={styles.legalLink}
+              onPress={() => Linking.openURL(`${BASE}/privacidad`)}
+            >
+              {t("profile_privacy")}
+            </Text>
+            <Text style={styles.legalDot}>·</Text>
+            <Text
+              style={styles.legalLink}
+              onPress={() => Linking.openURL(`${BASE}/terminos`)}
+            >
+              {t("profile_terms")}
+            </Text>
+          </View>
+
+          <Text style={styles.versionText}>
+            Atelier v{Constants.expoConfig?.version ?? "—"}
+          </Text>
         </ScrollView>
       </BottomSheet>
 
       <DeleteAccountSheet open={deleteOpen} onClose={() => setDeleteOpen(false)} />
+      <LeaveRestaurantSheet open={leaveOpen} onClose={() => setLeaveOpen(false)} />
     </>
   );
 }
@@ -281,6 +420,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: spacing.sm,
   },
+  heroPhotoUploading: { opacity: 0.5 },
+  heroPhotoImg: { width: 72, height: 72, borderRadius: 36 },
   heroPhotoText: {
     color: colors.paper,
     fontFamily: fonts.sans,
@@ -405,6 +546,25 @@ const styles = StyleSheet.create({
   modelOptionActive: { borderColor: colors.terracota, backgroundColor: colors.paperWarm },
   modelOptionText: { fontFamily: fonts.sans, fontSize: fontSizes.bodySm, color: colors.inkSoft },
   modelOptionTextActive: { color: colors.terracota, fontWeight: "600" },
+  // CTA "Hacete Pro" — outline terracota pill (mismo look que el viejo
+  // byokReturnBtn: acción secundaria destacada, no grita como el editSave).
+  goProBtn: {
+    borderWidth: 1,
+    borderColor: colors.terracota,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs + 2,
+    backgroundColor: "transparent",
+    alignSelf: "center",
+    marginBottom: spacing.sm,
+  },
+  goProLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.terracota,
+    fontWeight: "600",
+    letterSpacing: 1.2,
+  },
   dangerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -414,4 +574,35 @@ const styles = StyleSheet.create({
     borderTopColor: colors.edge,
   },
   dangerLabel: { fontFamily: fonts.sans, fontSize: fontSizes.body, color: colors.danger },
+  // Pie del perfil — soporte (fila neutra), legales chiquitos y versión muda.
+  footRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: spacing.md,
+    borderTopWidth: 0.5,
+    borderTopColor: colors.edge,
+  },
+  footLabel: { fontFamily: fonts.sans, fontSize: fontSizes.body, color: colors.inkSoft },
+  legalRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingTop: spacing.sm,
+  },
+  legalLink: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.mute,
+    textDecorationLine: "underline",
+  },
+  legalDot: { fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.mute },
+  versionText: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.mute,
+    textAlign: "center",
+    paddingBottom: spacing.sm,
+  },
 });

@@ -185,16 +185,21 @@ describe("POST /api/mobile/auth/verify", () => {
       languagePref: "es",
       defaultModel: "sonnet",
       tokenVersion: 7,
-      restaurant: { name: "Atelier Test" },
+      restaurant: { name: "Atelier Test", plan: "pilot", planStatus: "trial" },
     });
 
     const res = await verifyRoute.POST(
       makePost("https://test.local/api/mobile/auth/verify", { email, token: plainToken }),
     );
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { accessToken: string; user: { id: string } };
+    const json = (await res.json()) as {
+      accessToken: string;
+      user: { id: string; plan: string | null; planStatus: string | null };
+    };
     expect(json.accessToken).toBeTruthy();
     expect(json.user.id).toBe("user-42");
+    expect(json.user.plan).toBe("pilot");
+    expect(json.user.planStatus).toBe("trial");
 
     const { payload } = await jwtVerify(
       json.accessToken,

@@ -2,7 +2,7 @@ import * as SecureStore from "@/src/lib/secure-storage";
 import type { ApiErrorCode } from "@atelier/shared";
 
 export const TOKEN_KEY = "atelier.access_token.v1";
-const BASE = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+export const BASE = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 const REQUEST_TIMEOUT_MS = 30_000;
 
 export class ApiError extends Error {
