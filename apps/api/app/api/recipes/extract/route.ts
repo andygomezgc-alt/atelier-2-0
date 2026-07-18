@@ -8,9 +8,8 @@
 // lo consume igual que el flujo PDF. NO persiste la receta: el chef revisa
 // y luego POST /api/recipes.
 //
-// Usa SIEMPRE la clave del server (extractRecipeFromText), no BYOK: la
-// extracción es infraestructura de la app (decisión A-01), no el servicio
-// personal del chef.
+// Usa la clave Anthropic del server (extractRecipeFromText): la extracción
+// es infraestructura de la app (decisión A-01).
 //
 // El bloque de matching está duplicado del upload route a propósito: son
 // ~25 líneas, evita tocar el path PDF de producción y mantener una

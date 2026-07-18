@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
       );
   }
 
-  // La visión va SIEMPRE con la clave del server (sin BYOK) → cuota SIEMPRE.
+  // La visión va con la clave del server → cuota SIEMPRE.
   const quota = await reserveAiCall(ctx.userId);
   if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
 

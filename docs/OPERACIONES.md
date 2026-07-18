@@ -313,7 +313,6 @@ Pasos simples si necesitás cambiar un secreto en prod:
 | `RESEND_API_KEY` / `RESEND_FROM` / `RESEND_REPLY_TO` | Envío del correo de acceso (magic link) |
 | `NEXTAUTH_SECRET` (y `AUTH_SECRET`) | Firma de sesiones |
 | `MOBILE_JWT_SECRET` | Firma del token de la app móvil |
-| `BYOK_ENCRYPTION_KEY` | Cifra la clave de IA propia del chef (BYOK) |
 | `BLOB_READ_WRITE_TOKEN` | Almacenamiento de archivos (PDFs subidos) |
 | `CRON_SECRET` | Protege el cron de recálculo |
 | `GOOGLE_WEB_CLIENT_ID` / `GOOGLE_IOS_CLIENT_ID` | Login con Google (verificación del token) |
@@ -336,8 +335,7 @@ Pasos simples si necesitás cambiar un secreto en prod:
   `google-login-credenciales`. El único secreto de Google es
   `GOOGLE_WEB_CLIENT_SECRET`, que vive en `apps/api/.env.local` y hoy **no** se
   usa (el login por idToken no lo necesita).
-- `AI_DAILY_LIMIT` es configurable por env **sin redeploy**; default 120. BYOK
-  (clave propia del chef) **no** cuenta contra el tope.
+- `AI_DAILY_LIMIT` es configurable por env **sin redeploy**; default 120.
 - El `.gitignore` ya cubre backups de secretos: `.env*`, `*.pull`, `.env*.bak*`,
   `.env*.backup`. (Nota: en `main` hay archivos `.env.local.bak-…` y
   `.env.production.pull` sin trackear — son locales, no están commiteados, pero

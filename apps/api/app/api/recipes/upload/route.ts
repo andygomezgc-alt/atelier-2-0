@@ -7,9 +7,6 @@
 // response incluye recipeIngredients (estructurado con productId pre-set
 // para matches exactos) y pendingMatches (sugerencias probable que el
 // cliente debe confirmar antes de guardar la receta).
-//
-// Routes BYOK-aware (Anthropic/OpenAI/Google) so the user's own provider is
-// used for extraction when configured.
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
@@ -22,9 +19,7 @@ import {
   PDF_MIME,
   DOCX_MIME,
   IMAGE_MIMES,
-  type ExtractorBYOK,
 } from "@/lib/recipe-extraction";
-import { loadUserBYOK } from "@/lib/byok-user";
 import { findMatch, type MatchCandidate } from "@/lib/products/matching";
 import { parseIngredient } from "@/lib/products/parser";
 import { reserveAiCall, aiQuotaExceededResponse } from "@/lib/ai-quota";
@@ -78,18 +73,8 @@ export async function POST(req: NextRequest) {
       { status: 415 },
     );
 
-  // loadUserBYOK descifra la clave (formato `v1:...`) y self-heala las
-  // entradas legacy plaintext que pudieran quedar de antes de la encripción.
-  const byok: ExtractorBYOK = await loadUserBYOK(ctx.userId);
-
-  // Con clave del server aplica el tope diario; con BYOK (clave del chef) no.
-  // Las imágenes SIEMPRE van por el server (extractRecipeFromImage no usa BYOK),
-  // así que cuentan contra la cuota aunque el chef tenga clave propia.
-  const mustReserve = isImage || !byok;
-  if (mustReserve) {
-    const quota = await reserveAiCall(ctx.userId);
-    if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
-  }
+  const quota = await reserveAiCall(ctx.userId);
+  if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
 
   const start = Date.now();
   try {
@@ -100,7 +85,7 @@ export async function POST(req: NextRequest) {
     const [extracted, productList] = await Promise.all([
       isImage
         ? extractRecipeFromImage(buffer, mime)
-        : extractRecipeFromFile(buffer, mime, byok),
+        : extractRecipeFromFile(buffer, mime),
       ctx.restaurantId
         ? prisma.product.findMany({
             where: {
@@ -156,7 +141,6 @@ export async function POST(req: NextRequest) {
       userId: ctx.userId,
       mime,
       bytes: file.size,
-      byok: byok?.provider ?? null,
       latencyMs: Date.now() - start,
       ingredients: extracted.ingredients.length,
       exactMatches: recipeIngredients.filter((r) => r.productId !== null).length,
@@ -178,7 +162,6 @@ export async function POST(req: NextRequest) {
       userId: ctx.userId,
       mime,
       bytes: file.size,
-      byok: byok?.provider ?? null,
       error: message,
     });
     return NextResponse.json(

@@ -28,9 +28,6 @@ export const meSelect = {
   defaultModel: true,
   restaurantId: true,
   restaurant: { select: { name: true } },
-  customProvider: true,
-  customModel: true,
-  customApiKey: true,
 } as const;
 
 // Include compartido lista/detalle de receta. C-06a: la lista también
@@ -143,9 +140,6 @@ type MeUser = {
   defaultModel: string | null;
   restaurantId: string | null;
   restaurant: { name: string } | null;
-  customProvider: string | null;
-  customModel: string | null;
-  customApiKey: string | null;
 };
 
 export function projectMe(user: MeUser): MeResponse {
@@ -160,10 +154,6 @@ export function projectMe(user: MeUser): MeResponse {
     defaultModel: (user.defaultModel ?? "sonnet") as MeResponse["defaultModel"],
     restaurantId: user.restaurantId,
     restaurantName: user.restaurant?.name ?? null,
-    customProvider: user.customProvider as MeResponse["customProvider"] ?? null,
-    customModel: user.customModel,
-    // Never return the raw key; just whether one is configured.
-    customApiKeySet: !!(user.customApiKey && user.customApiKey.length > 0),
   };
 }
 

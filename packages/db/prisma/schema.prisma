@@ -188,13 +188,6 @@ model User {
   defaultModel String  @default("sonnet")
   tokenVersion Int     @default(0)
 
-  // Bring-your-own-key (BYOK). When all three are set, the chat route uses
-  // the user's provider/model/key instead of the server's Anthropic key.
-  // TODO: encrypt customApiKey at rest before exposing to non-dev workspaces.
-  customProvider String?
-  customApiKey   String?
-  customModel    String?
-
   restaurantId String?
   restaurant   Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
 
@@ -270,8 +263,7 @@ model Message {
 }
 
 /// Contador diario por usuario de llamadas a la IA hechas con la clave
-/// ANTHROPIC del server. Las llamadas BYOK (clave propia del chef) NO se
-/// cuentan: no nos cuestan. Protege contra que una sola cuenta agote la
+/// ANTHROPIC del server. Protege contra que una sola cuenta agote la
 /// clave compartida. Una fila por (userId, día-UTC). Ver lib/ai-quota.ts.
 model AiUsage {
   id           String   @id @default(cuid())

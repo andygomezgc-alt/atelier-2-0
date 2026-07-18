@@ -1,8 +1,8 @@
 // "Tu estilo" — extrae los tokens de estilo (MenuStyleSpec) de una FOTO o un
 // PDF de la carta real del restaurante. Mismo patrón que extractRecipeFromImage
 // (lib/recipe-extraction.ts): SIEMPRE server-only (clave Anthropic del
-// server, SIN BYOK — es infraestructura de la app, no el servicio personal
-// del chef), tool use FORZADO para garantizar JSON parseable, y validación
+// server — es infraestructura de la app), tool use FORZADO para
+// garantizar JSON parseable, y validación
 // Zod antes de devolver. Modelo: Sonnet (mejor ojo de diseño que Haiku; es
 // UNA llamada por configuración de la casa, no un flujo de alto volumen).
 

@@ -44,9 +44,6 @@ const fakeUser = {
   defaultModel: "sonnet",
   restaurantId: null as string | null,
   restaurantName: null as string | null,
-  customProvider: null,
-  customModel: null,
-  customApiKeySet: false,
 };
 
 describe("useAuth bootstrap (P1-4)", () => {

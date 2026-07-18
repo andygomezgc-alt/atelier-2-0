@@ -136,20 +136,6 @@ export const es = {
   model_haiku: "Sous-chef",
   model_sonnet: "Creativo",
   model_opus: "Ejecutivo",
-  // BYOK · selector de modelos por proveedor (Anthropic / ChatGPT / Google).
-  // Las etiquetas son del lenguaje de Andy ("rápido / equilibrado / potente"),
-  // los IDs técnicos viajan aparte en BYOK_MODELS y se muestran como sublabel.
-  byok_tier_fast: "Rápido",
-  byok_tier_balanced: "Equilibrado",
-  byok_tier_powerful: "Potente",
-  byok_help_anthropic_note:
-    "Si elegís Anthropic acá, se usa tu cuenta de Claude en vez de la del servidor.",
-  // BYOK pausa — cuando hay key propia activa, los 3 modelos de "Modelo Claude"
-  // de arriba quedan visualmente atenuados y no tappeables. {provider} es el
-  // nombre legible (Anthropic / ChatGPT / Google), no el ID interno.
-  byok_paused_note: "En pausa — estás usando tu propia clave de {provider}.",
-  byok_back_to_app_models: "Volver a los modelos de la app",
-  byok_back_to_app_models_toast: "Volviste a los modelos de la app",
   // A-05 · indicador mientras Atelier piensa antes del primer delta.
   chat_thinking: "Atelier piensa",
   chat_save_recipe: "Guardar como receta",

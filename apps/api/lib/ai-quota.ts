@@ -1,7 +1,6 @@
-// Tope diario de llamadas a la IA por usuario, SOLO cuando se usa la clave
-// ANTHROPIC del server. Las llamadas BYOK (clave propia del chef) no pasan por
-// acá: no nos cuestan. Esto cierra el agujero de "cualquiera con cuenta puede
-// loopear y vaciar la clave compartida" (auditoría jul 2026, urgencia #1).
+// Tope diario de llamadas a la IA por usuario (clave ANTHROPIC del server).
+// Cierra el agujero de "cualquiera con cuenta puede loopear y vaciar la clave
+// compartida" (auditoría jul 2026, urgencia #1).
 //
 // Contador persistente en Postgres (tabla AiUsage), una fila por (userId, día
 // UTC). El rate-limit in-memory de lib/rate-limit.ts es por-lambda y NO sirve
@@ -35,7 +34,7 @@ export function secondsToUtcMidnight(now: number = Date.now()): number {
  * atómico via upsert; si tras incrementar supera el tope, devuelve ok:false.
  * No revertimos el incremento en el caso de rechazo: bajo concurrencia
  * preferimos cortar de más que dejar pasar (es un tope de costo, no un contador
- * exacto). Llamar SOLO en el path de la clave del server (byok === null).
+ * exacto).
  */
 export async function reserveAiCall(userId: string): Promise<QuotaResult> {
   const day = utcDay();

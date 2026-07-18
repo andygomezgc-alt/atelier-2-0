@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 // Mocks elevados (el factory de vi.mock se iza sobre los consts).
-const { db, guard, quota, byok, anthro, streamMock } = vi.hoisted(() => {
+const { db, guard, quota, anthro, streamMock } = vi.hoisted(() => {
   const db = {
     conversation: { findUnique: vi.fn() },
     message: { create: vi.fn(), findMany: vi.fn() },
@@ -22,7 +22,6 @@ const { db, guard, quota, byok, anthro, streamMock } = vi.hoisted(() => {
         status: 429,
       }),
   };
-  const byok = { loadUserBYOK: vi.fn(async () => null) };
   const streamMock = vi.fn();
   class Anthropic {
     messages = { stream: streamMock };
@@ -30,7 +29,7 @@ const { db, guard, quota, byok, anthro, streamMock } = vi.hoisted(() => {
     constructor(_opts: unknown) {}
   }
   class APIUserAbortError extends Error {}
-  return { db, guard, quota, byok, anthro: { Anthropic, APIUserAbortError }, streamMock };
+  return { db, guard, quota, anthro: { Anthropic, APIUserAbortError }, streamMock };
 });
 
 vi.mock("@atelier/db", () => ({ prisma: db }));
@@ -43,8 +42,6 @@ vi.mock("@/lib/ai-quota", () => ({
   recordAiTokens: quota.recordAiTokens,
   aiQuotaExceededResponse: quota.aiQuotaExceededResponse,
 }));
-vi.mock("@/lib/byok-user", () => ({ loadUserBYOK: byok.loadUserBYOK }));
-vi.mock("@/lib/byok-providers", () => ({ streamBYOK: vi.fn() }));
 vi.mock("@/lib/anthropic", () => ({
   buildSystemBlocks: () => [{ type: "text", text: "sys" }],
   MODEL_IDS: { haiku: "h", sonnet: "s", opus: "o" },
@@ -95,7 +92,6 @@ beforeEach(() => {
   });
   quota.reserveAiCall.mockReset().mockResolvedValue({ ok: true, used: 1, limit: 120 });
   quota.recordAiTokens.mockClear();
-  byok.loadUserBYOK.mockReset().mockResolvedValue(null);
   streamMock.mockReset();
   db.conversation.findUnique.mockResolvedValue({
     id: "conv-1",

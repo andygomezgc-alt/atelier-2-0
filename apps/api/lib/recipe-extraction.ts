@@ -3,17 +3,13 @@
 //  1. Parse the file to plain text (unpdf for PDF, mammoth for DOCX).
 //  2. Ask an LLM to coerce that text into our RecipeContent shape.
 //  3. Validate the LLM response with Zod so the caller can trust it.
-//
-// BYOK-aware: if the user has a custom provider configured, we route through
-// it. Otherwise we use the server's Anthropic key + Haiku 4.5 (fast/cheap; the
-// task is structured extraction, not deep reasoning).
+// Uses the server's Anthropic key + Haiku 4.5 (fast/cheap; the task is
+// structured extraction, not deep reasoning).
 //
 // TODO v2: add Google Drive OAuth flow so the user can pick files directly
 // from Drive without going through the device file picker.
 
 import Anthropic from "@anthropic-ai/sdk";
-import OpenAI from "openai";
-import { GoogleGenAI } from "@google/genai";
 import { extractText, getDocumentProxy } from "unpdf";
 import mammoth from "mammoth";
 import { z } from "zod";
@@ -75,12 +71,6 @@ export function fileMatchesMime(buffer: Uint8Array, mime: string): boolean {
   return false;
 }
 
-export type ExtractorBYOK = {
-  provider: "anthropic" | "openai" | "google";
-  apiKey: string;
-  model: string;
-} | null;
-
 const ExtractedRecipeSchema = z.object({
   title: z.string().min(1).max(200),
   ingredients: z.array(z.string().min(1).max(500)).max(50),
@@ -110,7 +100,6 @@ TEXTO:
 export async function extractRecipeFromFile(
   buffer: Uint8Array,
   mimeType: string,
-  byok: ExtractorBYOK,
 ): Promise<ExtractedRecipe> {
   const text = await fileToText(buffer, mimeType);
   if (!text.trim()) throw new Error("El archivo no contiene texto legible");
@@ -118,7 +107,7 @@ export async function extractRecipeFromFile(
   // Safety cap: keep prompts predictable in size. ~30k chars ≈ 8k tokens.
   const truncated = text.length > 30_000 ? text.slice(0, 30_000) : text;
 
-  const raw = await callForExtraction(PROMPT, truncated, byok);
+  const raw = await callForExtraction(PROMPT, truncated);
   const parsed = ExtractedRecipeSchema.safeParse(parseJsonLoose(raw));
   if (!parsed.success) {
     throw new Error(
@@ -131,8 +120,7 @@ export async function extractRecipeFromFile(
 }
 
 // --- Extracción desde TEXTO (Asistente → "Guardar como receta", A-01). ---
-// A diferencia de extractRecipeFromFile (BYOK-aware), esta SIEMPRE usa la
-// clave del server + Haiku con TOOL USE FORZADO. Decisión A-01 "Opción A":
+// Usa la clave del server + Haiku con TOOL USE FORZADO. Decisión A-01 "Opción A":
 // la extracción es infraestructura de la app, no el servicio personal del
 // chef; y el tool use forzado da garantía técnica de JSON parseable (no
 // "esperanza" de que el modelo cumpla un formato de texto). Validado en
@@ -210,11 +198,9 @@ export async function extractRecipeFromText(
 }
 
 // --- Extracción desde IMAGEN (foto de receta, cámara o galería). ---
-// SIEMPRE server-only (clave Anthropic del server + Haiku visión, tool use
-// forzado). NO usa BYOK: los proveedores OpenAI/Google del chef no portan el
-// formato de imagen fácilmente (media_type/base64 distinto por SDK) y, como en
-// A-01, la extracción es infraestructura de la app, no el servicio personal del
-// chef. No pasa por fileToText: el modelo de visión lee la foto directamente.
+// Clave Anthropic del server + Haiku visión, con tool use forzado. Como en A-01,
+// la extracción es infraestructura de la app. No pasa por fileToText: el modelo
+// de visión lee la foto directamente.
 export async function extractRecipeFromImage(
   buffer: Uint8Array,
   mimeType: string,
@@ -296,69 +282,10 @@ function parseJsonLoose(raw: string): unknown {
 async function callForExtraction(
   instructions: string,
   fileText: string,
-  byok: ExtractorBYOK,
 ): Promise<string> {
   const MAX_OUTPUT_TOKENS = 2048;
 
-  if (byok?.provider === "anthropic") {
-    const client = new Anthropic({ apiKey: byok.apiKey });
-    const msg = await client.messages.create({
-      model: byok.model,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      messages: [
-        {
-          role: "user",
-          content: [
-            // Prefix estable: Anthropic cachea ~5 min y descontamos costo
-            // del prefix en uploads sucesivos del mismo chef.
-            { type: "text", text: instructions, cache_control: { type: "ephemeral" } },
-            { type: "text", text: fileText },
-          ],
-        },
-      ],
-    });
-    return firstTextBlock(msg);
-  }
-
-  if (byok?.provider === "openai") {
-    // OpenAI hace prompt caching automático para prompts >1024 tokens, sin
-    // API explícita. Concatenamos y dejamos que el server cachee solo.
-    const client = new OpenAI({ apiKey: byok.apiKey });
-    const completion = await client.chat.completions.create({
-      model: byok.model,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      messages: [{ role: "user", content: instructions + fileText }],
-      response_format: { type: "json_object" },
-    });
-    const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error("OpenAI no devolvió contenido");
-    return content;
-  }
-
-  if (byok?.provider === "google") {
-    // Gemini caching es una API aparte (CachedContent). No vale la pena
-    // por upload — el ahorro se cobra solo a partir de N hits del mismo cache.
-    const client = new GoogleGenAI({ apiKey: byok.apiKey });
-    const model = byok.model
-      .trim()
-      .replace(/^models\//, "")
-      .replace(/^google\//, "")
-      .replace(/\s+/g, "-")
-      .toLowerCase();
-    const result = await client.models.generateContent({
-      model,
-      contents: [{ role: "user", parts: [{ text: instructions + fileText }] }],
-      config: {
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-        responseMimeType: "application/json",
-      },
-    });
-    const text = result.text;
-    if (!text) throw new Error("Google no devolvió contenido");
-    return text;
-  }
-
-  // Default path: server's Anthropic key, Haiku 4.5 (cheap + fast).
+  // Server's Anthropic key, Haiku 4.5 (cheap + fast).
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY no configurada en el servidor");
   const client = new Anthropic({ apiKey });

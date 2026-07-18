@@ -4,8 +4,6 @@ import { prisma } from "@atelier/db";
 import { PostMessageRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { buildSystemBlocks, MODEL_IDS, type Msg } from "@/lib/anthropic";
-import { streamBYOK } from "@/lib/byok-providers";
-import { loadUserBYOK } from "@/lib/byok-user";
 import { reserveAiCall, recordAiTokens, aiQuotaExceededResponse } from "@/lib/ai-quota";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
@@ -71,7 +69,6 @@ export async function POST(
   let recentRecipes: { title: string; state: string }[] = [];
   let messages: Msg[] = [];
   let pinnedIdeaText: string | null = null;
-  let byok: Awaited<ReturnType<typeof loadUserBYOK>> | null = null;
 
   if (isPreview) {
     // Restaurante placeholder — el chef todavía no le puso nombre.
@@ -99,13 +96,8 @@ export async function POST(
       messages.push({ role: "user", content: parse.data.content });
     }
 
-    byok = await loadUserBYOK(ctx.userId);
-
-    // Tope diario de IA: solo con la clave del server (BYOK no nos cuesta).
-    if (!byok) {
-      const quota = await reserveAiCall(ctx.userId);
-      if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
-    }
+    const quota = await reserveAiCall(ctx.userId);
+    if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
   } else {
     const conv = await prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -116,14 +108,10 @@ export async function POST(
 
     pinnedIdeaText = conv.idea?.text ?? null;
 
-    // Cargar BYOK ANTES de persistir/gastar. Con la clave del server aplica el
-    // tope diario; lo chequeamos antes de persistir el mensaje del user para no
+    // Chequeamos el tope diario antes de persistir el mensaje del user para no
     // dejar un mensaje huérfano sin respuesta si rebota el 429.
-    byok = await loadUserBYOK(ctx.userId);
-    if (!byok) {
-      const quota = await reserveAiCall(ctx.userId);
-      if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
-    }
+    const quota = await reserveAiCall(ctx.userId);
+    if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
 
     // Persist user message before streaming.
     await prisma.message.create({
@@ -177,7 +165,6 @@ export async function POST(
   // No usamos conv.modelUsed como fallback para evitar perpetuar Opus en turnos
   // cortos cuando la conversación fue creada con Opus para una pregunta puntual.
   const model = parse.data.model ?? "sonnet";
-  const flatSystem = system.map((b) => b.text).join("\n\n");
 
   const start = Date.now();
 
@@ -213,74 +200,45 @@ export async function POST(
       }, 8_000);
 
       try {
-        if (byok) {
-          // User's own provider + key.
-          for await (const ev of streamBYOK({
-            provider: byok.provider,
-            apiKey: byok.apiKey,
-            model: byok.model,
-            system: flatSystem,
+        // Server's Anthropic key.
+        const anthroStream = anthropic.messages.stream(
+          {
+            model: MODEL_IDS[model],
+            // A-01b — antes 2048: las recetas largas (texto visible +
+            // bloque <recipe_payload> al final) se cortaban en el cap.
+            // Se cobra por tokens generados, no por max; los chats
+            // simples no notan diferencia.
+            max_tokens: 4096,
+            system,
             messages,
-            signal: req.signal,
-            // A-01b — antes 2048: las recetas largas se cortaban en el cap
-            // (texto visible + bloque <recipe_payload> JSON al final
-            // necesitan ~3-4k tokens). Cobramos por tokens generados, no
-            // por max; los chats simples no se ven afectados.
-            maxTokens: 4096,
-          })) {
-            if (ev.type === "delta") {
-              if (!firstDeltaReceived) firstDeltaReceived = true;
-              assistantText += ev.text;
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ type: "delta", text: ev.text })}\n\n`),
-              );
-            } else {
-              inputTokens = ev.inputTokens;
-              outputTokens = ev.outputTokens;
-              cachedTokens = 0;
-            }
-          }
-        } else {
-          // Server's Anthropic key (default).
-          const anthroStream = anthropic.messages.stream(
-            {
-              model: MODEL_IDS[model],
-              // A-01b — antes 2048: las recetas largas (texto visible +
-              // bloque <recipe_payload> al final) se cortaban en el cap.
-              // Se cobra por tokens generados, no por max; los chats
-              // simples no notan diferencia.
-              max_tokens: 4096,
-              system,
-              messages,
-              // Sonnet 4.6 defaults to effort=high; force low for chat workloads
-              // to match Sonnet 4.5 cost/latency profile. Opus uses its default
-              // (high) so "máxima profundidad" stays meaningful. Haiku 4.5 does
-              // not support effort and would 400 if set.
-              ...(model === "sonnet" && {
-                thinking: { type: "disabled" as const },
-                output_config: { effort: "low" as const },
-              }),
-            },
-            { signal: req.signal },
-          );
+            // Sonnet 4.6 defaults to effort=high; force low for chat workloads
+            // to match Sonnet 4.5 cost/latency profile. Opus uses its default
+            // (high) so "máxima profundidad" stays meaningful. Haiku 4.5 does
+            // not support effort and would 400 if set.
+            ...(model === "sonnet" && {
+              thinking: { type: "disabled" as const },
+              output_config: { effort: "low" as const },
+            }),
+          },
+          { signal: req.signal },
+        );
 
-          for await (const event of anthroStream) {
-            if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-              if (!firstDeltaReceived) firstDeltaReceived = true;
-              assistantText += event.delta.text;
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: "delta", text: event.delta.text })}\n\n`,
-                ),
-              );
-            }
+        for await (const event of anthroStream) {
+          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            if (!firstDeltaReceived) firstDeltaReceived = true;
+            assistantText += event.delta.text;
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "delta", text: event.delta.text })}\n\n`,
+              ),
+            );
           }
-
-          const final = await anthroStream.finalMessage();
-          inputTokens = final.usage.input_tokens;
-          outputTokens = final.usage.output_tokens;
-          cachedTokens = final.usage.cache_read_input_tokens ?? 0;
         }
+
+        const final = await anthroStream.finalMessage();
+        inputTokens = final.usage.input_tokens;
+        outputTokens = final.usage.output_tokens;
+        cachedTokens = final.usage.cache_read_input_tokens ?? 0;
 
         controller.enqueue(
           encoder.encode(
@@ -306,7 +264,6 @@ export async function POST(
             JSON.stringify({
               evt: "anthropic_stream_error",
               model,
-              byok: byok ? byok.provider : null,
               message,
               raw: rawMessage,
             }),
@@ -346,7 +303,6 @@ export async function POST(
           JSON.stringify({
             evt: "anthropic_message",
             model,
-            byok: byok ? byok.provider : null,
             input_tokens: inputTokens,
             output_tokens: outputTokens,
             cached_tokens: cachedTokens,
@@ -355,9 +311,9 @@ export async function POST(
             partial_chars: aborted || errored ? assistantText.length : undefined,
           }),
         );
-        // Sumar tokens gastados al contador diario (solo clave del server;
-        // best-effort, ya reservamos el slot antes de arrancar el stream).
-        if (!byok && (inputTokens || outputTokens)) {
+        // Sumar tokens gastados al contador diario (best-effort, ya reservamos
+        // el slot antes de arrancar el stream).
+        if (inputTokens || outputTokens) {
           await recordAiTokens(ctx.userId, inputTokens ?? 0, outputTokens ?? 0);
         }
         try {

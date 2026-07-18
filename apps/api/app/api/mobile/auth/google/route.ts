@@ -57,9 +57,6 @@ export async function POST(req: NextRequest) {
       defaultModel: true,
       tokenVersion: true,
       restaurant: { select: { name: true } },
-      customProvider: true,
-      customModel: true,
-      customApiKey: true,
     },
   });
 
@@ -87,9 +84,6 @@ export async function POST(req: NextRequest) {
       restaurantName: user.restaurant?.name ?? null,
       languagePref: user.languagePref ?? "es",
       defaultModel: user.defaultModel ?? "sonnet",
-      customProvider: user.customProvider,
-      customModel: user.customModel,
-      customApiKeySet: !!(user.customApiKey && user.customApiKey.length > 0),
     },
   });
 }

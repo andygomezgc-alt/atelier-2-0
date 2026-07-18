@@ -1,7 +1,5 @@
 import { apiFetch } from "./client";
 
-export type CustomProvider = "anthropic" | "openai" | "google";
-
 export type MeUser = {
   id: string;
   email: string;
@@ -13,9 +11,6 @@ export type MeUser = {
   defaultModel: "haiku" | "sonnet" | "opus";
   restaurantId: string | null;
   restaurantName: string | null;
-  customProvider: CustomProvider | null;
-  customModel: string | null;
-  customApiKeySet: boolean;
 };
 
 export function requestMagicLink(email: string): Promise<{ ok: boolean }> {
@@ -64,10 +59,6 @@ export function patchMe(data: {
   bio?: string;
   languagePref?: "es" | "it" | "en";
   defaultModel?: "haiku" | "sonnet" | "opus";
-  // BYOK. Pass null to clear, omit to leave unchanged.
-  customProvider?: CustomProvider | null;
-  customModel?: string | null;
-  customApiKey?: string | null;
 }): Promise<MeUser> {
   return apiFetch("/api/me", { method: "PATCH", body: JSON.stringify(data) });
 }

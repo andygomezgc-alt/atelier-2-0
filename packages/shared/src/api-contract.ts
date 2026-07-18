@@ -29,7 +29,6 @@ export const MenuStyleSpecSchema = z.object({
 export const IdeaStatusSchema = z.enum(["open", "in_chat", "archived"]);
 export const LanguageSchema = z.enum(["es", "it", "en"]);
 export const ModelSchema = z.enum(["haiku", "sonnet", "opus"]);
-export const CustomProviderSchema = z.enum(["anthropic", "openai", "google"]);
 
 // Banco de Productos — los enums declarados acá arriba para que las recetas
 // (que ahora referencian estructura de producto en RecipeIngredientResponse)
@@ -76,10 +75,6 @@ export const MeResponseSchema = z.object({
   defaultModel: ModelSchema,
   restaurantId: z.string().max(100).nullable(),
   restaurantName: z.string().max(100).nullable(),
-  customProvider: CustomProviderSchema.nullable(),
-  customModel: z.string().max(120).nullable(),
-  // Whether a BYOK key is stored — we never return the key itself.
-  customApiKeySet: z.boolean(),
 });
 
 export const PatchMeRequestSchema = z.object({
@@ -87,10 +82,6 @@ export const PatchMeRequestSchema = z.object({
   bio: z.string().max(1000).optional(),
   languagePref: LanguageSchema.optional(),
   defaultModel: ModelSchema.optional(),
-  // BYOK config. Pass empty string to clear a value.
-  customProvider: CustomProviderSchema.nullable().optional(),
-  customModel: z.string().max(120).nullable().optional(),
-  customApiKey: z.string().max(500).nullable().optional(),
 });
 
 // ─────────── /api/restaurant ───────────

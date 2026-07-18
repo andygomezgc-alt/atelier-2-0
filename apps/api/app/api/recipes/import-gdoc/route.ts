@@ -20,10 +20,8 @@ import {
   extractRecipeFromFile,
   fileMatchesMime,
   DOCX_MIME,
-  type ExtractorBYOK,
 } from "@/lib/recipe-extraction";
 import { parseGDocId, gdocExportUrl } from "@/lib/gdoc";
-import { loadUserBYOK } from "@/lib/byok-user";
 import { findMatch, type MatchCandidate } from "@/lib/products/matching";
 import { parseIngredient } from "@/lib/products/parser";
 import { reserveAiCall, aiQuotaExceededResponse } from "@/lib/ai-quota";
@@ -93,18 +91,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const byok: ExtractorBYOK = await loadUserBYOK(ctx.userId);
-
-  // Con clave del server aplica el tope diario; con BYOK (clave del chef) no.
-  if (!byok) {
-    const quota = await reserveAiCall(ctx.userId);
-    if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
-  }
+  const quota = await reserveAiCall(ctx.userId);
+  if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
 
   const start = Date.now();
   try {
     const [extracted, productList] = await Promise.all([
-      extractRecipeFromFile(buffer, DOCX_MIME, byok),
+      extractRecipeFromFile(buffer, DOCX_MIME),
       ctx.restaurantId
         ? prisma.product.findMany({
             where: {
@@ -155,7 +148,6 @@ export async function POST(req: NextRequest) {
     logger.info("recipe_import_gdoc", {
       userId: ctx.userId,
       bytes: buffer.byteLength,
-      byok: byok?.provider ?? null,
       latencyMs: Date.now() - start,
       ingredients: extracted.ingredients.length,
       exactMatches: recipeIngredients.filter((r) => r.productId !== null).length,
@@ -178,7 +170,6 @@ export async function POST(req: NextRequest) {
     logger.error("recipe_import_gdoc_failed", {
       userId: ctx.userId,
       bytes: buffer.byteLength,
-      byok: byok?.provider ?? null,
       error: message,
     });
     return NextResponse.json(
