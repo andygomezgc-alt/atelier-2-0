@@ -43,7 +43,7 @@ Primer tester: chef de confianza (¿Kokoo?). Checklist de humo en su teléfono:
 
 ## Sentry móvil — nota de configuración
 
-El init es **guardado**: si `EXPO_PUBLIC_SENTRY_DSN` está vacío o el módulo nativo no existe (Expo Go), no hace nada. Para activarlo: crear un proyecto **react-native** en sentry.io (el DSN del servidor es otro proyecto) y pegar el DSN en los perfiles `pilot` y `testflight` de `eas.json`. Sin DSN la app compila y corre igual — solo que a ciegas.
+El init es **guardado**: si `EXPO_PUBLIC_SENTRY_DSN` no existe o el módulo nativo no está (Expo Go), no hace nada. Para activarlo: crear un proyecto **react-native** en sentry.io (el DSN del servidor es otro proyecto) y **añadir la clave** `"EXPO_PUBLIC_SENTRY_DSN": "<dsn>"` al bloque `env` de los perfiles `pilot` y `testflight` de `eas.json`. OJO: la clave no está pre-creada vacía a propósito — **EAS rechaza el eas.json entero si una env es string vacío** (rompe hasta `build:list`). Sin DSN la app compila y corre igual — solo que a ciegas.
 
 ## App Store real (después del pilot)
 
