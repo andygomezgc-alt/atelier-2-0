@@ -296,4 +296,22 @@ describe("requireAuth — candado de plan (ENTITLEMENTS_ENFORCED)", () => {
     expect(ctx).toEqual({ userId: "user-1", role: "chef_executive", restaurantId: "rest-1" });
     expect(restaurantFindUniqueMock).not.toHaveBeenCalled();
   });
+
+  it("flag=1 + DELETE /api/me → pasa aunque el plan esté vencido", async () => {
+    vi.stubEnv("ENTITLEMENTS_ENFORCED", "1");
+    const ctx = await callAs("DELETE", "/api/me");
+    expect(ctx).toEqual({ userId: "user-1", role: "chef_executive", restaurantId: "rest-1" });
+    expect(restaurantFindUniqueMock).not.toHaveBeenCalled();
+  });
+
+  it("flag=1 + PATCH /api/me → conserva el candado de plan", async () => {
+    vi.stubEnv("ENTITLEMENTS_ENFORCED", "1");
+    restaurantFindUniqueMock.mockResolvedValueOnce({
+      planStatus: "canceled",
+      graceUntil: null,
+      trialEndsAt: null,
+    });
+    const res = await callAs("PATCH", "/api/me");
+    expect((res as Response).status).toBe(402);
+  });
 });

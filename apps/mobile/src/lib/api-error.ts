@@ -8,9 +8,19 @@ import type { ApiErrorCode } from "@atelier/shared";
 import type { TranslationKey } from "@atelier/i18n";
 import { ApiError, NetworkError } from "@/src/api/client";
 
+// Codes del flujo eliminar-cuenta (DELETE /api/me). La API se construye en
+// paralelo, así que pueden no estar todavía en el enum de shared; la unión
+// colapsa sola cuando lleguen (mismo string = mismo miembro).
+type KnownApiErrorCode =
+  | ApiErrorCode
+  | "confirm_mismatch"
+  | "last_admin"
+  | "case_changed"
+  | "stripe_cancel_failed";
+
 // Mapeo exhaustivo (typecheck force: si se agrega un code en shared sin la
 // key i18n correspondiente, TS rompe).
-const CODE_TO_KEY: Record<ApiErrorCode, TranslationKey> = {
+const CODE_TO_KEY: Record<KnownApiErrorCode, TranslationKey> = {
   email_invalid: "error_email_invalid",
   rate_limited: "error_rate_limited",
   email_send_failed: "error_email_send_failed",
@@ -27,13 +37,21 @@ const CODE_TO_KEY: Record<ApiErrorCode, TranslationKey> = {
   gdoc_access_denied: "error_gdoc_access_denied",
   forbidden: "error_forbidden",
   plan_inactive: "error_plan_inactive",
+  confirm_mismatch: "error_confirm_mismatch",
+  last_admin: "error_last_admin",
+  case_changed: "error_case_changed",
+  stripe_cancel_failed: "error_stripe_cancel_failed",
 };
 
 type T = (key: TranslationKey, vars?: Record<string, string | number>) => string;
 
 export function apiErrorMessage(err: unknown, t: T): string {
   if (err instanceof ApiError && err.code) {
-    return t(CODE_TO_KEY[err.code]);
+    // Un code que el cliente no conoce (server más nuevo que el APK) cae al
+    // message del server en vez de renderear t(undefined) → "undefined".
+    const key: TranslationKey | undefined = CODE_TO_KEY[err.code];
+    if (key) return t(key);
+    return err.message;
   }
   // NetworkError.message es un code interno (network_unreachable /
   // request_timeout), no texto para humanos.

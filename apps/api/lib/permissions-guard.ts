@@ -74,10 +74,12 @@ export async function requireAuth(
 ): Promise<AuthedContext | NextResponse> {
   const bearer = await bearerClaims(req);
   let userId: string | null = bearer?.userId ?? null;
+  let sessionEmail: string | null = null;
 
   if (!userId) {
     const session = await auth();
     userId = session?.user?.id ?? null;
+    sessionEmail = session?.user?.email ?? null;
   }
 
   if (!userId) {
@@ -86,7 +88,7 @@ export async function requireAuth(
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, role: true, restaurantId: true, tokenVersion: true },
+    select: { id: true, email: true, role: true, restaurantId: true, tokenVersion: true },
   });
 
   if (!user) {
@@ -107,6 +109,14 @@ export async function requireAuth(
     return unauthorizedRevoked();
   }
 
+  // Cookie NextAuth (JWT, sin claim tv): el email del JWT debe seguir siendo
+  // el de la fila. El único flujo que cambia email es la anonimización de
+  // "Eliminar cuenta" — sin este chequeo, una cookie de 30 días seguiría
+  // autenticando a la cuenta tombstone (podría re-entrar con invite code).
+  if (!bearer && sessionEmail && user.email !== sessionEmail) {
+    return unauthorizedRevoked();
+  }
+
   if (permission && !user.restaurantId) {
     return NextResponse.json({ error: "Not in a restaurant" }, { status: 403 });
   }
@@ -124,7 +134,9 @@ export async function requireAuth(
     process.env.ENTITLEMENTS_ENFORCED === "1" &&
     req.method !== "GET" &&
     user.restaurantId &&
-    !ENTITLEMENT_EXEMPT_PREFIXES.some((p) => req.nextUrl.pathname.startsWith(p))
+    !ENTITLEMENT_EXEMPT_PREFIXES.some((p) => req.nextUrl.pathname.startsWith(p)) &&
+    // Borrar la propia cuenta debe seguir disponible con el plan vencido.
+    !(req.method === "DELETE" && req.nextUrl.pathname === "/api/me")
   ) {
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: user.restaurantId },

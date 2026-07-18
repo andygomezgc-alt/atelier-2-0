@@ -84,6 +84,32 @@ export const PatchMeRequestSchema = z.object({
   defaultModel: ModelSchema.optional(),
 });
 
+export const DeletePreflightResponseSchema = z.object({
+  case: z.enum(["A", "B", "C", "none"]),
+  restaurantName: z.string().max(120).nullable(),
+  // Solo presente en caso B: permite elegir a quién transferir el rol admin.
+  otherMembers: z
+    .array(
+      z.object({
+        id: z.string().max(100),
+        name: z.string().max(100),
+        role: RoleSchema,
+      }),
+    )
+    .max(50)
+    .optional(),
+  authored: z.object({
+    recipes: z.number().int().nonnegative(),
+    ideas: z.number().int().nonnegative(),
+    conversations: z.number().int().nonnegative(),
+    yieldTests: z.number().int().nonnegative(),
+  }),
+});
+
+export const DeleteMeRequestSchema = z.object({
+  confirmEmail: z.string().max(254),
+});
+
 // ─────────── /api/restaurant ───────────
 
 export const CreateRestaurantRequestSchema = z.object({
@@ -206,6 +232,10 @@ export const ApiErrorCodeSchema = z.enum([
   "gdoc_access_denied",
   "forbidden",
   "plan_inactive",
+  "confirm_mismatch",
+  "last_admin",
+  "case_changed",
+  "stripe_cancel_failed",
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
 
@@ -699,6 +729,8 @@ export const MatchProductsResponseSchema = z.object({
 // ─────────── Inferred types (use these in handlers) ───────────
 
 export type MeResponse = z.infer<typeof MeResponseSchema>;
+export type DeletePreflightResponse = z.infer<typeof DeletePreflightResponseSchema>;
+export type DeleteMeRequest = z.infer<typeof DeleteMeRequestSchema>;
 export type CreateRestaurantRequest = z.infer<typeof CreateRestaurantRequestSchema>;
 export type PatchRestaurantRequest = z.infer<typeof PatchRestaurantRequestSchema>;
 export type RestaurantResponse = z.infer<typeof RestaurantResponseSchema>;

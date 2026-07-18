@@ -56,6 +56,26 @@ export const es = {
   leave_case_c_body: "Sos el último miembro. Salir borra permanentemente el restaurante y todo su contenido: recetas, menús, productos, ideas, conversaciones. Esta acción no se puede deshacer.",
   leave_case_c_typing_hint: "Para confirmar, escribí el nombre exacto del restaurante ({name}):",
   leave_case_c_confirm: "Eliminar",
+  // ─── Perfil · Eliminar cuenta (DELETE /api/me) ───
+  profile_delete_account: "Eliminar cuenta",
+  delete_account_title: "¿Eliminar tu cuenta?",
+  delete_account_case_a_body:
+    "Tu cuenta se eliminará. Las recetas y menús que creaste quedan en {name}.",
+  delete_account_authored_intro: "Lo que creaste:",
+  delete_account_authored_recipes: "{count} recetas",
+  delete_account_authored_ideas: "{count} ideas",
+  delete_account_authored_conversations: "{count} conversaciones",
+  delete_account_authored_yield_tests: "{count} pruebas de rendimiento",
+  delete_account_case_b_body:
+    "Sos el único admin de {name}. Pasá el rol de admin a otro miembro antes de eliminar tu cuenta.",
+  delete_account_case_c_title: "Borrar el restaurante",
+  delete_account_case_c_body:
+    "Sos el último miembro: se eliminará TODO el restaurante {name} — recetas, menús, productos y conversaciones — de forma permanente.",
+  delete_account_none_body:
+    "Tu cuenta se eliminará de forma permanente. Esta acción no se puede deshacer.",
+  delete_account_typing_hint: "Para confirmar, tipeá tu email exacto ({email}):",
+  delete_account_email_placeholder: "tu@email.com",
+  delete_account_confirm: "Eliminar cuenta",
   confirm_delete_recipe_title: "¿Eliminar receta?",
   confirm_delete_recipe_body: "Esta acción no se puede deshacer.",
   confirm_delete_idea_title: "¿Eliminar esta idea?",
@@ -580,6 +600,13 @@ export const es = {
   error_invite_code_invalid:
     "Código no válido o expirado. Pedile al admin que genere uno nuevo.",
   error_already_in_restaurant: "Ya estás en un restaurante.",
+  error_confirm_mismatch: "El email no coincide con el de tu cuenta.",
+  error_last_admin:
+    "Sos el único admin. Pasá el rol de admin a otro miembro primero.",
+  error_case_changed:
+    "La situación cambió mientras confirmabas. Revisá de nuevo antes de seguir.",
+  error_stripe_cancel_failed:
+    "No se pudo cancelar la suscripción. No se borró nada — probá de nuevo.",
 
   // ─── BP-01 · Labels del Alert de migración legacy ───
   migrate_dryrun_counts: "{recipes} recetas · {ingredients} ingredientes",

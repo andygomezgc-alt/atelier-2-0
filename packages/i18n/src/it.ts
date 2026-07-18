@@ -56,6 +56,26 @@ export const it: EsDict = {
   leave_case_c_body: "Sei l'ultimo membro. Uscire elimina permanentemente il ristorante e tutti i suoi contenuti: ricette, menù, prodotti, idee, conversazioni. Questa azione non si può annullare.",
   leave_case_c_typing_hint: "Per confermare, scrivi il nome esatto del ristorante ({name}):",
   leave_case_c_confirm: "Elimina",
+  // ─── Profilo · Elimina account (DELETE /api/me) ───
+  profile_delete_account: "Elimina account",
+  delete_account_title: "Eliminare il tuo account?",
+  delete_account_case_a_body:
+    "Il tuo account verrà eliminato. Le ricette e i menù che hai creato restano in {name}.",
+  delete_account_authored_intro: "Quello che hai creato:",
+  delete_account_authored_recipes: "{count} ricette",
+  delete_account_authored_ideas: "{count} idee",
+  delete_account_authored_conversations: "{count} conversazioni",
+  delete_account_authored_yield_tests: "{count} prove di resa",
+  delete_account_case_b_body:
+    "Sei l'unico admin di {name}. Passa il ruolo di admin a un altro membro prima di eliminare il tuo account.",
+  delete_account_case_c_title: "Eliminare il ristorante",
+  delete_account_case_c_body:
+    "Sei l'ultimo membro: verrà eliminato TUTTO il ristorante {name} — ricette, menù, prodotti e conversazioni — in modo permanente.",
+  delete_account_none_body:
+    "Il tuo account verrà eliminato in modo permanente. Questa azione non si può annullare.",
+  delete_account_typing_hint: "Per confermare, digita la tua email esatta ({email}):",
+  delete_account_email_placeholder: "tua@email.com",
+  delete_account_confirm: "Elimina account",
   confirm_delete_recipe_title: "Eliminare la ricetta?",
   confirm_delete_recipe_body: "Questa azione non si può annullare.",
   confirm_delete_idea_title: "Eliminare questa idea?",
@@ -572,6 +592,13 @@ export const it: EsDict = {
   error_invite_code_invalid:
     "Codice non valido o scaduto. Chiedi all'admin di generarne uno nuovo.",
   error_already_in_restaurant: "Sei già in un ristorante.",
+  error_confirm_mismatch: "L'email non corrisponde a quella del tuo account.",
+  error_last_admin:
+    "Sei l'unico admin. Passa prima il ruolo di admin a un altro membro.",
+  error_case_changed:
+    "La situazione è cambiata mentre confermavi. Ricontrolla prima di continuare.",
+  error_stripe_cancel_failed:
+    "Impossibile annullare l'abbonamento. Non è stato cancellato nulla — riprova.",
 
   // ─── BP-01 · Etichette dell'Alert di migrazione legacy ───
   migrate_dryrun_counts: "{recipes} ricette · {ingredients} ingredienti",

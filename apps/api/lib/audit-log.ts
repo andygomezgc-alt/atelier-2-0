@@ -5,6 +5,7 @@ export type AuditAction =
   | "staff_role_changed"
   | "staff_removed"
   | "staff_left"
+  | "account_deleted"
   | "invite_regenerated"
   | "token_revoked";
 

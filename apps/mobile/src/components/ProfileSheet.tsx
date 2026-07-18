@@ -7,6 +7,7 @@ import { patchMe } from "@/src/api/auth";
 import { apiErrorMessage } from "@/src/lib/api-error";
 import { showToast } from "./Toast";
 import { BottomSheet } from "./BottomSheet";
+import { DeleteAccountSheet } from "./DeleteAccountSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import type { Language } from "@atelier/i18n";
 import type { Role } from "@atelier/shared";
@@ -59,6 +60,9 @@ export function ProfileSheet({ open, onClose }: Props) {
   // que usamos en alérgenos: el override local se aplica al instante, se
   // revierte si el PATCH falla, se limpia cuando refreshMe trae los nuevos.
   const [editing, setEditing] = useState(false);
+  // Eliminar cuenta — sheet propio apilado sobre este (patrón StaffMemberSheet
+  // + ConfirmSheet: modal hermano, el perfil queda abierto debajo).
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [bioInput, setBioInput] = useState("");
   const [nameOverride, setNameOverride] = useState<string | null>(null);
@@ -105,8 +109,9 @@ export function ProfileSheet({ open, onClose }: Props) {
   }, [user, nameOverride, bioOverride]);
 
   return (
-    <BottomSheet open={open} onClose={onClose}>
-      <ScrollView contentContainerStyle={styles.content}>
+    <>
+      <BottomSheet open={open} onClose={onClose}>
+        <ScrollView contentContainerStyle={styles.content}>
           {user ? (
             <>
               <View style={styles.hero}>
@@ -214,8 +219,16 @@ export function ProfileSheet({ open, onClose }: Props) {
             <Text style={styles.dangerLabel}>{t("profile_logout")}</Text>
             <Ionicons name="log-out-outline" size={18} color={colors.danger} />
           </Pressable>
+
+          <Pressable style={styles.dangerRow} onPress={() => setDeleteOpen(true)}>
+            <Text style={styles.dangerLabel}>{t("profile_delete_account")}</Text>
+            <Ionicons name="trash-outline" size={18} color={colors.danger} />
+          </Pressable>
         </ScrollView>
-    </BottomSheet>
+      </BottomSheet>
+
+      <DeleteAccountSheet open={deleteOpen} onClose={() => setDeleteOpen(false)} />
+    </>
   );
 }
 

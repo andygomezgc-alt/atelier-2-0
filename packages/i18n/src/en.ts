@@ -55,6 +55,26 @@ export const en: EsDict = {
   leave_case_c_body: "You're the last member. Leaving permanently deletes the restaurant and all its content: recipes, menus, products, ideas, conversations. This cannot be undone.",
   leave_case_c_typing_hint: "To confirm, type the exact restaurant name ({name}):",
   leave_case_c_confirm: "Delete",
+  // ─── Profile · Delete account (DELETE /api/me) ───
+  profile_delete_account: "Delete account",
+  delete_account_title: "Delete your account?",
+  delete_account_case_a_body:
+    "Your account will be deleted. The recipes and menus you created stay in {name}.",
+  delete_account_authored_intro: "What you created:",
+  delete_account_authored_recipes: "{count} recipes",
+  delete_account_authored_ideas: "{count} ideas",
+  delete_account_authored_conversations: "{count} conversations",
+  delete_account_authored_yield_tests: "{count} yield tests",
+  delete_account_case_b_body:
+    "You're the only admin of {name}. Hand the admin role to another member before deleting your account.",
+  delete_account_case_c_title: "Delete restaurant",
+  delete_account_case_c_body:
+    "You're the last member: the ENTIRE restaurant {name} — recipes, menus, products and conversations — will be permanently deleted.",
+  delete_account_none_body:
+    "Your account will be permanently deleted. This action cannot be undone.",
+  delete_account_typing_hint: "To confirm, type your exact email ({email}):",
+  delete_account_email_placeholder: "you@email.com",
+  delete_account_confirm: "Delete account",
   confirm_delete_recipe_title: "Delete recipe?",
   confirm_delete_recipe_body: "This action cannot be undone.",
   confirm_delete_idea_title: "Delete this idea?",
@@ -571,6 +591,13 @@ export const en: EsDict = {
   error_invite_code_invalid:
     "Invalid or expired code. Ask your admin for a new one.",
   error_already_in_restaurant: "You're already in a restaurant.",
+  error_confirm_mismatch: "The email doesn't match your account.",
+  error_last_admin:
+    "You're the only admin. Hand the admin role to another member first.",
+  error_case_changed:
+    "Things changed while you were confirming. Review again before continuing.",
+  error_stripe_cancel_failed:
+    "We couldn't cancel the subscription. Nothing was deleted — try again.",
 
   // ─── BP-01 · Legacy migration Alert labels ───
   migrate_dryrun_counts: "{recipes} recipes · {ingredients} ingredients",

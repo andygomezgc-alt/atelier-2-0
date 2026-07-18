@@ -22,6 +22,7 @@ import { computeLeaveCase } from "@/lib/leave-cases";
 import { audit } from "@/lib/audit-log";
 import { logger } from "@/lib/logger";
 import { deleteBlobs } from "@/lib/blob";
+import { deleteRestaurantRecords } from "@/lib/delete-restaurant";
 
 export const dynamic = "force-dynamic";
 
@@ -180,21 +181,7 @@ export async function POST(req: NextRequest) {
         mismatch = c.case;
         return;
       }
-      await tx.menuItem.deleteMany({ where: { menuFolder: { restaurantId } } });
-      await tx.menuClientOverride.deleteMany({ where: { menuFolder: { restaurantId } } });
-      await tx.menuSection.deleteMany({ where: { menuFolder: { restaurantId } } });
-      await tx.menuFolder.deleteMany({ where: { restaurantId } });
-      await tx.recipeIngredient.deleteMany({ where: { recipe: { restaurantId } } });
-      await tx.recipe.deleteMany({ where: { restaurantId } });
-      await tx.message.deleteMany({ where: { conversation: { restaurantId } } });
-      await tx.conversation.deleteMany({ where: { restaurantId } });
-      await tx.idea.deleteMany({ where: { restaurantId } });
-      await tx.yieldTest.deleteMany({ where: { restaurantId } });
-      await tx.productPriceHistory.deleteMany({ where: { product: { restaurantId } } });
-      await tx.product.deleteMany({ where: { restaurantId } });
-      await tx.auditLog.deleteMany({ where: { restaurantId } });
-      await tx.user.updateMany({ where: { restaurantId }, data: { restaurantId: null } });
-      await tx.restaurant.deleteMany({ where: { id: restaurantId } });
+      await deleteRestaurantRecords(tx, restaurantId);
     },
     { timeout: 30_000 },
   );

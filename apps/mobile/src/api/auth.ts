@@ -108,3 +108,34 @@ export function leaveRestaurant(body: {
     body: JSON.stringify(body),
   });
 }
+
+// Eliminar cuenta — preflight read-only (misma filosofía que el leave
+// preflight): decide qué variante del sheet rendear sin disparar acciones.
+// Contrato fijo con la API (se construye en paralelo); el móvil duplica los
+// tipos acá, no importa de @atelier/shared.
+export type DeletePreflight = {
+  case: "A" | "B" | "C" | "none";
+  restaurantName: string | null;
+  // Solo en caso B — bloqueado: hay que pasar el rol de admin a uno de estos.
+  otherMembers?: LeavePreflightMember[];
+  authored: {
+    recipes: number;
+    ideas: number;
+    conversations: number;
+    yieldTests: number;
+  };
+};
+
+export function deletePreflight(): Promise<DeletePreflight> {
+  return apiFetch("/api/me/delete-preflight");
+}
+
+// DELETE /api/me — borra la cuenta. `confirmEmail` debe ser el email exacto
+// del usuario; el server lo re-valida (400 confirm_mismatch) y re-computa el
+// caso (409 last_admin / case_changed). Responde 204 sin body.
+export function deleteAccount(confirmEmail: string): Promise<void> {
+  return apiFetch("/api/me", {
+    method: "DELETE",
+    body: JSON.stringify({ confirmEmail }),
+  });
+}
