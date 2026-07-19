@@ -1,61 +1,25 @@
-import Link from "next/link";
+import type { Metadata } from "next";
+import { LandingPage } from "@/components/landing/LandingPage";
+import { landingJsonLd } from "@/components/landing/jsonld";
 
-const footerLinkStyle = {
-  color: "#8b7a6f",
-  textDecoration: "none",
-  borderBottom: "1px solid #d8d0c2",
-  paddingBottom: 1,
-} as const;
+export const metadata: Metadata = {
+  title: "Atelier — Food cost, ricette e menù per ristoranti indipendenti | 49€/mese",
+  description:
+    "Il quaderno dello chef: ricette, food cost, menù e assistente IA nel tuo telefono. 49€/mese + IVA, tutto incluso, utenti illimitati, senza vincoli.",
+  alternates: {
+    canonical: "/",
+    languages: { it: "/", es: "/es", "x-default": "/" },
+  },
+};
 
 export default function HomePage() {
   return (
-    <main
-      style={{
-        textAlign: "center",
-        padding: "0 32px",
-        maxWidth: 480,
-      }}
-    >
-      <div
-        style={{
-          fontFamily:
-            '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif',
-          fontStyle: "italic",
-          fontSize: 64,
-          lineHeight: 1,
-          color: "#1a3a3a",
-          marginBottom: 16,
-        }}
-      >
-        <span style={{ color: "#c47e4f" }}>A</span>telier
-      </div>
-      <p style={{ color: "#8b7a6f", fontFamily: "system-ui, sans-serif", fontSize: 14 }}>
-        Cuaderno creativo del chef. Disponible en TestFlight.
-      </p>
-      <nav
-        style={{
-          marginTop: 48,
-          display: "flex",
-          gap: 20,
-          justifyContent: "center",
-          flexWrap: "wrap",
-          fontFamily: "system-ui, sans-serif",
-          fontSize: 12,
-        }}
-      >
-        <Link href="/pro" style={footerLinkStyle}>
-          Pro
-        </Link>
-        <Link href="/privacidad" style={footerLinkStyle}>
-          Privacidad
-        </Link>
-        <Link href="/terminos" style={footerLinkStyle}>
-          Términos
-        </Link>
-        <Link href="/cuenta/eliminar" style={footerLinkStyle}>
-          Eliminar cuenta
-        </Link>
-      </nav>
-    </main>
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(landingJsonLd("it")) }}
+      />
+      <LandingPage lang="it" />
+    </>
   );
 }
