@@ -1,25 +1,54 @@
 # TestFlight — guía operativa (iOS sin Mac ni iPhone)
 
-Ruta decidida el 16-jul-2026: los chefs del pilot son todos iPhone; Play Store personal quedó descartada (exige 12 testers Android × 14 días). EAS compila y sube a Apple desde este PC — no hace falta Mac ni iPhone propio. Certificados: los gestiona EAS (como la keystore de Android).
+Ruta decidida el 16-jul-2026: los chefs del pilot son todos iPhone; Play Store personal quedó descartada (exige 12 testers Android × 14 días). EAS compila y sube a Apple desde este PC — no hace falta Mac ni iPhone propio.
 
-## Fase 2 — Inscripción Apple (Andy, ~30 min + 1-2 días de espera)
+## Identificadores (todo esto ya existe — 20-jul-2026)
 
-1. Crear/usar un **Apple ID** con email real (recomendado: andygomezgc@gmail.com) en [account.apple.com](https://account.apple.com). Activar verificación en dos pasos (obligatoria).
-2. Entrar en [developer.apple.com/programs/enroll](https://developer.apple.com/programs/enroll) → **Enroll as Individual**. Hace falta: nombre legal, DNI/pasaporte a mano (a veces piden foto), tarjeta para los **99 €/año**.
-3. La verificación tarda **1-2 días** (email de "Welcome to the Apple Developer Program"). Sin esto no se puede subir nada — conviene lanzarla cuanto antes; corre en paralelo con todo lo demás.
-4. Cuando llegue el welcome: entrar una vez en [appstoreconnect.apple.com](https://appstoreconnect.apple.com) para aceptar los términos.
+| Qué | Valor |
+|---|---|
+| Apple Team ID | `TU6284T7J8` (Andy Gomez, Individual) |
+| Bundle ID iOS | **`com.atelierchef.app`** (id Apple `FD526HNWKW`) |
+| Package Android | `com.atelier.app` — **distinto a propósito, no tocar** |
+| Certificado distribución | `MYZJSNWHGZ`, caduca **2027-07-20** |
+| Perfil App Store | `BK3U9TASAS` |
+| ASC API Key | `HSXXXG7WT5`, issuer `f784947a-a4b8-4be3-8797-7294fb17cace` |
+| Secretos en disco | `C:\Users\Utente\Desktop\atelier-secretos\` (`.p8`, `dist.p12`, `dist.key`, `.mobileprovision`, `NOTAS-ios.txt`) |
 
-## Fase 3 — Primer build y subida (Claude, con la cuenta de Andy)
+⚠️ **`com.atelier.app` NO estaba disponible en Apple** (los bundle ID son únicos mundialmente; ya pertenece a otra cuenta). De ahí el cambio a `com.atelierchef.app` solo en iOS. El **cliente OAuth "Atelier iOS" de Google Cloud** se actualizó a ese bundle — si algún día vuelve a cambiar, hay que actualizarlo también o el login con Google falla solo en iPhone.
 
-```bash
-# Desde apps/mobile (el perfil "testflight" vive en eas.json):
-eas build --platform ios --profile testflight     # 1ª vez: EAS pide login Apple y crea certs/perfiles solo
-eas submit --platform ios --profile testflight    # sube el .ipa a App Store Connect
+## Fase 2 — Inscripción Apple (hecha)
+
+1. **Apple ID** en [account.apple.com](https://account.apple.com) con verificación en dos pasos.
+2. [developer.apple.com/programs/enroll](https://developer.apple.com/programs/enroll) → **Enroll as Individual**, 99 €/año. Verificación 1-2 días.
+3. Al llegar el welcome: entrar en [appstoreconnect.apple.com](https://appstoreconnect.apple.com) y aceptar términos.
+
+## Fase 3 — Build (⚠️ leer esto antes de tocar credenciales)
+
+**La lección cara de esta fase:** `eas-cli` **nunca** se autentica contra Apple desde una shell sin TTY. En `build/commandUtils/flags.js`, `isNonInteractiveByDefault()` devuelve `true` si `!process.stdin.isTTY`; y en `build/credentials/context.js`, `bestEffortAppStoreAuthenticateAsync()` hace `if (this.nonInteractive) return;` **antes** de mirar la ASC API Key. Resultado: `Distribution Certificate is not validated for non-interactive builds` pase lo que pase, con o sin `EXPO_ASC_*`. No perder tiempo peleando con flags.
+
+**Solución adoptada: credenciales locales.** Se fabricaron contra la API REST de App Store Connect (script en el scratchpad, `asc/provision.mjs`) y se le pasan hechas a EAS:
+
+```
+apps/mobile/credentials.json          <- gitignoreado
+apps/mobile/ios/certs/dist.p12        <- gitignoreado (pass: ver NOTAS-ios.txt)
+apps/mobile/ios/certs/atelier.mobileprovision
 ```
 
-- La primera vez, `eas build` pide las credenciales de Apple de Andy de forma interactiva (o se configura una **App Store Connect API Key** en expo.dev para no volver a teclearlas — recomendado).
-- En App Store Connect hay que **crear la app** una vez (nombre "Atelier", bundle `com.atelier.app`, idioma primario español) y copiar su **Apple ID numérico** al campo `ascAppId` del bloque `submit` de `eas.json`.
-- `ITSAppUsesNonExemptEncryption: false` ya va en `app.json` → no pregunta por export compliance en cada build.
+con `"credentialsSource": "local"` en el perfil `testflight` de `eas.json`. Eso salta `SetUpDistributionCertificate`, que era donde moría.
+
+```bash
+# Desde el CLON de horneado (nunca desde el worktree anidado):
+cd C:/Users/Utente/atelier-bake && git pull && pnpm install
+cd apps/mobile
+npx expo export --platform ios                                    # valida el bundle ANTES de encolar
+npx eas-cli build --platform ios --profile testflight --non-interactive --no-wait
+```
+
+Si hay que **regenerar** credenciales (certificado caducado en 2027, o pérdida de `dist.key`): revocar en Apple y volver a correr `provision.mjs` (crea bundle ID si falta, certificado y perfil; es idempotente para el bundle ID, **no** para el certificado). Dos trampas del entorno ya resueltas dentro del script: el `fetch` de node **no conecta** con `api.appstoreconnect.apple.com` en este Windows (usa `curl`), y `curl` necesita `-g` porque los corchetes de `filter[identifier]` los interpreta como glob.
+
+### Crear la app en App Store Connect
+
+`eas submit` la crea sola si no existe. Si se hace a mano: [appstoreconnect.apple.com/apps](https://appstoreconnect.apple.com/apps) → **+** → iOS, nombre "Atelier", bundle `com.atelierchef.app`, SKU `atelier-pilot`; luego copiar su **Apple ID numérico** a `submit.testflight.ios.ascAppId` en `eas.json`. `ITSAppUsesNonExemptEncryption: false` ya está en `app.json` → no pregunta por export compliance en cada build.
 
 ## Fase 4 — TestFlight
 
@@ -27,6 +56,7 @@ eas submit --platform ios --profile testflight    # sube el .ipa a App Store Con
 2. **Testers internos** (tu propio Apple ID + hasta 100): disponibles al instante, sin revisión.
 3. **Testers externos** (los chefs): crear un grupo, añadir emails **o activar el link público**; la primera build externa pasa la **revisión beta de Apple (~1 día)**. Datos que pedirá: descripción beta, email de contacto, y si el login lo requiere, una **cuenta demo** (tenemos magic link — basta explicar el flujo o dar un email de prueba accesible).
 4. Las builds de TestFlight caducan a los **90 días** (vs 14 del APK interno de Android).
+5. ⚠️ **DSA / operador comercial:** App Store Connect muestra un aviso de la normativa europea — antes de distribuir en la UE hay que declarar el *trader status*. Para TestFlight normalmente no bloquea; para publicar en la App Store sí. Enlaza con la partita IVA pendiente. Es una declaración legal de Andy: nadie la rellena por él.
 
 ## Fase 5 — Estreno controlado (primer iPhone real que toca la app)
 
