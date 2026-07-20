@@ -146,6 +146,11 @@ model Restaurant {
   // MenuStyleSpecSchema en @atelier/shared). Es DE LA CASA: un solo estilo
   // por restaurante, cualquier menú con presentationStyle=custom lo usa.
   menuStyleSpec   Json?
+  // "Tu estilo" fiel — theme HTML/CSS completo generado por IA de la carta real
+  // (shape MenuCustomThemeSchema en @atelier/shared). Dato NUEVO adicional al
+  // menuStyleSpec (que se conserva para la preview móvil nativa). null si nunca
+  // se generó o si la generación falló.
+  menuStyleTheme  Json?
   // Foto de referencia subida a Blob (best-effort; puede quedar null).
   menuStyleRefUrl String?
 

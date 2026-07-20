@@ -26,6 +26,47 @@ export const MenuStyleSpecSchema = z.object({
   sectionCase: z.enum(["uppercase", "smallcaps"]),
   dishLayout: z.enum(["row", "stack", "grid"]),
 });
+
+// "Tu estilo" fiel — IDs de las familias de fuente que el modelo puede usar al
+// GENERAR el theme HTML/CSS completo (a diferencia del spec de tokens de arriba,
+// que se conserva para la preview móvil nativa). El registro real de las fuentes
+// (family, fallback, archivos woff2) vive en apps/api/lib/pdf/fonts.ts; shared no
+// puede importar de apps/api sin crear un ciclo, así que la lista se DUPLICA acá y
+// un test en apps/api valida que coincida byte a byte con el registro real.
+export const FONT_IDS = [
+  "playfair-display",
+  "cormorant-garamond",
+  "eb-garamond",
+  "libre-baskerville",
+  "cinzel",
+  "montserrat",
+  "lato",
+  "oswald",
+  "dancing-script",
+] as const;
+export type FontId = (typeof FONT_IDS)[number];
+
+// El theme generado: fragmentos HTML con placeholders + CSS libre. El server lo
+// valida con este Zod, lo SANITIZA (apps/api/lib/pdf/theme-sanitize.ts) y lo
+// renderiza reemplazando placeholders con datos escapados. El modelo nunca corre
+// scripts ni carga recursos externos (Puppeteer bloquea red y JS).
+export const MenuCustomThemeSchema = z.object({
+  version: z.literal(1),
+  fontTitle: z.enum(FONT_IDS),
+  fontBody: z.enum(FONT_IDS),
+  fontAccent: z.enum(FONT_IDS).nullable(),
+  css: z.string().min(50).max(20000),
+  // Envuelve todo el contenido; placeholder {{CONTENT}}.
+  frameHtml: z.string().max(3000).nullable(),
+  // {{RESTAURANT_NAME}} {{MENU_NAME}} {{SEASON_HTML}}
+  headerHtml: z.string().min(10).max(4000),
+  // {{SECTION_NAME}}
+  sectionHeaderHtml: z.string().min(5).max(2000),
+  // {{DISH_NAME}} {{DISH_DESC}} {{PRICE}} {{ALLERGENS_HTML}}
+  dishHtml: z.string().min(10).max(3000),
+  footerHtml: z.string().max(2000).nullable(),
+});
+
 export const IdeaStatusSchema = z.enum(["open", "in_chat", "archived"]);
 export const LanguageSchema = z.enum(["es", "it", "en"]);
 export const ModelSchema = z.enum(["haiku", "sonnet", "opus"]);
@@ -761,6 +802,7 @@ export type CreateMenuSectionRequest = z.infer<typeof CreateMenuSectionRequestSc
 export type PatchMenuSectionRequest = z.infer<typeof PatchMenuSectionRequestSchema>;
 export type MenuDetail = z.infer<typeof MenuDetailSchema>;
 export type MenuStyleSpec = z.infer<typeof MenuStyleSpecSchema>;
+export type MenuCustomTheme = z.infer<typeof MenuCustomThemeSchema>;
 export type AddMenuItemRequest = z.infer<typeof AddMenuItemRequestSchema>;
 export type PatchMenuItemRequest = z.infer<typeof PatchMenuItemRequestSchema>;
 export type ReorderItemsRequest = z.infer<typeof ReorderItemsRequestSchema>;
