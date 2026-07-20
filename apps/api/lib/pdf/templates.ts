@@ -18,7 +18,7 @@
 
 import type { Allergen, MenuStyleSpec } from "@atelier/shared";
 
-type Dish = {
+export type Dish = {
   name: string;
   description: string;
   price: number; // cents
@@ -28,12 +28,12 @@ type Dish = {
   allergens: Allergen[];
 };
 
-type Section = {
+export type Section = {
   name: string;
   dishes: Dish[];
 };
 
-type RenderInput = {
+export type RenderInput = {
   restaurantName: string;
   menuName: string;
   season: string | null;
@@ -57,7 +57,7 @@ export type Theme = {
   footer?: string;
 };
 
-const PRICE = (cents: number) => `${(cents / 100).toFixed(0)} €`;
+export const PRICE = (cents: number) => `${(cents / 100).toFixed(0)} €`;
 
 const ESCAPE: Record<string, string> = {
   "&": "&amp;",
@@ -66,7 +66,7 @@ const ESCAPE: Record<string, string> = {
   '"': "&quot;",
   "'": "&#39;",
 };
-const escape = (s: string) => s.replace(/[&<>"']/g, (c) => ESCAPE[c] ?? c);
+export const escape = (s: string) => s.replace(/[&<>"']/g, (c) => ESCAPE[c] ?? c);
 
 // ───── SVG icons inline por alérgeno ─────
 // Line-icon style (stroke #9c8e78, fill none, viewBox 24×24). Coherente con
@@ -128,7 +128,7 @@ const ALLERGEN_SVG_PATHS: Record<Allergen, string> = {
 
 const ALLERGEN_ICON_COLOR = "#9c8e78";
 
-function allergenIconSvg(code: Allergen, size = 16): string {
+export function allergenIconSvg(code: Allergen, size = 16): string {
   const path = ALLERGEN_SVG_PATHS[code];
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${ALLERGEN_ICON_COLOR}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
 }
