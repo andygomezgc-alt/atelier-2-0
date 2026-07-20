@@ -4,3 +4,6 @@
 
 expo-env.d.ts
 # @end expo-cli
+# Credenciales iOS locales (credentialsSource: local) — NUNCA subir
+credentials.json
+ios/certs/

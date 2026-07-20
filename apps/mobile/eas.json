@@ -18,6 +18,8 @@
     },
     "testflight": {
       "autoIncrement": true,
+      "distribution": "store",
+      "credentialsSource": "local",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://atelier-2-0-mu.vercel.app",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "147262114833-bjejn5r52gtcfejbq64nf9salo3q55c8.apps.googleusercontent.com",
