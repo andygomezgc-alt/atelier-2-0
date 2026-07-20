@@ -104,6 +104,36 @@ describe("generateMenuTheme", () => {
     await expect(generateMenuTheme(JPEG, "image/jpeg")).rejects.toThrow();
   });
 
+  it("llamada 1 estructuralmente inválida (frame sin CONTENT) → reintenta con feedback y usa el theme bueno", async () => {
+    // Reproduce el bug real: frameHtml con {{HEADER}}{{SECTIONS}}{{FOOTER}} y sin
+    // {{CONTENT}} → el render saldría vacío; la validación estructural lo caza.
+    const BAD_STRUCT = {
+      ...VALID_THEME,
+      frameHtml: '<div class="p">{{HEADER}}{{SECTIONS}}{{FOOTER}}</div>',
+    };
+    create
+      .mockResolvedValueOnce(toolUse(BAD_STRUCT)) // call 1: rechazado
+      .mockResolvedValueOnce(toolUse(VALID_THEME)); // retry: bueno
+    // La 3ª (refine) no está mockeada → falla dentro del try → cae a v1 (bueno).
+
+    const { theme } = await generateMenuTheme(JPEG, "image/jpeg");
+    expect(theme.frameHtml).toBeNull(); // el bueno (VALID_THEME.frameHtml null)
+
+    // La 2ª llamada llevó el motivo del rechazo como feedback en el prompt.
+    const retryText = create.mock.calls[1]![0].messages[0].content.find(
+      (b: { type: string }) => b.type === "text",
+    ).text;
+    expect(retryText).toMatch(/RECHAZAD/i);
+    expect(retryText).toMatch(/CONTENT/);
+  });
+
+  it("ambas llamadas estructuralmente inválidas → throw (1 + retry, sin refine)", async () => {
+    const BAD = { ...VALID_THEME, frameHtml: "<div>{{HEADER}}</div>" };
+    create.mockResolvedValueOnce(toolUse(BAD)).mockResolvedValueOnce(toolUse(BAD));
+    await expect(generateMenuTheme(JPEG, "image/jpeg")).rejects.toThrow();
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
   it("PDF → bloque document en la 1ª llamada", async () => {
     create
       .mockResolvedValueOnce(toolUse(VALID_THEME))

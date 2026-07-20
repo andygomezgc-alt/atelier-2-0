@@ -1,5 +1,9 @@
 import { describe, test, expect } from "vitest";
-import { renderGeneratedTheme } from "./theme-render";
+import {
+  renderGeneratedTheme,
+  validateThemeStructure,
+  ThemeValidationError,
+} from "./theme-render";
 import type { RenderInput } from "./templates";
 import type { Allergen, MenuCustomTheme } from "@atelier/shared";
 
@@ -145,5 +149,79 @@ describe("renderGeneratedTheme", () => {
     expect(html).not.toContain('<div class="frame">');
     expect(html).toContain("<h1>Trattoria");
     expect(html).toContain("<footer>grazie</footer>");
+  });
+
+  test("interpolación TOLERANTE: rescata camelCase/espacios y elimina leftovers de cualquier case", () => {
+    const camelTheme: MenuCustomTheme = {
+      ...THEME,
+      frameHtml: '<div class="f">{{content}}</div>',
+      headerHtml: "<h1>{{ restaurantName }} — {{menuName}}</h1>{{ SEASON_HTML }}{{tagline}}",
+      sectionHeaderHtml: "<div>{{sectionName}}</div>",
+      dishHtml: '<div>{{dishName}} — {{ price }} {{allergensHtml}}</div>',
+      footerHtml: null,
+    };
+    const html = renderGeneratedTheme(makeInput(), camelTheme);
+    // Datos rescatados pese al camelCase / espacios internos.
+    expect(html).toContain("Trattoria — Carta");
+    expect(html).toContain("Autunno"); // {{ SEASON_HTML }}
+    expect(html).toContain("Tagliatelle"); // {{dishName}}
+    expect(html).toContain("24 €"); // {{ price }}
+    expect(html).toContain('<div class="f">'); // {{content}} envolvió
+    // Leftover en minúsculas ({{tagline}}) eliminado — el regex viejo solo
+    // borraba MAYÚSCULAS y lo dejaba como texto literal visible.
+    expect(html).not.toContain("tagline");
+    expect(html).not.toContain("{{");
+  });
+});
+
+describe("validateThemeStructure", () => {
+  test("theme válido no lanza", () => {
+    expect(() => validateThemeStructure(THEME)).not.toThrow();
+  });
+
+  test("frameHtml sin {{CONTENT}} → ThemeValidationError (mensaje menciona CONTENT)", () => {
+    expect(() =>
+      validateThemeStructure({ ...THEME, frameHtml: "<div>{{HEADER}}{{SECTIONS}}{{FOOTER}}</div>" }),
+    ).toThrow(ThemeValidationError);
+    expect(() =>
+      validateThemeStructure({ ...THEME, frameHtml: "<div>{{HEADER}}</div>" }),
+    ).toThrow(/CONTENT/);
+  });
+
+  test("frameHtml null es válido (no exige {{CONTENT}})", () => {
+    expect(() => validateThemeStructure({ ...THEME, frameHtml: null })).not.toThrow();
+  });
+
+  test("headerHtml sin MENU_NAME ni RESTAURANT_NAME → throw", () => {
+    expect(() =>
+      validateThemeStructure({ ...THEME, headerHtml: "<h1>{{tagline}}</h1>" }),
+    ).toThrow(ThemeValidationError);
+  });
+
+  test("sectionHeaderHtml sin SECTION_NAME → throw", () => {
+    expect(() =>
+      validateThemeStructure({ ...THEME, sectionHeaderHtml: "<div>x</div>" }),
+    ).toThrow(ThemeValidationError);
+  });
+
+  test("dishHtml sin DISH_NAME o sin PRICE → throw", () => {
+    expect(() =>
+      validateThemeStructure({ ...THEME, dishHtml: "<div>{{DISH_NAME}}</div>" }),
+    ).toThrow(ThemeValidationError);
+    expect(() =>
+      validateThemeStructure({ ...THEME, dishHtml: "<div>{{PRICE}}</div>" }),
+    ).toThrow(ThemeValidationError);
+  });
+
+  test("acepta camelCase (misma normalización que interpolate)", () => {
+    expect(() =>
+      validateThemeStructure({
+        ...THEME,
+        frameHtml: "<div>{{content}}</div>",
+        headerHtml: "<h1>{{menuName}}</h1>",
+        sectionHeaderHtml: "<div>{{sectionName}}</div>",
+        dishHtml: "<div>{{dishName}} {{price}}</div>",
+      }),
+    ).not.toThrow();
   });
 });

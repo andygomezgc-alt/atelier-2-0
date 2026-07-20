@@ -15,7 +15,11 @@ import {
 } from "@atelier/shared";
 import { FONT_IDS, FONT_REGISTRY } from "./fonts";
 import { sanitizeTheme } from "./theme-sanitize";
-import { renderGeneratedTheme } from "./theme-render";
+import {
+  renderGeneratedTheme,
+  validateThemeStructure,
+  ThemeValidationError,
+} from "./theme-render";
 import { renderHtmlToPng } from "./render";
 import type { RenderInput } from "./templates";
 import { logger } from "../logger";
@@ -30,16 +34,39 @@ const EMIT_THEME_TOOL = {
   input_schema: {
     type: "object" as const,
     properties: {
-      version: { type: "integer", enum: [1] },
-      fontTitle: { type: "string", enum: FONT_ENUM },
-      fontBody: { type: "string", enum: FONT_ENUM },
-      fontAccent: { type: ["string", "null"], enum: [...FONT_ENUM, null] },
-      css: { type: "string" },
-      frameHtml: { type: ["string", "null"] },
-      headerHtml: { type: "string" },
-      sectionHeaderHtml: { type: "string" },
-      dishHtml: { type: "string" },
-      footerHtml: { type: ["string", "null"] },
+      version: { type: "integer", enum: [1], description: "Siempre 1." },
+      fontTitle: { type: "string", enum: FONT_ENUM, description: "id de fuente del catálogo para los títulos." },
+      fontBody: { type: "string", enum: FONT_ENUM, description: "id de fuente del catálogo para el cuerpo." },
+      fontAccent: {
+        type: ["string", "null"],
+        enum: [...FONT_ENUM, null],
+        description: "id de fuente del catálogo para acentos, o null.",
+      },
+      css: {
+        type: "string",
+        description:
+          "Todo el CSS del theme (clases propias, colores, tipografías, márgenes de página). SIN etiqueta <style>, sin recursos externos, sin @import.",
+      },
+      frameHtml: {
+        type: ["string", "null"],
+        description:
+          "Marco que envuelve TODO. Si lo usás DEBE contener el placeholder EXACTO {{CONTENT}}. Si no hay marco, null.",
+      },
+      headerHtml: {
+        type: "string",
+        description:
+          "Encabezado del menú. DEBE contener {{MENU_NAME}} y/o {{RESTAURANT_NAME}}; opcional {{SEASON_HTML}}.",
+      },
+      sectionHeaderHtml: {
+        type: "string",
+        description: "Encabezado de cada sección. DEBE contener {{SECTION_NAME}}.",
+      },
+      dishHtml: {
+        type: "string",
+        description:
+          "Un plato. DEBE contener {{DISH_NAME}} y {{PRICE}}; opcionales {{DISH_DESC}} y {{ALLERGENS_HTML}}.",
+      },
+      footerHtml: { type: ["string", "null"], description: "Pie opcional, o null." },
     },
     required: [
       "version",
@@ -70,6 +97,8 @@ Fragmentos y sus placeholders (usá EXACTAMENTE estos nombres con dobles llaves)
 - footerHtml (o null): pie opcional.
 - css: TODO el CSS del theme (clases propias que uses en los fragmentos, colores, tipografías, ornamentos, márgenes de página). NO incluyas <style>, el server lo agrega.
 
+⚠️ CRÍTICO: los nombres de los placeholders son EXACTOS, en MAYÚSCULAS con guiones bajos ({{RESTAURANT_NAME}}, {{MENU_NAME}}, {{SEASON_HTML}}, {{SECTION_NAME}}, {{DISH_NAME}}, {{DISH_DESC}}, {{PRICE}}, {{ALLERGENS_HTML}}, {{CONTENT}}). Cualquier OTRO nombre (camelCase, inventado como {{HEADER}}/{{SECTIONS}}/{{tagline}}/{{date}}) se DESCARTA y tu theme queda VACÍO. NO partas el contenido en {{HEADER}}/{{SECTIONS}}/{{FOOTER}}: el server arma header + secciones + platos + leyenda + footer en ese orden; vos solo definís CADA fragmento y, si usás frameHtml, ponés {{CONTENT}} donde va todo.
+
 Fuentes: fontTitle / fontBody / fontAccent son ids del catálogo (fontAccent puede ser null). En el CSS referí a las familias por su nombre EXACTO del catálogo (ej: font-family: 'Playfair Display', serif;). Solo podés usar esas familias + genéricas (serif/sans-serif/cursive). El server embebe los woff2 de las fuentes que declares.
 
 Ejemplo mínimo (adaptalo al diseño real, no lo copies):
@@ -96,13 +125,16 @@ const HARD_RULES = `Reglas duras:
 
 const PDF_MULTIPAGE_NOTE = `El documento puede tener varias páginas: basate en la página más representativa del diseño interior (donde se listan los platos), ignorando portada/contraportada si difieren.`;
 
-function buildGeneratePrompt(isPdf: boolean): string {
+function buildGeneratePrompt(isPdf: boolean, feedback?: string): string {
   return [
     "Replicá el diseño de esta carta de restaurante como un theme HTML/CSS imprimible en A4.",
     ...(isPdf ? [PDF_MULTIPAGE_NOTE] : []),
     `Catálogo de fuentes disponibles (usá los ids en fontTitle/fontBody/fontAccent y los nombres de familia en el CSS):\n${FONT_CATALOG}`,
     CONTRACT,
     HARD_RULES,
+    ...(feedback
+      ? [`Tu intento anterior fue RECHAZADO: ${feedback}\nUsá EXACTAMENTE los placeholders del contrato (MAYÚSCULAS con guiones bajos).`]
+      : []),
   ].join("\n\n");
 }
 
@@ -234,6 +266,33 @@ function parseThemeFromResponse(msg: Anthropic.Message): MenuCustomTheme {
   return sanitizeTheme(parsed.data);
 }
 
+// Una generación completa: llamada al modelo + Zod/sanitizado + validación
+// estructural de placeholders. `feedback` (opcional) se agrega al prompt en el
+// reintento. Lanza ThemeValidationError si el theme no respeta el contrato de
+// placeholders; Error normal si es Zod/sanitizado; y el error del SDK si es red.
+async function generateAndValidate(
+  client: Anthropic,
+  block: Anthropic.ContentBlockParam,
+  isPdf: boolean,
+  feedback?: string,
+): Promise<MenuCustomTheme> {
+  const msg = await client.messages.create({
+    model: "claude-sonnet-5",
+    max_tokens: 8192,
+    tools: [EMIT_THEME_TOOL as unknown as Anthropic.Tool],
+    tool_choice: { type: "tool", name: "emit_menu_theme" },
+    messages: [
+      {
+        role: "user",
+        content: [block, { type: "text", text: buildGeneratePrompt(isPdf, feedback) }],
+      },
+    ],
+  });
+  const theme = parseThemeFromResponse(msg);
+  validateThemeStructure(theme);
+  return theme;
+}
+
 export async function generateMenuTheme(
   buffer: Uint8Array,
   mimeType: string,
@@ -245,20 +304,21 @@ export async function generateMenuTheme(
   const block = fileBlock(buffer, mimeType);
   const client = new Anthropic({ apiKey });
 
-  // ── Llamada 1: generar ──
-  const gen = await client.messages.create({
-    model: "claude-sonnet-5",
-    max_tokens: 8192,
-    tools: [EMIT_THEME_TOOL as unknown as Anthropic.Tool],
-    tool_choice: { type: "tool", name: "emit_menu_theme" },
-    messages: [
-      {
-        role: "user",
-        content: [block, { type: "text", text: buildGeneratePrompt(isPdf) }],
-      },
-    ],
-  });
-  const themeV1 = parseThemeFromResponse(gen);
+  // ── Llamada 1: generar (con retry si falla la validación ESTRUCTURAL) ──
+  let themeV1: MenuCustomTheme;
+  try {
+    themeV1 = await generateAndValidate(client, block, isPdf);
+  } catch (err) {
+    if (err instanceof ThemeValidationError) {
+      // El modelo ignoró el contrato de placeholders (p.ej. frameHtml sin
+      // {{CONTENT}}, o nombres camelCase/inventados). Reintentamos UNA vez con el
+      // motivo exacto del rechazo como feedback. Si vuelve a fallar, propaga
+      // (el endpoint lo trata como best-effort: guarda el theme en null).
+      themeV1 = await generateAndValidate(client, block, isPdf, err.message);
+    } else {
+      throw err; // red / Zod / sanitizado → sin retry
+    }
+  }
 
   // ── Refinamiento best-effort: render de muestra → screenshot → corrección ──
   try {
@@ -288,6 +348,9 @@ export async function generateMenuTheme(
       ],
     });
     const themeV2 = parseThemeFromResponse(refine);
+    // Validación estructural DENTRO del try: un refinado que rompe el contrato
+    // de placeholders cae a v1 en vez de romper el render.
+    validateThemeStructure(themeV2);
     return { theme: themeV2, refined: true };
   } catch (err) {
     // El refine NUNCA tira: si falla, nos quedamos con el theme v1.

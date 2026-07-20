@@ -8,16 +8,74 @@ import type { Allergen, MenuCustomTheme } from "@atelier/shared";
 import { escape, PRICE, allergenIconSvg, type RenderInput, type Dish } from "./templates";
 import { fontFaceCss } from "./fonts";
 
-// Reemplaza {{PLACEHOLDER}} con valores YA listos para insertar (los de datos
-// vienen escapados; los de HTML seguro —season, iconos— vienen ya-HTML). Usa
-// split/join para no interpretar caracteres especiales del reemplazo ($, etc.).
-// Cualquier placeholder desconocido que quede sin reemplazar se elimina.
-function interpolate(template: string, values: Record<string, string>): string {
-  let out = template;
-  for (const [key, val] of Object.entries(values)) {
-    out = out.split(`{{${key}}}`).join(val);
+// Error de validación ESTRUCTURAL del theme (placeholders faltantes). Se
+// distingue de fallos de red/Zod para decidir si vale la pena reintentar la
+// generación con feedback (ver theme-generate.ts).
+export class ThemeValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ThemeValidationError";
   }
-  return out.replace(/\{\{[A-Z_]+\}\}/g, "");
+}
+
+// Normaliza un nombre de placeholder para matcheo TOLERANTE: sin espacios, en
+// minúsculas y sin guiones bajos. Así "dishName", "DISH_NAME", "dish_name" y
+// " Dish Name " colapsan a "dishname". El modelo a veces ignora el case exacto
+// del contrato; en vez de romper, rescatamos el placeholder por su nombre lógico.
+function normalizeKey(raw: string): string {
+  return raw.replace(/\s+/g, "").toLowerCase().replace(/_/g, "");
+}
+
+const PLACEHOLDER_RE = /\{\{\s*([^}]*?)\s*\}\}/g;
+
+// Reemplaza {{PLACEHOLDER}} con valores YA listos para insertar (los de datos
+// vienen escapados; los de HTML seguro —season, iconos— vienen ya-HTML). Match
+// tolerante por nombre normalizado. Cualquier placeholder desconocido (de
+// cualquier case) que quede sin reemplazar se ELIMINA. Un solo pase sobre el
+// template: el texto insertado NO se re-escanea (dato con "{{x}}" no se interpola).
+function interpolate(template: string, values: Record<string, string>): string {
+  const lookup = new Map<string, string>();
+  for (const [key, val] of Object.entries(values)) lookup.set(normalizeKey(key), val);
+  return template.replace(PLACEHOLDER_RE, (_m, inner: string) => {
+    return lookup.get(normalizeKey(inner)) ?? "";
+  });
+}
+
+// Conjunto de placeholders (normalizados) presentes en un fragmento.
+function placeholderKeys(html: string): Set<string> {
+  const set = new Set<string>();
+  for (const m of html.matchAll(PLACEHOLDER_RE)) set.add(normalizeKey(m[1] ?? ""));
+  return set;
+}
+
+// Validación ESTRUCTURAL: el modelo debe respetar el contrato de placeholders o
+// el render sale vacío (bug real: frameHtml sin {{CONTENT}} → marco sin nada).
+// Usa la MISMA normalización que interpolate (camelCase cuenta). Los mensajes van
+// en español y sirven de feedback para el retry (ver theme-generate.ts).
+export function validateThemeStructure(theme: MenuCustomTheme): void {
+  const frame = theme.frameHtml?.trim();
+  if (frame && !placeholderKeys(frame).has("content")) {
+    throw new ThemeValidationError(
+      "El frameHtml debe contener el placeholder {{CONTENT}} (envuelve todo el contenido); si no hay marco, mandá frameHtml en null.",
+    );
+  }
+  const header = placeholderKeys(theme.headerHtml);
+  if (!header.has("menuname") && !header.has("restaurantname")) {
+    throw new ThemeValidationError(
+      "El headerHtml debe contener {{MENU_NAME}} o {{RESTAURANT_NAME}}. Placeholders válidos del header: {{RESTAURANT_NAME}}, {{MENU_NAME}}, {{SEASON_HTML}}.",
+    );
+  }
+  if (!placeholderKeys(theme.sectionHeaderHtml).has("sectionname")) {
+    throw new ThemeValidationError(
+      "El sectionHeaderHtml debe contener {{SECTION_NAME}}.",
+    );
+  }
+  const dish = placeholderKeys(theme.dishHtml);
+  if (!dish.has("dishname") || !dish.has("price")) {
+    throw new ThemeValidationError(
+      "El dishHtml debe contener {{DISH_NAME}} y {{PRICE}}. Placeholders válidos del plato: {{DISH_NAME}}, {{DISH_DESC}}, {{PRICE}}, {{ALLERGENS_HTML}}.",
+    );
+  }
 }
 
 // Iconos inline (SVG ya-seguro) de los alérgenos de un plato. Vacío si no tiene.
