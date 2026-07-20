@@ -32,7 +32,10 @@
   "submit": {
     "testflight": {
       "ios": {
-        "ascAppId": "6792742020"
+        "ascAppId": "6792742020",
+        "ascApiKeyPath": "C:/Users/Utente/Desktop/atelier-secretos/AuthKey_HSXXXG7WT5(clave de apple).p8",
+        "ascApiKeyId": "HSXXXG7WT5",
+        "ascApiKeyIssuerId": "f784947a-a4b8-4be3-8797-7294fb17cace"
       }
     }
   }
