@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
     "ios": {
-      "bundleIdentifier": "com.atelier.app",
+      "bundleIdentifier": "com.atelierchef.app",
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
