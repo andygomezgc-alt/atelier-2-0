@@ -43,7 +43,13 @@ Primer tester: chef de confianza (¿Kokoo?). Checklist de humo en su teléfono:
 
 ## Sentry móvil — nota de configuración
 
-El init es **guardado**: si `EXPO_PUBLIC_SENTRY_DSN` no existe o el módulo nativo no está (Expo Go), no hace nada. Para activarlo: crear un proyecto **react-native** en sentry.io (el DSN del servidor es otro proyecto) y **añadir la clave** `"EXPO_PUBLIC_SENTRY_DSN": "<dsn>"` al bloque `env` de los perfiles `pilot` y `testflight` de `eas.json`. OJO: la clave no está pre-creada vacía a propósito — **EAS rechaza el eas.json entero si una env es string vacío** (rompe hasta `build:list`). Sin DSN la app compila y corre igual — solo que a ciegas.
+**Ya configurado** (18-jul): proyecto `atelier-mobile` (plataforma React Native) creado en la organización `atelier-xm` de sentry.io — el del servidor es `atelier-api`, otro proyecto distinto. Su DSN está en el `env` de los perfiles `pilot` y `testflight` de `eas.json`, así que **el próximo horneo de cualquiera de los dos ya reporta crashes**. El DSN es público por diseño (va dentro del bundle del cliente), como los client IDs de Google.
+
+Detalles para el futuro:
+
+- El init es **guardado**: si `EXPO_PUBLIC_SENTRY_DSN` no existe o el módulo nativo no está (Expo Go), no hace nada.
+- ⚠️ **EAS rechaza el `eas.json` entero si una env es string vacío** (rompe hasta `build:list`) — nunca dejar claves placeholder con `""`.
+- `SENTRY_DISABLE_AUTO_UPLOAD: "true"` sigue en ambos perfiles a propósito: sin `SENTRY_AUTH_TOKEN` la subida de source maps/símbolos rompe el build (mordió antes, commit 5f7485a). Consecuencia: llegan los crashes, pero los stack traces salen sin desminificar. Para tenerlos legibles hay que crear un auth token en sentry.io → Settings → Auth Tokens, guardarlo como secreto de EAS (`eas secret:create --name SENTRY_AUTH_TOKEN`) y quitar el flag.
 
 ## App Store real (después del pilot)
 
