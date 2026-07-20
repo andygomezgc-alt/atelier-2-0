@@ -151,6 +151,28 @@ describe("renderGeneratedTheme", () => {
     expect(html).toContain("<footer>grazie</footer>");
   });
 
+  test("footerHtml pasa por interpolate: {{RESTAURANT_NAME}} se reemplaza y un placeholder inventado se elimina", () => {
+    const html = renderGeneratedTheme(makeInput(), {
+      ...THEME,
+      footerHtml: '<footer>{{RESTAURANT_NAME}} · {{bogusFooter}}</footer>',
+    });
+    expect(html).toContain("<footer>Trattoria · </footer>");
+    expect(html).not.toContain("{{RESTAURANT_NAME}}");
+    expect(html).not.toContain("bogusFooter");
+    expect(html).not.toContain("{{");
+  });
+
+  test("frameHtml acepta placeholders de cabecera extra ({{MENU_NAME}}) además de {{CONTENT}}", () => {
+    const html = renderGeneratedTheme(makeInput(), {
+      ...THEME,
+      frameHtml: '<div class="frame"><span class="wm">{{MENU_NAME}}</span>{{CONTENT}}</div>',
+    });
+    expect(html).toContain('<span class="wm">Carta</span>');
+    expect(html).toContain('<div class="frame">');
+    expect(html).toContain("Tagliatelle"); // el CONTENT igual entró
+    expect(html).not.toContain("{{MENU_NAME}}");
+  });
+
   test("interpolación TOLERANTE: rescata camelCase/espacios y elimina leftovers de cualquier case", () => {
     const camelTheme: MenuCustomTheme = {
       ...THEME,

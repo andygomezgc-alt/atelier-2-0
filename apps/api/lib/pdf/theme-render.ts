@@ -134,11 +134,14 @@ export function renderGeneratedTheme(input: RenderInput, theme: MenuCustomTheme)
     ? `<div class="season">${escape(input.season)}</div>`
     : "";
 
-  const header = interpolate(theme.headerHtml, {
+  // Contexto de cabecera — lo comparten header, footer y frame (es legítimo que
+  // un theme repita el nombre del restaurante/menú en el pie o en el marco).
+  const headerContext = {
     RESTAURANT_NAME: escape(input.restaurantName),
     MENU_NAME: escape(input.menuName),
     SEASON_HTML: seasonHtml,
-  });
+  };
+  const header = interpolate(theme.headerHtml, headerContext);
 
   // Secciones con al menos un plato (sección vacía = ruido, se oculta).
   const sectionsHtml = input.sections
@@ -159,12 +162,17 @@ export function renderGeneratedTheme(input: RenderInput, theme: MenuCustomTheme)
     ...input.unsectioned,
   ];
   const legendHtml = renderLegend(input, allVisibleDishes);
-  const footerHtml = theme.footerHtml ?? "";
+  // El footer también pasa por interpolate (bug: antes iba crudo → sus
+  // placeholders quedaban literales, p.ej. {{RESTAURANT_NAME}} en el pie).
+  const footerHtml = theme.footerHtml
+    ? interpolate(theme.footerHtml, headerContext)
+    : "";
 
   const content = header + sectionsHtml + unsectionedHtml + legendHtml + footerHtml;
-  // frameHtml envuelve todo vía {{CONTENT}}.
+  // frameHtml envuelve todo vía {{CONTENT}}; además acepta los placeholders de
+  // cabecera por simetría con header/footer.
   const body = theme.frameHtml
-    ? interpolate(theme.frameHtml, { CONTENT: content })
+    ? interpolate(theme.frameHtml, { ...headerContext, CONTENT: content })
     : content;
 
   const faceCss = fontFaceCss([theme.fontTitle, theme.fontBody, theme.fontAccent]);

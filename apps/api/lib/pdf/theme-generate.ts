@@ -50,7 +50,7 @@ const EMIT_THEME_TOOL = {
       frameHtml: {
         type: ["string", "null"],
         description:
-          "Marco que envuelve TODO. Si lo usás DEBE contener el placeholder EXACTO {{CONTENT}}. Si no hay marco, null.",
+          "Marco que envuelve TODO. Si lo usás DEBE contener el placeholder EXACTO {{CONTENT}}; opcionales {{RESTAURANT_NAME}}, {{MENU_NAME}}, {{SEASON_HTML}}. Si no hay marco, null.",
       },
       headerHtml: {
         type: "string",
@@ -66,7 +66,11 @@ const EMIT_THEME_TOOL = {
         description:
           "Un plato. DEBE contener {{DISH_NAME}} y {{PRICE}}; opcionales {{DISH_DESC}} y {{ALLERGENS_HTML}}.",
       },
-      footerHtml: { type: ["string", "null"], description: "Pie opcional, o null." },
+      footerHtml: {
+        type: ["string", "null"],
+        description:
+          "Pie opcional (o null). Acepta {{RESTAURANT_NAME}}, {{MENU_NAME}}, {{SEASON_HTML}}.",
+      },
     },
     required: [
       "version",
@@ -93,8 +97,8 @@ Fragmentos y sus placeholders (usá EXACTAMENTE estos nombres con dobles llaves)
 - headerHtml: encabezado del menú. Placeholders: {{RESTAURANT_NAME}}, {{MENU_NAME}}, {{SEASON_HTML}} (este último ya viene como HTML, un <div class="season"> con la temporada, o vacío).
 - sectionHeaderHtml: encabezado de cada sección. Placeholder: {{SECTION_NAME}}.
 - dishHtml: un plato. Placeholders: {{DISH_NAME}}, {{DISH_DESC}}, {{PRICE}} (texto tipo "24 €"), {{ALLERGENS_HTML}}.
-- frameHtml (o null): envuelve TODO el contenido. Placeholder obligatorio: {{CONTENT}}. Usalo solo si la carta tiene un marco/borde de página; si no, mandá null.
-- footerHtml (o null): pie opcional.
+- frameHtml (o null): envuelve TODO el contenido. Placeholder obligatorio: {{CONTENT}}. Opcionalmente acepta {{RESTAURANT_NAME}}, {{MENU_NAME}}, {{SEASON_HTML}}. Usalo solo si la carta tiene un marco/borde de página; si no, mandá null.
+- footerHtml (o null): pie opcional. Acepta {{RESTAURANT_NAME}}, {{MENU_NAME}}, {{SEASON_HTML}} (ej: repetir el nombre del restaurante en el pie).
 - css: TODO el CSS del theme (clases propias que uses en los fragmentos, colores, tipografías, ornamentos, márgenes de página). NO incluyas <style>, el server lo agrega.
 
 ⚠️ CRÍTICO: los nombres de los placeholders son EXACTOS, en MAYÚSCULAS con guiones bajos ({{RESTAURANT_NAME}}, {{MENU_NAME}}, {{SEASON_HTML}}, {{SECTION_NAME}}, {{DISH_NAME}}, {{DISH_DESC}}, {{PRICE}}, {{ALLERGENS_HTML}}, {{CONTENT}}). Cualquier OTRO nombre (camelCase, inventado como {{HEADER}}/{{SECTIONS}}/{{tagline}}/{{date}}) se DESCARTA y tu theme queda VACÍO. NO partas el contenido en {{HEADER}}/{{SECTIONS}}/{{FOOTER}}: el server arma header + secciones + platos + leyenda + footer en ese orden; vos solo definís CADA fragmento y, si usás frameHtml, ponés {{CONTENT}} donde va todo.
