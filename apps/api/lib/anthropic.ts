@@ -15,7 +15,7 @@ function loadSystemPrompt(): string {
 
 export const MODEL_IDS = {
   haiku: "claude-haiku-4-5",
-  sonnet: "claude-sonnet-4-6",
+  sonnet: "claude-sonnet-5",
   opus: "claude-opus-4-7",
 } as const;
 

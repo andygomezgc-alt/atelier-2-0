@@ -104,7 +104,7 @@ export async function extractMenuStyle(
 
   const client = new Anthropic({ apiKey });
   const msg = await client.messages.create({
-    model: "claude-sonnet-4-6",
+    model: "claude-sonnet-5",
     max_tokens: 2048,
     tools: [EMIT_STYLE_TOOL as unknown as Anthropic.Tool],
     tool_choice: { type: "tool", name: "emit_menu_style" },
