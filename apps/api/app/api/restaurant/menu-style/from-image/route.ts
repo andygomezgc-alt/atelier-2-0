@@ -5,7 +5,7 @@
 // exportar el PDF.
 
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@atelier/db";
+import { prisma, Prisma } from "@atelier/db";
 import { getDocumentProxy } from "unpdf";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
@@ -106,14 +106,15 @@ export async function POST(req: NextRequest) {
 
     // "Estilo fiel" — el modelo genera el theme HTML/CSS completo de la carta.
     // Best-effort: si revienta seguimos con el spec (la preview móvil y el
-    // fallback por tokens funcionan igual). menuStyleTheme queda null a
-    // propósito: spec nuevo + theme viejo de otra carta = inconsistente.
-    let menuStyleTheme: unknown = null;
+    // fallback por tokens funcionan igual). Por defecto Prisma.DbNull (= SQL NULL;
+    // pasar `null` literal a un Json? lo rechaza el cliente Prisma): limpia el
+    // theme viejo, porque spec nuevo + theme viejo de otra carta = inconsistente.
+    let menuStyleTheme: Prisma.InputJsonValue | typeof Prisma.DbNull = Prisma.DbNull;
     let themeGenerated = false;
     try {
       const themeStart = Date.now();
       const { theme, refined } = await generateMenuTheme(buffer, mime);
-      menuStyleTheme = theme;
+      menuStyleTheme = theme as Prisma.InputJsonValue;
       themeGenerated = true;
       logger.info("menu_style_theme_generated", {
         userId: ctx.userId,
@@ -146,11 +147,11 @@ export async function POST(req: NextRequest) {
 
     await prisma.restaurant.update({
       where: { id: ctx.restaurantId },
-      // menuStyleTheme se escribe SIEMPRE (theme nuevo o null): si la generación
-      // falló, limpia un theme viejo que ya no corresponde al spec nuevo.
+      // menuStyleTheme se escribe SIEMPRE (theme nuevo o DbNull): si la
+      // generación falló, limpia un theme viejo que ya no corresponde al spec.
       data: {
         menuStyleSpec: spec,
-        menuStyleTheme: menuStyleTheme as never,
+        menuStyleTheme,
         ...(refUrl ? { menuStyleRefUrl: refUrl } : {}),
       },
     });

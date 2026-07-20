@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { db, guard, extract, generate, blob, quota, pdf } = vi.hoisted(() => ({
+const { db, guard, extract, generate, blob, quota, pdf, prismaNs } = vi.hoisted(() => ({
   db: { restaurant: { update: vi.fn(), findUnique: vi.fn() } },
   guard: {
     requireAuth: vi.fn(),
@@ -13,9 +13,11 @@ const { db, guard, extract, generate, blob, quota, pdf } = vi.hoisted(() => ({
   blob: { uploadPhoto: vi.fn() },
   quota: { reserveAiCall: vi.fn() },
   pdf: { getDocumentProxy: vi.fn() },
+  // Sentinel de Prisma.DbNull (SQL NULL en Json?) para el path de fallo.
+  prismaNs: { DbNull: Symbol("DbNull") },
 }));
 
-vi.mock("@atelier/db", () => ({ prisma: db }));
+vi.mock("@atelier/db", () => ({ prisma: db, Prisma: prismaNs }));
 vi.mock("@/lib/permissions-guard", () => ({
   requireAuth: guard.requireAuth,
   isNextResponse: guard.isNextResponse,
@@ -145,10 +147,10 @@ describe("POST /api/restaurant/menu-style/from-image", () => {
     expect(body.themeGenerated).toBe(false);
 
     const updateArg = db.restaurant.update.mock.calls[0]![0];
-    // El spec se persiste igual; el theme queda null (spec nuevo + theme viejo
-    // sería inconsistente).
+    // El spec se persiste igual; el theme se limpia con Prisma.DbNull (SQL NULL;
+    // spec nuevo + theme viejo sería inconsistente).
     expect(updateArg.data.menuStyleSpec).toEqual(SPEC);
-    expect(updateArg.data.menuStyleTheme).toBeNull();
+    expect(updateArg.data.menuStyleTheme).toBe(prismaNs.DbNull);
   });
 
   it("si Blob no está configurado (uploadPhoto → null) persiste el spec sin refUrl", async () => {
