@@ -2,11 +2,12 @@ import { NextRequest } from "next/server";
 import { prisma } from "@atelier/db";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { TEMPLATES, renderCustom } from "@/lib/pdf/templates";
+import { renderGeneratedTheme } from "@/lib/pdf/theme-render";
 import { renderHtmlToPdf } from "@/lib/pdf/render";
 import { computeRecipeAllergens } from "@/lib/products/allergens-recipe";
 import { logger } from "@/lib/logger";
 import type { ClientOverrides, Allergen } from "@atelier/shared";
-import { ALLERGEN_ORDER, MenuStyleSpecSchema } from "@atelier/shared";
+import { ALLERGEN_ORDER, MenuStyleSpecSchema, MenuCustomThemeSchema } from "@atelier/shared";
 import { t, type Language } from "@atelier/i18n";
 
 export const dynamic = "force-dynamic";
@@ -28,8 +29,16 @@ export async function GET(
   const menu = await prisma.menuFolder.findUnique({
     where: { id },
     include: {
-      // menuStyleSpec: "Tu estilo" de la casa (para presentationStyle=custom).
-      restaurant: { select: { name: true, languageDefault: true, menuStyleSpec: true } },
+      // menuStyleSpec (tokens) + menuStyleTheme (theme HTML/CSS "estilo fiel") de
+      // la casa, para presentationStyle=custom.
+      restaurant: {
+        select: {
+          name: true,
+          languageDefault: true,
+          menuStyleSpec: true,
+          menuStyleTheme: true,
+        },
+      },
       sections: { orderBy: { order: "asc" }, select: { id: true, name: true } },
       items: {
         orderBy: { order: "asc" },
@@ -57,15 +66,26 @@ export async function GET(
     return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
 
   const style = (styleParam ?? menu.presentationStyle) as string;
-  // "Tu estilo": si el estilo efectivo es custom, el theme se construye del
-  // spec de la casa. Sin spec (o spec corrupto) → fallback elegant, nunca 500.
-  const customSpec =
-    style === "custom"
-      ? MenuStyleSpecSchema.safeParse(menu.restaurant?.menuStyleSpec)
-      : null;
-  const renderer = customSpec?.success
-    ? (input: Parameters<typeof renderCustom>[0]) => renderCustom(input, customSpec.data)
-    : (TEMPLATES[style as keyof typeof TEMPLATES] ?? TEMPLATES.elegant);
+  // "Estilo fiel": si el estilo efectivo es custom, se prefiere el theme HTML/CSS
+  // generado (menuStyleTheme). Si no valida, se cae al spec de tokens
+  // (renderCustom); si tampoco, al fallback elegant. Nunca 500 por dato corrupto.
+  type Render = (input: Parameters<typeof renderCustom>[0]) => string;
+  let renderer: Render;
+  if (style === "custom") {
+    const themeParse = MenuCustomThemeSchema.safeParse(menu.restaurant?.menuStyleTheme);
+    const specParse = MenuStyleSpecSchema.safeParse(menu.restaurant?.menuStyleSpec);
+    if (themeParse.success) {
+      const theme = themeParse.data;
+      renderer = (input) => renderGeneratedTheme(input, theme);
+    } else if (specParse.success) {
+      const spec = specParse.data;
+      renderer = (input) => renderCustom(input, spec);
+    } else {
+      renderer = TEMPLATES.elegant;
+    }
+  } else {
+    renderer = TEMPLATES[style as keyof typeof TEMPLATES] ?? TEMPLATES.elegant;
+  }
 
   // Cliente overrides: JSON validado por Zod arriba; acá lo tratamos como
   // partial deep. Cada campo: override > canonical-staff > fallback.

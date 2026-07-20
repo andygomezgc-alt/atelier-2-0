@@ -11,11 +11,14 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 import { fileMatchesMime, IMAGE_MIMES, PDF_MIME } from "@/lib/recipe-extraction";
 import { extractMenuStyle } from "@/lib/pdf/style-extract";
+import { generateMenuTheme } from "@/lib/pdf/theme-generate";
 import { deleteBlobs, uploadPhoto } from "@/lib/blob";
 import { reserveAiCall, aiQuotaExceededResponse } from "@/lib/ai-quota";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// El flujo "estilo fiel" corre visión + generación + refinamiento (3 llamadas al
+// modelo, la del medio renderiza un PDF a PNG con Puppeteer), así que sube el tope.
+export const maxDuration = 300;
 
 const ALLOWED_MIMES: readonly string[] = [...IMAGE_MIMES, PDF_MIME];
 
@@ -90,13 +93,41 @@ export async function POST(req: NextRequest) {
       );
   }
 
-  // La visión va con la clave del server → cuota SIEMPRE.
+  // La visión va con la clave del server → cuota SIEMPRE. Reservamos UNA sola vez
+  // aunque el flujo "estilo fiel" haga ~3 llamadas al modelo (extracción de
+  // tokens + generación del theme + refinamiento): es configuración de la casa
+  // (una vez por restaurante), no un flujo de alto volumen.
   const quota = await reserveAiCall(ctx.userId);
   if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
 
   const start = Date.now();
   try {
     const spec = await extractMenuStyle(buffer, mime);
+
+    // "Estilo fiel" — el modelo genera el theme HTML/CSS completo de la carta.
+    // Best-effort: si revienta seguimos con el spec (la preview móvil y el
+    // fallback por tokens funcionan igual). menuStyleTheme queda null a
+    // propósito: spec nuevo + theme viejo de otra carta = inconsistente.
+    let menuStyleTheme: unknown = null;
+    let themeGenerated = false;
+    try {
+      const themeStart = Date.now();
+      const { theme, refined } = await generateMenuTheme(buffer, mime);
+      menuStyleTheme = theme;
+      themeGenerated = true;
+      logger.info("menu_style_theme_generated", {
+        userId: ctx.userId,
+        restaurantId: ctx.restaurantId,
+        latencyMs: Date.now() - themeStart,
+        refined,
+      });
+    } catch (themeErr) {
+      logger.warn("menu_style_theme_failed", {
+        userId: ctx.userId,
+        restaurantId: ctx.restaurantId,
+        error: themeErr instanceof Error ? themeErr.message : String(themeErr),
+      });
+    }
 
     // Foto de referencia BEST-EFFORT: sin token de Blob devuelve null y si
     // falla la subida seguimos igual — el spec es lo que importa.
@@ -115,7 +146,13 @@ export async function POST(req: NextRequest) {
 
     await prisma.restaurant.update({
       where: { id: ctx.restaurantId },
-      data: { menuStyleSpec: spec, ...(refUrl ? { menuStyleRefUrl: refUrl } : {}) },
+      // menuStyleTheme se escribe SIEMPRE (theme nuevo o null): si la generación
+      // falló, limpia un theme viejo que ya no corresponde al spec nuevo.
+      data: {
+        menuStyleSpec: spec,
+        menuStyleTheme: menuStyleTheme as never,
+        ...(refUrl ? { menuStyleRefUrl: refUrl } : {}),
+      },
     });
 
     if (refUrl && oldRefUrl && oldRefUrl !== refUrl) {
@@ -127,8 +164,9 @@ export async function POST(req: NextRequest) {
       restaurantId: ctx.restaurantId,
       latencyMs: Date.now() - start,
       hasRefUrl: !!refUrl,
+      themeGenerated,
     });
-    return NextResponse.json({ spec });
+    return NextResponse.json({ spec, themeGenerated });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error al procesar la foto";
     logger.error("menu_style_extract_failed", {
