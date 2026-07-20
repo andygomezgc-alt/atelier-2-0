@@ -46,6 +46,14 @@ npx eas-cli build --platform ios --profile testflight --non-interactive --no-wai
 
 Si hay que **regenerar** credenciales (certificado caducado en 2027, o pérdida de `dist.key`): revocar en Apple y volver a correr `provision.mjs` (crea bundle ID si falta, certificado y perfil; es idempotente para el bundle ID, **no** para el certificado). Dos trampas del entorno ya resueltas dentro del script: el `fetch` de node **no conecta** con `api.appstoreconnect.apple.com` en este Windows (usa `curl`), y `curl` necesita `-g` porque los corchetes de `filter[identifier]` los interpreta como glob.
 
+### Submit sin TTY (lección final)
+
+Las variables `EXPO_ASC_*` NO sirven para `eas submit` en modo no interactivo (`App Store Connect API Keys cannot be set up in --non-interactive mode`): la API key va en el propio perfil `submit` de `eas.json` (`ascApiKeyPath/ascApiKeyId/ascApiKeyIssuerId`, ya configurados). Comando que funcionó:
+
+```bash
+npx eas-cli submit --platform ios --profile testflight --id <buildId> --non-interactive
+```
+
 ### Crear la app en App Store Connect
 
 `eas submit` la crea sola si no existe. Si se hace a mano: [appstoreconnect.apple.com/apps](https://appstoreconnect.apple.com/apps) → **+** → iOS, nombre "Atelier", bundle `com.atelierchef.app`, SKU `atelier-pilot`; luego copiar su **Apple ID numérico** a `submit.testflight.ios.ascAppId` en `eas.json`. `ITSAppUsesNonExemptEncryption: false` ya está en `app.json` → no pregunta por export compliance en cada build.
