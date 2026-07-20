@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { db, guard, extract, blob, quota, pdf } = vi.hoisted(() => ({
+const { db, guard, extract, generate, blob, quota, pdf } = vi.hoisted(() => ({
   db: { restaurant: { update: vi.fn(), findUnique: vi.fn() } },
   guard: {
     requireAuth: vi.fn(),
@@ -9,6 +9,7 @@ const { db, guard, extract, blob, quota, pdf } = vi.hoisted(() => ({
       typeof v === "object" && v !== null && "status" in v && "headers" in v,
   },
   extract: { extractMenuStyle: vi.fn() },
+  generate: { generateMenuTheme: vi.fn() },
   blob: { uploadPhoto: vi.fn() },
   quota: { reserveAiCall: vi.fn() },
   pdf: { getDocumentProxy: vi.fn() },
@@ -21,6 +22,9 @@ vi.mock("@/lib/permissions-guard", () => ({
 }));
 vi.mock("@/lib/pdf/style-extract", () => ({
   extractMenuStyle: extract.extractMenuStyle,
+}));
+vi.mock("@/lib/pdf/theme-generate", () => ({
+  generateMenuTheme: generate.generateMenuTheme,
 }));
 vi.mock("@/lib/blob", () => ({
   uploadPhoto: blob.uploadPhoto,
@@ -56,6 +60,21 @@ const SPEC = {
   dishLayout: "row",
 };
 
+// Theme "estilo fiel" que devuelve el generador mockeado (forma libre acá — el
+// contenido real lo valida theme-generate.test.ts).
+const THEME = {
+  version: 1,
+  fontTitle: "playfair-display",
+  fontBody: "lato",
+  fontAccent: null,
+  css: ".menu{color:#111}",
+  frameHtml: null,
+  headerHtml: "<h1>{{MENU_NAME}}</h1>",
+  sectionHeaderHtml: "<div>{{SECTION_NAME}}</div>",
+  dishHtml: "<div>{{DISH_NAME}}</div>",
+  footerHtml: null,
+};
+
 // SOI de JPEG (FF D8 FF) — pasa fileMatchesMime real (no mockeado a propósito).
 const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
 
@@ -80,6 +99,7 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({ userId: "u1", restaurantId: "r1", role: "chef_executive" });
   extract.extractMenuStyle.mockReset().mockResolvedValue(SPEC);
+  generate.generateMenuTheme.mockReset().mockResolvedValue({ theme: THEME, refined: true });
   blob.uploadPhoto.mockReset().mockResolvedValue("https://blob.local/menu-style/r1/x.jpg");
   quota.reserveAiCall.mockReset().mockResolvedValue({ ok: true, used: 1, limit: 120 });
   // Como pdf.js real: DETACHA el typed array recibido (transfer al worker)
@@ -102,6 +122,33 @@ describe("POST /api/restaurant/menu-style/from-image", () => {
     expect(updateArg.where).toEqual({ id: "r1" });
     expect(updateArg.data.menuStyleSpec).toEqual(SPEC);
     expect(updateArg.data.menuStyleRefUrl).toBe("https://blob.local/menu-style/r1/x.jpg");
+  });
+
+  it("estilo fiel OK: guarda el theme junto al spec y responde themeGenerated:true", async () => {
+    const res = await postWithFile(JPEG_BYTES);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.themeGenerated).toBe(true);
+
+    expect(generate.generateMenuTheme).toHaveBeenCalledWith(expect.any(Uint8Array), "image/jpeg");
+    const updateArg = db.restaurant.update.mock.calls[0]![0];
+    expect(updateArg.data.menuStyleSpec).toEqual(SPEC);
+    expect(updateArg.data.menuStyleTheme).toEqual(THEME);
+  });
+
+  it("generación del theme revienta → 200, themeGenerated:false y menuStyleTheme:null (limpia el viejo)", async () => {
+    generate.generateMenuTheme.mockRejectedValue(new Error("modelo caído"));
+    const res = await postWithFile(JPEG_BYTES);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.spec).toEqual(SPEC);
+    expect(body.themeGenerated).toBe(false);
+
+    const updateArg = db.restaurant.update.mock.calls[0]![0];
+    // El spec se persiste igual; el theme queda null (spec nuevo + theme viejo
+    // sería inconsistente).
+    expect(updateArg.data.menuStyleSpec).toEqual(SPEC);
+    expect(updateArg.data.menuStyleTheme).toBeNull();
   });
 
   it("si Blob no está configurado (uploadPhoto → null) persiste el spec sin refUrl", async () => {

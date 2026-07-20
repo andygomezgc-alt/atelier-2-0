@@ -41,6 +41,21 @@ const SPEC = {
   dishLayout: "grid",
 };
 
+// Theme "estilo fiel" válido, con un marcador (#0a0b0c) y fuente Cinzel para
+// verificar que el render usó el theme y no el fallback por spec.
+const THEME = {
+  version: 1,
+  fontTitle: "cinzel",
+  fontBody: "lato",
+  fontAccent: null,
+  css: ".mk{color:#0a0b0c;font-family:'Cinzel',serif;padding:10mm;margin:0}",
+  frameHtml: null,
+  headerHtml: '<div class="mk"><h1>{{MENU_NAME}}</h1></div>',
+  sectionHeaderHtml: "<div>{{SECTION_NAME}}</div>",
+  dishHtml: "<div>{{DISH_NAME}} {{PRICE}}</div>",
+  footerHtml: null,
+};
+
 const baseMenu = (over: Record<string, unknown> = {}) => ({
   id: "menu-1",
   restaurantId: "r1",
@@ -82,6 +97,47 @@ describe("GET /api/menus/[id]/pdf — estilo custom", () => {
     expect(html).toContain("background: #10222e");
     expect(html).toContain("grid-template-columns");
     expect(html).toContain("Tagliatelle");
+  });
+
+  it("custom CON theme fiel válido → usa renderGeneratedTheme (marcador + fuente embebida)", async () => {
+    db.menuFolder.findUnique.mockResolvedValue(
+      baseMenu({
+        restaurant: {
+          name: "Koko",
+          languageDefault: "es",
+          menuStyleSpec: SPEC,
+          menuStyleTheme: THEME,
+        },
+      }),
+    );
+    const res = await get("menu-1");
+    expect(res.status).toBe(200);
+    const html = render.renderHtmlToPdf.mock.calls[0]![0] as string;
+    // Marcador del theme + fuente embebida como @font-face + plato real.
+    expect(html).toContain("#0a0b0c");
+    expect(html).toContain("font-family:'Cinzel'");
+    expect(html).toContain("@font-face");
+    expect(html).toContain("Tagliatelle");
+    // NO cayó al spec (bg del spec ausente).
+    expect(html).not.toContain("background: #10222e");
+  });
+
+  it("custom con theme CORRUPTO → cae al spec de tokens (bg del spec)", async () => {
+    db.menuFolder.findUnique.mockResolvedValue(
+      baseMenu({
+        restaurant: {
+          name: "Koko",
+          languageDefault: "es",
+          menuStyleSpec: SPEC,
+          menuStyleTheme: { version: 1, css: "corto" },
+        },
+      }),
+    );
+    const res = await get("menu-1");
+    expect(res.status).toBe(200);
+    const html = render.renderHtmlToPdf.mock.calls[0]![0] as string;
+    expect(html).toContain("background: #10222e");
+    expect(html).not.toContain("#0a0b0c");
   });
 
   it("custom SIN spec → fallback elegant (no explota, nunca 500)", async () => {
