@@ -21,6 +21,9 @@ const config: NextConfig = {
     "/api/**/*": [
       "../../node_modules/.pnpm/@prisma+client*/**/libquery_engine-rhel-openssl-3.0.x.so.node",
       "../../node_modules/.pnpm/@prisma+client*/**/schema.prisma",
+      // "Tu estilo" fiel — los woff2 embebidos en el theme se leen en runtime con
+      // readFileSync(process.cwd()/lib/pdf/fonts/...); el tracer no los sigue solo.
+      "lib/pdf/fonts/**",
     ],
   },
   async headers() {
