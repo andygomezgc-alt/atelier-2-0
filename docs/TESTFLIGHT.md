@@ -89,6 +89,26 @@ Detalles para el futuro:
 - ⚠️ **EAS rechaza el `eas.json` entero si una env es string vacío** (rompe hasta `build:list`) — nunca dejar claves placeholder con `""`.
 - `SENTRY_DISABLE_AUTO_UPLOAD: "true"` sigue en ambos perfiles a propósito: sin `SENTRY_AUTH_TOKEN` la subida de source maps/símbolos rompe el build (mordió antes, commit 5f7485a). Consecuencia: llegan los crashes, pero los stack traces salen sin desminificar. Para tenerlos legibles hay que crear un auth token en sentry.io → Settings → Auth Tokens, guardarlo como secreto de EAS (`eas secret:create --name SENTRY_AUTH_TOKEN`) y quitar el flag.
 
+## Mantener las apps actualizadas (automatización)
+
+**Un solo comando** reconstruye y re-publica ambas plataformas:
+
+```bash
+bash scripts/rebake-mobile.sh          # iOS (auto-submit a TestFlight) + APK Android
+bash scripts/rebake-mobile.sh ios      # solo iOS
+bash scripts/rebake-mobile.sh android  # solo APK Android
+```
+
+Hace: sincroniza el clon de horneado con `origin/main` → `pnpm install` → repone las credenciales locales iOS desde `atelier-secretos` → valida el bundle con `expo export` → `eas build` con `--auto-submit` en iOS (sube solo a TestFlight al terminar) y APK en Android.
+
+**Por qué NO es totalmente desatendido (cloud):** las claves de firma iOS (`dist.p12`, `dist.key`) viven SOLO en el disco local a propósito — nunca en el repo ni en los servidores de EAS. Un agente en la nube no las tiene, así que el rebuild se dispara a mano con el script (que ya tiene todo a un comando). Cada vez que aterrice código móvil en `main`, corre el script y en ~20 min tienes TestFlight + APK al día.
+
+## Testers (configurado 20-jul)
+
+- **Link público (chefs iPhone):** https://testflight.apple.com/join/kY83jmnk — grupo externo "Chefs". ⚠️ Los externos solo pueden instalar DESPUÉS de que Apple apruebe la primera build en la **revisión beta** (falta el teléfono de contacto para poder enviarla).
+- **Grupo interno "Equipo" (Andy):** disponible YA sin revisión — instala con TestFlight usando el Apple ID de la cuenta.
+- Info beta en italiano y contacto de la revisión: cargados vía API (email andygomezgc@gmail.com; `demoAccountRequired:false`, con nota explicando el login por código).
+
 ## App Store real (después del pilot)
 
 Mismo pipeline (`eas build` + `eas submit`) + ficha completa en App Store Connect (capturas, descripción, política de privacidad — hará falta URL pública) + revisión completa de Apple (1-3 días). No urge para el pilot.
