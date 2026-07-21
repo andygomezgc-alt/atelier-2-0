@@ -45,6 +45,13 @@ async function setupPage(
       req.abort();
     }
   });
+  // ⚠️ FRONTERA DE SEGURIDAD, no solo performance. JS apagado + red bloqueada
+  // (arriba) es lo que mantiene INERTE cualquier bypass del sanitizador de theme
+  // (theme-sanitize.ts es defensa-en-profundidad de UNA sola pasada: tags
+  // reformados, on-handlers sin espacio, entidades HTML en href, srcset, @import
+  // ofuscado, etc. podrían colarse). Con JS off no ejecutan y sin red no cargan
+  // nada externo. NO reactivar setJavaScriptEnabled(true) ni relajar la
+  // interception sin re-endurecer el sanitizador primero — los revivís a todos.
   await page.setJavaScriptEnabled(false);
   // Viewport ANTES de setContent para que el layout use el ancho A4 (PNG).
   if (viewport) await page.setViewport(viewport);

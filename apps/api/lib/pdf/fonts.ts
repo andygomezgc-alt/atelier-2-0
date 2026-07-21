@@ -106,7 +106,13 @@ function fileBase64(file: string): string {
 
 function fontFaceBlock(family: string, ff: FontFile): string {
   const data = fileBase64(ff.file);
-  return `@font-face{font-family:'${family}';font-style:${ff.style};font-weight:${ff.weight};font-display:swap;src:url(data:font/woff2;base64,${data}) format('woff2');}`;
+  // font-display:block (no swap): mantiene el texto oculto hasta aplicar la
+  // fuente en vez de pintar el fallback genérico. render.ts dispara pdf()/
+  // screenshot() con waitUntil:"load" y SIN JS (no hay document.fonts.ready que
+  // esperar), así que con swap el PDF "fiel" podía salir en fuente genérica en
+  // silencio. Las fuentes son data: (decodifican en <100ms, sin red), así que
+  // block muestra el texto correcto enseguida sin FOIT visible.
+  return `@font-face{font-family:'${family}';font-style:${ff.style};font-weight:${ff.weight};font-display:block;src:url(data:font/woff2;base64,${data}) format('woff2');}`;
 }
 
 // Emite los @font-face (con el woff2 inline en base64) de las familias pedidas.

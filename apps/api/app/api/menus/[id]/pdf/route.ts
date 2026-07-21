@@ -133,7 +133,7 @@ export async function GET(
   }));
   const unsectioned = dishesBySection.get(null) ?? [];
 
-  const html = renderer({
+  const renderInput: Parameters<typeof renderCustom>[0] = {
     restaurantName: ov.restaurantName ?? menu.restaurant?.name ?? "",
     menuName: ov.menuName ?? menu.name,
     season: ov.subtitle ?? menu.season,
@@ -142,7 +142,23 @@ export async function GET(
     showAllergensInPdf: menu.showAllergensInPdf,
     allergenLegendTitle: t("menu_allergen_legend_title", lang),
     allergenLabels,
-  });
+  };
+
+  // El renderer puede tirar en RENDER-TIME (p.ej. renderGeneratedTheme leyendo un
+  // woff2 ausente del bundle → readFileSync ENOENT). Igual que un theme/spec
+  // corrupto cae a elegant en la selección de renderer, un fallo en render-time
+  // cae a elegant acá: el invariante es "nunca 500 por el estilo de la casa".
+  let html: string;
+  try {
+    html = renderer(renderInput);
+  } catch (err) {
+    logger.error("menu_pdf_theme_render_failed", {
+      err: err instanceof Error ? err.message : String(err),
+      menuId: id,
+      style,
+    });
+    html = TEMPLATES.elegant(renderInput);
+  }
 
   let pdf: Buffer;
   try {
