@@ -9,13 +9,28 @@ import { ApiError, NetworkError, TOKEN_KEY } from "@/src/api/client";
 // vi.hoisted: las factories de vi.mock se izan por encima de los imports, así
 // que los spies tienen que existir antes. (Patrón del repo.)
 const h = vi.hoisted(() => ({
+  asyncStorage: new Map<string, string>(),
   getItemAsync: vi.fn(async (_k: string): Promise<string | null> => "test-token"),
   setItemAsync: vi.fn(async () => {}),
   deleteItemAsync: vi.fn(async () => {}),
+  getAllKeys: vi.fn(),
+  multiRemove: vi.fn(),
   fetchMe: vi.fn(),
   devLogin: vi.fn(),
   loginWithGoogle: vi.fn(),
   requestMagicLink: vi.fn(),
+}));
+
+h.getAllKeys.mockImplementation(async () => [...h.asyncStorage.keys()]);
+h.multiRemove.mockImplementation(async (keys: string[]) => {
+  keys.forEach((key) => h.asyncStorage.delete(key));
+});
+
+vi.mock("@react-native-async-storage/async-storage", () => ({
+  default: {
+    getAllKeys: h.getAllKeys,
+    multiRemove: h.multiRemove,
+  },
 }));
 
 vi.mock("@/src/lib/secure-storage", () => ({
@@ -31,7 +46,7 @@ vi.mock("@/src/api/auth", () => ({
   requestMagicLink: h.requestMagicLink,
 }));
 
-import { bootstrap, getAuthState } from "@/src/hooks/useAuth";
+import { bootstrap, getAuthActions, getAuthState } from "@/src/hooks/useAuth";
 
 const fakeUser = {
   id: "u1",
@@ -52,6 +67,9 @@ describe("useAuth bootstrap (P1-4)", () => {
     h.deleteItemAsync.mockClear();
     h.setItemAsync.mockClear();
     h.fetchMe.mockReset();
+    h.asyncStorage.clear();
+    h.getAllKeys.mockClear();
+    h.multiRemove.mockClear();
     // Evita que el atajo dev-login se dispare antes de mirar el token.
     delete process.env.EXPO_PUBLIC_DEV_AUTH_EMAIL;
   });
@@ -95,5 +113,23 @@ describe("useAuth bootstrap (P1-4)", () => {
     h.fetchMe.mockResolvedValueOnce({ ...fakeUser, restaurantId: null });
     await bootstrap();
     expect(getAuthState()).toMatchObject({ status: "needs-restaurant" });
+  });
+
+  it("signOut borra todas las colas offline y conserva otras claves", async () => {
+    h.asyncStorage.set("atelier.idea_queue.v1", "legacy");
+    h.asyncStorage.set("atelier.idea_queue.v2.user-a.restaurant-a", "a");
+    h.asyncStorage.set("atelier.idea_queue.v2.user-b.restaurant-b", "b");
+    h.asyncStorage.set("otro.modulo", "keep");
+
+    await getAuthActions().signOut();
+
+    expect(h.getAllKeys).toHaveBeenCalledOnce();
+    expect(h.multiRemove).toHaveBeenCalledWith([
+      "atelier.idea_queue.v1",
+      "atelier.idea_queue.v2.user-a.restaurant-a",
+      "atelier.idea_queue.v2.user-b.restaurant-b",
+    ]);
+    expect([...h.asyncStorage.entries()]).toEqual([["otro.modulo", "keep"]]);
+    expect(getAuthState()).toEqual({ status: "signed-out" });
   });
 });

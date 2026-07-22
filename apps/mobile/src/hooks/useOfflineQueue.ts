@@ -4,33 +4,56 @@
 
 import { useCallback, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { ApiError } from "@/src/api/client";
 import { createIdea, type Idea } from "@/src/api/ideas";
+import { getCurrentIdentity } from "@/src/hooks/useAuth";
 
-const KEY = "atelier.idea_queue.v1";
+const LEGACY_KEY = "atelier.idea_queue.v1";
+const KEY_PREFIX = "atelier.idea_queue.v2";
 
 type QueuedIdea = { id: string; text: string; createdAt: number };
 
-async function readQueue(): Promise<QueuedIdea[]> {
+function currentQueueKey(): string | null {
+  const identity = getCurrentIdentity();
+  return identity
+    ? `${KEY_PREFIX}.${identity.userId}.${identity.restaurantId}`
+    : null;
+}
+
+async function readQueue(key: string | null): Promise<QueuedIdea[]> {
+  // v1 no tenía dueño: nunca es seguro migrarla a la sesión actual.
+  await AsyncStorage.removeItem(LEGACY_KEY).catch(() => undefined);
+  if (!key) return [];
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await AsyncStorage.getItem(key);
     return raw ? (JSON.parse(raw) as QueuedIdea[]) : [];
   } catch {
     return [];
   }
 }
 
-async function writeQueue(q: QueuedIdea[]): Promise<void> {
-  await AsyncStorage.setItem(KEY, JSON.stringify(q));
+async function writeQueue(key: string, q: QueuedIdea[]): Promise<void> {
+  await AsyncStorage.setItem(key, JSON.stringify(q));
 }
 
-export async function enqueueIdea(text: string): Promise<void> {
-  const q = await readQueue();
+export async function enqueueIdea(text: string, error: unknown): Promise<void> {
+  if (error instanceof ApiError) throw error;
+
+  const key = currentQueueKey();
+  if (!key) throw error;
+
+  const q = await readQueue(key);
   q.push({ id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text, createdAt: Date.now() });
-  await writeQueue(q);
+  await writeQueue(key, q);
 }
 
 export async function flushQueue(): Promise<Idea[]> {
-  const q = await readQueue();
+  const key = currentQueueKey();
+  if (!key) {
+    await readQueue(null);
+    return [];
+  }
+  const q = await readQueue(key);
   if (q.length === 0) return [];
 
   const created: Idea[] = [];
@@ -40,12 +63,13 @@ export async function flushQueue(): Promise<Idea[]> {
     try {
       const idea = await createIdea(item.text);
       created.push(idea);
-    } catch {
-      remaining.push(item);
+    } catch (error) {
+      // El server ya lo rechazó: reintentar indefinidamente no lo arregla.
+      if (!(error instanceof ApiError)) remaining.push(item);
     }
   }
 
-  await writeQueue(remaining);
+  await writeQueue(key, remaining);
   return created;
 }
 
@@ -53,7 +77,8 @@ export function useOfflineQueueSize() {
   const [size, setSize] = useState(0);
 
   const refresh = useCallback(async () => {
-    const q = await readQueue();
+    // La key se resuelve en cada refresh para seguir cambios de sesión.
+    const q = await readQueue(currentQueueKey());
     setSize(q.length);
   }, []);
 

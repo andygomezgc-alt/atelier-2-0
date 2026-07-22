@@ -35,11 +35,16 @@ export async function cached<T>(
 
   const promise = fetcher()
     .then((data) => {
-      cache.set(key, { data, ts: Date.now() });
+      // Debe correr antes del finally: invalidate/clearAll revocan el derecho
+      // de esta promesa a reescribir el caché aunque su waiter reciba `data`.
+      if (inflight.get(key) === promise) {
+        cache.set(key, { data, ts: Date.now() });
+      }
       return data;
     })
     .finally(() => {
-      inflight.delete(key);
+      // Una promesa vieja tampoco debe borrar a su sucesora post-invalidate.
+      if (inflight.get(key) === promise) inflight.delete(key);
     });
 
   inflight.set(key, promise);

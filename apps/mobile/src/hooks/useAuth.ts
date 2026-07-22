@@ -1,4 +1,5 @@
 import { useCallback, useRef, useSyncExternalStore } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "@/src/lib/secure-storage";
 import { TOKEN_KEY, setUnauthorizedHandler, ApiError } from "@/src/api/client";
 import { devLogin, fetchMe, loginWithGoogle, requestMagicLink, type MeUser } from "@/src/api/auth";
@@ -43,6 +44,17 @@ export function getAuthState(): AuthState {
   return _state;
 }
 
+export function getCurrentIdentity(): {
+  userId: string;
+  restaurantId: string;
+} | null {
+  if (_state.status !== "signed-in" || !_state.user.restaurantId) return null;
+  return {
+    userId: _state.user.id,
+    restaurantId: _state.user.restaurantId,
+  };
+}
+
 // A-12 — Acciones imperativas accesibles fuera de componentes (ej. el
 // `LazyRestaurantHost` que vive global). Mismo comportamiento que las que
 // expone el hook; las definimos a nivel módulo para que el host pueda
@@ -71,13 +83,24 @@ function patchLocalUserImpl(updates: Partial<MeUser>): void {
 }
 
 export function getAuthActions() {
-  return { refreshMe: refreshMeImpl, patchLocalUser: patchLocalUserImpl };
+  return {
+    refreshMe: refreshMeImpl,
+    patchLocalUser: patchLocalUserImpl,
+    signOut: signOutImpl,
+  };
 }
 
 // signOut imperativo reutilizable: lo usa el hook y el handler global de 401
 // (sesión inválida). Idempotente: llamarlo ya deslogueado no hace daño.
 async function signOutImpl(): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => null);
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const queueKeys = keys.filter((key) => key.startsWith("atelier.idea_queue."));
+    if (queueKeys.length > 0) await AsyncStorage.multiRemove(queueKeys);
+  } catch {
+    // Best effort: un fallo de storage no debe impedir cerrar la sesión.
+  }
   // Si otro usuario logea en el mismo device, no debe ver datos del anterior.
   clearApiCache();
   setState({ status: "signed-out" });
@@ -175,8 +198,7 @@ export async function bootstrap() {
     // reintenta sin perder la sesión). El 401 de un request en vivo ya tiene su
     // vía por `setUnauthorizedHandler`; esto cubre el 401 del bootstrap.
     if (err instanceof ApiError && err.status === 401) {
-      await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => null);
-      setState({ status: "signed-out" });
+      await signOutImpl();
     } else {
       setState({ status: "offline" });
     }

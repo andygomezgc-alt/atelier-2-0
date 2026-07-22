@@ -24,6 +24,7 @@ import { useAuth } from "@/src/hooks/useAuth";
 import { useOfflineQueueSize, enqueueIdea, flushQueue } from "@/src/hooks/useOfflineQueue";
 import { useRefresh } from "@/src/hooks/useRefresh";
 import { listIdeas, createIdea, patchIdea, deleteIdea, type Idea } from "@/src/api/ideas";
+import { ApiError } from "@/src/api/client";
 import { showToast } from "@/src/components/Toast";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
@@ -103,8 +104,17 @@ export default function InicioScreen() {
       setIdeas((prev) => [idea, ...prev]);
       setText("");
       showToast(t("toast_idea_saved"));
-    } catch {
-      await enqueueIdea(text.trim());
+    } catch (err) {
+      if (err instanceof ApiError) {
+        showToast(apiErrorMessage(err, t));
+        return;
+      }
+      try {
+        await enqueueIdea(text.trim(), err);
+      } catch (queueError) {
+        showToast(apiErrorMessage(queueError, t));
+        return;
+      }
       setText("");
       showToast(t("toast_idea_saved_offline"));
       void refreshQueue();
