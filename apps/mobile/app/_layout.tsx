@@ -72,7 +72,7 @@ export default function RootLayout() {
   if (!fontsLoaded) {
     return (
       <SafeAreaProvider>
-        <StatusBar style="dark" backgroundColor={colors.paper} />
+        <StatusBar style="dark" />
         <View
           style={{
             flex: 1,
@@ -89,7 +89,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" backgroundColor={colors.paper} />
+      <StatusBar style="dark" />
       <AuthGate>
         <Stack
           screenOptions={{

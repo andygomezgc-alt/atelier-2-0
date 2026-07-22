@@ -70,7 +70,7 @@ export function ChoiceSheet<T extends string>({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(20,17,15,0.5)" },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(20,17,15,0.5)" },
   center: {
     flex: 1,
     alignItems: "center",
