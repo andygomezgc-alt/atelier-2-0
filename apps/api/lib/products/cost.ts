@@ -272,9 +272,16 @@ export function computeRecipeCost(input: RecipeCostInput): RecipeCostBreakdown {
   const portions = input.portions && input.portions > 0 ? input.portions : 1;
   const perPortionCents =
     totalCents !== null ? Math.round(totalCents / portions) : null;
+  // Food cost POR RACIÓN (decisión de producto): `salePriceCents` es el PVP de
+  // UNA porción, como en cualquier restaurante. El % compara el coste POR RACIÓN
+  // contra ese PVP, no el coste de la tanda entera (que inflaba el % ×porciones).
+  // Base sobre totalCents/(portions*salePriceCents) y NO perPortionCents/salePrice
+  // para no arrastrar el redondeo a centavo de perPortionCents.
+  // Ej.: receta 4 porciones, coste total 20€ (2000c), PVP ración 10€ (1000c)
+  //      → 2000/(4*1000) = 0,5 → 50%.
   const foodCostPct =
     totalCents !== null && input.salePriceCents && input.salePriceCents > 0
-      ? Math.round((totalCents / input.salePriceCents) * 100)
+      ? Math.round((totalCents / (portions * input.salePriceCents)) * 100)
       : null;
 
   return {

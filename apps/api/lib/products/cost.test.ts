@@ -297,7 +297,32 @@ describe("computeRecipeCost — buckets", () => {
     expect(r.missingPriceCount).toBe(1);
   });
 
-  it("portions + salePrice → perPortion + foodCostPct", () => {
+  it("portions + salePrice → perPortion + foodCostPct (food cost POR RACIÓN)", () => {
+    // Ejemplo canónico de la decisión de producto: receta de 4 porciones,
+    // coste total 20€ (2000c), PVP POR RACIÓN 10€ (1000c).
+    // Coste por ración = 2000/4 = 500c (5€). Food cost = 5€/10€ = 50%.
+    // Base: totalCents/(portions*salePriceCents) = 2000/(4*1000) = 0,5 → 50%.
+    // (Con la fórmula vieja totalCents/salePriceCents daba 2000/1000 = 200%.)
+    const r = computeRecipeCost({
+      ingredients: [
+        ing({
+          qty: 2,
+          unit: "kg",
+          productOverrides: { precioCompra: 1000, mermaPct: 0, unidadCompra: "kg" },
+        }),
+      ],
+      portions: 4,
+      salePriceCents: 1000,
+    });
+    expect(r.totalCents).toBe(2000);
+    expect(r.perPortionCents).toBe(500);
+    expect(r.foodCostPct).toBe(50);
+  });
+
+  it("foodCostPct usa totalCents/(portions*salePrice), no perPortionCents redondeado", () => {
+    // total 1000c, 7 porciones, PVP ración 200c.
+    // Correcto (sin arrastrar redondeo): 1000/(7*200) = 0,714285 → 71%.
+    // Si se calculara desde perPortionCents=round(1000/7)=143 → 143/200 = 71,5 → 72% (mal).
     const r = computeRecipeCost({
       ingredients: [
         ing({
@@ -306,11 +331,11 @@ describe("computeRecipeCost — buckets", () => {
           productOverrides: { precioCompra: 1000, mermaPct: 0, unidadCompra: "kg" },
         }),
       ],
-      portions: 4,
-      salePriceCents: 4000,
+      portions: 7,
+      salePriceCents: 200,
     });
     expect(r.totalCents).toBe(1000);
-    expect(r.perPortionCents).toBe(250);
-    expect(r.foodCostPct).toBe(25);
+    expect(r.perPortionCents).toBe(143);
+    expect(r.foodCostPct).toBe(71);
   });
 });
