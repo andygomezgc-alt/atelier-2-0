@@ -53,7 +53,12 @@ async function getMock() {
   return mod.default;
 }
 
-import { parseSseEvent, streamMessage, StreamTimeoutError } from "../conversations";
+import {
+  parseSseEvent,
+  streamMessage,
+  StreamInterruptedError,
+  StreamTimeoutError,
+} from "../conversations";
 
 afterEach(async () => {
   const M = await getMock();
@@ -115,14 +120,55 @@ describe("streamMessage", () => {
     expect(M.lastInstance.closed).toBe(true);
   });
 
-  it("resolves with accumulated text on transport-end after deltas (no explicit done)", async () => {
+  it("rejects with the partial text on transport-end after deltas (no explicit done)", async () => {
     const M = await getMock();
     const onDelta = vi.fn();
     const promise = streamMessage("conv-1", "hi", "sonnet", onDelta);
+    const assertion = promise.catch((error: unknown) => {
+      expect(error).toBeInstanceOf(StreamInterruptedError);
+      expect(error).toMatchObject({ partialText: "part" });
+    });
     await new Promise((r) => setImmediate(r));
     M.lastInstance.emit("message", { type: "message", data: '{"type":"delta","text":"part"}' });
     M.lastInstance.emit("error", { type: "error", xhrStatus: 200, message: "" });
-    expect(await promise).toBe("part");
+    await assertion;
+    expect(M.lastInstance.closed).toBe(true);
+  });
+
+  it("reuses the same clientMessageId when the logical send is retried", async () => {
+    const M = await getMock();
+    const clientMessageId = "client-1712345678-abcd";
+
+    const first = streamMessage(
+      "conv-1",
+      "hi",
+      "sonnet",
+      vi.fn(),
+      undefined,
+      undefined,
+      clientMessageId,
+    );
+    await new Promise((r) => setImmediate(r));
+    const firstBody = JSON.parse(M.constructorArgs?.options.body ?? "{}");
+    M.lastInstance.emit("message", { type: "message", data: '{"type":"done"}' });
+    await first;
+
+    const retry = streamMessage(
+      "conv-1",
+      "hi",
+      "sonnet",
+      vi.fn(),
+      undefined,
+      undefined,
+      clientMessageId,
+    );
+    await new Promise((r) => setImmediate(r));
+    const retryBody = JSON.parse(M.constructorArgs?.options.body ?? "{}");
+    M.lastInstance.emit("message", { type: "message", data: '{"type":"done"}' });
+    await retry;
+
+    expect(firstBody.clientMessageId).toBe(clientMessageId);
+    expect(retryBody.clientMessageId).toBe(clientMessageId);
   });
 
   it("rejects with StreamTimeoutError when no events arrive in window", async () => {

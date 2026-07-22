@@ -46,6 +46,10 @@ import { apiErrorMessage } from "@/src/lib/api-error";
 
 type ModelKey = "haiku" | "sonnet" | "opus";
 
+function createClientMessageId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 const MODEL_LABEL_KEYS: Record<ModelKey, TranslationKey> = {
   haiku: "model_haiku",
   sonnet: "model_sonnet",
@@ -218,7 +222,11 @@ export default function AsistenteScreen() {
   const [structuring, setStructuring] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [streamShown, setStreamShown] = useState("");
-  const [streamError, setStreamError] = useState<{ content: string; model: ModelKey } | null>(null);
+  const [streamError, setStreamError] = useState<{
+    content: string;
+    model: ModelKey;
+    clientMessageId: string;
+  } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -373,7 +381,7 @@ export default function AsistenteScreen() {
     return conv.id;
   }, [conversationId, ideaId, model, hasRestaurant]);
 
-  async function runStream(text: string, modelToUse: ModelKey) {
+  async function runStream(text: string, modelToUse: ModelKey, clientMessageId: string) {
     const gen = streamGenRef.current;
     setStreaming(true);
     resetStream();
@@ -401,6 +409,7 @@ export default function AsistenteScreen() {
         },
         ac.signal,
         previewHistory,
+        clientMessageId,
       );
       if (gen !== streamGenRef.current) return;
       const finalText = full || streamTargetRef.current;
@@ -435,7 +444,8 @@ export default function AsistenteScreen() {
       // reintento, conservando el texto del chef. Antes solo StreamTimeoutError
       // lo hacía; el resto caía a un toast fugaz y el mensaje ya se había borrado
       // del input — había que recordarlo y reescribirlo.
-      setStreamError({ content: text, model: modelToUse });
+      setStreamError({ content: text, model: modelToUse, clientMessageId });
+      showToast(apiErrorMessage(err, t));
     } finally {
       if (abortRef.current === ac) abortRef.current = null;
       // Generación vieja = la idea cambió y ya reseteó este estado para el chat
@@ -452,15 +462,16 @@ export default function AsistenteScreen() {
     if (!text || streaming) return;
     tapLight();
     setInput("");
+    const clientMessageId = createClientMessageId();
 
     const userMsg: ChatMessage = {
-      id: `local-${Date.now()}`,
+      id: `local-${clientMessageId}`,
       role: "user",
       content: text,
       createdAt: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, userMsg]);
-    await runStream(text, model);
+    await runStream(text, model, clientMessageId);
   }
 
   function handleMic() {
@@ -475,7 +486,7 @@ export default function AsistenteScreen() {
 
   async function retryStream() {
     if (!streamError || streaming) return;
-    await runStream(streamError.content, streamError.model);
+    await runStream(streamError.content, streamError.model, streamError.clientMessageId);
   }
 
   // Sin restaurante, ensureConversationForSave hace lazy-create + crea

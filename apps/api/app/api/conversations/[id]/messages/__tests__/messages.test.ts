@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 // Mocks elevados (el factory de vi.mock se iza sobre los consts).
-const { db, guard, quota, anthro, streamMock } = vi.hoisted(() => {
+const { db, guard, quota, anthro, streamMock, PrismaClientKnownRequestError } = vi.hoisted(() => {
   const db = {
     conversation: { findUnique: vi.fn() },
     message: { create: vi.fn(), findMany: vi.fn() },
@@ -29,10 +29,29 @@ const { db, guard, quota, anthro, streamMock } = vi.hoisted(() => {
     constructor(_opts: unknown) {}
   }
   class APIUserAbortError extends Error {}
-  return { db, guard, quota, anthro: { Anthropic, APIUserAbortError }, streamMock };
+  class PrismaClientKnownRequestError extends Error {
+    code: string;
+
+    constructor(code: string) {
+      super(code);
+      this.name = "PrismaClientKnownRequestError";
+      this.code = code;
+    }
+  }
+  return {
+    db,
+    guard,
+    quota,
+    anthro: { Anthropic, APIUserAbortError },
+    streamMock,
+    PrismaClientKnownRequestError,
+  };
 });
 
-vi.mock("@atelier/db", () => ({ prisma: db }));
+vi.mock("@atelier/db", () => ({
+  prisma: db,
+  Prisma: { PrismaClientKnownRequestError },
+}));
 vi.mock("@/lib/permissions-guard", () => ({
   requireAuth: guard.requireAuth,
   isNextResponse: guard.isNextResponse,
@@ -101,6 +120,66 @@ beforeEach(() => {
 });
 
 describe("POST chat — persistencia", () => {
+  it("persiste un clientMessageId nuevo junto al mensaje del user", async () => {
+    streamMock.mockReturnValue(anthropicStream(["Listo"], { in: 20, out: 5 }));
+
+    const res = await post({
+      content: "buenas",
+      model: "sonnet",
+      clientMessageId: "client-message-001",
+    });
+    await res.text();
+
+    const userCreate = db.message.create.mock.calls.find(
+      (c) => (c[0] as { data: { role: string } }).data.role === "user",
+    );
+    expect(userCreate?.[0]).toEqual({
+      data: {
+        conversationId: "conv-1",
+        role: "user",
+        content: "buenas",
+        clientMessageId: "client-message-001",
+      },
+    });
+  });
+
+  it("si se repite el clientMessageId ignora P2002 y vuelve a responder el stream", async () => {
+    const persistedClientIds = new Set<string>();
+    db.message.create.mockImplementation(
+      async ({ data }: { data: { role: string; clientMessageId?: string } }) => {
+        if (data.role === "user" && data.clientMessageId) {
+          if (persistedClientIds.has(data.clientMessageId)) {
+            throw new PrismaClientKnownRequestError("P2002");
+          }
+          persistedClientIds.add(data.clientMessageId);
+        }
+        return {};
+      },
+    );
+    streamMock.mockImplementation(() => anthropicStream(["Listo"], { in: 20, out: 5 }));
+    const body = {
+      content: "buenas",
+      model: "sonnet",
+      clientMessageId: "client-message-duplicate",
+    };
+
+    const first = await post(body);
+    await first.text();
+    const retry = await post(body);
+    const retryStream = await retry.text();
+
+    expect(retry.status).toBe(200);
+    expect(retryStream).toContain('"type":"delta"');
+    expect(retryStream).toContain('"type":"done"');
+    expect(persistedClientIds).toEqual(new Set([body.clientMessageId]));
+    expect(streamMock).toHaveBeenCalledTimes(2);
+    expect(
+      db.message.create.mock.calls.filter(
+        (c) => (c[0] as { data: { role: string } }).data.role === "assistant",
+      ),
+    ).toHaveLength(2);
+  });
+
   it("al completar limpio persiste la respuesta del asistente con sus tokens", async () => {
     streamMock.mockReturnValue(anthropicStream(["Hola ", "chef"], { in: 100, out: 20 }));
 

@@ -7,9 +7,19 @@ const BASE = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 
 const STREAM_INACTIVITY_MS = 35_000;
 
-export class StreamTimeoutError extends Error {
-  constructor() {
-    super("stream_timeout");
+export class StreamInterruptedError extends Error {
+  constructor(
+    message: string,
+    readonly partialText: string,
+  ) {
+    super(message);
+    this.name = "StreamInterruptedError";
+  }
+}
+
+export class StreamTimeoutError extends StreamInterruptedError {
+  constructor(partialText = "") {
+    super("stream_timeout", partialText);
     this.name = "StreamTimeoutError";
   }
 }
@@ -124,6 +134,7 @@ export async function streamMessage(
   onDelta: (delta: string) => void,
   signal?: AbortSignal,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
+  clientMessageId?: string,
 ): Promise<string> {
   const token = await SecureStore.getItemAsync(TOKEN_KEY);
 
@@ -143,6 +154,7 @@ export async function streamMessage(
     const pathSegment = conversationId ?? "preview";
     const body: Record<string, unknown> = { content, model };
     if (!conversationId && history) body.history = history;
+    if (clientMessageId) body.clientMessageId = clientMessageId;
 
     const es = new EventSource(`${BASE}/api/conversations/${pathSegment}/messages`, {
       method: "POST",
@@ -170,7 +182,7 @@ export async function streamMessage(
       if (inactivityTimer) clearTimeout(inactivityTimer);
       inactivityTimer = setTimeout(() => {
         timedOut = true;
-        settle(() => reject(new StreamTimeoutError()));
+        settle(() => reject(new StreamTimeoutError(full)));
       }, STREAM_INACTIVITY_MS);
     };
 
@@ -204,22 +216,15 @@ export async function streamMessage(
       } else if (ev.type === "done") {
         settle(() => resolve(full));
       } else if (ev.type === "error") {
-        settle(() => reject(new Error(ev.message)));
+        settle(() => reject(new StreamInterruptedError(ev.message, full)));
       }
     });
 
     es.addEventListener("error", (event) => {
-      // The lib emits "error" both on transport failures and when the server
-      // closes the stream cleanly (xhrState === 4). If we already accumulated
-      // text and the connection just ended, treat it as a successful end.
       if (timedOut || aborted) return; // already settled
       const ev = event as { type: string; message?: string; xhrStatus?: number };
-      if (ev.type === "error" && full.length > 0) {
-        settle(() => resolve(full));
-      } else {
-        const msg = ev.message ?? `stream_error${ev.xhrStatus ? `_${ev.xhrStatus}` : ""}`;
-        settle(() => reject(new Error(msg)));
-      }
+      const msg = ev.message || `stream_error${ev.xhrStatus ? `_${ev.xhrStatus}` : ""}`;
+      settle(() => reject(new StreamInterruptedError(msg, full)));
     });
   });
 }

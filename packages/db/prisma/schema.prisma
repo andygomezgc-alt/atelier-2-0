@@ -252,18 +252,21 @@ model Conversation {
 }
 
 model Message {
-  id             String       @id @default(cuid())
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  role           String
-  content        String       @db.Text
-  createdAt      DateTime     @default(now())
+  id              String       @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  clientMessageId String?
+  role            String
+  content         String       @db.Text
+  createdAt       DateTime     @default(now())
 
   inputTokens  Int?
   outputTokens Int?
   cachedTokens Int?
   latencyMs    Int?
 
+  // PostgreSQL permite múltiples NULL en este unique; no hace falta un índice parcial.
+  @@unique([conversationId, clientMessageId])
   @@index([conversationId, createdAt])
 }
 

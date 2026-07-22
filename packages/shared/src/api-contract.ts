@@ -244,6 +244,7 @@ export const CreateConversationRequestSchema = z.object({
 export const PostMessageRequestSchema = z.object({
   content: z.string().min(1).max(20_000),
   model: ModelSchema.optional(), // overrides conversation default if present
+  clientMessageId: z.string().min(8).max(64).optional(),
   // A-12 — el cliente en modo preview (conversationId="preview") manda el
   // historial acumulado localmente. El server lo usa para que Claude tenga
   // contexto de los turnos anteriores. Ignorado fuera del modo preview.

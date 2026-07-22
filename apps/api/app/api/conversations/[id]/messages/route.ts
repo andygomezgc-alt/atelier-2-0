@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import Anthropic, { APIUserAbortError } from "@anthropic-ai/sdk";
-import { prisma } from "@atelier/db";
+import { prisma, Prisma } from "@atelier/db";
 import { PostMessageRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { buildSystemBlocks, MODEL_IDS, type Msg } from "@/lib/anthropic";
@@ -113,14 +113,27 @@ export async function POST(
     const quota = await reserveAiCall(ctx.userId);
     if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
 
-    // Persist user message before streaming.
-    await prisma.message.create({
-      data: {
-        conversationId,
-        role: "user",
-        content: parse.data.content,
-      },
-    });
+    // Persist user message before streaming. A retry keeps the same
+    // clientMessageId: the unique constraint raises P2002, which means the turn
+    // is already present and we can safely make a fresh model call.
+    try {
+      await prisma.message.create({
+        data: {
+          conversationId,
+          role: "user",
+          content: parse.data.content,
+          ...(parse.data.clientMessageId
+            ? { clientMessageId: parse.data.clientMessageId }
+            : {}),
+        },
+      });
+    } catch (err) {
+      const isDuplicateClientMessage =
+        parse.data.clientMessageId &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002";
+      if (!isDuplicateClientMessage) throw err;
+    }
 
     // Build context: recent recipes + pinned idea.
     const [r, recent, history] = await Promise.all([
