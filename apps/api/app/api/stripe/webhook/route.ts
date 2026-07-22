@@ -25,19 +25,22 @@ function idOf(v: string | { id: string } | null | undefined): string | null {
 }
 
 // Enlazamos el restaurante por subscription primero, customer como fallback.
+// Recibe el cliente `db` (prisma o el tx de la transacción) para leer dentro
+// de la misma transacción que aplica los cambios.
 async function findRestaurantId(
+  db: Prisma.TransactionClient,
   subscriptionId: string | null,
   customerId: string | null,
 ): Promise<{ id: string; graceUntil: Date | null } | null> {
   if (subscriptionId) {
-    const r = await prisma.restaurant.findFirst({
+    const r = await db.restaurant.findFirst({
       where: { stripeSubscriptionId: subscriptionId },
       select: { id: true, graceUntil: true },
     });
     if (r) return r;
   }
   if (customerId) {
-    const r = await prisma.restaurant.findFirst({
+    const r = await db.restaurant.findFirst({
       where: { stripeCustomerId: customerId },
       select: { id: true, graceUntil: true },
     });
@@ -75,6 +78,94 @@ function planDataFromSubscription(
   }
 }
 
+// Aplica el efecto de negocio del evento sobre el cliente `tx`. Corre DENTRO de
+// la transacción de idempotencia: si algo acá tira, la tx revierte también el
+// processedStripeEvent y Stripe reintentará el evento entero.
+// Los casos "sin referencia / restaurante no encontrado / status intermedio" NO
+// tiran: retornan y dejan que la tx confirme (reintentar no ayudaría, el evento
+// queda consumido). Antes estos casos hacían `return NextResponse.json(...)`
+// dentro del switch; ahora son `return` a secas y la respuesta se arma afuera.
+// TODO(ordering): no ordenamos por event.created. Si Stripe entrega un
+// customer.subscription.updated viejo después de uno nuevo, podría pisar el
+// estado con datos rancios. Fuera de alcance de esta ronda de estabilización.
+async function applyEvent(
+  tx: Prisma.TransactionClient,
+  event: Stripe.Event,
+): Promise<void> {
+  switch (event.type) {
+    case "checkout.session.completed": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      // client_reference_id lo mandamos en el Payment Link = restaurantId.
+      const restaurantId = session.client_reference_id;
+      if (!restaurantId) {
+        logger.warn("stripe_checkout_no_reference", { eventId: event.id });
+        return;
+      }
+      const plan = toPlanTier(session.metadata?.plan) ?? "pro";
+      const res = await tx.restaurant.updateMany({
+        where: { id: restaurantId },
+        data: {
+          stripeCustomerId: idOf(session.customer),
+          stripeSubscriptionId: idOf(session.subscription),
+          planStatus: "active",
+          plan,
+          graceUntil: null,
+        },
+      });
+      if (res.count === 0) {
+        logger.warn("stripe_checkout_restaurant_not_found", { restaurantId, eventId: event.id });
+        return;
+      }
+      logger.info("stripe_checkout_completed", { restaurantId, plan });
+      return;
+    }
+
+    case "customer.subscription.updated": {
+      const sub = event.data.object as Stripe.Subscription;
+      const found = await findRestaurantId(tx, sub.id, idOf(sub.customer));
+      if (!found) {
+        logger.warn("stripe_subscription_restaurant_not_found", {
+          subscriptionId: sub.id,
+          eventId: event.id,
+        });
+        return;
+      }
+      const data = planDataFromSubscription(sub, found.graceUntil);
+      if (!data) {
+        // Status intermedio: no cambiamos nada, solo acusamos recibo afuera.
+        return;
+      }
+      await tx.restaurant.update({ where: { id: found.id }, data });
+      logger.info("stripe_subscription_updated", {
+        restaurantId: found.id,
+        planStatus: data.planStatus,
+      });
+      return;
+    }
+
+    case "customer.subscription.deleted": {
+      const sub = event.data.object as Stripe.Subscription;
+      const found = await findRestaurantId(tx, sub.id, idOf(sub.customer));
+      if (!found) {
+        logger.warn("stripe_subscription_restaurant_not_found", {
+          subscriptionId: sub.id,
+          eventId: event.id,
+        });
+        return;
+      }
+      await tx.restaurant.update({
+        where: { id: found.id },
+        data: { planStatus: "canceled" },
+      });
+      logger.info("stripe_subscription_deleted", { restaurantId: found.id });
+      return;
+    }
+
+    default:
+      return;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) {
@@ -95,106 +186,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_signature" }, { status: 400 });
   }
 
-  // P2-6 (auditoría jul 2026): idempotencia por event.id. Un evento
-  // reentregado no debe reprocesarse — podría pisar planStatus con un estado
-  // viejo. `id` es unique: el segundo insert del mismo evento falla con
-  // P2002 y ahí cortamos sin tocar el switch de abajo.
+  // Idempotencia ATÓMICA (estabilización jul 2026). Marcar el evento como
+  // procesado y aplicar el cambio de negocio ocurren en la MISMA transacción:
+  // - Éxito → ambos commitean juntos.
+  // - Fallo de negocio → la tx revierte TAMBIÉN el processedStripeEvent, así que
+  //   el retry de Stripe vuelve a aplicarlo (antes el evento quedaba "consumido"
+  //   por el create previo al switch y el cambio se perdía para siempre).
+  // - Carrera de dos entregas del mismo evento → el segundo create choca con
+  //   P2002, aborta su tx y lo tratamos como duplicado (acuse sin reprocesar).
   try {
-    await prisma.processedStripeEvent.create({ data: { id: event.id } });
-  } catch (err) {
-    const isDuplicate =
-      err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
-    if (isDuplicate) {
+    const outcome = await prisma.$transaction(async (tx) => {
+      const dup = await tx.processedStripeEvent.findUnique({ where: { id: event.id } });
+      if (dup) return "already" as const;
+      await tx.processedStripeEvent.create({ data: { id: event.id } });
+      await applyEvent(tx, event);
+      return "done" as const;
+    });
+
+    if (outcome === "already") {
       logger.info("stripe_webhook_already_processed", {
         eventId: event.id,
         eventType: event.type,
       });
       return NextResponse.json({ received: true, alreadyProcessed: true });
     }
-    logger.error("stripe_webhook_dedup_error", {
-      eventId: event.id,
-      eventType: event.type,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return NextResponse.json({ error: "handler_error" }, { status: 500 });
-  }
-
-  try {
-    switch (event.type) {
-      case "checkout.session.completed": {
-        const session = event.data.object as Stripe.Checkout.Session;
-        // client_reference_id lo mandamos en el Payment Link = restaurantId.
-        const restaurantId = session.client_reference_id;
-        if (!restaurantId) {
-          logger.warn("stripe_checkout_no_reference", { eventId: event.id });
-          return NextResponse.json({ received: true });
-        }
-        const plan = toPlanTier(session.metadata?.plan) ?? "pro";
-        const res = await prisma.restaurant.updateMany({
-          where: { id: restaurantId },
-          data: {
-            stripeCustomerId: idOf(session.customer),
-            stripeSubscriptionId: idOf(session.subscription),
-            planStatus: "active",
-            plan,
-            graceUntil: null,
-          },
-        });
-        if (res.count === 0) {
-          logger.warn("stripe_checkout_restaurant_not_found", { restaurantId, eventId: event.id });
-          return NextResponse.json({ received: true });
-        }
-        logger.info("stripe_checkout_completed", { restaurantId, plan });
-        return NextResponse.json({ received: true });
-      }
-
-      case "customer.subscription.updated": {
-        const sub = event.data.object as Stripe.Subscription;
-        const found = await findRestaurantId(sub.id, idOf(sub.customer));
-        if (!found) {
-          logger.warn("stripe_subscription_restaurant_not_found", {
-            subscriptionId: sub.id,
-            eventId: event.id,
-          });
-          return NextResponse.json({ received: true });
-        }
-        const data = planDataFromSubscription(sub, found.graceUntil);
-        if (!data) {
-          // Status intermedio: no cambiamos nada, solo acusamos recibo.
-          return NextResponse.json({ received: true });
-        }
-        await prisma.restaurant.update({ where: { id: found.id }, data });
-        logger.info("stripe_subscription_updated", {
-          restaurantId: found.id,
-          planStatus: data.planStatus,
-        });
-        return NextResponse.json({ received: true });
-      }
-
-      case "customer.subscription.deleted": {
-        const sub = event.data.object as Stripe.Subscription;
-        const found = await findRestaurantId(sub.id, idOf(sub.customer));
-        if (!found) {
-          logger.warn("stripe_subscription_restaurant_not_found", {
-            subscriptionId: sub.id,
-            eventId: event.id,
-          });
-          return NextResponse.json({ received: true });
-        }
-        await prisma.restaurant.update({
-          where: { id: found.id },
-          data: { planStatus: "canceled" },
-        });
-        logger.info("stripe_subscription_deleted", { restaurantId: found.id });
-        return NextResponse.json({ received: true });
-      }
-
-      default:
-        return NextResponse.json({ received: true });
-    }
+    return NextResponse.json({ received: true });
   } catch (err) {
+    // Carrera concurrente: dos requests del mismo evento pasan el findUnique a la
+    // vez y el segundo create tira P2002 → su tx aborta. Igual que un duplicado:
+    // acusamos recibo sin reprocesar (el otro request ya lo aplicó/lo aplicará).
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      logger.info("stripe_webhook_already_processed", {
+        eventId: event.id,
+        eventType: event.type,
+        concurrent: true,
+      });
+      return NextResponse.json({ received: true, alreadyProcessed: true });
+    }
+    // Fallo real (negocio o infra): la tx revirtió el processedStripeEvent, así
+    // que respondemos 500 y Stripe reintentará el evento entero.
     logger.error("stripe_webhook_handler_error", {
       eventType: event.type,
+      eventId: event.id,
       error: err instanceof Error ? err.message : String(err),
     });
     return NextResponse.json({ error: "handler_error" }, { status: 500 });

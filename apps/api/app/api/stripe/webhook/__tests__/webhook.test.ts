@@ -24,7 +24,9 @@ const { constructEvent, db, log, FakePrismaKnownRequestError } = vi.hoisted(() =
       },
       processedStripeEvent: {
         create: vi.fn(),
+        findUnique: vi.fn(),
       },
+      $transaction: vi.fn(),
     },
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     FakePrismaKnownRequestError,
@@ -59,9 +61,16 @@ beforeEach(() => {
   db.restaurant.updateMany.mockReset();
   db.restaurant.findFirst.mockReset();
   db.restaurant.update.mockReset();
-  // Por defecto el evento nunca se vio: create() pega y el handler sigue al
-  // switch. Los tests de idempotencia lo pisan con un reject puntual.
+  // Por defecto el evento nunca se vio: findUnique() no lo encuentra y create()
+  // pega, así el handler sigue al switch. Los tests de idempotencia lo pisan.
   db.processedStripeEvent.create.mockReset().mockResolvedValue({ id: "evt_x" });
+  db.processedStripeEvent.findUnique.mockReset().mockResolvedValue(null);
+  // $transaction interactivo: ejecuta el callback con `db` como cliente tx (en
+  // el mock tx === db, así tx.restaurant.* son los mismos spies). Si el callback
+  // tira, re-lanza — como Prisma al revertir la transacción.
+  db.$transaction
+    .mockReset()
+    .mockImplementation(async (cb: (tx: typeof db) => unknown) => cb(db));
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test");
 });
 
@@ -164,10 +173,25 @@ describe("POST /api/stripe/webhook", () => {
     expect(db.restaurant.update).not.toHaveBeenCalled();
   });
 
-  // P2-6 (auditoría jul 2026) — idempotencia por event.id.
-  it("event.id repetido (P2002 en processedStripeEvent) → 200 already processed, sin tocar el switch", async () => {
+  // P2-6 (auditoría jul 2026) + estabilización — idempotencia ATÓMICA por event.id.
+  it("evento ya procesado (findUnique lo encuentra) → 200 already processed, sin create ni switch", async () => {
     constructEvent.mockReturnValue({
-      id: "evt_dup",
+      id: "evt_seen",
+      type: "checkout.session.completed",
+      data: { object: { client_reference_id: "rest-1", customer: "cus_123", subscription: "sub_123" } },
+    });
+    db.processedStripeEvent.findUnique.mockResolvedValueOnce({ id: "evt_seen" });
+
+    const res = await post();
+    expect(res.status).toBe(200);
+    expect((await res.json()).alreadyProcessed).toBe(true);
+    expect(db.processedStripeEvent.create).not.toHaveBeenCalled();
+    expect(db.restaurant.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("carrera concurrente: create tira P2002 dentro de la tx → 200 already processed, sin tocar el switch", async () => {
+    constructEvent.mockReturnValue({
+      id: "evt_race",
       type: "checkout.session.completed",
       data: {
         object: {
@@ -178,18 +202,50 @@ describe("POST /api/stripe/webhook", () => {
         },
       },
     });
+    // findUnique no lo ve (otra entrega aún no commiteó) pero el create choca.
     db.processedStripeEvent.create.mockRejectedValueOnce(
       new FakePrismaKnownRequestError("Unique constraint failed", "P2002"),
     );
 
     const res = await post();
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.alreadyProcessed).toBe(true);
+    expect((await res.json()).alreadyProcessed).toBe(true);
     expect(db.restaurant.updateMany).not.toHaveBeenCalled();
   });
 
-  it("error real (no P2002) al insertar processedStripeEvent → 500, sin tocar el switch", async () => {
+  it("negocio falla dentro de la tx → 500 y el evento NO queda consumido; el retry SÍ aplica", async () => {
+    constructEvent.mockReturnValue({
+      id: "evt_retry",
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          client_reference_id: "rest-1",
+          customer: "cus_123",
+          subscription: "sub_123",
+          metadata: { plan: "pro" },
+        },
+      },
+    });
+
+    // 1er intento: el update de negocio tira → la tx revierte también el
+    // processedStripeEvent. En el mock eso se refleja en que findUnique sigue
+    // devolviendo null en el retry (nada quedó consumido).
+    db.restaurant.updateMany.mockRejectedValueOnce(new Error("db down"));
+    const first = await post();
+    expect(first.status).toBe(500);
+
+    // 2º intento (retry de Stripe): ahora el update resuelve → el cambio se
+    // aplica (antes del fix, el evento quedaba consumido y esto no ocurría).
+    db.restaurant.updateMany.mockResolvedValueOnce({ count: 1 });
+    const second = await post();
+    expect(second.status).toBe(200);
+    const body = await second.json();
+    expect(body.received).toBe(true);
+    expect(body.alreadyProcessed).toBeUndefined();
+    expect(db.restaurant.updateMany).toHaveBeenCalledTimes(2);
+  });
+
+  it("error real (no P2002) dentro de la tx → 500, sin dejar el evento consumido", async () => {
     constructEvent.mockReturnValue({
       id: "evt_err",
       type: "checkout.session.completed",
