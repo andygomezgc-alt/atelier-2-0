@@ -21,6 +21,8 @@ Thumbs.db
 *.pull
 .env*.bak*
 .env*.backup
+# chequeo puntual de env de prod — contiene secretos, nunca al repo
+.env.prod-check
 
 # prisma
 packages/db/generated/
@@ -50,3 +52,6 @@ coverage/
 
 # superpowers brainstorm
 .superpowers/
+
+# codex CLI — config/artefactos locales del agente, no van al repo
+.codex/
