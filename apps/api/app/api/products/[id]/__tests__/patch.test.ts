@@ -5,6 +5,7 @@ const { db, ctx } = vi.hoisted(() => ({
   db: {
     product: { findUnique: vi.fn(), updateMany: vi.fn() },
     productPriceHistory: { create: vi.fn() },
+    $transaction: vi.fn(),
   },
   ctx: { userId: "u1", restaurantId: "r1", role: "chef_executive" },
 }));
@@ -58,6 +59,10 @@ beforeEach(() => {
     .mockResolvedValue({ ...EXISTING, name: "Patata nueva" });
   db.product.updateMany.mockReset().mockResolvedValue({ count: 1 });
   db.productPriceHistory.create.mockReset().mockResolvedValue({ id: "h1" });
+  // $transaction interactivo: ejecuta el callback con `db` como tx.
+  db.$transaction
+    .mockReset()
+    .mockImplementation(async (cb: (tx: typeof db) => unknown) => cb(db));
 });
 
 describe("PATCH /api/products/:id", () => {
@@ -83,5 +88,20 @@ describe("PATCH /api/products/:id", () => {
     expect(res.status).toBe(404);
     expect(db.product.findUnique).toHaveBeenCalledOnce();
     expect(db.productPriceHistory.create).not.toHaveBeenCalled();
+  });
+
+  it("cambio de precio → escribe el histórico en la MISMA tx que el update", async () => {
+    const res = await patch({ precioCompra: 250 });
+
+    expect(res.status).toBe(200);
+    // update + histórico dentro de una única transacción.
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(db.product.updateMany).toHaveBeenCalledWith({
+      where: { id: "p1", restaurantId: "r1", deletedAt: null },
+      data: expect.objectContaining({ precioCompra: 250 }),
+    });
+    expect(db.productPriceHistory.create).toHaveBeenCalledWith({
+      data: { productId: "p1", authorId: "u1", precio: 250, unidadCompra: "kg" },
+    });
   });
 });

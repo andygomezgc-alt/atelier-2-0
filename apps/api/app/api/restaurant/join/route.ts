@@ -61,10 +61,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  await prisma.user.update({
-    where: { id: ctx.userId },
+  // Carrera: el check de arriba usa ctx.restaurantId, que viene del token y
+  // puede estar rancio (el usuario ya se unió a otro restaurante en otra
+  // sesión). El guard `restaurantId: null` en el updateMany cierra la carrera
+  // atómicamente: si el usuario ya tiene restaurante, count===0 y respondemos
+  // 409 con el mismo code que el cliente ya traduce (already_in_restaurant).
+  const claimed = await prisma.user.updateMany({
+    where: { id: ctx.userId, restaurantId: null },
     data: { restaurantId: restaurant.id, role: "viewer" },
   });
+  if (claimed.count === 0) {
+    return NextResponse.json(
+      { error: "Already in a restaurant", code: "already_in_restaurant" },
+      { status: 409 },
+    );
+  }
 
   // Devolvemos `role` también: el cliente lo usa con patchLocalUser para
   // actualizar auth-state sin un GET /me extra (A-10 / Ola 0 0.2).

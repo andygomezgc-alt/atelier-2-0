@@ -529,8 +529,9 @@ Estas son las cuentas de las que depende Atelier. Todas están a nombre de Andy.
   (`instrumentation.ts` + `sentry.server.config.ts`; `SENTRY_DSN` en Vercel) y
   Sentry manda un correo a Andy en cada error nuevo de prioridad alta. Panel:
   https://atelier-xm.sentry.io/issues/ — Para probar el circuito:
-  `GET /api/debug-sentry?secret=<CRON_SECRET>` lanza un error de prueba
-  (verificado end-to-end el 2026-07-13). La app móvil todavía NO reporta a
+  `curl -H "Authorization: Bearer <CRON_SECRET>" https://<host>/api/debug-sentry`
+  lanza un error de prueba (el secreto va en el header, ya NO en `?secret=`, que
+  quedaba en logs; verificado end-to-end el 2026-07-13). La app móvil todavía NO reporta a
   Sentry (opcional, requiere horneada).
 
 <details>

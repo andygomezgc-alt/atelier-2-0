@@ -144,47 +144,56 @@ export const PATCH = withAuth(
       }
     }
 
-    const result = await prisma.product.updateMany({
-      where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
-      data: {
-        name: body.name ?? undefined,
-        category: body.category ?? undefined,
-        pezzatura: body.pezzatura === undefined ? undefined : body.pezzatura,
-        pezzaturaMode,
-        pezzaturaMin,
-        pezzaturaMax,
-        unidadCompra: body.unidadCompra ?? undefined,
-        precioCompra: body.precioCompra ?? undefined,
-        precioActualizadoAt: priceChanged ? new Date() : undefined,
-        mermaPct: body.mermaPct ?? undefined,
-        mermaOrigen: nextMermaOrigen,
-        proveedor: body.proveedor === undefined ? undefined : body.proveedor,
-        notas: body.notas === undefined ? undefined : body.notas,
-        estado: body.estado ?? undefined,
-        aliases: body.aliases ?? undefined,
-        criticality: nextCriticality,
-        criticalityManual: nextCriticalityManual,
-      },
-    });
-    if (result.count === 0)
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-    const updated = await prisma.product.findUnique({
-      where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
-    });
-    if (!updated)
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-    if (priceChanged) {
-      await prisma.productPriceHistory.create({
+    // updateMany + fila de histórico en la MISMA transacción: si el precio
+    // cambió, la fila de historial se escribe atómicamente con el update (o no
+    // se escribe ninguna). La tx devuelve el producto ya actualizado, o null si
+    // dejó de ser mutable (borrado / cambió de tenant) entre el findUnique
+    // inicial y la escritura.
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.product.updateMany({
+        where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
         data: {
-          productId: id,
-          authorId: ctx.userId,
-          precio: body.precioCompra!,
-          unidadCompra: updated.unidadCompra,
+          name: body.name ?? undefined,
+          category: body.category ?? undefined,
+          pezzatura: body.pezzatura === undefined ? undefined : body.pezzatura,
+          pezzaturaMode,
+          pezzaturaMin,
+          pezzaturaMax,
+          unidadCompra: body.unidadCompra ?? undefined,
+          precioCompra: body.precioCompra ?? undefined,
+          precioActualizadoAt: priceChanged ? new Date() : undefined,
+          mermaPct: body.mermaPct ?? undefined,
+          mermaOrigen: nextMermaOrigen,
+          proveedor: body.proveedor === undefined ? undefined : body.proveedor,
+          notas: body.notas === undefined ? undefined : body.notas,
+          estado: body.estado ?? undefined,
+          aliases: body.aliases ?? undefined,
+          criticality: nextCriticality,
+          criticalityManual: nextCriticalityManual,
         },
       });
-    }
+      if (result.count === 0) return null;
+
+      if (priceChanged) {
+        await tx.productPriceHistory.create({
+          data: {
+            productId: id,
+            authorId: ctx.userId,
+            precio: body.precioCompra!,
+            // Igual a updated.unidadCompra: el update setea unidadCompra a
+            // body.unidadCompra si vino, si no queda la de existing.
+            unidadCompra: body.unidadCompra ?? existing.unidadCompra,
+          },
+        });
+      }
+
+      return tx.product.findUnique({
+        where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
+      });
+    });
+
+    if (!updated)
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     logger.info("product_updated", {
       productId: id,

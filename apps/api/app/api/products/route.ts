@@ -164,28 +164,46 @@ export const POST = withAuth(
       }
     }
 
-    const product = await prisma.product.create({
-      data: {
-        restaurantId: ctx.restaurantId!,
-        name: body.name,
-        category: body.category,
-        pezzatura: body.pezzatura ?? null,
-        pezzaturaMode,
-        pezzaturaMin,
-        pezzaturaMax,
-        unidadCompra: body.unidadCompra,
-        precioCompra: body.precioCompra,
-        mermaPct: body.mermaPct ?? defaultMermaPct(body.category),
-        mermaOrigen: body.mermaOrigen ?? "sugerida",
-        proveedor: body.proveedor ?? null,
-        notas: body.notas ?? null,
-        estado: body.estado ?? "activo",
-        aliases: body.aliases ?? [],
-        // Si el chef forzó una criticidad en el create (raro), la respetamos
-        // y marcamos manual. Si no, usamos el auto-cálculo.
-        criticality: body.criticality ?? autoCrit,
-        criticalityManual: body.criticality !== undefined,
-      },
+    // Producto + primera fila de histórico de precios en la MISMA transacción:
+    // si el insert del histórico falla, el producto tampoco queda a medias.
+    const product = await prisma.$transaction(async (tx) => {
+      const created = await tx.product.create({
+        data: {
+          restaurantId: ctx.restaurantId!,
+          name: body.name,
+          category: body.category,
+          pezzatura: body.pezzatura ?? null,
+          pezzaturaMode,
+          pezzaturaMin,
+          pezzaturaMax,
+          unidadCompra: body.unidadCompra,
+          precioCompra: body.precioCompra,
+          mermaPct: body.mermaPct ?? defaultMermaPct(body.category),
+          mermaOrigen: body.mermaOrigen ?? "sugerida",
+          proveedor: body.proveedor ?? null,
+          notas: body.notas ?? null,
+          estado: body.estado ?? "activo",
+          aliases: body.aliases ?? [],
+          // Si el chef forzó una criticidad en el create (raro), la respetamos
+          // y marcamos manual. Si no, usamos el auto-cálculo.
+          criticality: body.criticality ?? autoCrit,
+          criticalityManual: body.criticality !== undefined,
+        },
+      });
+
+      // Histórico de precios: primera fila en la creación (si tiene precio > 0).
+      if (created.precioCompra > 0) {
+        await tx.productPriceHistory.create({
+          data: {
+            productId: created.id,
+            authorId: ctx.userId,
+            precio: created.precioCompra,
+            unidadCompra: created.unidadCompra,
+          },
+        });
+      }
+
+      return created;
     });
 
     logger.info("product_created", {
@@ -195,18 +213,6 @@ export const POST = withAuth(
       category: product.category,
       criticality: product.criticality,
     });
-
-    // Histórico de precios: primera fila en la creación (si tiene precio > 0).
-    if (product.precioCompra > 0) {
-      await prisma.productPriceHistory.create({
-        data: {
-          productId: product.id,
-          authorId: ctx.userId,
-          precio: product.precioCompra,
-          unidadCompra: product.unidadCompra,
-        },
-      });
-    }
 
     return NextResponse.json(projectProductDetail(product), { status: 201 });
   },
