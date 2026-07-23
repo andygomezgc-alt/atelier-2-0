@@ -219,6 +219,11 @@ export const es = {
   onboard_btn_google: "Continuar con Google",
   onboard_or: "o",
   error_google_signin: "No pudimos validar tu cuenta de Google. Intenta de nuevo.",
+  error_apple_signin: "No pudimos validar tu cuenta de Apple. Intenta de nuevo.",
+  error_apple_revoke:
+    "Apple no pudo desconectar tu cuenta. No borramos nada; inténtalo de nuevo.",
+  error_apple_revoke_after_stripe:
+    "Apple no pudo desconectar tu cuenta. Tus datos siguen intactos, pero la suscripción del restaurante ya quedó cancelada. Vuelve a intentar la eliminación.",
   error_ai_daily_limit:
     "Llegaste al límite de ayudas de IA por hoy. Vuelve mañana, o usa tu propia clave en Ajustes.",
   error_recipe_extraction_failed:

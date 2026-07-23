@@ -46,6 +46,37 @@ export function loginWithGoogle(
   });
 }
 
+export type AppleSignInChallenge = {
+  nonce: string;
+  state: string;
+};
+
+export type AppleSignInPayload = {
+  identityToken: string;
+  authorizationCode: string;
+  nonce: string;
+  name?: string;
+};
+
+// El server crea un nonce de un solo uso y un state antes de abrir la hoja
+// nativa de Apple. El nonce permite verificar el token y el state protege el
+// regreso a la app contra respuestas que no pertenecen a este intento.
+export function requestAppleSignInChallenge(): Promise<AppleSignInChallenge> {
+  return apiFetch("/api/mobile/auth/apple/nonce", { method: "POST" });
+}
+
+// Apple entrega el identityToken y el authorizationCode al SDK nativo. La app
+// no confía en ellos: los reenvía al server junto con el nonce para su
+// verificación y recibe un accessToken propio de Atelier.
+export function loginWithApple(
+  payload: AppleSignInPayload,
+): Promise<{ accessToken: string; user: MeUser }> {
+  return apiFetch("/api/mobile/auth/apple", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function fetchMe(): Promise<MeUser> {
   return apiFetch("/api/me");
 }

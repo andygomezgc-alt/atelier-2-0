@@ -39,7 +39,7 @@ describe("apiErrorMessage (A-11)", () => {
     expect(apiErrorMessage("string raro", tStub as never)).toBe("[error_network]");
   });
 
-  it("mapea los 9 codes a sus keys i18n", () => {
+  it("mapea los códigos principales a sus keys i18n", () => {
     const cases: Array<[string, string]> = [
       ["email_invalid", "[error_email_invalid]"],
       ["rate_limited", "[error_rate_limited]"],
@@ -50,6 +50,13 @@ describe("apiErrorMessage (A-11)", () => {
       ["invite_rate_limited", "[error_invite_rate_limited]"],
       ["invite_code_invalid", "[error_invite_code_invalid]"],
       ["already_in_restaurant", "[error_already_in_restaurant]"],
+      ["google_signin_failed", "[error_google_signin]"],
+      ["apple_signin_failed", "[error_apple_signin]"],
+      ["apple_revoke_failed", "[error_apple_revoke]"],
+      [
+        "apple_revoke_failed_after_stripe",
+        "[error_apple_revoke_after_stripe]",
+      ],
     ];
     for (const [code, expected] of cases) {
       const err = new ApiError(400, "fallback", code as never);

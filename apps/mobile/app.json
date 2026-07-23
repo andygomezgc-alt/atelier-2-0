@@ -10,6 +10,7 @@
     "ios": {
       "bundleIdentifier": "com.atelierchef.app",
       "supportsTablet": false,
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -26,6 +27,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-apple-authentication",
       "expo-secure-store",
       [
         "expo-image-picker",

@@ -9,6 +9,8 @@ import { deleteRestaurantRecords } from "@/lib/delete-restaurant";
 import { deleteBlobs } from "@/lib/blob";
 import { audit } from "@/lib/audit-log";
 import { logger } from "@/lib/logger";
+import { revokeAppleRefreshToken } from "@/lib/apple-auth";
+import { decryptAppleToken } from "@/lib/apple-token-crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +85,29 @@ function confirmMismatch() {
   );
 }
 
+function lastAdminBlocked() {
+  return NextResponse.json(
+    { error: "Transfiere el rol admin antes de eliminar la cuenta.", code: "last_admin" },
+    { status: 409 },
+  );
+}
+
+async function cancelStripeSubscriptionIdempotently(
+  userId: string,
+  subscriptionId: string,
+): Promise<boolean> {
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? "sk_test_placeholder");
+  const current = await stripe.subscriptions.retrieve(subscriptionId);
+  if (current.status === "canceled") return false;
+
+  await stripe.subscriptions.cancel(
+    subscriptionId,
+    {},
+    { idempotencyKey: `delete-account:${userId}:${subscriptionId}` },
+  );
+  return true;
+}
+
 async function authoredCount(tx: Prisma.TransactionClient, userId: string): Promise<number> {
   const recipes = await tx.recipe.count({ where: { authorId: userId } });
   const ideas = await tx.idea.count({ where: { authorId: userId } });
@@ -138,7 +163,15 @@ export async function DELETE(req: NextRequest) {
 
   const originalUser = await prisma.user.findUnique({
     where: { id: ctx.userId },
-    select: { email: true, photoUrl: true, restaurantId: true },
+    select: {
+      email: true,
+      photoUrl: true,
+      restaurantId: true,
+      accounts: {
+        where: { provider: "apple" },
+        select: { refresh_token: true },
+      },
+    },
   });
   if (!originalUser) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -149,6 +182,8 @@ export async function DELETE(req: NextRequest) {
   const expectedCase: DeleteCase = expectedRestaurantId
     ? (await computeLeaveCase(ctx.userId, expectedRestaurantId)).case
     : "none";
+  // No external side effect (Stripe/Apple) is allowed when deletion is blocked.
+  if (expectedCase === "B") return lastAdminBlocked();
 
   let restaurant:
     | {
@@ -157,6 +192,7 @@ export async function DELETE(req: NextRequest) {
         menuStyleRefUrl: string | null;
       }
     | null = null;
+  let stripeCanceledNow = false;
 
   if (expectedCase === "C" && expectedRestaurantId) {
     restaurant = await prisma.restaurant.findUnique({
@@ -167,12 +203,21 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (restaurant.stripeSubscriptionId) {
-      const pre = await computeLeaveCase(ctx.userId, expectedRestaurantId);
-      if (pre.case !== "C") return deleteCaseChanged();
+  }
+
+  // Revalida inmediatamente antes de cualquier llamada externa. No elimina la
+  // imposibilidad teórica de una carrera, pero evita efectos si el caso ya cambió.
+  if (expectedRestaurantId) {
+    const preExternal = await computeLeaveCase(ctx.userId, expectedRestaurantId);
+    if (preExternal.case !== expectedCase) return deleteCaseChanged();
+  }
+
+  if (expectedCase === "C" && expectedRestaurantId && restaurant?.stripeSubscriptionId) {
       try {
-        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? "sk_test_placeholder");
-        await stripe.subscriptions.cancel(restaurant.stripeSubscriptionId);
+        stripeCanceledNow = await cancelStripeSubscriptionIdempotently(
+          ctx.userId,
+          restaurant.stripeSubscriptionId,
+        );
       } catch (err) {
         logger.error("delete_account_stripe_cancel_failed", {
           restaurantId: expectedRestaurantId,
@@ -187,7 +232,31 @@ export async function DELETE(req: NextRequest) {
           { status: 502 },
         );
       }
+  }
+
+  // Apple asks apps that offer in-app deletion to revoke Sign in with Apple
+  // tokens. Do this before deleting Account rows so a failure is recoverable.
+  try {
+    for (const account of originalUser.accounts) {
+      if (!account.refresh_token) throw new Error("apple_refresh_token_missing");
+      await revokeAppleRefreshToken(decryptAppleToken(account.refresh_token));
     }
+  } catch (err) {
+    logger.error("delete_account_apple_revoke_failed", {
+      userId: ctx.userId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      {
+        error: stripeCanceledNow
+          ? "No se pudo desconectar la cuenta de Apple. Tus datos siguen intactos, pero la suscripción ya quedó cancelada. Inténtalo de nuevo."
+          : "No se pudo desconectar la cuenta de Apple; no se borraron tus datos. Inténtalo de nuevo.",
+        code: stripeCanceledNow
+          ? "apple_revoke_failed_after_stripe"
+          : "apple_revoke_failed",
+      },
+      { status: 502 },
+    );
   }
 
   const outcome = await withSerializableRetry(async (tx) => {
@@ -195,19 +264,16 @@ export async function DELETE(req: NextRequest) {
       where: { id: ctx.userId },
       select: { id: true, email: true, role: true, restaurantId: true },
     });
-    if (!user) return { missing: true, mismatch: false, blocked: false, confirmMismatch: false };
+    if (!user) return { missing: true, mismatch: false, confirmMismatch: false };
 
     const actualCase: DeleteCase = user.restaurantId
       ? (await computeLeaveCase(user.id, user.restaurantId, tx)).case
       : "none";
     if (actualCase !== expectedCase || user.restaurantId !== expectedRestaurantId) {
-      return { missing: false, mismatch: true, blocked: false, confirmMismatch: false };
+      return { missing: false, mismatch: true, confirmMismatch: false };
     }
     if (user.email !== parse.data.confirmEmail) {
-      return { missing: false, mismatch: false, blocked: false, confirmMismatch: true };
-    }
-    if (actualCase === "B") {
-      return { missing: false, mismatch: false, blocked: true, confirmMismatch: false };
+      return { missing: false, mismatch: false, confirmMismatch: true };
     }
 
     if (actualCase === "C" && user.restaurantId) {
@@ -230,7 +296,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     await tx.verificationToken.deleteMany({ where: { identifier: originalUser.email } });
-    return { missing: false, mismatch: false, blocked: false, confirmMismatch: false };
+    return { missing: false, mismatch: false, confirmMismatch: false };
   });
 
   if (outcome.missing) {
@@ -238,12 +304,6 @@ export async function DELETE(req: NextRequest) {
   }
   if (outcome.mismatch) return deleteCaseChanged();
   if (outcome.confirmMismatch) return confirmMismatch();
-  if (outcome.blocked) {
-    return NextResponse.json(
-      { error: "Transfiere el rol admin antes de eliminar la cuenta.", code: "last_admin" },
-      { status: 409 },
-    );
-  }
 
   await deleteBlobs([
     originalUser.photoUrl,

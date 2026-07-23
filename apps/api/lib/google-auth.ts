@@ -9,6 +9,7 @@ const GOOGLE_JWKS = createRemoteJWKSet(
 const GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"];
 
 export type GoogleProfile = {
+  subject: string;
   email: string;
   name: string | null;
   picture: string | null;
@@ -30,6 +31,8 @@ export function googleAudiences(): string[] {
  * y email_verified. Lanza Error con mensaje-código.
  */
 export function extractGoogleProfile(payload: JWTPayload): GoogleProfile {
+  const subject = typeof payload.sub === "string" ? payload.sub.trim() : "";
+  if (!subject) throw new Error("google_subject_missing");
   const email =
     typeof payload.email === "string" ? payload.email.toLowerCase().trim() : "";
   if (!email) throw new Error("google_no_email");
@@ -40,7 +43,7 @@ export function extractGoogleProfile(payload: JWTPayload): GoogleProfile {
     typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : null;
   const picture =
     typeof payload.picture === "string" && payload.picture ? payload.picture : null;
-  return { email, name, picture };
+  return { subject, email, name, picture };
 }
 
 /**
@@ -54,6 +57,8 @@ export async function verifyGoogleIdToken(idToken: string): Promise<GoogleProfil
   const { payload } = await jwtVerify(idToken, GOOGLE_JWKS, {
     issuer: GOOGLE_ISSUERS,
     audience,
+    algorithms: ["RS256"],
+    requiredClaims: ["sub", "iat", "exp"],
   });
   return extractGoogleProfile(payload);
 }

@@ -16,6 +16,32 @@ Ruta decidida el 16-jul-2026: los chefs del pilot son todos iPhone; Play Store p
 
 ⚠️ **`com.atelier.app` NO estaba disponible en Apple** (los bundle ID son únicos mundialmente; ya pertenece a otra cuenta). De ahí el cambio a `com.atelierchef.app` solo en iOS. El **cliente OAuth "Atelier iOS" de Google Cloud** se actualizó a ese bundle — si algún día vuelve a cambiar, hay que actualizarlo también o el login con Google falla solo en iPhone.
 
+## Sign in with Apple — preparación obligatoria antes del próximo build
+
+El acceso con Apple necesita dos elementos distintos: la **capacidad de la app iOS** y una **clave privada del servidor**. La ASC API Key que ya se usa para subir builds a App Store Connect no necesariamente está habilitada para Sign in with Apple y no debe darse por válida solo porque también sea un archivo `.p8`.
+
+### 1. Activar la capacidad y renovar el perfil
+
+1. En [Apple Developer → Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/identifiers/list), abrir el App ID explícito **`com.atelierchef.app`**.
+2. Activar **Sign in with Apple**, configurarlo como App ID principal y guardar.
+3. Crear una **Key nueva y dedicada** con Sign in with Apple habilitado y asociarla a `com.atelierchef.app`. Anotar su Key ID y descargar el `.p8`: Apple permite descargarlo una sola vez.
+4. Regenerar el perfil **App Store** de `com.atelierchef.app` con el certificado de distribución vigente. El perfil actual se creó antes de activar esta capacidad y, por tanto, no la contiene.
+5. Reemplazar `C:\Users\Utente\Desktop\atelier-secretos\atelier.mobileprovision` por el nuevo. `scripts/rebake-mobile.sh` lo copiará a `apps/mobile/certs/atelier.mobileprovision` durante el siguiente horneado. No subir al repositorio ni el perfil ni el `.p8`.
+
+### 2. Configurar los secretos del servidor
+
+Agregar estas variables en el entorno del servidor (Vercel Production y cualquier Preview donde se vaya a probar). Son secretos del backend: **ninguna** debe llevar el prefijo `EXPO_PUBLIC_` ni entrar en el bundle móvil.
+
+| Variable | Qué contiene |
+|---|---|
+| `APPLE_CLIENT_ID` | `com.atelierchef.app` |
+| `APPLE_TEAM_ID` | `TU6284T7J8` |
+| `APPLE_KEY_ID` | El ID de la Key dedicada a Sign in with Apple |
+| `APPLE_PRIVATE_KEY` | El contenido completo del `.p8`, conservando sus saltos de línea (o usando `\n` si el proveedor lo exige) |
+| `APPLE_TOKEN_ENCRYPTION_KEY` | Una clave nueva, aleatoria e independiente de 32 bytes en base64, usada para cifrar los tokens de Apple almacenados |
+
+El `.p8` dedicado debe quedar también en `atelier-secretos` como copia local protegida, pero no sustituye a la ASC API Key: ambas cumplen funciones diferentes. Después de cargar o cambiar estas variables hay que volver a desplegar el servidor.
+
 ## Fase 2 — Inscripción Apple (hecha)
 
 1. **Apple ID** en [account.apple.com](https://account.apple.com) con verificación en dos pasos.
@@ -30,8 +56,8 @@ Ruta decidida el 16-jul-2026: los chefs del pilot son todos iPhone; Play Store p
 
 ```
 apps/mobile/credentials.json          <- gitignoreado
-apps/mobile/ios/certs/dist.p12        <- gitignoreado (pass: ver NOTAS-ios.txt)
-apps/mobile/ios/certs/atelier.mobileprovision
+apps/mobile/certs/dist.p12            <- gitignoreado (pass: ver NOTAS-ios.txt)
+apps/mobile/certs/atelier.mobileprovision
 ```
 
 con `"credentialsSource": "local"` en el perfil `testflight` de `eas.json`. Eso salta `SetUpDistributionCertificate`, que era donde moría.
@@ -62,7 +88,7 @@ npx eas-cli submit --platform ios --profile testflight --id <buildId> --non-inte
 
 1. El build aparece en App Store Connect → TestFlight en ~15-30 min tras el submit.
 2. **Testers internos** (tu propio Apple ID + hasta 100): disponibles al instante, sin revisión.
-3. **Testers externos** (los chefs): crear un grupo, añadir emails **o activar el link público**; la primera build externa pasa la **revisión beta de Apple (~1 día)**. Datos que pedirá: descripción beta, email de contacto, y si el login lo requiere, una **cuenta demo** (tenemos magic link — basta explicar el flujo o dar un email de prueba accesible).
+3. **Testers externos** (los chefs): crear un grupo, añadir emails **o activar el link público**; la primera build externa pasa la **revisión beta de Apple (~1 día)**. Datos que pedirá: descripción beta, email de contacto y una explicación clara de que el acceso se hace con Apple o Google. Si Apple exige una cuenta demo, hay que preparar una accesible al revisor en vez de mencionar el antiguo magic link, que ya no aparece en la pantalla.
 4. Las builds de TestFlight caducan a los **90 días** (vs 14 del APK interno de Android).
 5. ⚠️ **DSA / operador comercial:** App Store Connect muestra un aviso de la normativa europea — antes de distribuir en la UE hay que declarar el *trader status*. Para TestFlight normalmente no bloquea; para publicar en la App Store sí. Enlaza con la partita IVA pendiente. Es una declaración legal de Andy: nadie la rellena por él.
 
@@ -70,8 +96,12 @@ npx eas-cli submit --platform ios --profile testflight --id <buildId> --non-inte
 
 Primer tester: chef de confianza (¿Kokoo?). Checklist de humo en su teléfono:
 
-- [ ] Login con magic link **abriendo el email en Mail de iOS** (deep link `atelier://` de vuelta)
 - [ ] Login con Google
+- [ ] Primer login con Apple eligiendo **Compartir mi correo**: entra en la cuenta correcta y conserva el nombre recibido
+- [ ] Primer login con Apple eligiendo **Ocultar mi correo**: entra correctamente con la dirección privada de retransmisión de Apple
+- [ ] Cerrar sesión y hacer un **segundo login con Apple** en ambos casos: debe funcionar aunque Apple ya no vuelva a enviar el nombre
+- [ ] Cancelar voluntariamente el diálogo de Apple: vuelve al login sin mostrar un error engañoso ni dejar la pantalla bloqueada
+- [ ] Eliminar desde la app una cuenta creada con Apple: termina la sesión, borra la cuenta y permite volver a autorizar Apple después
 - [ ] Foto-receta con la cámara (permiso + extracción)
 - [ ] Dictado al asistente (permiso micrófono)
 - [ ] Exportar/compartir un PDF (share sheet de iOS)
@@ -107,7 +137,7 @@ Hace: sincroniza el clon de horneado con `origin/main` → `pnpm install` → re
 
 - **Link público (chefs iPhone):** https://testflight.apple.com/join/kY83jmnk — grupo externo "Chefs". ⚠️ Los externos solo pueden instalar DESPUÉS de que Apple apruebe la primera build en la **revisión beta** (falta el teléfono de contacto para poder enviarla).
 - **Grupo interno "Equipo" (Andy):** disponible YA sin revisión — instala con TestFlight usando el Apple ID de la cuenta.
-- Info beta en italiano y contacto de la revisión: cargados vía API (email andygomezgc@gmail.com; `demoAccountRequired:false`, con nota explicando el login por código).
+- Info beta en italiano y contacto de la revisión: cargados vía API (email andygomezgc@gmail.com; `demoAccountRequired:false`). Antes del próximo envío, actualizar la nota para explicar el acceso actual con Apple/Google; ya no debe decir “login por código”.
 
 ## App Store real (después del pilot)
 

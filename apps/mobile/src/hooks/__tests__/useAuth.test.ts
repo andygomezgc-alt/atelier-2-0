@@ -10,7 +10,10 @@ import { ApiError, NetworkError, TOKEN_KEY } from "@/src/api/client";
 // que los spies tienen que existir antes. (Patrón del repo.)
 const h = vi.hoisted(() => ({
   asyncStorage: new Map<string, string>(),
-  getItemAsync: vi.fn(async (_k: string): Promise<string | null> => "test-token"),
+  getItemAsync: vi.fn(
+    async (key: string): Promise<string | null> =>
+      key === "atelier.access_token.v1" ? "test-token" : null,
+  ),
   setItemAsync: vi.fn(async () => {}),
   deleteItemAsync: vi.fn(async () => {}),
   getAllKeys: vi.fn(),
@@ -18,7 +21,11 @@ const h = vi.hoisted(() => ({
   fetchMe: vi.fn(),
   devLogin: vi.fn(),
   loginWithGoogle: vi.fn(),
+  loginWithApple: vi.fn(),
+  requestAppleSignInChallenge: vi.fn(),
   requestMagicLink: vi.fn(),
+  getCredentialStateAsync: vi.fn(),
+  addRevokeListener: vi.fn(() => ({ remove: vi.fn() })),
 }));
 
 h.getAllKeys.mockImplementation(async () => [...h.asyncStorage.keys()]);
@@ -43,10 +50,29 @@ vi.mock("@/src/api/auth", () => ({
   fetchMe: h.fetchMe,
   devLogin: h.devLogin,
   loginWithGoogle: h.loginWithGoogle,
+  loginWithApple: h.loginWithApple,
+  requestAppleSignInChallenge: h.requestAppleSignInChallenge,
   requestMagicLink: h.requestMagicLink,
 }));
 
-import { bootstrap, getAuthActions, getAuthState } from "@/src/hooks/useAuth";
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+vi.mock("expo-apple-authentication", () => ({
+  addRevokeListener: h.addRevokeListener,
+  getCredentialStateAsync: h.getCredentialStateAsync,
+  AppleAuthenticationCredentialState: {
+    REVOKED: 0,
+    AUTHORIZED: 1,
+    NOT_FOUND: 2,
+    TRANSFERRED: 3,
+  },
+}));
+
+import {
+  APPLE_USER_ID_KEY,
+  bootstrap,
+  getAuthActions,
+  getAuthState,
+} from "@/src/hooks/useAuth";
 
 const fakeUser = {
   id: "u1",
@@ -63,10 +89,13 @@ const fakeUser = {
 
 describe("useAuth bootstrap (P1-4)", () => {
   beforeEach(() => {
-    h.getItemAsync.mockResolvedValue("test-token");
+    h.getItemAsync.mockImplementation(async (key: string) =>
+      key === TOKEN_KEY ? "test-token" : null,
+    );
     h.deleteItemAsync.mockClear();
     h.setItemAsync.mockClear();
     h.fetchMe.mockReset();
+    h.getCredentialStateAsync.mockReset();
     h.asyncStorage.clear();
     h.getAllKeys.mockClear();
     h.multiRemove.mockClear();
@@ -115,6 +144,34 @@ describe("useAuth bootstrap (P1-4)", () => {
     expect(getAuthState()).toMatchObject({ status: "needs-restaurant" });
   });
 
+  it("credencial Apple revocada → borra la sesión antes de llamar a la API", async () => {
+    h.getItemAsync.mockImplementation(async (key: string) =>
+      key === TOKEN_KEY ? "test-token" : "apple-user-123",
+    );
+    h.getCredentialStateAsync.mockResolvedValueOnce(0);
+
+    await bootstrap();
+
+    expect(h.getCredentialStateAsync).toHaveBeenCalledWith("apple-user-123");
+    expect(h.fetchMe).not.toHaveBeenCalled();
+    expect(h.deleteItemAsync).toHaveBeenCalledWith(TOKEN_KEY);
+    expect(h.deleteItemAsync).toHaveBeenCalledWith(APPLE_USER_ID_KEY);
+    expect(getAuthState()).toEqual({ status: "signed-out" });
+  });
+
+  it("fallo temporal al consultar Apple no expulsa al usuario", async () => {
+    h.getItemAsync.mockImplementation(async (key: string) =>
+      key === TOKEN_KEY ? "test-token" : "apple-user-123",
+    );
+    h.getCredentialStateAsync.mockRejectedValueOnce(new Error("simulator unavailable"));
+    h.fetchMe.mockResolvedValueOnce({ ...fakeUser, restaurantId: null });
+
+    await bootstrap();
+
+    expect(h.fetchMe).toHaveBeenCalledOnce();
+    expect(getAuthState()).toMatchObject({ status: "needs-restaurant" });
+  });
+
   it("signOut borra todas las colas offline y conserva otras claves", async () => {
     h.asyncStorage.set("atelier.idea_queue.v1", "legacy");
     h.asyncStorage.set("atelier.idea_queue.v2.user-a.restaurant-a", "a");
@@ -131,5 +188,6 @@ describe("useAuth bootstrap (P1-4)", () => {
     ]);
     expect([...h.asyncStorage.entries()]).toEqual([["otro.modulo", "keep"]]);
     expect(getAuthState()).toEqual({ status: "signed-out" });
+    expect(h.deleteItemAsync).toHaveBeenCalledWith(APPLE_USER_ID_KEY);
   });
 });

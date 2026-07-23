@@ -212,6 +212,11 @@ export const en: EsDict = {
   onboard_btn_google: "Continue with Google",
   onboard_or: "or",
   error_google_signin: "We couldn't verify your Google account. Please try again.",
+  error_apple_signin: "We couldn't verify your Apple account. Please try again.",
+  error_apple_revoke:
+    "Apple couldn't disconnect your account. Nothing was deleted; please try again.",
+  error_apple_revoke_after_stripe:
+    "Apple couldn't disconnect your account. Your data is still intact, but the restaurant subscription was already canceled. Please retry account deletion.",
   error_ai_daily_limit:
     "You've reached today's AI limit. Come back tomorrow, or use your own key in Settings.",
   error_recipe_extraction_failed:

@@ -16,7 +16,8 @@ type KnownApiErrorCode =
   | "confirm_mismatch"
   | "last_admin"
   | "case_changed"
-  | "stripe_cancel_failed";
+  | "stripe_cancel_failed"
+  | "apple_revoke_failed";
 
 // Mapeo exhaustivo (typecheck force: si se agrega un code en shared sin la
 // key i18n correspondiente, TS rompe).
@@ -31,6 +32,9 @@ const CODE_TO_KEY: Record<KnownApiErrorCode, TranslationKey> = {
   invite_code_invalid: "error_invite_code_invalid",
   already_in_restaurant: "error_already_in_restaurant",
   google_signin_failed: "error_google_signin",
+  apple_signin_failed: "error_apple_signin",
+  apple_revoke_failed: "error_apple_revoke",
+  apple_revoke_failed_after_stripe: "error_apple_revoke_after_stripe",
   ai_daily_limit: "error_ai_daily_limit",
   recipe_extraction_failed: "error_recipe_extraction_failed",
   file_invalid: "error_file_invalid",

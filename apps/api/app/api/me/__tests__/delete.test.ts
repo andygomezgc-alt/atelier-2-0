@@ -29,6 +29,12 @@ const yieldTest = { deleteMany: vi.fn(), count: vi.fn() };
 const productPriceHistory = { deleteMany: vi.fn() };
 const product = { deleteMany: vi.fn() };
 const deleteBlobs = vi.fn();
+const revokeAppleRefreshToken = vi.fn();
+const decryptAppleToken = vi.fn((value: string) => `plain:${value}`);
+const stripeMocks = vi.hoisted(() => ({
+  retrieve: vi.fn(),
+  cancel: vi.fn(),
+}));
 
 const tx = {
   user,
@@ -77,6 +83,13 @@ vi.mock("@atelier/db", () => ({
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => null) }));
 vi.mock("@/lib/blob", () => ({ deleteBlobs }));
+vi.mock("@/lib/apple-auth", () => ({ revokeAppleRefreshToken }));
+vi.mock("@/lib/apple-token-crypto", () => ({ decryptAppleToken }));
+vi.mock("stripe", () => ({
+  default: class Stripe {
+    subscriptions = stripeMocks;
+  },
+}));
 vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -100,6 +113,13 @@ beforeEach(() => {
   }
   deleteBlobs.mockReset();
   deleteBlobs.mockResolvedValue(undefined);
+  revokeAppleRefreshToken.mockReset();
+  revokeAppleRefreshToken.mockResolvedValue(undefined);
+  decryptAppleToken.mockClear();
+  stripeMocks.retrieve.mockReset();
+  stripeMocks.retrieve.mockResolvedValue({ status: "active" });
+  stripeMocks.cancel.mockReset();
+  stripeMocks.cancel.mockResolvedValue({ status: "canceled" });
   transactionMock.mockClear();
 });
 
@@ -138,11 +158,16 @@ function mockAuth(restaurantId: string | null, role = "admin") {
   });
 }
 
-function mockOriginal(restaurantId: string | null, photoUrl: string | null = null) {
+function mockOriginal(
+  restaurantId: string | null,
+  photoUrl: string | null = null,
+  appleRefreshTokens: string[] = [],
+) {
   user.findUnique.mockResolvedValueOnce({
     email: "chef@example.com",
     photoUrl,
     restaurantId,
+    accounts: appleRefreshTokens.map((refresh_token) => ({ refresh_token })),
   });
 }
 
@@ -241,6 +266,7 @@ describe("DELETE /api/me", () => {
     expect(user.update).not.toHaveBeenCalled();
     expect(user.delete).not.toHaveBeenCalled();
     expect(verificationToken.deleteMany).not.toHaveBeenCalled();
+    expect(revokeAppleRefreshToken).not.toHaveBeenCalled();
   });
 
   it("case A anonymizes the user and leaves restaurant content intact", async () => {
@@ -417,6 +443,100 @@ describe("DELETE /api/me", () => {
     expect(verificationToken.deleteMany).toHaveBeenCalledWith({
       where: { identifier: "chef@example.com" },
     });
+  });
+
+  it("revokes the Apple refresh token before deleting the account", async () => {
+    mockAuth(null, "viewer");
+    mockOriginal(null, null, ["encrypted-refresh-token"]);
+    mockTxUser(null, "viewer");
+    recipe.count.mockResolvedValue(0);
+    idea.count.mockResolvedValue(0);
+    conversation.count.mockResolvedValue(0);
+    yieldTest.count.mockResolvedValue(0);
+
+    const token = await makeToken("u1");
+    const res = await meRoute.DELETE(
+      makeReq("/api/me", "DELETE", token, { confirmEmail: "chef@example.com" }),
+    );
+
+    expect(res.status).toBe(204);
+    expect(decryptAppleToken).toHaveBeenCalledWith("encrypted-refresh-token");
+    expect(revokeAppleRefreshToken).toHaveBeenCalledWith(
+      "plain:encrypted-refresh-token",
+    );
+    expect(user.delete).toHaveBeenCalledWith({ where: { id: "u1" } });
+  });
+
+  it("does not delete anything when Apple token revocation fails", async () => {
+    mockAuth(null, "viewer");
+    mockOriginal(null, null, ["encrypted-refresh-token"]);
+    revokeAppleRefreshToken.mockRejectedValueOnce(new Error("apple_unavailable"));
+
+    const token = await makeToken("u1");
+    const res = await meRoute.DELETE(
+      makeReq("/api/me", "DELETE", token, { confirmEmail: "chef@example.com" }),
+    );
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({ code: "apple_revoke_failed" });
+    expect(transactionMock).not.toHaveBeenCalled();
+    expect(user.delete).not.toHaveBeenCalled();
+    expect(user.update).not.toHaveBeenCalled();
+  });
+
+  it("reports partial Stripe cancellation when Apple revocation then fails", async () => {
+    mockAuth("r1");
+    mockOriginal("r1", null, ["encrypted-refresh-token"]);
+    user.findMany.mockResolvedValue(membersC);
+    restaurant.findUnique.mockResolvedValue({
+      stripeSubscriptionId: "sub_123",
+      photoUrl: null,
+      menuStyleRefUrl: null,
+    });
+    revokeAppleRefreshToken.mockRejectedValueOnce(new Error("apple_unavailable"));
+
+    const token = await makeToken("u1");
+    const res = await meRoute.DELETE(
+      makeReq("/api/me", "DELETE", token, { confirmEmail: "chef@example.com" }),
+    );
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({
+      code: "apple_revoke_failed_after_stripe",
+    });
+    expect(stripeMocks.cancel).toHaveBeenCalledWith(
+      "sub_123",
+      {},
+      { idempotencyKey: "delete-account:u1:sub_123" },
+    );
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("treats an already canceled Stripe subscription as an idempotent retry", async () => {
+    mockAuth("r1");
+    mockOriginal("r1");
+    mockTxUser("r1");
+    user.findMany.mockResolvedValue(membersC);
+    restaurant.findUnique.mockResolvedValue({
+      stripeSubscriptionId: "sub_123",
+      photoUrl: null,
+      menuStyleRefUrl: null,
+    });
+    stripeMocks.retrieve.mockResolvedValueOnce({ status: "canceled" });
+    recipe.count.mockResolvedValue(0);
+    idea.count.mockResolvedValue(0);
+    conversation.count.mockResolvedValue(0);
+    yieldTest.count.mockResolvedValue(0);
+
+    const token = await makeToken("u1");
+    const res = await meRoute.DELETE(
+      makeReq("/api/me", "DELETE", token, { confirmEmail: "chef@example.com" }),
+    );
+
+    expect(res.status).toBe(204);
+    expect(stripeMocks.retrieve).toHaveBeenCalledWith("sub_123");
+    expect(stripeMocks.cancel).not.toHaveBeenCalled();
+    expect(user.delete).toHaveBeenCalledWith({ where: { id: "u1" } });
   });
 
   it("returns 409 case_changed when the transaction recompute differs", async () => {

@@ -2,7 +2,15 @@ import { useCallback, useRef, useSyncExternalStore } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "@/src/lib/secure-storage";
 import { TOKEN_KEY, setUnauthorizedHandler, ApiError } from "@/src/api/client";
-import { devLogin, fetchMe, loginWithGoogle, requestMagicLink, type MeUser } from "@/src/api/auth";
+import {
+  devLogin,
+  fetchMe,
+  loginWithApple,
+  loginWithGoogle,
+  requestAppleSignInChallenge,
+  requestMagicLink,
+  type MeUser,
+} from "@/src/api/auth";
 import { clearAll as clearApiCache } from "@/src/api/cache";
 import { setLang } from "@/src/hooks/useI18n";
 
@@ -14,6 +22,10 @@ export type AuthState =
   | { status: "signed-out" }
   | { status: "needs-restaurant"; user: MeUser }
   | { status: "signed-in"; user: MeUser };
+
+// Identificador local y no secreto que Apple entrega de forma estable. Permite
+// comprobar si el usuario revocó el permiso desde Ajustes de iOS.
+export const APPLE_USER_ID_KEY = "atelier.apple_user_id";
 
 // Module-level store so any component can call `getAuthState()` synchronously
 // for non-hook usage (e.g. the API client).
@@ -94,6 +106,7 @@ export function getAuthActions() {
 // (sesión inválida). Idempotente: llamarlo ya deslogueado no hace daño.
 async function signOutImpl(): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => null);
+  await SecureStore.deleteItemAsync(APPLE_USER_ID_KEY).catch(() => null);
   try {
     const keys = await AsyncStorage.getAllKeys();
     const queueKeys = keys.filter((key) => key.startsWith("atelier.idea_queue."));
@@ -133,6 +146,7 @@ async function signInWithGoogleImpl(): Promise<void> {
     const idToken = res.data?.idToken;
     if (!idToken) throw new Error("google_no_id_token");
     const { accessToken, user } = await loginWithGoogle(idToken);
+    await SecureStore.deleteItemAsync(APPLE_USER_ID_KEY);
     await SecureStore.setItemAsync(TOKEN_KEY, accessToken);
     setState(
       user.restaurantId
@@ -146,12 +160,111 @@ async function signInWithGoogleImpl(): Promise<void> {
   }
 }
 
+// Sign in with Apple. El módulo se carga de forma perezosa para que los tests
+// de Node y las plataformas no-iOS no intenten evaluar código nativo.
+async function signInWithAppleImpl(): Promise<void> {
+  const AppleAuthentication = await import("expo-apple-authentication");
+
+  try {
+    const { nonce, state } = await requestAppleSignInChallenge();
+    if (!nonce || !state) throw new Error("apple_invalid_challenge");
+
+    const credential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+      nonce,
+      state,
+    });
+
+    // Aunque el server valida el token y consume el nonce, el state se valida
+    // también en el dispositivo para no aceptar el resultado de otro intento.
+    if (credential.state !== state) throw new Error("apple_state_mismatch");
+
+    const identityToken = credential.identityToken;
+    const authorizationCode = credential.authorizationCode;
+    if (!identityToken) throw new Error("apple_no_identity_token");
+    if (!authorizationCode) throw new Error("apple_no_authorization_code");
+
+    // Apple suele entregar el nombre una sola vez. Nunca lo hacemos obligatorio
+    // para que los accesos posteriores sigan funcionando.
+    const formattedName = credential.fullName
+      ? AppleAuthentication.formatFullName(credential.fullName).trim()
+      : "";
+
+    const { accessToken, user } = await loginWithApple({
+      identityToken,
+      authorizationCode,
+      nonce,
+      ...(formattedName ? { name: formattedName } : {}),
+    });
+    await SecureStore.setItemAsync(APPLE_USER_ID_KEY, credential.user);
+    await SecureStore.setItemAsync(TOKEN_KEY, accessToken);
+    setState(
+      user.restaurantId
+        ? { status: "signed-in", user }
+        : { status: "needs-restaurant", user },
+    );
+  } catch (err) {
+    // Cerrar la hoja de Apple es una decisión normal del usuario, no un error.
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      err.code === "ERR_REQUEST_CANCELED"
+    ) {
+      return;
+    }
+    throw err;
+  }
+}
+
 // Re-exportamos MeUser para los consumidores no-hook (ej. LazyRestaurantHost).
 export type { MeUser };
+
+let appleRevokeListenerPromise: Promise<void> | null = null;
+let appleRevokeSubscription: { remove(): void } | null = null;
+
+function ensureAppleRevokeListener(): Promise<void> {
+  if (appleRevokeSubscription) return Promise.resolve();
+  if (appleRevokeListenerPromise) return appleRevokeListenerPromise;
+  appleRevokeListenerPromise = (async () => {
+    const { Platform } = await import("react-native");
+    if (Platform.OS !== "ios") return;
+    const AppleAuthentication = await import("expo-apple-authentication");
+    appleRevokeSubscription = AppleAuthentication.addRevokeListener(() => {
+      void SecureStore.getItemAsync(APPLE_USER_ID_KEY)
+        .then((appleUserId) => (appleUserId ? signOutImpl() : undefined))
+        .catch(() => undefined);
+    });
+  })().catch(() => {
+    // El listener se volverá a intentar en el próximo bootstrap.
+    appleRevokeSubscription = null;
+    appleRevokeListenerPromise = null;
+  });
+  return appleRevokeListenerPromise;
+}
+
+async function appleCredentialIsAuthorized(appleUserId: string): Promise<boolean | null> {
+  try {
+    const { Platform } = await import("react-native");
+    if (Platform.OS !== "ios") return true;
+    const AppleAuthentication = await import("expo-apple-authentication");
+    const state = await AppleAuthentication.getCredentialStateAsync(appleUserId);
+    return state === AppleAuthentication.AppleAuthenticationCredentialState.AUTHORIZED;
+  } catch {
+    // El simulador y los fallos temporales pueden lanzar: no expulsamos a un
+    // chef por una comprobación inconclusa; el listener y el próximo arranque
+    // volverán a verificarlo.
+    return null;
+  }
+}
 
 // Exportada para el reintento manual (`retryBootstrap`) y para los tests
 // unitarios de P1-4 (fetchMe que rechaza NetworkError vs ApiError 401).
 export async function bootstrap() {
+  await ensureAppleRevokeListener();
   // DEV: if the dev-auth env var is set, skip every login flow and sign in
   // with a fixed test user that auto-gets a Dev Kitchen restaurant. We do this
   // BEFORE checking any stored token so stale sessions from previous magic-link
@@ -164,6 +277,7 @@ export async function bootstrap() {
       // Best-effort persistence — if SecureStore throws on this platform, the
       // in-memory state still advances so the UI doesn't get stuck on login.
       // Next cold start will just dev-login again.
+      await SecureStore.deleteItemAsync(APPLE_USER_ID_KEY).catch(() => null);
       await SecureStore.setItemAsync(TOKEN_KEY, accessToken).catch(() => null);
       console.log("[dev-auth] signed in as", user.email, "restaurant:", user.restaurantName);
       setState(
@@ -177,9 +291,19 @@ export async function bootstrap() {
     }
   }
 
-  const token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
+  const [token, appleUserId] = await Promise.all([
+    SecureStore.getItemAsync(TOKEN_KEY).catch(() => null),
+    SecureStore.getItemAsync(APPLE_USER_ID_KEY).catch(() => null),
+  ]);
   if (!token) {
+    if (appleUserId) {
+      await SecureStore.deleteItemAsync(APPLE_USER_ID_KEY).catch(() => null);
+    }
     setState({ status: "signed-out" });
+    return;
+  }
+  if (appleUserId && (await appleCredentialIsAuthorized(appleUserId)) === false) {
+    await signOutImpl();
     return;
   }
   try {
@@ -240,6 +364,7 @@ export function useAuth() {
 
   const signInWithToken = useCallback(
     async (accessToken: string, user: MeUser): Promise<void> => {
+      await SecureStore.deleteItemAsync(APPLE_USER_ID_KEY);
       await SecureStore.setItemAsync(TOKEN_KEY, accessToken);
       setState(
         user.restaurantId
@@ -252,6 +377,8 @@ export function useAuth() {
 
   const signInWithGoogle = useCallback(signInWithGoogleImpl, []);
 
+  const signInWithApple = useCallback(signInWithAppleImpl, []);
+
   const refreshMe = useCallback(refreshMeImpl, []);
 
   // Local-only merge into the signed-in user — útil tras un PATCH que ya
@@ -263,5 +390,15 @@ export function useAuth() {
 
   const retryBootstrap = useCallback(retryBootstrapImpl, []);
 
-  return { state, sendMagicLink, signInWithGoogle, signInWithToken, refreshMe, patchLocalUser, signOut, retryBootstrap };
+  return {
+    state,
+    sendMagicLink,
+    signInWithApple,
+    signInWithGoogle,
+    signInWithToken,
+    refreshMe,
+    patchLocalUser,
+    signOut,
+    retryBootstrap,
+  };
 }

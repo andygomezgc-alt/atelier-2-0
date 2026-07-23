@@ -27,12 +27,14 @@ describe("extractGoogleProfile", () => {
   it("normaliza email a minúsculas y devuelve name/picture", () => {
     expect(
       extractGoogleProfile({
+        sub: "google-user-123",
         email: "Chef@Cocina.IT",
         email_verified: true,
         name: "Andy Gómez",
         picture: "https://lh3.googleusercontent.com/a/foto",
       }),
     ).toEqual({
+      subject: "google-user-123",
       email: "chef@cocina.it",
       name: "Andy Gómez",
       picture: "https://lh3.googleusercontent.com/a/foto",
@@ -41,24 +43,30 @@ describe("extractGoogleProfile", () => {
 
   it("name y picture son null cuando faltan", () => {
     expect(
+      extractGoogleProfile({ sub: "google-user-123", email: "x@y.com", email_verified: true }),
+    ).toEqual({ subject: "google-user-123", email: "x@y.com", name: null, picture: null });
+  });
+
+  it("rechaza token sin subject permanente", () => {
+    expect(() =>
       extractGoogleProfile({ email: "x@y.com", email_verified: true }),
-    ).toEqual({ email: "x@y.com", name: null, picture: null });
+    ).toThrow("google_subject_missing");
   });
 
   it("rechaza token sin email", () => {
-    expect(() => extractGoogleProfile({ email_verified: true })).toThrow(
+    expect(() => extractGoogleProfile({ sub: "google-user-123", email_verified: true })).toThrow(
       "google_no_email",
     );
   });
 
   it("rechaza email no verificado", () => {
     expect(() =>
-      extractGoogleProfile({ email: "x@y.com", email_verified: false }),
+      extractGoogleProfile({ sub: "google-user-123", email: "x@y.com", email_verified: false }),
     ).toThrow("google_email_unverified");
   });
 
   it("rechaza cuando email_verified no viene", () => {
-    expect(() => extractGoogleProfile({ email: "x@y.com" })).toThrow(
+    expect(() => extractGoogleProfile({ sub: "google-user-123", email: "x@y.com" })).toThrow(
       "google_email_unverified",
     );
   });

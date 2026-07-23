@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@atelier/db";
-import { SignJWT } from "jose";
 import { verifyGoogleIdToken } from "@/lib/google-auth";
 import { logger } from "@/lib/logger";
+import { createMobileSession } from "@/lib/mobile-session";
+import { resolveOAuthIdentity } from "@/lib/oauth-identity";
 
 export const dynamic = "force-dynamic";
-
-function getSecret() {
-  const secret = process.env.MOBILE_JWT_SECRET ?? process.env.NEXTAUTH_SECRET;
-  if (!secret) throw new Error("MOBILE_JWT_SECRET or NEXTAUTH_SECRET is not set");
-  return new TextEncoder().encode(secret);
-}
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -39,53 +33,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const user = await prisma.user.upsert({
-    where: { email: profile.email },
-    update: {},
-    create: {
-      email: profile.email,
-      name: profile.name ?? profile.email.split("@")[0] ?? profile.email,
-      photoUrl: profile.picture,
-    },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      role: true,
-      restaurantId: true,
-      languagePref: true,
-      defaultModel: true,
-      tokenVersion: true,
-      restaurant: { select: { name: true, plan: true, planStatus: true } },
-    },
+  const user = await resolveOAuthIdentity({
+    provider: "google",
+    providerAccountId: profile.subject,
+    email: profile.email,
+    name: profile.name,
+    photoUrl: profile.picture,
   });
-
-  const accessToken = await new SignJWT({
-    sub: user.id,
-    email: user.email,
-    tv: user.tokenVersion,
-  })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setIssuer("atelier-mobile")
-    .setAudience("atelier-api")
-    .setExpirationTime("30d")
-    .sign(getSecret());
 
   logger.info("mobile_google_success", { userId: user.id, email: user.email });
-  return NextResponse.json({
-    accessToken,
-    user: {
-      id: user.id,
-      email: user.email ?? "",
-      name: user.name ?? user.email ?? "",
-      role: user.role ?? "viewer",
-      restaurantId: user.restaurantId,
-      restaurantName: user.restaurant?.name ?? null,
-      plan: user.restaurant?.plan ?? null,
-      planStatus: user.restaurant?.planStatus ?? null,
-      languagePref: user.languagePref ?? "es",
-      defaultModel: user.defaultModel ?? "sonnet",
-    },
-  });
+  return NextResponse.json(await createMobileSession(user));
 }

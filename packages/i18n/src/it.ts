@@ -213,6 +213,11 @@ export const it: EsDict = {
   onboard_btn_google: "Continua con Google",
   onboard_or: "oppure",
   error_google_signin: "Non è stato possibile verificare il tuo account Google. Riprova.",
+  error_apple_signin: "Non è stato possibile verificare il tuo account Apple. Riprova.",
+  error_apple_revoke:
+    "Apple non ha potuto scollegare il tuo account. Non è stato eliminato nulla; riprova.",
+  error_apple_revoke_after_stripe:
+    "Apple non ha potuto scollegare il tuo account. I dati sono ancora intatti, ma l'abbonamento del ristorante è già stato annullato. Riprova a eliminare l'account.",
   error_ai_daily_limit:
     "Hai raggiunto il limite di aiuti IA per oggi. Riprova domani, o usa la tua chiave in Impostazioni.",
   error_recipe_extraction_failed:
