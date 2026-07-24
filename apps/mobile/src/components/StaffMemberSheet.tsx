@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useI18n } from "@/src/hooks/useI18n";
 import { apiFetch } from "@/src/api/client";
 import { showToast } from "./Toast";
@@ -13,6 +13,7 @@ import { apiErrorMessage } from "@/src/lib/api-error";
 type Member = {
   id: string;
   name: string;
+  photoUrl?: string | null;
   role: Role;
 };
 
@@ -86,7 +87,11 @@ export function StaffMemberSheet({ open, member, onClose, onChanged }: Props) {
           <ScrollView contentContainerStyle={styles.content}>
             <View style={styles.hero}>
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{initials}</Text>
+                {member.photoUrl ? (
+                  <Image source={{ uri: member.photoUrl }} style={styles.avatarImg} />
+                ) : (
+                  <Text style={styles.avatarText}>{initials}</Text>
+                )}
               </View>
               <Text style={styles.name}>{member.name}</Text>
             </View>
@@ -150,6 +155,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  avatarImg: { width: 64, height: 64, borderRadius: 32 },
   avatarText: { color: colors.paper, fontFamily: fonts.sans, fontSize: 22, fontWeight: "600" },
   name: {
     fontFamily: fonts.serifItalic,

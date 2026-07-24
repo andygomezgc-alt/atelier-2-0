@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, fonts, fontSizes, spacing } from "@/src/theme";
 
@@ -8,10 +8,13 @@ type Props = {
   onBack?: () => void;
   onAvatar?: () => void;
   initials: string;
+  // Foto de perfil del chef. Cuando existe reemplaza a las iniciales en TODAS
+  // las pantallas (antes solo se veía dentro del ProfileSheet).
+  photoUrl?: string | null;
   right?: React.ReactNode;
 };
 
-export function Header({ title, back, onBack, onAvatar, initials, right }: Props) {
+export function Header({ title, back, onBack, onAvatar, initials, photoUrl, right }: Props) {
   return (
     <View style={styles.root}>
       <View style={styles.side}>
@@ -37,7 +40,11 @@ export function Header({ title, back, onBack, onAvatar, initials, right }: Props
           accessibilityRole="button"
           accessibilityLabel="Profile"
         >
-          <Text style={styles.avatarText}>{initials}</Text>
+          {photoUrl ? (
+            <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
+          ) : (
+            <Text style={styles.avatarText}>{initials}</Text>
+          )}
         </Pressable>
       </View>
     </View>
@@ -89,6 +96,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarPressed: { opacity: 0.85 },
+  avatarImg: { width: 32, height: 32, borderRadius: 16 },
   avatarText: {
     color: colors.paper,
     fontFamily: fonts.sans,
