@@ -3,7 +3,7 @@ import Anthropic, { APIUserAbortError } from "@anthropic-ai/sdk";
 import { prisma, Prisma } from "@atelier/db";
 import { PostMessageRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
-import { buildSystemBlocks, MODEL_IDS, type Msg } from "@/lib/anthropic";
+import { buildMessageBlocks, buildSystemBlocks, MODEL_IDS, type Msg } from "@/lib/anthropic";
 import { reserveAiCall, recordAiTokens, aiQuotaExceededResponse } from "@/lib/ai-quota";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
@@ -225,7 +225,9 @@ export async function POST(
             // con 4096 la receta se cortaría a media respuesta.
             max_tokens: model === "opus" ? 16384 : 4096,
             system,
-            messages,
+            // Breakpoint de caché en el último mensaje: el turno siguiente lee
+            // el hilo previo desde caché en vez de reprocesarlo entero.
+            messages: buildMessageBlocks(messages),
             // Sonnet 5 defaults to effort=high; force low for chat workloads
             // to keep the cost/latency profile. Opus 5 uses its defaults
             // (adaptive thinking + effort=high) so "máxima profundidad" stays

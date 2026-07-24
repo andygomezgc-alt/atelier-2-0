@@ -61,10 +61,17 @@ vi.mock("@/lib/ai-quota", () => ({
   recordAiTokens: quota.recordAiTokens,
   aiQuotaExceededResponse: quota.aiQuotaExceededResponse,
 }));
-vi.mock("@/lib/anthropic", () => ({
-  buildSystemBlocks: () => [{ type: "text", text: "sys" }],
-  MODEL_IDS: { haiku: "h", sonnet: "s", opus: "o" },
-}));
+// buildSystemBlocks queda stubbeado (lee el .md del disco), pero
+// buildMessageBlocks corre de verdad: así el test comprueba que el breakpoint
+// de caché llega al payload y no solo que la ruta llama a un stub.
+vi.mock("@/lib/anthropic", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/anthropic")>("@/lib/anthropic");
+  return {
+    buildSystemBlocks: () => [{ type: "text", text: "sys" }],
+    buildMessageBlocks: actual.buildMessageBlocks,
+    MODEL_IDS: { haiku: "h", sonnet: "s", opus: "o" },
+  };
+});
 vi.mock("@anthropic-ai/sdk", () => ({
   default: anthro.Anthropic,
   APIUserAbortError: anthro.APIUserAbortError,
@@ -224,5 +231,55 @@ describe("POST chat — persistencia", () => {
     expect(body.code).toBe("ai_daily_limit");
     expect(db.message.create).not.toHaveBeenCalled();
     expect(streamMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST chat — payload del modelo", () => {
+  const payload = () => streamMock.mock.calls[0]?.[0] as {
+    model: string;
+    max_tokens: number;
+    messages: { role: string; content: unknown }[];
+  };
+
+  it("manda el hilo con breakpoint de caché en el último mensaje", async () => {
+    db.message.findMany.mockResolvedValue([
+      // La ruta pide desc y revierte: el más nuevo va primero acá.
+      { role: "user", content: "y sin lácteos?" },
+      { role: "assistant", content: "probá con jengibre" },
+      { role: "user", content: "una crema de calabaza" },
+    ]);
+    streamMock.mockReturnValue(anthropicStream(["ok"], { in: 10, out: 2 }));
+
+    await (await post({ content: "y sin lácteos?", model: "sonnet" })).text();
+
+    const { messages } = payload();
+    expect(messages.at(-1)).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "y sin lácteos?", cache_control: { type: "ephemeral" } },
+      ],
+    });
+    // Los anteriores viajan planos: un solo breakpoint, el prefijo es acumulativo.
+    expect(messages.slice(0, -1).map((m) => m.content)).toEqual([
+      "una crema de calabaza",
+      "probá con jengibre",
+    ]);
+  });
+
+  it("le da a Opus presupuesto para pensar + responder sin cortarse", async () => {
+    streamMock.mockReturnValue(anthropicStream(["ok"], { in: 10, out: 2 }));
+
+    await (await post({ content: "buenas", model: "opus" })).text();
+
+    // Opus 5 piensa por defecto y max_tokens cubre pensamiento + texto.
+    expect(payload().max_tokens).toBeGreaterThan(4096);
+  });
+
+  it("sonnet y haiku se quedan en el presupuesto de chat", async () => {
+    streamMock.mockReturnValue(anthropicStream(["ok"], { in: 10, out: 2 }));
+
+    await (await post({ content: "buenas", model: "haiku" })).text();
+
+    expect(payload().max_tokens).toBe(4096);
   });
 });
