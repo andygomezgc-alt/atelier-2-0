@@ -220,14 +220,18 @@ export async function POST(
             // A-01b — antes 2048: las recetas largas (texto visible +
             // bloque <recipe_payload> al final) se cortaban en el cap.
             // Se cobra por tokens generados, no por max; los chats
-            // simples no notan diferencia.
-            max_tokens: 4096,
+            // simples no notan diferencia. Opus 5 piensa por defecto y
+            // max_tokens cubre pensamiento + texto en el mismo presupuesto:
+            // con 4096 la receta se cortaría a media respuesta.
+            max_tokens: model === "opus" ? 16384 : 4096,
             system,
             messages,
-            // Sonnet 4.6 defaults to effort=high; force low for chat workloads
-            // to match Sonnet 4.5 cost/latency profile. Opus uses its default
-            // (high) so "máxima profundidad" stays meaningful. Haiku 4.5 does
-            // not support effort and would 400 if set.
+            // Sonnet 5 defaults to effort=high; force low for chat workloads
+            // to keep the cost/latency profile. Opus 5 uses its defaults
+            // (adaptive thinking + effort=high) so "máxima profundidad" stays
+            // meaningful — el pensamiento no se emite (display=omitted) y el
+            // heartbeat cubre la pausa extra antes del primer delta de texto.
+            // Haiku 4.5 does not support effort and would 400 if set.
             ...(model === "sonnet" && {
               thinking: { type: "disabled" as const },
               output_config: { effort: "low" as const },
