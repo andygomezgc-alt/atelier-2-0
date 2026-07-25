@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -303,6 +304,12 @@ export default function CasaScreen() {
             // así que ni ofrecemos la acción. Deshabilitada y sin chevron.
             const isSelf = s.id === user?.id;
             const rowActionable = canManage && !isSelf;
+            // Mi propia foto sale del auth-state, no de `rs`: el ProfileSheet
+            // vive dentro de esta pantalla, así que al cambiarla `refreshMe` ya
+            // actualizó al usuario mientras `restaurant.staff` sigue con la URL
+            // vieja hasta el próximo reload (Casa no cachea, pero solo recarga
+            // al montar o con pull-to-refresh).
+            const photoUrl = isSelf ? (user?.photoUrl ?? null) : s.photoUrl;
             return (
               <Pressable
                 key={s.id}
@@ -317,7 +324,11 @@ export default function CasaScreen() {
                     s.role === "chef_executive" && styles.staffAvatarChef,
                   ]}
                 >
-                  <Text style={styles.staffAvatarText}>{si}</Text>
+                  {photoUrl ? (
+                    <Image source={{ uri: photoUrl }} style={styles.staffAvatarImg} />
+                  ) : (
+                    <Text style={styles.staffAvatarText}>{si}</Text>
+                  )}
                 </View>
                 <View style={styles.staffMeta}>
                   <Text style={styles.staffName}>{s.name}</Text>
@@ -558,6 +569,9 @@ const styles = StyleSheet.create({
   },
   staffAvatarAdmin: { borderColor: colors.terracota },
   staffAvatarChef: { borderColor: colors.teal },
+  // La foto llena el círculo por dentro del borde: el anillo de color por rol
+  // (admin terracota / chef teal) sigue siendo legible.
+  staffAvatarImg: { width: "100%", height: "100%", borderRadius: 19 },
   staffAvatarText: {
     fontFamily: fonts.sans,
     fontSize: fontSizes.bodySm,

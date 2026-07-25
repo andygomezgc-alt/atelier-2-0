@@ -3,7 +3,7 @@ import Anthropic, { APIUserAbortError } from "@anthropic-ai/sdk";
 import { prisma, Prisma } from "@atelier/db";
 import { PostMessageRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
-import { buildSystemBlocks, MODEL_IDS, type Msg } from "@/lib/anthropic";
+import { buildMessageBlocks, buildSystemBlocks, MODEL_IDS, type Msg } from "@/lib/anthropic";
 import { reserveAiCall, recordAiTokens, aiQuotaExceededResponse } from "@/lib/ai-quota";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
@@ -220,14 +220,20 @@ export async function POST(
             // A-01b — antes 2048: las recetas largas (texto visible +
             // bloque <recipe_payload> al final) se cortaban en el cap.
             // Se cobra por tokens generados, no por max; los chats
-            // simples no notan diferencia.
-            max_tokens: 4096,
+            // simples no notan diferencia. Opus 5 piensa por defecto y
+            // max_tokens cubre pensamiento + texto en el mismo presupuesto:
+            // con 4096 la receta se cortaría a media respuesta.
+            max_tokens: model === "opus" ? 16384 : 4096,
             system,
-            messages,
-            // Sonnet 4.6 defaults to effort=high; force low for chat workloads
-            // to match Sonnet 4.5 cost/latency profile. Opus uses its default
-            // (high) so "máxima profundidad" stays meaningful. Haiku 4.5 does
-            // not support effort and would 400 if set.
+            // Breakpoint de caché en el último mensaje: el turno siguiente lee
+            // el hilo previo desde caché en vez de reprocesarlo entero.
+            messages: buildMessageBlocks(messages),
+            // Sonnet 5 defaults to effort=high; force low for chat workloads
+            // to keep the cost/latency profile. Opus 5 uses its defaults
+            // (adaptive thinking + effort=high) so "máxima profundidad" stays
+            // meaningful — el pensamiento no se emite (display=omitted) y el
+            // heartbeat cubre la pausa extra antes del primer delta de texto.
+            // Haiku 4.5 does not support effort and would 400 if set.
             ...(model === "sonnet" && {
               thinking: { type: "disabled" as const },
               output_config: { effort: "low" as const },

@@ -16,7 +16,7 @@ function loadSystemPrompt(): string {
 export const MODEL_IDS = {
   haiku: "claude-haiku-4-5",
   sonnet: "claude-sonnet-5",
-  opus: "claude-opus-4-7",
+  opus: "claude-opus-5",
 } as const;
 
 type ModelKey = keyof typeof MODEL_IDS;
@@ -78,6 +78,36 @@ export function buildSystemBlocks(
     blocks.push({ type: "text", text: dynamicLines.join("\n") });
   }
   return blocks;
+}
+
+// Caché del hilo. El breakpoint va SOLO en el último mensaje: en el turno
+// siguiente todo lo anterior (bloques de sistema + hilo) se lee desde caché a
+// ~10% del precio en vez de reprocesarse entero. Un breakpoint por mensaje
+// quemaría el tope de 4 por request sin ganar nada — el prefijo es acumulativo.
+//
+// Dos límites conocidos, ninguno rompe nada (si no cachea, no cobra premium):
+//  - Por debajo del mínimo cacheable del modelo no entra y no avisa: 512 tokens
+//    en Opus 5, 1024 en Sonnet 5, 4096 en Haiku 4.5. En Haiku el hilo corto
+//    nunca va a llegar.
+//  - La ruta manda una ventana deslizante de los últimos 20 mensajes. Pasados
+//    esos 20, cada turno tira el más viejo y cambia el prefijo del hilo, así
+//    que desde ahí solo siguen cacheando los bloques de sistema.
+export function buildMessageBlocks(messages: Msg[]) {
+  const last = messages.length - 1;
+  return messages.map((m, i) =>
+    i === last
+      ? {
+          role: m.role,
+          content: [
+            {
+              type: "text" as const,
+              text: m.content,
+              cache_control: { type: "ephemeral" as const },
+            },
+          ],
+        }
+      : { role: m.role, content: m.content },
+  );
 }
 
 export function streamMessage({

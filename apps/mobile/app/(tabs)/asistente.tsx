@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -202,6 +203,10 @@ export default function AsistenteScreen() {
       ? authState.user.name
       : "";
   const userInitials = userName ? initials(userName) : "?";
+  const userPhotoUrl =
+    authState.status === "signed-in" || authState.status === "needs-restaurant"
+      ? authState.user.photoUrl
+      : null;
 
   const langPref: "es" | "it" | "en" =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -621,7 +626,11 @@ export default function AsistenteScreen() {
             onPress={() => setProfileOpen(true)}
             accessibilityLabel={userName}
           >
-            <Text style={styles.avatarText}>{userInitials}</Text>
+            {userPhotoUrl ? (
+              <Image source={{ uri: userPhotoUrl }} style={styles.avatarImg} />
+            ) : (
+              <Text style={styles.avatarText}>{userInitials}</Text>
+            )}
           </Pressable>
         </View>
       </View>
@@ -835,6 +844,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  avatarImg: { width: 32, height: 32, borderRadius: 16 },
   avatarText: {
     fontFamily: fonts.sans,
     fontSize: 11,

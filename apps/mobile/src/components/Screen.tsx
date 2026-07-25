@@ -32,10 +32,9 @@ export function Screen({ title, back, onBack, right, children }: Props) {
   const { state } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
 
-  const userInitials =
-    state.status === "signed-in" || state.status === "needs-restaurant"
-      ? initials(state.user.name)
-      : "?";
+  const signedUser =
+    state.status === "signed-in" || state.status === "needs-restaurant" ? state.user : null;
+  const userInitials = signedUser ? initials(signedUser.name) : "?";
 
   return (
     <SafeAreaView edges={["top"]} style={styles.root}>
@@ -45,6 +44,7 @@ export function Screen({ title, back, onBack, right, children }: Props) {
         onBack={onBack}
         right={right}
         initials={userInitials}
+        photoUrl={signedUser?.photoUrl ?? null}
         onAvatar={() => setProfileOpen(true)}
       />
       <View style={styles.body}>{children}</View>
