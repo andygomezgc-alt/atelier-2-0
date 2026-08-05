@@ -766,11 +766,29 @@ export const MatchProductsRequestSchema = z.object({
   queries: z.array(z.string().min(1).max(500)).max(50),
 });
 
+// Hermano de familia entre los que el chef tiene que elegir cuando el banco
+// tiene varios productos del mismo tipo ("Gambero rosso Mazara 3ra",
+// "… Sicilia 15/20", …). procedencia + calibre + precio son lo que hace que
+// la elección sea informada.
+export const AmbiguousCandidateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  origen: z.string().nullable(),
+  calibreLabel: z.string().nullable(),
+  precioCompra: z.number().nullable(),
+  unidadCompra: z.string().nullable(),
+});
+
 export const MatchResultSchema = z.object({
-  level: z.enum(["exact", "probable", "none"]),
+  // "ambiguo" (jul 2026): hay varios hermanos de familia y el query no los
+  // distingue. NO se enlaza nada; el cliente obliga a elegir entre
+  // `candidates`. Pisa incluso a "exact".
+  level: z.enum(["exact", "ambiguo", "probable", "none"]),
   productId: z.string().nullable(),
   productName: z.string().nullable(),
   distance: z.number(),
+  // Vacío salvo con level="ambiguo".
+  candidates: z.array(AmbiguousCandidateSchema).default([]),
 });
 
 export const MatchProductsResponseSchema = z.object({

@@ -11,7 +11,7 @@
 // rescriben (útil para re-migrar después de mejorar el parser).
 
 import { prisma } from "@atelier/db";
-import { findMatch, type MatchCandidate } from "./matching";
+import { findMatch, type MatchCandidate, type MatchLevel } from "./matching";
 import { defaultCriticality } from "./criticality";
 import { categorizeFromName, defaultMermaPct } from "./defaults";
 import { parseIngredient } from "./parser";
@@ -31,7 +31,7 @@ type IngredientPlan = {
   parsedName: string;
   parsedUnit: string | null;
   parsedQty: number | null;
-  level: "exact" | "probable" | "none";
+  level: MatchLevel;
   productId: string | null;
   productName: string | null;
   distance: number;
@@ -54,7 +54,10 @@ export type MigrateReport = {
     recipesToMigrate: number;
     recipesSkipped: number;
     totalIngredients: number;
-    matches: { exact: number; probable: number; none: number };
+    // `ambiguo`: el banco tiene varios hermanos de familia y el texto de la
+    // receta no distingue cuál. Ni se enlaza ni se crea borrador — queda sin
+    // enlazar para que el chef elija en el editor.
+    matches: { exact: number; probable: number; ambiguo: number; none: number };
     probableMatchesPolicy: ProbableMatchesPolicy;
   };
   conflicts: Array<{
@@ -197,6 +200,7 @@ export async function migrateRecipesForRestaurant(
   let totalIngredients = 0;
   let exactCount = 0;
   let probableCount = 0;
+  let ambiguoCount = 0;
   let noneCount = 0;
   const conflicts: MigrateReport["conflicts"] = [];
   const newDrafts: MigrateReport["newDrafts"] = [];
@@ -223,6 +227,11 @@ export async function migrateRecipesForRestaurant(
           productName: ing.productName!,
           distance: ing.distance,
         });
+      } else if (ing.level === "ambiguo") {
+        // Solo se cuenta. NO va a conflicts (no hay UN candidato que
+        // proponer, hay varios) ni a newDrafts (crear un borrador acá sería
+        // exactamente el duplicado que queremos evitar).
+        ambiguoCount++;
       } else {
         noneCount++;
         const draftCategory = categorizeFromName(ing.parsedName);
@@ -249,7 +258,12 @@ export async function migrateRecipesForRestaurant(
       recipesToMigrate,
       recipesSkipped,
       totalIngredients,
-      matches: { exact: exactCount, probable: probableCount, none: noneCount },
+      matches: {
+        exact: exactCount,
+        probable: probableCount,
+        ambiguo: ambiguoCount,
+        none: noneCount,
+      },
       probableMatchesPolicy,
     },
     conflicts,
@@ -289,6 +303,11 @@ export async function migrateRecipesForRestaurant(
         } else if (ing.level === "probable") {
           productId =
             probableMatchesPolicy === "auto-link" ? ing.productId : null;
+        } else if (ing.level === "ambiguo") {
+          // Queda sin enlazar, pase lo que pase con probableMatchesPolicy:
+          // hay varios hermanos de familia y elegir uno sería inventar. El
+          // chef lo resuelve en el editor de la receta.
+          productId = null;
         } else {
           // Draft nuevo: name + categoría inferida + unidadCompra del default
           // (NO del parser: la unidad del rawText es de USO en receta — ej.

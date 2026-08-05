@@ -116,6 +116,7 @@ export default function AjustesBancoScreen() {
           t("migrate_dryrun_matches", {
             exact: s.matches.exact,
             probable: s.matches.probable,
+            ambiguo: s.matches.ambiguo,
             none: s.matches.none,
           }),
         [

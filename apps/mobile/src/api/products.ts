@@ -147,7 +147,9 @@ export type MigrateRecipesReport = {
     recipesToMigrate: number;
     recipesSkipped: number;
     totalIngredients: number;
-    matches: { exact: number; probable: number; none: number };
+    // `ambiguo`: varios hermanos de familia en el banco y el texto de la
+    // receta no dice cuál. Ni se enlazan ni se crean drafts.
+    matches: { exact: number; probable: number; ambiguo: number; none: number };
     probableMatchesPolicy: "auto-link" | "leave-unmatched";
   };
   conflicts: Array<{

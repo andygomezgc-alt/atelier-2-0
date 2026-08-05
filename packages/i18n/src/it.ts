@@ -622,7 +622,7 @@ export const it: EsDict = {
   // ─── BP-01 · Etichette dell'Alert di migrazione legacy ───
   migrate_dryrun_counts: "{recipes} ricette · {ingredients} ingredienti",
   migrate_dryrun_matches:
-    "Match: {exact} esatti / {probable} probabili (non collegati) / {none} nuove bozze",
+    "Match: {exact} esatti / {probable} probabili (non collegati) / {ambiguo} da scegliere / {none} nuove bozze",
 
   // ─── A-12 · Casa come lobby quando non c'è ancora ristorante ───
   casa_lobby_title: "Non hai ancora creato il tuo posto",

@@ -20,13 +20,40 @@
 // (no aliases) para preferir el producto canónico.
 
 import { normalizeForMatch } from "./defaults";
+import {
+  splitAttributes,
+  attributesMatch,
+  baseNameMatches,
+  hasDiscriminators,
+  type ProductAttributes,
+} from "@atelier/shared";
 
-export type MatchLevel = "exact" | "probable" | "none";
+// "ambiguo" (jul 2026, pedido de Andy): el banco tiene varios productos de la
+// MISMA familia (Gambero rosso Mazara 3ra / Sicilia 15/20 / Argentina 20/30) y
+// la receta dice solo "gambero rosso". El sistema NO elige: devuelve los
+// hermanos y el chef marca cuál. Ver ambiguityFor() más abajo.
+export type MatchLevel = "exact" | "ambiguo" | "probable" | "none";
 
 export type MatchCandidate = {
   id: string;
   name: string;
   aliases: string[];
+  // Opcionales: solo los usa el sheet de elección entre hermanos. Los
+  // llamadores que no desambiguan (migrate.ts) pueden omitirlos.
+  precioCompra?: number;
+  unidadCompra?: string;
+};
+
+// Hermano de familia que el chef tiene que distinguir. origen/calibre salen
+// del propio nombre del producto; el precio viene del banco. Los tres juntos
+// son lo que hace que elegir sea una decisión informada y no una lotería.
+export type AmbiguousCandidate = {
+  id: string;
+  name: string;
+  origen: string | null;
+  calibreLabel: string | null;
+  precioCompra: number | null;
+  unidadCompra: string | null;
 };
 
 export type MatchResult = {
@@ -36,6 +63,9 @@ export type MatchResult = {
   // Distancia Levenshtein contra el mejor candidato (debug + UI: mostrar
   // "match probable: trufa (distancia 1)" si querés).
   distance: number;
+  // Solo con level="ambiguo": los hermanos entre los que hay que elegir.
+  // Vacío en todos los demás niveles.
+  candidates: AmbiguousCandidate[];
 };
 
 // Wagner-Fischer DP. O(a*b) tiempo, O(min(a,b)) espacio.
@@ -155,13 +185,125 @@ function tokenOverlap(aTokens: string[], bTokens: string[]): number {
   return matched / small.length;
 }
 
+// ───────── Desambiguación entre hermanos de familia (jul 2026) ─────────
+//
+// Los atributos salen del NOMBRE del producto, no de columnas: así funciona
+// hoy mismo, sin esperar a que la migración llene Product.baseName. Cuando
+// esas columnas existan, esto se puede cambiar por una lectura directa.
+//
+// splitAttributes es regex-pesada y /api/products/match la llamaría
+// queries × candidatos veces (50 × 500 = 25.000). Memo por nombre: los
+// nombres del banco se repiten en cada query del mismo request.
+const attrCache = new Map<string, ProductAttributes>();
+const ATTR_CACHE_MAX = 4000;
+
+function attrsOf(name: string): ProductAttributes {
+  const hit = attrCache.get(name);
+  if (hit) return hit;
+  const attrs = splitAttributes(name);
+  // Cache sin política de expulsión fina: al llenarse se vacía entera. Es un
+  // acelerador, no una fuente de verdad, y el costo de recalcular es bajo.
+  if (attrCache.size >= ATTR_CACHE_MAX) attrCache.clear();
+  attrCache.set(name, attrs);
+  return attrs;
+}
+
+function toAmbiguous(c: MatchCandidate): AmbiguousCandidate {
+  const a = attrsOf(c.name);
+  return {
+    id: c.id,
+    name: c.name,
+    origen: a.origen,
+    calibreLabel: a.calibreLabel,
+    precioCompra: c.precioCompra ?? null,
+    unidadCompra: c.unidadCompra ?? null,
+  };
+}
+
+// Cuántos atributos que el query SÍ nombra coinciden exactamente con los del
+// candidato. Es distinto de attributesMatch, que solo comprueba que no haya
+// choque: un producto sin calibre cargado "no contradice" a un query 15/20,
+// pero tampoco lo confirma. Sin esta distinción, un hermano con los datos
+// incompletos se cuela en toda elección y el chef termina eligiendo siempre.
+function positiveMatches(
+  q: ProductAttributes,
+  c: ProductAttributes,
+): number {
+  let n = 0;
+  if (q.origen !== null && q.origen === c.origen) n++;
+  if (q.calibreLabel !== null && q.calibreLabel === c.calibreLabel) n++;
+  if (q.conservacion !== null && q.conservacion === c.conservacion) n++;
+  return n;
+}
+
+type FamilyVerdict =
+  // Sin familia que desambiguar — comportamiento histórico intacto.
+  | { kind: "pass" }
+  // Los atributos del query señalan a un hermano concreto.
+  | { kind: "pin"; candidate: MatchCandidate }
+  // Hay que preguntarle al chef.
+  | { kind: "ambiguous"; options: MatchCandidate[] };
+
+// Solo se activa cuando el ganador tiene AL MENOS UN hermano de familia: si
+// el producto es único en su familia, nada cambia respecto de siempre. Ese
+// guard es lo que mantiene intacto el comportamiento de las recetas actuales.
+function resolveFamily(
+  query: string,
+  winner: MatchCandidate,
+  candidates: ReadonlyArray<MatchCandidate>,
+): FamilyVerdict {
+  const qAttrs = splitAttributes(query);
+  if (!qAttrs.baseName) return { kind: "pass" };
+
+  // El ganador tiene que ser de la familia del query; si ganó por otra vía
+  // (frase larga, alias), no hay familia que desambiguar.
+  if (!baseNameMatches(qAttrs.baseName, attrsOf(winner.name).baseName))
+    return { kind: "pass" };
+
+  const family = candidates.filter((c) =>
+    baseNameMatches(qAttrs.baseName, attrsOf(c.name).baseName),
+  );
+  if (family.length < 2) return { kind: "pass" };
+
+  // De los hermanos, los que no contradicen lo que dice el query.
+  const compatible = family.filter((c) =>
+    attributesMatch(qAttrs, attrsOf(c.name)),
+  );
+
+  // ¿Alguno coincide POSITIVAMENTE mejor que todos los demás? Si el query
+  // trae "15/20" y un solo hermano lo tiene, ese es — aunque otro hermano
+  // sin calibre cargado tampoco lo contradiga.
+  if (hasDiscriminators(qAttrs) && compatible.length > 0) {
+    const scored = compatible.map((c) => ({
+      c,
+      score: positiveMatches(qAttrs, attrsOf(c.name)),
+    }));
+    const top = Math.max(...scored.map((s) => s.score));
+    const winners = scored.filter((s) => s.score === top);
+    if (top > 0 && winners.length === 1) {
+      return { kind: "pin", candidate: winners[0]!.c };
+    }
+  }
+
+  // Cualquier otro caso se pregunta. Si ninguno es compatible (el chef pidió
+  // una procedencia que el banco no tiene) igual se ofrecen todos: el sheet
+  // tiene la salida "ninguna, crear nuevo".
+  return { kind: "ambiguous", options: compatible.length > 0 ? compatible : family };
+}
+
 export function findMatch(
   query: string,
   candidates: ReadonlyArray<MatchCandidate>,
 ): MatchResult {
   const qNorm = normalize(query);
   if (!qNorm) {
-    return { level: "none", productId: null, productName: null, distance: Infinity };
+    return {
+      level: "none",
+      productId: null,
+      productName: null,
+      distance: Infinity,
+      candidates: [],
+    };
   }
   const qTokens = tokenizeForMatch(query);
 
@@ -173,7 +315,14 @@ export function findMatch(
     matchedOnName: boolean;
   } | null = null;
 
-  const levelRank: Record<MatchLevel, number> = { exact: 2, probable: 1, none: 0 };
+  // "ambiguo" no sale nunca de este bucle (se decide después, mirando la
+  // familia entera); está en el mapa solo para que el Record quede completo.
+  const levelRank: Record<MatchLevel, number> = {
+    exact: 3,
+    ambiguo: 2,
+    probable: 1,
+    none: 0,
+  };
 
   for (const cand of candidates) {
     // Distancia de frase entera (comportamiento histórico) y overlap de
@@ -228,6 +377,34 @@ export function findMatch(
       productId: null,
       productName: null,
       distance: best ? best.distance : Infinity,
+      candidates: [],
+    };
+  }
+
+  // Antes de devolver el ganador: ¿hay hermanos de familia que el query no
+  // distingue? Si los hay, no se enlaza nada y decide el chef. Esto pisa
+  // incluso a "exact" — un nombre que coincide letra por letra tampoco
+  // alcanza si en el banco hay cuatro gamberi rossi.
+  const family = resolveFamily(query, best.candidate, candidates);
+  if (family.kind === "ambiguous") {
+    return {
+      level: "ambiguo",
+      productId: null,
+      productName: null,
+      distance: best.distance,
+      candidates: family.options.map(toAmbiguous),
+    };
+  }
+  if (family.kind === "pin") {
+    // Los atributos identifican el producto sin lugar a duda; es una señal
+    // más fuerte que la distancia de texto, así que vale como exact y no
+    // se le pregunta nada al chef.
+    return {
+      level: "exact",
+      productId: family.candidate.id,
+      productName: family.candidate.name,
+      distance: levenshtein(qNorm, normalize(family.candidate.name)),
+      candidates: [],
     };
   }
 
@@ -236,5 +413,6 @@ export function findMatch(
     productId: best.candidate.id,
     productName: best.candidate.name,
     distance: best.distance,
+    candidates: [],
   };
 }

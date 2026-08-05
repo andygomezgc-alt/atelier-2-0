@@ -11,9 +11,9 @@
 // Usa la clave Anthropic del server (extractRecipeFromText): la extracción
 // es infraestructura de la app (decisión A-01).
 //
-// El bloque de matching está duplicado del upload route a propósito: son
-// ~25 líneas, evita tocar el path PDF de producción y mantener una
-// abstracción prematura compartida (CLAUDE.md #3/#7).
+// El bloque de matching estuvo duplicado del upload route mientras fueron
+// ~25 líneas estables. Al sumar el nivel "ambiguo" (jul 2026) había que
+// tocar las tres copias igual, así que pasó a lib/products/match-ingredients.ts.
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
@@ -21,8 +21,11 @@ import { ExtractRecipeRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 import { extractRecipeFromText } from "@/lib/recipe-extraction";
-import { findMatch, type MatchCandidate } from "@/lib/products/matching";
-import { parseIngredient } from "@/lib/products/parser";
+import { type MatchCandidate } from "@/lib/products/matching";
+import {
+  matchIngredientList,
+  MATCH_CANDIDATE_SELECT,
+} from "@/lib/products/match-ingredients";
 import { reserveAiCall, aiQuotaExceededResponse } from "@/lib/ai-quota";
 
 export const dynamic = "force-dynamic";
@@ -60,7 +63,7 @@ export async function POST(req: NextRequest) {
               deletedAt: null,
               estado: { in: ["activo", "borrador"] },
             },
-            select: { id: true, name: true, aliases: true },
+            select: MATCH_CANDIDATE_SELECT,
           })
         : Promise.resolve([]),
     ]);
@@ -69,36 +72,12 @@ export async function POST(req: NextRequest) {
       id: p.id,
       name: p.name,
       aliases: p.aliases,
+      precioCompra: p.precioCompra,
+      unidadCompra: p.unidadCompra,
     }));
 
-    const recipeIngredients: Array<{
-      rawText: string;
-      productId: string | null;
-    }> = [];
-    const pendingMatches: Array<{
-      ingredientIdx: number;
-      productId: string;
-      productName: string;
-    }> = [];
-
-    extracted.ingredients.forEach((rawText, idx) => {
-      // Parsear antes de matchear (Bug C fix, igual que el upload route):
-      // "200g harina" → matchear sólo "harina" contra el banco.
-      const p = parseIngredient(rawText);
-      const m = findMatch(p.name || rawText, candidates);
-      if (m.level === "exact" && m.productId) {
-        recipeIngredients.push({ rawText, productId: m.productId });
-      } else if (m.level === "probable" && m.productId && m.productName) {
-        recipeIngredients.push({ rawText, productId: null });
-        pendingMatches.push({
-          ingredientIdx: idx,
-          productId: m.productId,
-          productName: m.productName,
-        });
-      } else {
-        recipeIngredients.push({ rawText, productId: null });
-      }
-    });
+    const { recipeIngredients, pendingMatches, ambiguousMatches } =
+      matchIngredientList(extracted.ingredients, candidates);
 
     logger.info("recipe_extract_from_text", {
       userId: ctx.userId,
@@ -108,6 +87,7 @@ export async function POST(req: NextRequest) {
       exactMatches: recipeIngredients.filter((r) => r.productId !== null)
         .length,
       probableMatches: pendingMatches.length,
+      ambiguousMatches: ambiguousMatches.length,
     });
 
     return NextResponse.json({
@@ -119,6 +99,7 @@ export async function POST(req: NextRequest) {
       },
       recipeIngredients,
       pendingMatches,
+      ambiguousMatches,
     });
   } catch (err) {
     const message =

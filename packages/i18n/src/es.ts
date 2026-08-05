@@ -630,7 +630,7 @@ export const es = {
   // ─── BP-01 · Labels del Alert de migración legacy ───
   migrate_dryrun_counts: "{recipes} recetas · {ingredients} ingredientes",
   migrate_dryrun_matches:
-    "Matches: {exact} exactos / {probable} probables (sin enlazar) / {none} nuevos drafts",
+    "Matches: {exact} exactos / {probable} probables (sin enlazar) / {ambiguo} a elegir / {none} nuevos drafts",
 
   // ─── A-12 · Casa como lobby cuando aún no hay restaurante ───
   casa_lobby_title: "Todavía no creaste tu sitio",

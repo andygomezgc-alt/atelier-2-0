@@ -120,3 +120,74 @@ describe("findMatch — tokens (caso ricciola real de prod)", () => {
     expect(r.productId).toBe("p2");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Desambiguación entre hermanos de familia (Andy, jul 2026).
+//
+// "si hay varios gamberos pero en la receta no marca el nombre en específico
+//  no se lo invente, sino que el sistema te pida cuál es el gambero a usar"
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("findMatch — familia con varios productos", () => {
+  const banco = [
+    cand("g1", "Gambero rosso Mazara 3ra"),
+    cand("g2", "Gambero rosso Sicilia 15/20"),
+    cand("g3", "Gambero rosso Argentina 20/30"),
+    cand("g4", "Gambero rosso Sanremo"),
+  ];
+
+  it("query sin especificar → ambiguo, NO elige por su cuenta", () => {
+    const r = findMatch("gambero rosso", banco);
+    expect(r.level).toBe("ambiguo");
+    expect(r.productId).toBeNull();
+    expect(r.candidates.map((c) => c.id).sort()).toEqual(["g1", "g2", "g3", "g4"]);
+  });
+
+  it("los candidatos llegan con procedencia y calibre para poder elegir", () => {
+    const r = findMatch("gambero rosso", banco);
+    const mazara = r.candidates.find((c) => c.id === "g1");
+    expect(mazara?.origen).toBe("mazara del vallo");
+    expect(mazara?.calibreLabel).toBe("cal.3");
+  });
+
+  it("query que sí especifica → enlaza sin molestar", () => {
+    const r = findMatch("gambero rosso di mazzara 3ra", banco);
+    expect(r.level).not.toBe("ambiguo");
+    expect(r.productId).toBe("g1");
+  });
+
+  it("basta el calibre para desambiguar", () => {
+    const r = findMatch("gambero rosso 15/20", banco);
+    expect(r.level).not.toBe("ambiguo");
+    expect(r.productId).toBe("g2");
+  });
+
+  it("procedencia que el banco no tiene → ofrece la familia igual", () => {
+    // El sheet siempre lleva la salida "ninguna, crear nuevo".
+    const r = findMatch("gambero rosso di norvegia", banco);
+    expect(r.level).toBe("ambiguo");
+    expect(r.candidates).toHaveLength(4);
+  });
+
+  it("un solo producto en la familia → comportamiento de siempre", () => {
+    const r = findMatch("gambero rosso", [cand("g1", "Gambero rosso Mazara 3ra")]);
+    expect(r.level).not.toBe("ambiguo");
+    expect(r.productId).toBe("g1");
+  });
+
+  // El cambio de comportamiento más delicado del lote: hasta ahora un nombre
+  // idéntico se enlazaba en silencio. Con hermanos en el banco ya no alcanza.
+  it("ni siquiera un nombre idéntico enlaza solo si hay hermanos", () => {
+    const r = findMatch("Gambero rosso", [
+      cand("g0", "Gambero rosso"),
+      cand("g1", "Gambero rosso Mazara 3ra"),
+    ]);
+    expect(r.level).toBe("ambiguo");
+    expect(r.productId).toBeNull();
+  });
+
+  it("productos de otra familia no entran en la elección", () => {
+    const r = findMatch("gambero rosso", [...banco, cand("s1", "Scampo 15/20")]);
+    expect(r.candidates.map((c) => c.id)).not.toContain("s1");
+  });
+});

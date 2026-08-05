@@ -20,8 +20,11 @@ import {
   DOCX_MIME,
   IMAGE_MIMES,
 } from "@/lib/recipe-extraction";
-import { findMatch, type MatchCandidate } from "@/lib/products/matching";
-import { parseIngredient } from "@/lib/products/parser";
+import { type MatchCandidate } from "@/lib/products/matching";
+import {
+  matchIngredientList,
+  MATCH_CANDIDATE_SELECT,
+} from "@/lib/products/match-ingredients";
 import { reserveAiCall, aiQuotaExceededResponse } from "@/lib/ai-quota";
 
 export const dynamic = "force-dynamic";
@@ -93,7 +96,7 @@ export async function POST(req: NextRequest) {
               deletedAt: null,
               estado: { in: ["activo", "borrador"] },
             },
-            select: { id: true, name: true, aliases: true },
+            select: MATCH_CANDIDATE_SELECT,
           })
         : Promise.resolve([]),
     ]);
@@ -102,40 +105,12 @@ export async function POST(req: NextRequest) {
       id: p.id,
       name: p.name,
       aliases: p.aliases,
+      precioCompra: p.precioCompra,
+      unidadCompra: p.unidadCompra,
     }));
 
-    // Matcheamos cada ingrediente contra el banco. exact → productId pre-set;
-    // probable → lo mandamos en pendingMatches para que el mobile pida
-    // confirmación al chef; none → productId null, el mobile crea draft al
-    // guardar.
-    const recipeIngredients: Array<{ rawText: string; productId: string | null }> = [];
-    const pendingMatches: Array<{
-      ingredientIdx: number;
-      productId: string;
-      productName: string;
-    }> = [];
-
-    extracted.ingredients.forEach((rawText, idx) => {
-      // Bug C fix (Andy 2026-05-17): parsear rawText antes de matchear
-      // contra el banco. El LLM extrae líneas tipo "200g harina" — si las
-      // pasamos enteras a findMatch, Levenshtein contra "harina" da
-      // distance>3 y cae como "none" → se crea draft duplicado. Parseando
-      // primero, matcheamos sólo el nombre limpio.
-      const parsed = parseIngredient(rawText);
-      const m = findMatch(parsed.name || rawText, candidates);
-      if (m.level === "exact" && m.productId) {
-        recipeIngredients.push({ rawText, productId: m.productId });
-      } else if (m.level === "probable" && m.productId && m.productName) {
-        recipeIngredients.push({ rawText, productId: null });
-        pendingMatches.push({
-          ingredientIdx: idx,
-          productId: m.productId,
-          productName: m.productName,
-        });
-      } else {
-        recipeIngredients.push({ rawText, productId: null });
-      }
-    });
+    const { recipeIngredients, pendingMatches, ambiguousMatches } =
+      matchIngredientList(extracted.ingredients, candidates);
 
     logger.info("recipe_upload_extracted", {
       userId: ctx.userId,
@@ -145,6 +120,7 @@ export async function POST(req: NextRequest) {
       ingredients: extracted.ingredients.length,
       exactMatches: recipeIngredients.filter((r) => r.productId !== null).length,
       probableMatches: pendingMatches.length,
+      ambiguousMatches: ambiguousMatches.length,
     });
     return NextResponse.json({
       title: extracted.title,
@@ -155,6 +131,7 @@ export async function POST(req: NextRequest) {
       },
       recipeIngredients,
       pendingMatches,
+      ambiguousMatches,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error al procesar archivo";

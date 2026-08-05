@@ -9,8 +9,9 @@
 // si no, Google responde con el HTML del login en vez del DOCX y
 // devolvemos un mensaje accionable.
 //
-// El bloque de matching está duplicado del upload route a propósito,
-// igual que en /api/recipes/extract (CLAUDE.md #3/#7).
+// El bloque de matching vive en lib/products/match-ingredients.ts, compartido
+// con /api/recipes/upload y /api/recipes/extract: al sumar el nivel "ambiguo"
+// (jul 2026) había que tocar las tres copias igual.
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
@@ -22,8 +23,11 @@ import {
   DOCX_MIME,
 } from "@/lib/recipe-extraction";
 import { parseGDocId, gdocExportUrl } from "@/lib/gdoc";
-import { findMatch, type MatchCandidate } from "@/lib/products/matching";
-import { parseIngredient } from "@/lib/products/parser";
+import { type MatchCandidate } from "@/lib/products/matching";
+import {
+  matchIngredientList,
+  MATCH_CANDIDATE_SELECT,
+} from "@/lib/products/match-ingredients";
 import { reserveAiCall, aiQuotaExceededResponse } from "@/lib/ai-quota";
 
 export const dynamic = "force-dynamic";
@@ -105,7 +109,7 @@ export async function POST(req: NextRequest) {
               deletedAt: null,
               estado: { in: ["activo", "borrador"] },
             },
-            select: { id: true, name: true, aliases: true },
+            select: MATCH_CANDIDATE_SELECT,
           })
         : Promise.resolve([]),
     ]);
@@ -114,36 +118,12 @@ export async function POST(req: NextRequest) {
       id: p.id,
       name: p.name,
       aliases: p.aliases,
+      precioCompra: p.precioCompra,
+      unidadCompra: p.unidadCompra,
     }));
 
-    const recipeIngredients: Array<{
-      rawText: string;
-      productId: string | null;
-    }> = [];
-    const pendingMatches: Array<{
-      ingredientIdx: number;
-      productId: string;
-      productName: string;
-    }> = [];
-
-    extracted.ingredients.forEach((rawText, idx) => {
-      // Parsear antes de matchear (Bug C fix, igual que el upload route):
-      // "200g harina" → matchear sólo "harina" contra el banco.
-      const p = parseIngredient(rawText);
-      const m = findMatch(p.name || rawText, candidates);
-      if (m.level === "exact" && m.productId) {
-        recipeIngredients.push({ rawText, productId: m.productId });
-      } else if (m.level === "probable" && m.productId && m.productName) {
-        recipeIngredients.push({ rawText, productId: null });
-        pendingMatches.push({
-          ingredientIdx: idx,
-          productId: m.productId,
-          productName: m.productName,
-        });
-      } else {
-        recipeIngredients.push({ rawText, productId: null });
-      }
-    });
+    const { recipeIngredients, pendingMatches, ambiguousMatches } =
+      matchIngredientList(extracted.ingredients, candidates);
 
     logger.info("recipe_import_gdoc", {
       userId: ctx.userId,
@@ -152,6 +132,7 @@ export async function POST(req: NextRequest) {
       ingredients: extracted.ingredients.length,
       exactMatches: recipeIngredients.filter((r) => r.productId !== null).length,
       probableMatches: pendingMatches.length,
+      ambiguousMatches: ambiguousMatches.length,
     });
 
     return NextResponse.json({
@@ -163,6 +144,7 @@ export async function POST(req: NextRequest) {
       },
       recipeIngredients,
       pendingMatches,
+      ambiguousMatches,
     });
   } catch (err) {
     const message =

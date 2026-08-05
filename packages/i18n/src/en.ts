@@ -621,7 +621,7 @@ export const en: EsDict = {
   // ─── BP-01 · Legacy migration Alert labels ───
   migrate_dryrun_counts: "{recipes} recipes · {ingredients} ingredients",
   migrate_dryrun_matches:
-    "Matches: {exact} exact / {probable} probable (unlinked) / {none} new drafts",
+    "Matches: {exact} exact / {probable} probable (unlinked) / {ambiguo} to choose / {none} new drafts",
 
   // ─── A-12 · Casa as a lobby when there's no restaurant yet ───
   casa_lobby_title: "You haven't created your place yet",
