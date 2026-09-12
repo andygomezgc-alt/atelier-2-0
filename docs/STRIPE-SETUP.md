@@ -1,5 +1,7 @@
 # Configurar Stripe para Atelier — Guía paso a paso
 
+> **Guía histórica, sustituida el 11 de septiembre de 2026. No ejecutar estos pasos para lanzar el piloto.** La landing se prepara para solicitar acceso por correo, sin contratación. El descuento fundador tendrá una duración máxima de **3 meses de suscripción**; después corresponde la tarifa estándar. El producto recurrente fundador descrito abajo no implementa ese vencimiento y no debe utilizarse como solución. Tampoco están aprobadas las pruebas gratuitas de 14 días mencionadas aquí. Antes de cobrar faltan el checkout autorizado por restaurante y las comprobaciones de activación/cancelación. Ver [decisión y revisión actual](REVISION-LANDING-PAGOS-2026-09-11.md). No compartir claves de Stripe en el chat: se configuran como secretos del servidor.
+
 Esta guía te lleva de la mano para crear tu cuenta de Stripe (la plataforma que procesa los cobros de Atelier) y dejar todo listo para cobrarle a **Kokoo**, el primer restaurante piloto. No hace falta saber programar: son todo clics en una página web.
 
 Vas a necesitar a mano:

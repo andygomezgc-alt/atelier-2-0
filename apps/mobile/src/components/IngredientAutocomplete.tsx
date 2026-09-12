@@ -6,7 +6,7 @@
 //    para sugerir productos del banco.
 //  - Sugerencias aparecen en un dropdown debajo: hasta 5 resultados +
 //    una opción "+ Crear nuevo producto: '<text>'" al final.
-//  - Tap sobre sugerencia → set { rawText: producto.name, productId: producto.id }
+//  - Tap sobre sugerencia → conserva cantidad/unidad y enlaza el producto
 //    y cierra dropdown.
 //  - Tap sobre "+ Crear nuevo" → deja productId=null por ahora; el form padre
 //    crea el draft al guardar la receta.
@@ -26,22 +26,17 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { listProducts, type Product } from "@/src/api/products";
+import { parseIngredient } from "@atelier/shared";
+import { editIngredientText, selectIngredientProduct, type IngredientValue } from "@/src/lib/recipe-editor";
+export type { IngredientValue } from "@/src/lib/recipe-editor";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 const DEBOUNCE_MS = 250;
 const MAX_SUGGESTIONS = 5;
 
-export type IngredientValue = {
-  rawText: string;
-  productId: string | null;
-  // Entrega A.5 — override de "peso por pieza" para esta receta.
-  // Null = usar punto medio de pezzatura del banco.
-  // Solo se renderiza el editor cuando unit=piezas y producto tiene
-  // pezzaturaMode no-null (ver Fase 7).
-  pesoCalculoG?: number | null;
-};
 
 type Props = {
+  editable?: boolean;
   value: IngredientValue;
   onChange: (next: IngredientValue) => void;
   placeholder?: string;
@@ -53,6 +48,7 @@ type Props = {
 };
 
 export function IngredientAutocomplete({
+  editable = true,
   value,
   onChange,
   placeholder,
@@ -76,11 +72,7 @@ export function IngredientAutocomplete({
   }, []);
 
   function handleChangeText(text: string) {
-    onChange({
-      rawText: text,
-      // Si el chef edita después de elegir, despegamos el producto.
-      productId: text === value.rawText ? value.productId : null,
-    });
+    onChange(editIngredientText(value, text));
 
     // Debounce de las sugerencias.
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -92,7 +84,7 @@ export function IngredientAutocomplete({
     setLoading(true);
     timerRef.current = setTimeout(async () => {
       try {
-        const list = await listProducts({ q: text.trim() });
+        const list = await listProducts({ q: parseIngredient(text).name || text.trim() });
         // Solo mostramos activos y borradores; archivados no aplican como sugerencia.
         setSuggestions(
           list.filter((p) => p.estado !== "archivado").slice(0, MAX_SUGGESTIONS),
@@ -106,7 +98,7 @@ export function IngredientAutocomplete({
   }
 
   function handlePickSuggestion(p: Product) {
-    onChange({ rawText: p.name, productId: p.id });
+    onChange(selectIngredientProduct(value, p));
     setSuggestions([]);
     setFocused(false);
   }
@@ -132,6 +124,7 @@ export function IngredientAutocomplete({
             <Ionicons name="link" size={12} color={colors.teal} style={styles.linkIcon} />
           ) : null}
           <TextInput
+            editable={editable}
             value={value.rawText}
             onChangeText={handleChangeText}
             onFocus={() => setFocused(true)}

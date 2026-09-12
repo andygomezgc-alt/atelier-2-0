@@ -6,13 +6,13 @@
 // Nota: esto es solo para DISPLAY. Los inputs editables guardan el número sin
 // símbolo (ver parseEurosToCents más abajo).
 
-export function formatEuros(cents: number): string {
-  return `${(cents / 100).toFixed(2).replace(".", ",")} €`;
+export function formatEuros(cents: number, decimals = 2): string {
+  return `${(cents / 100).toFixed(decimals).replace(".", ",")} €`;
 }
 
 // Precio por unidad de compra: "3,20 €/kg".
-export function formatEurosPerUnit(cents: number, unitShort: string): string {
-  return `${(cents / 100).toFixed(2).replace(".", ",")} €/${unitShort}`;
+export function formatEurosPerUnit(cents: number, unitShort: string, decimals = 2): string {
+  return `${(cents / 100).toFixed(decimals).replace(".", ",")} €/${unitShort}`;
 }
 
 // Parsea "12,50" o "12.50" → 1250 centavos (input de precio de producto).
@@ -33,8 +33,7 @@ export function centsFromInput(raw: string): number {
   return Math.max(0, Math.round(n * 100));
 }
 
-// Precio de plato para el input editable — sin decimales (los menús muestran
-// precios enteros, ej. "28").
+// Precio editable: conserva los céntimos y omite solo los decimales cero.
 export function formatPrice(cents: number): string {
-  return (cents / 100).toFixed(0);
+  return (cents / 100).toFixed(2).replace(/\.00$/, "").replace(".", ",");
 }

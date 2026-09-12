@@ -2,9 +2,7 @@
 // the chosen conversation id back to the caller (asistente), which navigates
 // to the assistant with `conversationId` so the existing chat reloads.
 //
-// Conversations may or may not have an anchored idea; the API returns
-// `ideaText: string | null` and we show a muted "Sin idea anclada" line when
-// it's missing.
+// Titles use the anchored idea or first message, without an AI generation.
 
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -16,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { normalizeChatMode } from "@atelier/shared";
 import { useI18n } from "@/src/hooks/useI18n";
 import {
   listConversations,
@@ -73,6 +72,8 @@ export function PreviousChatsSheet({ open, onClose, onPick }: Props) {
       <ScrollView contentContainerStyle={styles.list}>
         {loading ? (
           <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
+        ) : loadError ? (
+          <NetworkError onRetry={loadConversations} />
         ) : items.length === 0 ? (
           <Empty
             icon="chatbubbles-outline"
@@ -84,6 +85,7 @@ export function PreviousChatsSheet({ open, onClose, onPick }: Props) {
             <Pressable
               key={c.id}
               style={styles.row}
+              accessibilityRole="button"
               onPress={() => {
                 onPick(c);
                 onClose();
@@ -93,14 +95,14 @@ export function PreviousChatsSheet({ open, onClose, onPick }: Props) {
                 <Text
                   style={[
                     styles.itemText,
-                    !c.ideaText && styles.itemTextMute,
+                    !c.title && !c.ideaText && styles.itemTextMute,
                   ]}
                   numberOfLines={2}
                 >
-                  {c.ideaText ?? t("chats_anteriores_no_idea")}
+                  {c.title ?? c.ideaText ?? t("chat_untitled")}
                 </Text>
                 <Text style={styles.itemMeta}>
-                  {formatDate(c.createdAt)} · {c.modelUsed}
+                  {formatDate(c.createdAt)} · {t(normalizeChatMode(c.modelUsed) === "creative" ? "model_creative" : "model_daily")}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.mute} />

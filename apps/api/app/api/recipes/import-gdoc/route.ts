@@ -24,7 +24,8 @@ import {
 import { parseGDocId, gdocExportUrl } from "@/lib/gdoc";
 import { findMatch, type MatchCandidate } from "@/lib/products/matching";
 import { parseIngredient } from "@/lib/products/parser";
-import { reserveAiCall, aiQuotaExceededResponse } from "@/lib/ai-quota";
+import { reserveAiCall, aiQuotaExceededResponse, recordAiTokens } from "@/lib/ai-quota";
+import { budgetErrorResponse } from "@/lib/ai/budget-policy";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -97,7 +98,7 @@ export async function POST(req: NextRequest) {
   const start = Date.now();
   try {
     const [extracted, productList] = await Promise.all([
-      extractRecipeFromFile(buffer, DOCX_MIME),
+      extractRecipeFromFile(buffer, DOCX_MIME, usage => recordAiTokens(ctx.userId, usage.inputTokens, usage.outputTokens).catch(() => undefined)),
       ctx.restaurantId
         ? prisma.product.findMany({
             where: {
@@ -156,6 +157,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       title: extracted.title,
+      portions: extracted.portions ?? null,
       contentJson: {
         ingredients: extracted.ingredients,
         method: extracted.method,
@@ -165,6 +167,8 @@ export async function POST(req: NextRequest) {
       pendingMatches,
     });
   } catch (err) {
+    const budgetResponse = budgetErrorResponse(err);
+    if (budgetResponse) return budgetResponse;
     const message =
       err instanceof Error ? err.message : "Error al procesar el documento";
     logger.error("recipe_import_gdoc_failed", {

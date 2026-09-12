@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { logger } from "@/lib/logger";
+import { providerConfigured } from "@/lib/ai/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,7 +46,7 @@ async function checkDb(): Promise<CheckResult> {
 // rompe el asistente + extracción con 401 — el deep lo detecta.
 async function checkAnthropic(deep: boolean): Promise<CheckResult> {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return { ok: true, skipped: true };
+  if (!key) return { ok: false, error: "provider not configured" };
   if (!key.startsWith("sk-ant-")) {
     logger.error("health_check_failed", {
       check: "anthropic",
@@ -104,7 +105,8 @@ export async function GET(req: NextRequest) {
     Promise.resolve(checkResend()),
   ]);
 
-  const checks = { db, anthropic, resend };
+  // Configuration checks only; no paid generation or scheduled model comparisons.
+  const checks: Record<string, CheckResult> = { db, anthropic, gemini: { ok: providerConfigured("gemini") }, zai: { ok: providerConfigured("zai") }, resend };
   const allOk = Object.values(checks).every((c) => c.skipped || c.ok);
   const status = allOk ? "ok" : "degraded";
 

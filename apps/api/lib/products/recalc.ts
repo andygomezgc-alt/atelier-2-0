@@ -5,9 +5,8 @@
 // Lógica (mismo spec del Banco):
 //   1. Para cada producto NO marcado como criticalityManual=true,
 //      recolectar todas sus apariciones en recetas via RecipeIngredient.
-//   2. Por cada receta, el costo total = suma(realCost de ingredientes
-//      enlazados). realCost = precioCompra / (1 - mermaPct/100).
-//   3. Cuota del producto en la receta = realCost(producto) / total.
+//   2. Costear cantidades con el mismo motor que el detalle de receta.
+//   3. Sumar apariciones de cada producto y dividir por el total computable.
 //   4. Si cuota > 15% en alguna receta → criticidad = "alta".
 //   5. Sino → defaultCriticality(category, name).
 //
@@ -17,15 +16,10 @@
 import { prisma } from "@atelier/db";
 import type { Criticality } from "@atelier/shared";
 import { defaultCriticality } from "./criticality";
+import { computeRecipeCost } from "./cost";
 
 // Umbral de "peso económico" — del spec.
 const ECONOMIC_THRESHOLD = 0.15;
-
-function realCost(precioCompra: number, mermaPctStr: string | number): number {
-  const merma = typeof mermaPctStr === "number" ? mermaPctStr : Number(mermaPctStr);
-  if (merma >= 100) return precioCompra;
-  return Math.ceil(precioCompra / (1 - merma / 100));
-}
 
 export type RecalcChange = {
   productId: string;
@@ -81,11 +75,22 @@ export async function recalcCriticalityForRestaurant(
   const allIngredientsInRecipes =
     recipeIds.length > 0
       ? await prisma.recipeIngredient.findMany({
-          where: { recipeId: { in: recipeIds }, productId: { not: null } },
+          where: {
+            recipeId: { in: recipeIds },
+            recipe: { restaurantId, deletedAt: null },
+            product: { restaurantId, deletedAt: null },
+          },
           select: {
             recipeId: true,
             productId: true,
-            product: { select: { precioCompra: true, mermaPct: true } },
+            qty: true,
+            unit: true,
+            mermaOverridePct: true,
+            pesoCalculoG: true,
+            product: { select: {
+              precioCompra: true, mermaPct: true, unidadCompra: true,
+              pezzaturaMode: true, pezzaturaMin: true, pezzaturaMax: true,
+            } },
           },
         })
       : [];
@@ -94,21 +99,39 @@ export async function recalcCriticalityForRestaurant(
   const recipeTotals = new Map<string, number>();
   type Share = { recipeId: string; productId: string; share: number };
   const productShares = new Map<string, Share[]>();
-
-  for (const ri of allIngredientsInRecipes) {
-    if (!ri.productId || !ri.product) continue;
-    const cost = realCost(ri.product.precioCompra, ri.product.mermaPct.toString());
+  const amounts = computeRecipeCost({
+    portions: 1,
+    salePriceCents: null,
+    ingredients: allIngredientsInRecipes.map(ri => ({
+      qty: ri.qty === null ? null : Number(ri.qty),
+      unit: ri.unit,
+      mermaOverridePct: ri.mermaOverridePct == null ? null : Number(ri.mermaOverridePct),
+      pesoCalculoG: ri.pesoCalculoG == null ? null : Number(ri.pesoCalculoG),
+      product: ri.product ? {
+        ...ri.product,
+        mermaPct: Number(ri.product.mermaPct),
+        pezzaturaMin: ri.product.pezzaturaMin == null ? null : Number(ri.product.pezzaturaMin),
+        pezzaturaMax: ri.product.pezzaturaMax == null ? null : Number(ri.product.pezzaturaMax),
+      } : null,
+    })),
+  }).costsByIdx;
+  const recipeProductTotals = new Map<string, Map<string, number>>();
+  for (const [idx, cost] of amounts) {
+    const ri = allIngredientsInRecipes[idx]!;
+    if (!ri.productId) continue;
     recipeTotals.set(ri.recipeId, (recipeTotals.get(ri.recipeId) ?? 0) + cost);
+    const totals = recipeProductTotals.get(ri.recipeId) ?? new Map<string, number>();
+    totals.set(ri.productId, (totals.get(ri.productId) ?? 0) + cost);
+    recipeProductTotals.set(ri.recipeId, totals);
   }
-  for (const ri of allIngredientsInRecipes) {
-    if (!ri.productId || !ri.product) continue;
-    const total = recipeTotals.get(ri.recipeId) ?? 0;
+  for (const [recipeId, totals] of recipeProductTotals) {
+    const total = recipeTotals.get(recipeId) ?? 0;
     if (total <= 0) continue;
-    const cost = realCost(ri.product.precioCompra, ri.product.mermaPct.toString());
-    const share = cost / total;
-    const list = productShares.get(ri.productId) ?? [];
-    list.push({ recipeId: ri.recipeId, productId: ri.productId, share });
-    productShares.set(ri.productId, list);
+    for (const [productId, cost] of totals) {
+      const list = productShares.get(productId) ?? [];
+      list.push({ recipeId, productId, share: cost / total });
+      productShares.set(productId, list);
+    }
   }
 
   const changes: RecalcChange[] = [];

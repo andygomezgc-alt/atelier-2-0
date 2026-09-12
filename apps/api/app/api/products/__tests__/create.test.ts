@@ -46,6 +46,12 @@ beforeEach(() => {
 });
 
 describe("POST /api/products", () => {
+  it.each([{ allergens: ["milk", "eggs"] }, { allergens: [] }])("persiste una declaración explícita de alérgenos: $allergens", async ({ allergens }) => {
+    db.product.create.mockImplementation(async ({ data }) => ({ id: "p-allergens", ...data }));
+    const res = await create({ name: "Producto revisado", category: "otro", unidadCompra: "kg", precioCompra: 0, allergens });
+    expect(res.status).toBe(201);
+    expect(db.product.create.mock.calls[0]![0].data).toMatchObject({ allergens, allergensReviewed: true, allergen: allergens[0] ?? null });
+  });
   it("con precio > 0 → crea producto + primera fila de histórico en la MISMA tx", async () => {
     db.product.create.mockResolvedValue({
       id: "p1",

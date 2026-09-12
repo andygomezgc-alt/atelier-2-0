@@ -11,6 +11,8 @@ const { db, guard } = vi.hoisted(() => {
     cb({
       recipe: { updateMany: recipe.updateMany, findUnique: recipe.findUnique },
       recipeIngredient,
+      product,
+      $queryRaw: vi.fn().mockResolvedValue([]),
     }),
   );
   return {
@@ -90,6 +92,17 @@ beforeEach(() => {
 });
 
 describe("PATCH /api/recipes/[id]", () => {
+  it("preserves explicit costing fields instead of reinterpreting the display text", async () => {
+    authAs("admin");
+    const ingredient = { rawText: "300 g patata", qty: 250, unit: "g", pezzatura: "mediana", mermaOverridePct: 0, pesoCalculoG: 150 };
+    expect((await patch({ recipeIngredients: [ingredient] })).status).toBe(200);
+    expect(db.recipeIngredient.createMany.mock.calls[0]![0].data[0]).toMatchObject(ingredient);
+  });
+  it("respects explicitly unknown quantity instead of guessing from the old text", async () => {
+    authAs("admin");
+    expect((await patch({ recipeIngredients: [{ rawText: "300 g patata", qty: null, unit: null }] })).status).toBe(200);
+    expect(db.recipeIngredient.createMany.mock.calls[0]![0].data[0]).toMatchObject({ qty: null, unit: null });
+  });
   it("403 viewer no puede editar ningún campo (edit_recipe exigido de entrada)", async () => {
     authAs("viewer");
     const res = await patch({ title: "Nuevo título" });

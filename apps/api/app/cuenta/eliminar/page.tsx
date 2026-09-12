@@ -24,9 +24,11 @@ export default function EliminarCuentaPage() {
 
       <h2 style={h2Style}>a) Desde la app</h2>
       <p style={pStyle}>
-        Andá a Perfil → Eliminar cuenta. El borrado es inmediato. Si sos el
+        Andá a Perfil → Eliminar cuenta y confirmá la operación. Si sos el
         último miembro del restaurante, se elimina también el restaurante con
-        todo su contenido.
+        todo su contenido. Si sos el último administrador y quedan compañeros,
+        primero asigná otro administrador. La app confirma cuando termina; si
+        aparece un error, la eliminación no debe darse por completada.
       </p>
 
       <h2 style={h2Style}>b) Sin acceso a la app</h2>
@@ -46,9 +48,13 @@ export default function EliminarCuentaPage() {
 
       <h2 style={h2Style}>Qué puede conservarse</h2>
       <p style={pStyle}>
-        Las recetas y menús del restaurante, si seguís teniendo compañeros de
-        equipo: dejan de estar asociadas a tu nombre, pero permanecen
-        disponibles para el resto del equipo.
+        Las recetas, ideas, menús y conversaciones compartidas con el restaurante
+        pueden permanecer para el equipo, con tu identificación de perfil
+        sustituida. Si escribiste datos personales dentro de esos contenidos,
+        contactanos para revisarlos. Los registros técnicos y las copias cifradas
+        tienen un tratamiento separado: el borrado no elimina automáticamente
+        las copias ya creadas. Encontrás más información en la{" "}
+        <a href="/privacidad" style={linkStyle}>política de privacidad</a>.
       </p>
     </PageShell>
   );

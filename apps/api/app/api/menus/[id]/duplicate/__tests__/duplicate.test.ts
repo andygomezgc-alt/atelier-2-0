@@ -51,10 +51,11 @@ const SOURCE = {
   season: "Primavera 2026",
   presentationStyle: "elegant",
   showAllergensInPdf: true,
+  serviceCharges: [{ id: "cover", name: "Coperto", price: 400, perPerson: true }],
   inService: true,
   sections: [{ id: "s1", name: "Antipasti", order: 0 }],
   items: [
-    { sectionId: "s1", recipeId: "rec1", customName: null, customDesc: null, price: 1800, order: 0 },
+    { sectionId: "s1", recipeId: "rec1", customName: null, customDesc: null, price: 1800, priceUnit: "kg", order: 0 },
     { sectionId: null, recipeId: "rec2", customName: "Especial", customDesc: null, price: 2200, order: 1 },
   ],
   clientOverride: { overrides: { menuName: "Carta" } },
@@ -84,6 +85,7 @@ describe("POST /api/menus/[id]/duplicate", () => {
     const folderArg = db.menuFolder.create.mock.calls[0]![0];
     expect(folderArg.data.name).toBe("Primavera (copia)");
     expect(folderArg.data.inService).toBe(false); // una copia no entra en servicio sola
+    expect(folderArg.data.serviceCharges).toEqual(SOURCE.serviceCharges);
 
     // Sección clonada, y el ítem con sección apunta a la NUEVA sección (ns1).
     expect(db.menuSection.create).toHaveBeenCalledOnce();
@@ -91,6 +93,8 @@ describe("POST /api/menus/[id]/duplicate", () => {
     expect(itemsArg.data[0].sectionId).toBe("ns1");
     expect(itemsArg.data[1].sectionId).toBeNull(); // el ítem sin sección queda sin sección
     expect(itemsArg.data[0].recipeId).toBe("rec1");
+    expect(itemsArg.data[0].priceUnit).toBe("kg");
+    expect(itemsArg.data[1].priceUnit).toBe("portion");
     // Override del PDF cliente clonado.
     expect(db.menuClientOverride.create).toHaveBeenCalledOnce();
   });

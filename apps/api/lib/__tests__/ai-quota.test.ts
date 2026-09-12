@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("../ai/budget", () => ({ isAiOwner: vi.fn().mockResolvedValue(false) }));
+import { isAiOwner } from "../ai/budget";
 
 // --- Prisma mock (vi.hoisted: el factory de vi.mock se eleva sobre los
 // consts, así que declaramos el mock también elevado). ---
@@ -20,12 +22,19 @@ import {
 } from "../ai-quota";
 
 beforeEach(() => {
+  vi.mocked(isAiOwner).mockResolvedValue(false);
   aiUsage.upsert.mockReset();
   aiUsage.update.mockReset();
 });
 afterEach(() => vi.restoreAllMocks());
 
 describe("reserveAiCall", () => {
+  it("does not apply the generic daily cap to the owner, but still records usage", async () => {
+    vi.mocked(isAiOwner).mockResolvedValue(true);
+    aiUsage.upsert.mockResolvedValue({ requestCount: 10000 });
+    expect((await reserveAiCall("owner")).ok).toBe(true);
+    expect(aiUsage.upsert).toHaveBeenCalledOnce();
+  });
   it("deja pasar cuando el contador está en el tope o por debajo", async () => {
     aiUsage.upsert.mockResolvedValue({ requestCount: AI_DAILY_LIMIT });
     const r = await reserveAiCall("user-1");
@@ -52,24 +61,28 @@ describe("reserveAiCall", () => {
 
 describe("recordAiTokens", () => {
   it("suma tokens al día actual", async () => {
-    aiUsage.update.mockResolvedValue({});
+    aiUsage.upsert.mockResolvedValue({});
     await recordAiTokens("user-1", 1000, 250);
-    const arg = aiUsage.update.mock.calls[0]![0];
-    expect(arg.data.inputTokens).toEqual({ increment: 1000 });
-    expect(arg.data.outputTokens).toEqual({ increment: 250 });
+    const arg = aiUsage.upsert.mock.calls[0]![0];
+    expect(arg.update.inputTokens).toEqual({ increment: 1000 });
+    expect(arg.update.outputTokens).toEqual({ increment: 250 });
+    // First chat of the day creates telemetry without consuming the separate
+    // technical-action quota, including a stream finishing after UTC midnight.
+    expect(arg.create).toEqual({ userId: "user-1", day: utcDay(), inputTokens: 1000, outputTokens: 250 });
+    expect(arg.update).not.toHaveProperty("requestCount");
   });
 
   it("es best-effort: nunca lanza aunque la base falle", async () => {
-    aiUsage.update.mockRejectedValue(new Error("db down"));
+    aiUsage.upsert.mockRejectedValue(new Error("db down"));
     await expect(recordAiTokens("user-1", 10, 10)).resolves.toBeUndefined();
   });
 
   it("clampa negativos a 0", async () => {
-    aiUsage.update.mockResolvedValue({});
+    aiUsage.upsert.mockResolvedValue({});
     await recordAiTokens("user-1", -5, -9);
-    const arg = aiUsage.update.mock.calls[0]![0];
-    expect(arg.data.inputTokens).toEqual({ increment: 0 });
-    expect(arg.data.outputTokens).toEqual({ increment: 0 });
+    const arg = aiUsage.upsert.mock.calls[0]![0];
+    expect(arg.update.inputTokens).toEqual({ increment: 0 });
+    expect(arg.update.outputTokens).toEqual({ increment: 0 });
   });
 });
 

@@ -6,3 +6,5 @@ export * from "./normalize";
 export * from "./pezzatura";
 export * from "./parser";
 export * from "./allergens";
+export * from "./culinary-memory";
+export * from "./ai-models";

@@ -66,6 +66,20 @@ beforeEach(() => {
 });
 
 describe("PATCH /api/products/:id", () => {
+  it("persiste todos los alérgenos revisados, incluido ninguno declarado", async () => {
+    await patch({ allergens: ["milk", "eggs"] });
+    expect(db.product.updateMany.mock.calls[0]![0].data).toMatchObject({ allergens: ["milk", "eggs"], allergen: "milk", allergensReviewed: true });
+    await patch({ allergens: [] });
+    expect(db.product.updateMany.mock.calls[1]![0].data).toMatchObject({ allergens: [], allergen: null, allergensReviewed: true });
+  });
+  it("cambiar nombre o proveedor requiere revisar de nuevo; precio conserva la revisión", async () => {
+    await patch({ name: "Patata preparada" });
+    expect(db.product.updateMany.mock.calls[0]![0].data.allergensReviewed).toBe(false);
+    await patch({ proveedor: "Otro proveedor" });
+    expect(db.product.updateMany.mock.calls[1]![0].data.allergensReviewed).toBe(false);
+    await patch({ precioCompra: 300 });
+    expect(db.product.updateMany.mock.calls[2]![0].data.allergensReviewed).toBeUndefined();
+  });
   it("actualiza con where atomico y re-fetch tenant-scoped", async () => {
     const res = await patch({ name: "Patata nueva" });
 

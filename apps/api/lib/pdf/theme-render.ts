@@ -5,8 +5,8 @@
 // embebidas, iconos de alérgenos, leyenda al pie).
 
 import type { Allergen, MenuCustomTheme } from "@atelier/shared";
-import { escape, PRICE, allergenIconSvg, type RenderInput, type Dish } from "./templates";
-import { fontFaceCss } from "./fonts";
+import { escape, DISH_PRICE, allergenIconSvg, type RenderInput, type Dish } from "./templates";
+import { fontFaceCss, FONT_REGISTRY } from "./fonts";
 
 // Error de validación ESTRUCTURAL del theme (placeholders faltantes). Se
 // distingue de fallos de red/Zod para decidir si vale la pena reintentar la
@@ -53,6 +53,12 @@ function placeholderKeys(html: string): Set<string> {
 // Usa la MISMA normalización que interpolate (camelCase cuenta). Los mensajes van
 // en español y sirven de feedback para el retry (ver theme-generate.ts).
 export function validateThemeStructure(theme: MenuCustomTheme): void {
+  if (theme.sectionHtml?.trim()) {
+    const keys = placeholderKeys(theme.sectionHtml);
+    if (!keys.has("sectionheaderhtml") || !keys.has("disheshtml")) {
+      throw new ThemeValidationError("sectionHtml debe contener {{SECTION_HEADER_HTML}} y {{DISHES_HTML}}.");
+    }
+  }
   const frame = theme.frameHtml?.trim();
   if (frame && !placeholderKeys(frame).has("content")) {
     throw new ThemeValidationError(
@@ -94,7 +100,7 @@ function renderDish(theme: MenuCustomTheme, dish: Dish): string {
   return interpolate(theme.dishHtml, {
     DISH_NAME: escape(dish.name),
     DISH_DESC: dish.description ? escape(dish.description) : "",
-    PRICE: PRICE(dish.price),
+    PRICE: DISH_PRICE(dish),
     ALLERGENS_HTML: allergensHtml(dish.allergens),
   });
 }
@@ -149,7 +155,9 @@ export function renderGeneratedTheme(input: RenderInput, theme: MenuCustomTheme)
     .map((s) => {
       const sh = interpolate(theme.sectionHeaderHtml, { SECTION_NAME: escape(s.name) });
       const dishes = s.dishes.map((d) => renderDish(theme, filterAllergens(d))).join("");
-      return sh + dishes;
+      return theme.sectionHtml
+        ? interpolate(theme.sectionHtml, { SECTION_HEADER_HTML: sh, DISHES_HTML: dishes })
+        : sh + dishes;
     })
     .join("");
 
@@ -168,7 +176,8 @@ export function renderGeneratedTheme(input: RenderInput, theme: MenuCustomTheme)
     ? interpolate(theme.footerHtml, headerContext)
     : "";
 
-  const content = header + sectionsHtml + unsectionedHtml + legendHtml + footerHtml;
+  const charges = (input.serviceCharges ?? []).map(d => renderDish(theme, { ...d, allergens: [] })).join("");
+  const content = header + sectionsHtml + unsectionedHtml + (charges ? `<div class="menu-service-charges">${charges}</div>` : "") + legendHtml + footerHtml;
   // frameHtml envuelve todo vía {{CONTENT}}; además acepta los placeholders de
   // cabecera por simetría con header/footer.
   const body = theme.frameHtml
@@ -179,5 +188,6 @@ export function renderGeneratedTheme(input: RenderInput, theme: MenuCustomTheme)
 
   return `<!doctype html><html><head><meta charset="utf-8" /><style>${RESET_CSS}
 ${faceCss}
+body{font-family:'${FONT_REGISTRY[theme.fontBody].family}',${FONT_REGISTRY[theme.fontBody].fallback};}
 ${theme.css}</style></head><body>${body}</body></html>`;
 }

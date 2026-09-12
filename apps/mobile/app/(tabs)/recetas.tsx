@@ -316,6 +316,7 @@ type RecipeCardTFn = (
     | "state_in_test"
     | "state_approved"
     | "recetas_card_cost_label"
+    | "cost_partial"
     | "recetas_card_pvp_label",
 ) => string;
 
@@ -355,6 +356,7 @@ const RecipeCard = memo(function RecipeCard({
             {hasCost ? (
               <Text style={styles.priceCost}>
                 {t("recetas_card_cost_label")} {formatEuroFromCents(item.perPortionCents!)}
+                {item.costStatus === "partial" ? ` · ${t("cost_partial")}` : ""}
               </Text>
             ) : null}
             {hasCost && hasPvp ? <Text style={styles.priceSep}> · </Text> : null}

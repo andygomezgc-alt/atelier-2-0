@@ -1,3 +1,4 @@
+import { normalizeChatMode, type ChatMode } from "@atelier/shared";
 import { useEffect, useState } from "react";
 import {
   Image,
@@ -22,6 +23,8 @@ import { showToast } from "./Toast";
 import { BottomSheet } from "./BottomSheet";
 import { DeleteAccountSheet } from "./DeleteAccountSheet";
 import { LeaveRestaurantSheet } from "./LeaveRestaurantSheet";
+import { CulinaryMemorySheet } from "./CulinaryMemorySheet";
+import { PilotBudget } from "./PilotBudget";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import type { Language } from "@atelier/i18n";
 import type { Role } from "@atelier/shared";
@@ -90,7 +93,7 @@ export function ProfileSheet({ open, onClose }: Props) {
     }
   }
 
-  async function handleModelChange(model: "haiku" | "sonnet" | "opus") {
+  async function handleModelChange(model: ChatMode) {
     // P2-11 — antes: `.catch(() => null)`, fallo silencioso total. El modelo
     // visible sale de user.defaultModel (se actualiza con refreshMe), así que si
     // el PATCH falla no hay optimista que revertir: basta avisar.
@@ -111,6 +114,7 @@ export function ProfileSheet({ open, onClose }: Props) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   // Salir del restaurante — mismo patrón de modal hermano.
   const [leaveOpen, setLeaveOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [bioInput, setBioInput] = useState("");
@@ -253,6 +257,7 @@ export function ProfileSheet({ open, onClose }: Props) {
               </View>
 
               <Row label={t("profile_role")} value={roleLabel[user.role]} />
+              <PilotBudget open={open} userId={user.id} />
               {user.restaurantName ? (
                 <Row label={t("profile_restaurant")} value={user.restaurantName} />
               ) : null}
@@ -272,6 +277,9 @@ export function ProfileSheet({ open, onClose }: Props) {
                 </>
               ) : null}
 
+                {user.restaurantId && user.role !== "viewer" && <Pressable style={styles.row} accessibilityRole="button" onPress={() => setMemoryOpen(true)}>
+                  <Text style={styles.rowValue}>{t("memory_title")}</Text><Ionicons name="chevron-forward" size={20} color={colors.mute} />
+                </Pressable>}
               <Section label={t("profile_language")}>
                 <View style={styles.pills}>
                   {LANGS.map((l) => (
@@ -290,19 +298,14 @@ export function ProfileSheet({ open, onClose }: Props) {
 
               <Section label={t("profile_model")}>
                 <ModelOption
-                  label={t("model_haiku")}
-                  active={user.defaultModel === "haiku"}
-                  onPress={() => handleModelChange("haiku")}
+                  label={t("model_daily")}
+                  active={normalizeChatMode(user.defaultModel) === "daily"}
+                  onPress={() => handleModelChange("daily")}
                 />
                 <ModelOption
-                  label={t("model_sonnet")}
-                  active={user.defaultModel === "sonnet"}
-                  onPress={() => handleModelChange("sonnet")}
-                />
-                <ModelOption
-                  label={t("model_opus")}
-                  active={user.defaultModel === "opus"}
-                  onPress={() => handleModelChange("opus")}
+                  label={t("model_creative")}
+                  active={normalizeChatMode(user.defaultModel) === "creative"}
+                  onPress={() => handleModelChange("creative")}
                 />
               </Section>
             </>
@@ -367,6 +370,7 @@ export function ProfileSheet({ open, onClose }: Props) {
 
       <DeleteAccountSheet open={deleteOpen} onClose={() => setDeleteOpen(false)} />
       <LeaveRestaurantSheet open={leaveOpen} onClose={() => setLeaveOpen(false)} />
+      {open && memoryOpen && user?.restaurantId && user.role !== "viewer" && <CulinaryMemorySheet key={`${user.id}:${user.restaurantId}`} restaurantId={user.restaurantId} onClose={() => setMemoryOpen(false)} />}
     </>
   );
 }

@@ -66,6 +66,29 @@ function makeInput(over: Partial<RenderInput> = {}): RenderInput {
 }
 
 describe("renderGeneratedTheme", () => {
+  test("conserva unidades y cargos en el estilo generado y escapa los nombres", () => {
+    const html = renderGeneratedTheme(makeInput({ sections: [], unsectioned: [{ name: "Pesce", description: "", price: 6000, priceSuffix: "/ kg", allergens: [] }],
+      serviceCharges: [{ name: "Coperto <script>", description: "", price: 400, priceSuffix: "a persona", allergens: [] }] }), THEME);
+    expect(html).toContain("60,00 € / kg"); expect(html).toContain("4,00 € a persona");
+    expect(html).toContain("Coperto &lt;script&gt;"); expect(html).not.toContain('<div class="legend">');
+  });
+  test("agrupa cada sección con sus platos sin mezclar columnas", () => {
+    const theme = { ...THEME, sectionHtml: '<section>{{SECTION_HEADER_HTML}}<div class="dishes">{{DISHES_HTML}}</div></section>' };
+    validateThemeStructure(theme);
+    const html = renderGeneratedTheme(makeInput(), theme);
+    const sections = html.match(/<section>[\s\S]*?<\/section>/g)!;
+    expect(sections).toHaveLength(2);
+    expect(sections[0]).toContain("Primi");
+    expect(sections[0]).toContain("Tagliatelle");
+    expect(sections[0]).not.toContain("Branzino");
+    expect(sections[1]).toContain("Branzino");
+  });
+
+  test("rechaza un contenedor de sección que pierde los platos", () => {
+    expect(() => validateThemeStructure({ ...THEME, sectionHtml: "<section>{{SECTION_HEADER_HTML}}</section>" }))
+      .toThrow(ThemeValidationError);
+  });
+
   test("escapa nombres/descripciones con <b>, & y comillas", () => {
     const html = renderGeneratedTheme(
       makeInput({
@@ -138,10 +161,10 @@ describe("renderGeneratedTheme", () => {
     expect(html).toContain("Branzino");
   });
 
-  test("precio con el formato de templates (entero + €)", () => {
+  test("precio con el formato de templates (dos decimales + €)", () => {
     const html = renderGeneratedTheme(makeInput(), THEME);
-    expect(html).toContain("24 €");
-    expect(html).toContain("26 €");
+    expect(html).toContain("24,00 €");
+    expect(html).toContain("26,00 €");
   });
 
   test("sin frameHtml el contenido va directo al body", () => {
@@ -187,7 +210,7 @@ describe("renderGeneratedTheme", () => {
     expect(html).toContain("Trattoria — Carta");
     expect(html).toContain("Autunno"); // {{ SEASON_HTML }}
     expect(html).toContain("Tagliatelle"); // {{dishName}}
-    expect(html).toContain("24 €"); // {{ price }}
+    expect(html).toContain("24,00 €"); // {{ price }}
     expect(html).toContain('<div class="f">'); // {{content}} envolvió
     // Leftover en minúsculas ({{tagline}}) eliminado — el regex viejo solo
     // borraba MAYÚSCULAS y lo dejaba como texto literal visible.

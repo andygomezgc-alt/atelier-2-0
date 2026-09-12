@@ -1,260 +1,114 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-// constructEvent controlado + prisma.restaurant mockeado. No tocamos DB ni la
-// API de Stripe: solo verificamos la lógica del handler.
-// FakePrismaKnownRequestError vive DENTRO de vi.hoisted a propósito: vi.mock
-// se hoistea al tope del archivo, así que solo puede referenciar bindings
-// creados también vía vi.hoisted (si no, TDZ al evaluar la factory).
-const { constructEvent, db, log, FakePrismaKnownRequestError } = vi.hoisted(() => {
-  class FakePrismaKnownRequestError extends Error {
-    code: string;
-    constructor(message: string, code: string) {
-      super(message);
-      this.code = code;
-    }
-  }
+const { sdk, db, FakePrismaError } = vi.hoisted(() => {
+  class FakePrismaError extends Error { code = "P2002"; }
   return {
-    constructEvent: vi.fn(),
-    db: {
-      restaurant: {
-        updateMany: vi.fn(),
-        findFirst: vi.fn(),
-        update: vi.fn(),
-      },
-      processedStripeEvent: {
-        create: vi.fn(),
-        findUnique: vi.fn(),
-      },
-      $transaction: vi.fn(),
-    },
-    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-    FakePrismaKnownRequestError,
+    FakePrismaError,
+    sdk: { webhooks: { constructEvent: vi.fn() }, checkout: { sessions: { retrieve: vi.fn() } }, subscriptions: { retrieve: vi.fn() } },
+    db: { restaurant: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() }, processedStripeEvent: { create: vi.fn(), findUnique: vi.fn() }, $transaction: vi.fn(), $queryRaw: vi.fn() },
   };
 });
+vi.mock("stripe", () => ({ default: function StripeMock() { return sdk; } }));
+vi.mock("@atelier/db", () => ({ prisma: db, Prisma: { PrismaClientKnownRequestError: FakePrismaError } }));
+vi.mock("@/lib/logger", () => ({ logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } }));
+import { POST } from "../route";
 
-// `new Stripe()` devuelve el objeto con nuestro constructEvent (un constructor
-// que retorna un objeto hace que `new` devuelva ese objeto).
-vi.mock("stripe", () => ({
-  default: vi.fn(() => ({ webhooks: { constructEvent } })),
-}));
-vi.mock("@atelier/db", () => ({
-  prisma: db,
-  Prisma: { PrismaClientKnownRequestError: FakePrismaKnownRequestError },
-}));
-vi.mock("@/lib/logger", () => ({ logger: log }));
-
-import * as route from "../route";
-
-function post(body = "raw-body") {
-  return route.POST(
-    new NextRequest("https://t.local/api/stripe/webhook", {
-      method: "POST",
-      body,
-      headers: { "stripe-signature": "sig-header" },
-    }),
-  );
-}
+const metadata = { restaurant_id: "rest-1", billing_version: "1" };
+const price = { id: "price_pro", currency: "eur", unit_amount: 4900, type: "recurring", billing_scheme: "per_unit", recurring: { interval: "month", interval_count: 1, usage_type: "licensed" }, tax_behavior: "exclusive" };
+const subscription = () => ({ id: "sub_1", customer: "cus_1", status: "active", metadata, discounts: [], items: { data: [{ price, quantity: 1 }] } });
+const session = () => ({ id: "cs_test_example", client_reference_id: "rest-1", customer: "cus_1", subscription: "sub_1", mode: "subscription", status: "complete", payment_status: "paid", metadata });
+const restaurant = () => ({ id: "rest-1", stripeCustomerId: "cus_1", stripeSubscriptionId: "sub_1", graceUntil: null });
+function event(type = "checkout.session.completed", object: unknown = session()) { sdk.webhooks.constructEvent.mockReturnValue({ id: "evt_1", type, data: { object } }); }
+function post() { return POST(new NextRequest("https://atelier.test/api/stripe/webhook", { method: "POST", body: "raw", headers: { "stripe-signature": "sig" } })); }
 
 beforeEach(() => {
-  constructEvent.mockReset();
-  db.restaurant.updateMany.mockReset();
-  db.restaurant.findFirst.mockReset();
-  db.restaurant.update.mockReset();
-  // Por defecto el evento nunca se vio: findUnique() no lo encuentra y create()
-  // pega, así el handler sigue al switch. Los tests de idempotencia lo pisan.
-  db.processedStripeEvent.create.mockReset().mockResolvedValue({ id: "evt_x" });
-  db.processedStripeEvent.findUnique.mockReset().mockResolvedValue(null);
-  // $transaction interactivo: ejecuta el callback con `db` como cliente tx (en
-  // el mock tx === db, así tx.restaurant.* son los mismos spies). Si el callback
-  // tira, re-lanza — como Prisma al revertir la transacción.
-  db.$transaction
-    .mockReset()
-    .mockImplementation(async (cb: (tx: typeof db) => unknown) => cb(db));
-  vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test");
+  vi.resetAllMocks();
+  vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_fake"); vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_fake"); vi.stubEnv("STRIPE_PRICE_PRO", "price_pro");
+  db.$transaction.mockImplementation(async cb => cb(db));
+  db.restaurant.findUnique.mockResolvedValue(restaurant());
+  db.restaurant.findFirst.mockResolvedValue({ id: "rest-1" });
+  db.processedStripeEvent.findUnique.mockResolvedValue(null);
+  sdk.checkout.sessions.retrieve.mockResolvedValue(session());
+  sdk.subscriptions.retrieve.mockResolvedValue(subscription());
+  event();
 });
+afterEach(() => vi.unstubAllEnvs());
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-  vi.clearAllMocks();
-});
-
-describe("POST /api/stripe/webhook", () => {
-  it("sin STRIPE_WEBHOOK_SECRET → 503 (no configurado)", async () => {
-    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "");
-    const res = await post();
-    expect(res.status).toBe(503);
-    expect(constructEvent).not.toHaveBeenCalled();
+describe("webhook seguro", () => {
+  it("rechaza firma inválida sin tocar la base de datos", async () => {
+    sdk.webhooks.constructEvent.mockImplementation(() => { throw Error("bad signature"); });
+    expect((await post()).status).toBe(400); expect(db.$transaction).not.toHaveBeenCalled();
   });
-
-  it("firma inválida (constructEvent tira) → 400", async () => {
-    constructEvent.mockImplementation(() => {
-      throw new Error("bad signature");
-    });
-    const res = await post();
-    expect(res.status).toBe(400);
-    expect(db.restaurant.updateMany).not.toHaveBeenCalled();
+  it("sin secreto devuelve 503", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", ""); expect((await post()).status).toBe(503);
   });
-
-  it("checkout.session.completed → update con active + customerId", async () => {
-    constructEvent.mockReturnValue({
-      id: "evt_1",
-      type: "checkout.session.completed",
-      data: {
-        object: {
-          client_reference_id: "rest-1",
-          customer: "cus_123",
-          subscription: "sub_123",
-          metadata: { plan: "founder" },
-        },
-      },
-    });
-    db.restaurant.updateMany.mockResolvedValueOnce({ count: 1 });
-
-    const res = await post();
-    expect(res.status).toBe(200);
-
-    const arg = db.restaurant.updateMany.mock.calls[0]![0];
-    expect(arg.where).toEqual({ id: "rest-1" });
-    expect(arg.data.planStatus).toBe("active");
-    expect(arg.data.stripeCustomerId).toBe("cus_123");
-    expect(arg.data.stripeSubscriptionId).toBe("sub_123");
-    expect(arg.data.plan).toBe("founder");
-    expect(arg.data.graceUntil).toBeNull();
+  it("no activa un checkout cuyo pago sigue pendiente", async () => {
+    sdk.checkout.sessions.retrieve.mockResolvedValue({ ...session(), payment_status: "unpaid" });
+    expect((await post()).status).toBe(200); expect(db.restaurant.update).not.toHaveBeenCalled();
   });
-
-  it("checkout.session.completed con plan desconocido → cae a 'pro'", async () => {
-    constructEvent.mockReturnValue({
-      id: "evt_1b",
-      type: "checkout.session.completed",
-      data: {
-        object: {
-          client_reference_id: "rest-1",
-          customer: "cus_123",
-          subscription: "sub_123",
-          metadata: { plan: "nope" },
-        },
-      },
-    });
-    db.restaurant.updateMany.mockResolvedValueOnce({ count: 1 });
-
-    const res = await post();
-    expect(res.status).toBe(200);
-    expect(db.restaurant.updateMany.mock.calls[0]![0].data.plan).toBe("pro");
+  it("activa el restaurante validado y bloquea antes de consultar Stripe", async () => {
+    expect((await post()).status).toBe(200);
+    expect(db.restaurant.update).toHaveBeenCalledWith({ where: { id: "rest-1" }, data: expect.objectContaining({ plan: "pro", planStatus: "active", stripeSubscriptionId: "sub_1", graceUntil: null }) });
+    expect(db.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(sdk.subscriptions.retrieve.mock.invocationCallOrder[0]!);
   });
-
-  it("customer.subscription.deleted → canceled", async () => {
-    constructEvent.mockReturnValue({
-      id: "evt_2",
-      type: "customer.subscription.deleted",
-      data: { object: { id: "sub_123", customer: "cus_123", status: "canceled" } },
-    });
-    db.restaurant.findFirst.mockResolvedValueOnce({ id: "rest-1", graceUntil: null });
-    db.restaurant.update.mockResolvedValueOnce({});
-
-    const res = await post();
-    expect(res.status).toBe(200);
-
-    const arg = db.restaurant.update.mock.calls[0]![0];
-    expect(arg.where).toEqual({ id: "rest-1" });
-    expect(arg.data.planStatus).toBe("canceled");
+  it("procesa la confirmación de un pago asíncrono", async () => {
+    event("checkout.session.async_payment_succeeded"); expect((await post()).status).toBe(200); expect(db.restaurant.update).toHaveBeenCalled();
   });
-
-  it("restaurante desconocido → 200 sin update", async () => {
-    constructEvent.mockReturnValue({
-      id: "evt_3",
-      type: "customer.subscription.updated",
-      data: { object: { id: "sub_x", customer: "cus_x", status: "active" } },
-    });
-    db.restaurant.findFirst.mockResolvedValue(null);
-
-    const res = await post();
-    expect(res.status).toBe(200);
-    expect(db.restaurant.update).not.toHaveBeenCalled();
+  it("un Payment Link antiguo no activa aunque contenga restaurantId", async () => {
+    event("checkout.session.completed", { ...session(), metadata: { plan: "founder" } });
+    await post(); expect(db.restaurant.update).not.toHaveBeenCalled(); expect(sdk.checkout.sessions.retrieve).not.toHaveBeenCalled();
   });
-
-  // P2-6 (auditoría jul 2026) + estabilización — idempotencia ATÓMICA por event.id.
-  it("evento ya procesado (findUnique lo encuentra) → 200 already processed, sin create ni switch", async () => {
-    constructEvent.mockReturnValue({
-      id: "evt_seen",
-      type: "checkout.session.completed",
-      data: { object: { client_reference_id: "rest-1", customer: "cus_123", subscription: "sub_123" } },
-    });
-    db.processedStripeEvent.findUnique.mockResolvedValueOnce({ id: "evt_seen" });
-
-    const res = await post();
-    expect(res.status).toBe(200);
-    expect((await res.json()).alreadyProcessed).toBe(true);
-    expect(db.processedStripeEvent.create).not.toHaveBeenCalled();
-    expect(db.restaurant.updateMany).not.toHaveBeenCalled();
+  it("rechaza un customer perteneciente a otro restaurante", async () => {
+    sdk.checkout.sessions.retrieve.mockResolvedValue({ ...session(), customer: "cus_other" });
+    await post(); expect(db.restaurant.update).not.toHaveBeenCalled();
   });
-
-  it("carrera concurrente: create tira P2002 dentro de la tx → 200 already processed, sin tocar el switch", async () => {
-    constructEvent.mockReturnValue({
-      id: "evt_race",
-      type: "checkout.session.completed",
-      data: {
-        object: {
-          client_reference_id: "rest-1",
-          customer: "cus_123",
-          subscription: "sub_123",
-          metadata: { plan: "founder" },
-        },
-      },
-    });
-    // findUnique no lo ve (otra entrega aún no commiteó) pero el create choca.
-    db.processedStripeEvent.create.mockRejectedValueOnce(
-      new FakePrismaKnownRequestError("Unique constraint failed", "P2002"),
-    );
-
-    const res = await post();
-    expect(res.status).toBe(200);
-    expect((await res.json()).alreadyProcessed).toBe(true);
-    expect(db.restaurant.updateMany).not.toHaveBeenCalled();
+  it("rechaza precio equivocado aunque el pago figure como completado", async () => {
+    sdk.subscriptions.retrieve.mockResolvedValue({ ...subscription(), items: { data: [{ quantity: 1, price: { ...price, unit_amount: 1 } }] } });
+    await post(); expect(db.restaurant.update).not.toHaveBeenCalled();
   });
-
-  it("negocio falla dentro de la tx → 500 y el evento NO queda consumido; el retry SÍ aplica", async () => {
-    constructEvent.mockReturnValue({
-      id: "evt_retry",
-      type: "checkout.session.completed",
-      data: {
-        object: {
-          client_reference_id: "rest-1",
-          customer: "cus_123",
-          subscription: "sub_123",
-          metadata: { plan: "pro" },
-        },
-      },
-    });
-
-    // 1er intento: el update de negocio tira → la tx revierte también el
-    // processedStripeEvent. En el mock eso se refleja en que findUnique sigue
-    // devolviendo null en el retry (nada quedó consumido).
-    db.restaurant.updateMany.mockRejectedValueOnce(new Error("db down"));
-    const first = await post();
-    expect(first.status).toBe(500);
-
-    // 2º intento (retry de Stripe): ahora el update resuelve → el cambio se
-    // aplica (antes del fix, el evento quedaba consumido y esto no ocurría).
-    db.restaurant.updateMany.mockResolvedValueOnce({ count: 1 });
-    const second = await post();
-    expect(second.status).toBe(200);
-    const body = await second.json();
-    expect(body.received).toBe(true);
-    expect(body.alreadyProcessed).toBeUndefined();
-    expect(db.restaurant.updateMany).toHaveBeenCalledTimes(2);
+  it("un evento viejo usa el estado actual de Stripe", async () => {
+    event("customer.subscription.updated", { ...subscription(), status: "active" });
+    sdk.subscriptions.retrieve.mockResolvedValue({ ...subscription(), status: "canceled" });
+    await post(); expect(db.restaurant.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ planStatus: "canceled" }) }));
   });
-
-  it("error real (no P2002) dentro de la tx → 500, sin dejar el evento consumido", async () => {
-    constructEvent.mockReturnValue({
-      id: "evt_err",
-      type: "checkout.session.completed",
-      data: { object: { client_reference_id: "rest-1", customer: "cus_123", subscription: "sub_123" } },
-    });
-    db.processedStripeEvent.create.mockRejectedValueOnce(new Error("connection lost"));
-
-    const res = await post();
-    expect(res.status).toBe(500);
-    expect(db.restaurant.updateMany).not.toHaveBeenCalled();
+  it("no busca por customer una suscripción vieja", async () => {
+    event("customer.subscription.deleted", { ...subscription(), id: "sub_old" }); db.restaurant.findFirst.mockResolvedValue(null);
+    await post(); expect(db.restaurant.findFirst).toHaveBeenCalledTimes(1); expect(db.restaurant.findFirst).toHaveBeenCalledWith({ where: { stripeSubscriptionId: "sub_old" }, select: { id: true } }); expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+  it("revalida el enlace después de obtener el bloqueo", async () => {
+    event("customer.subscription.updated", subscription()); db.restaurant.findUnique.mockResolvedValue({ ...restaurant(), stripeSubscriptionId: "sub_new" });
+    await post(); expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+  it("un checkout viejo no sustituye otra suscripción activa", async () => {
+    db.restaurant.findUnique.mockResolvedValue({ ...restaurant(), stripeSubscriptionId: "sub_new" });
+    sdk.subscriptions.retrieve.mockResolvedValue({ ...subscription(), id: "sub_new" });
+    await post(); expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+  it("una nueva compra puede sustituir la suscripción cancelada", async () => {
+    db.restaurant.findUnique.mockResolvedValue({ ...restaurant(), stripeSubscriptionId: "sub_old" });
+    sdk.subscriptions.retrieve.mockResolvedValueOnce({ ...subscription(), id: "sub_old", status: "canceled" });
+    await post(); expect(db.restaurant.update).toHaveBeenCalled();
+  });
+  it("no extiende repetidamente la gracia de un impago", async () => {
+    const graceUntil = new Date("2026-09-01"); event("customer.subscription.updated", subscription());
+    db.restaurant.findUnique.mockResolvedValue({ ...restaurant(), graceUntil }); sdk.subscriptions.retrieve.mockResolvedValue({ ...subscription(), status: "past_due" });
+    await post(); expect(db.restaurant.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ graceUntil, planStatus: "past_due" }) }));
+  });
+  it("reentrega confirmada no vuelve a aplicar el cambio", async () => {
+    db.processedStripeEvent.findUnique.mockResolvedValue({ id: "evt_1" }); const response = await post();
+    expect(await response.json()).toEqual({ received: true, alreadyProcessed: true }); expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+  it("un error de Stripe devuelve 500 para permitir el reintento", async () => {
+    sdk.subscriptions.retrieve.mockRejectedValueOnce(Error("Stripe down")); expect((await post()).status).toBe(500);
+    expect((await post()).status).toBe(200); expect(db.restaurant.update).toHaveBeenCalledTimes(1);
+  });
+  it("un P2002 ajeno a event.id no se oculta como duplicado", async () => {
+    db.restaurant.update.mockRejectedValue(new FakePrismaError()); expect((await post()).status).toBe(500);
+  });
+  it("un P2002 de entrega concurrente se comprueba fuera de la transacción", async () => {
+    db.processedStripeEvent.create.mockRejectedValue(new FakePrismaError());
+    db.processedStripeEvent.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "evt_1" });
+    expect(await (await post()).json()).toEqual({ received: true, alreadyProcessed: true });
   });
 });

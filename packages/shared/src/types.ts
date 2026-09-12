@@ -34,7 +34,7 @@ export type Me = {
   bio: string | null;
   role: import("@atelier/db").Role;
   languagePref: "es" | "it" | "en";
-  defaultModel: "haiku" | "sonnet" | "opus";
+  defaultModel: "daily" | "creative" | "haiku" | "sonnet" | "opus";
   restaurantId: string | null;
 };
 
@@ -88,6 +88,8 @@ export type Criticality = "alta" | "media" | "baja";
 // (precioCompra / (1 - mermaPct/100)) para que el cliente no tenga que
 // re-implementar la fórmula.
 export type ProductListItem = {
+  allergens?: import("./allergens").Allergen[];
+  allergensReviewed?: boolean;
   id: string;
   name: string;
   category: ProductCategory;
@@ -98,7 +100,7 @@ export type ProductListItem = {
   pezzaturaMax: number | null;
   unidadCompra: ProductUnit;
   precioCompra: number; // centavos
-  realCost: number;     // centavos, computed
+  realCost: number | null; // centavos; null sin rendimiento útil
   mermaPct: number;     // 0-100 (con decimales)
   mermaOrigen: MermaOrigin;
   criticality: Criticality;

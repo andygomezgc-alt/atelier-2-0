@@ -48,7 +48,9 @@ const SOURCE = {
   mermaOrigen: "medida",
   proveedor: "Pescadería X",
   notas: "manejar en frío",
-  allergen: "pescado",
+  allergen: "fish",
+  allergens: ["fish", "sulphites"],
+  allergensReviewed: true,
   estado: "activo",
   aliases: ["seriola", "hamachi"],
   criticality: "alta",
@@ -85,7 +87,9 @@ describe("POST /api/products/[id]/duplicate", () => {
     expect(createArg.data.pezzaturaMode).toBe("g_per_piece");
     expect(createArg.data.proveedor).toBe("Pescadería X");
     expect(createArg.data.notas).toBe("manejar en frío");
-    expect(createArg.data.allergen).toBe("pescado");
+    expect(createArg.data.allergen).toBe("fish");
+    expect(createArg.data.allergens).toEqual(["fish", "sulphites"]);
+    expect(createArg.data.allergensReviewed).toBe(false);
     expect(createArg.data.criticality).toBe("alta");
     expect(createArg.data.criticalityManual).toBe(true);
     expect(createArg.data.restaurantId).toBe("r1");

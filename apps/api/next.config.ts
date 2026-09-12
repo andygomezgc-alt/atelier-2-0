@@ -7,6 +7,7 @@ const config: NextConfig = {
   transpilePackages: ["@atelier/db", "@atelier/shared", "@atelier/i18n"],
   // Keep Prisma out of the client bundle; only the server resolves it.
   serverExternalPackages: [
+    "@napi-rs/canvas",
     "@prisma/client",
     "puppeteer",
     "puppeteer-core",

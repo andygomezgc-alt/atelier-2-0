@@ -29,10 +29,16 @@ export async function PATCH(
 
   const item = await prisma.menuItem.findUnique({
     where: { id: itemId },
-    include: { menuFolder: { select: { id: true, restaurantId: true } } },
+    include: { menuFolder: { select: { id: true, restaurantId: true, deletedAt: true } } },
   });
-  if (!item || item.menuFolderId !== menuId || item.menuFolder?.restaurantId !== ctx.restaurantId)
+  if (!item || item.menuFolderId !== menuId || item.menuFolder?.restaurantId !== ctx.restaurantId || item.menuFolder.deletedAt != null)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (parse.data.sectionId && !(await prisma.menuSection.count({
+    where: { id: parse.data.sectionId, menuFolderId: menuId },
+  }))) {
+    return NextResponse.json({ error: "invalid_section_reference" }, { status: 400 });
+  }
 
   const { presentationStyle, ...itemData } = parse.data;
   // Las dos updates tocan tablas distintas (MenuItem vs MenuFolder) — sin
@@ -59,9 +65,9 @@ export async function DELETE(
 
   const item = await prisma.menuItem.findUnique({
     where: { id: itemId },
-    include: { menuFolder: { select: { id: true, restaurantId: true } } },
+    include: { menuFolder: { select: { id: true, restaurantId: true, deletedAt: true } } },
   });
-  if (!item || item.menuFolderId !== menuId || item.menuFolder?.restaurantId !== ctx.restaurantId)
+  if (!item || item.menuFolderId !== menuId || item.menuFolder?.restaurantId !== ctx.restaurantId || item.menuFolder.deletedAt != null)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.menuItem.delete({ where: { id: itemId } });

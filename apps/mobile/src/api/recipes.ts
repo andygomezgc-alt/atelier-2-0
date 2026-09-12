@@ -42,6 +42,7 @@ export const getRecipe = (id: string) =>
 export const createRecipe = async (data: CreateRecipeRequest) => {
   const result = await apiFetch<Recipe>("/api/recipes", { method: "POST", body: JSON.stringify(data) });
   invalidate("recipes:");
+  invalidate("products:");
   return result;
 };
 
@@ -55,6 +56,7 @@ export const patchRecipe = async (id: string, data: PatchRecipeRequest) => {
     body: JSON.stringify(data),
   });
   invalidate("recipes:");
+  invalidate("products:");
   invalidate("menus:");
   return result;
 };
@@ -104,6 +106,7 @@ export const scaleRecipe = async (id: string, fromPortions: number, toPortions: 
 //  - pendingMatches: probables que el cliente debe confirmar con el chef
 //    antes de guardar la receta. Indexa por posición en recipeIngredients.
 export type ExtractedRecipeResponse = {
+  portions?: number | null;
   title: string;
   contentJson: {
     ingredients: string[];

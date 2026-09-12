@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildMessageBlocks, type Msg } from "../anthropic";
+import { buildMessageBlocks, buildSystemBlocks, type Msg } from "../anthropic";
+
+it("la memoria sustituye las recetas recientes y mantiene la idea actual", () => {
+  const restaurant = { name: "Casa", identityLine: "Cocina vegetal" };
+  const recent = [{ title: "Receta anterior", state: "approved" }];
+  const text = JSON.stringify(buildSystemBlocks(restaurant, recent, "Idea actual", "Preferimos asar"));
+  expect(text).toContain("Preferimos asar"); expect(text).toContain("Idea actual"); expect(text).toContain("Cocina vegetal");
+  expect(text).not.toContain("Receta anterior");
+  expect(JSON.stringify(buildSystemBlocks(restaurant, recent, null))).toContain("Receta anterior");
+});
 
 // El breakpoint de caché va SOLO en el último mensaje: así el turno siguiente
 // lee todo el hilo anterior desde caché (~10% del precio) en vez de

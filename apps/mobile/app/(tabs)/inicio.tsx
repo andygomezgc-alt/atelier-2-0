@@ -20,11 +20,10 @@ import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { SectionExplainer } from "@/src/components/SectionExplainer";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n } from "@/src/hooks/useI18n";
-import { useAuth } from "@/src/hooks/useAuth";
-import { useOfflineQueueSize, enqueueIdea, flushQueue } from "@/src/hooks/useOfflineQueue";
+import { useAuth, getCurrentIdentity } from "@/src/hooks/useAuth";
+import { useOfflineQueueSize, saveIdea, flushQueue } from "@/src/hooks/useOfflineQueue";
 import { useRefresh } from "@/src/hooks/useRefresh";
-import { listIdeas, createIdea, patchIdea, deleteIdea, type Idea } from "@/src/api/ideas";
-import { ApiError } from "@/src/api/client";
+import { listIdeas, patchIdea, deleteIdea, type Idea } from "@/src/api/ideas";
 import { showToast } from "@/src/components/Toast";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
@@ -47,6 +46,7 @@ export default function InicioScreen() {
     ideasRef.current = ideas;
   }, [ideas]);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [pendingDelete, setPendingDelete] = useState<Idea | null>(null);
   const [editing, setEditing] = useState<Idea | null>(null);
   const [editText, setEditText] = useState("");
@@ -89,7 +89,9 @@ export default function InicioScreen() {
   const { refreshing, onRefresh } = useRefresh([], reload);
 
   async function handleSave() {
-    if (!text.trim() || saving) return;
+    const draft = text.trim();
+    if (!draft || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       // A-12 — lazy create del restaurante/proyecto si todavía no hay uno.
@@ -97,28 +99,23 @@ export default function InicioScreen() {
       try {
         await ensureRestaurant();
       } catch {
-        setSaving(false);
         return;
       }
-      const idea = await createIdea(text.trim());
-      setIdeas((prev) => [idea, ...prev]);
-      setText("");
-      showToast(t("toast_idea_saved"));
-    } catch (err) {
-      if (err instanceof ApiError) {
-        showToast(apiErrorMessage(err, t));
-        return;
+      const owner = getCurrentIdentity();
+      const result = await saveIdea(draft);
+      const current = getCurrentIdentity();
+      if (owner?.userId !== current?.userId || owner?.restaurantId !== current?.restaurantId) return;
+      if (result.status === "saved") {
+        const idea = result.idea;
+        setIdeas((prev) => [idea, ...prev.filter((entry) => entry.id !== idea.id)]);
       }
-      try {
-        await enqueueIdea(text.trim(), err);
-      } catch (queueError) {
-        showToast(apiErrorMessage(queueError, t));
-        return;
-      }
-      setText("");
-      showToast(t("toast_idea_saved_offline"));
+      setText((value) => value.trim() === draft ? "" : value);
+      showToast(t(result.status === "saved" ? "toast_idea_saved" : "toast_idea_saved_offline"));
       void refreshQueue();
+    } catch (err) {
+      showToast(apiErrorMessage(err, t));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
@@ -202,6 +199,7 @@ export default function InicioScreen() {
               <TextInput
                 value={text}
                 onChangeText={setText}
+                editable={!saving}
                 multiline
                 placeholder={t("inicio_placeholder")}
                 placeholderTextColor={colors.mute}

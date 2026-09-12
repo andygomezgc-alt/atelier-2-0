@@ -39,6 +39,7 @@ export async function POST(
         season: source.season,
         presentationStyle: source.presentationStyle,
         showAllergensInPdf: source.showAllergensInPdf,
+        serviceCharges: source.serviceCharges ?? [],
         inService: false,
       },
     });
@@ -61,6 +62,7 @@ export async function POST(
           customName: it.customName,
           customDesc: it.customDesc,
           price: it.price,
+          priceUnit: it.priceUnit ?? "portion",
           order: it.order,
         })),
       });

@@ -11,8 +11,10 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { FONT_IDS, type FontId } from "@atelier/shared";
+import type { FontVariant } from "./font-validation";
 
-type FontFile = { weight: 400 | 700; style: "normal" | "italic"; file: string };
+type FontWeight = 100 | 300 | 400 | 700;
+type FontFile = { weight: FontWeight; style: "normal" | "italic"; file: string };
 
 type FontEntry = {
   // Nombre EXACTO de la familia CSS que el modelo debe usar en el theme.css.
@@ -25,7 +27,7 @@ type FontEntry = {
 
 // f() arma el nombre de archivo con la convención de @fontsource:
 //   <id>-latin-<weight>-<style>.woff2
-const f = (id: FontId, weight: 400 | 700, style: "normal" | "italic"): FontFile => ({
+const f = (id: FontId, weight: FontWeight, style: "normal" | "italic"): FontFile => ({
   weight,
   style,
   file: `${id}-latin-${weight}-${style}.woff2`,
@@ -71,8 +73,8 @@ export const FONT_REGISTRY: Record<FontId, FontEntry> = {
   lato: {
     family: "Lato",
     fallback: "sans-serif",
-    blurb: "sans humanista cálida, muy legible",
-    files: [f("lato", 400, "normal"), f("lato", 700, "normal"), f("lato", 400, "italic")],
+    blurb: "sans humanista; pesos reales 100 (muy fino), 300 (ligero), 400 y 700; cursivas reales 100, 300 y 400",
+    files: [f("lato", 100, "normal"), f("lato", 100, "italic"), f("lato", 300, "normal"), f("lato", 300, "italic"), f("lato", 400, "normal"), f("lato", 700, "normal"), f("lato", 400, "italic")],
   },
   oswald: {
     family: "Oswald",
@@ -107,11 +109,9 @@ function fileBase64(file: string): string {
 function fontFaceBlock(family: string, ff: FontFile): string {
   const data = fileBase64(ff.file);
   // font-display:block (no swap): mantiene el texto oculto hasta aplicar la
-  // fuente en vez de pintar el fallback genérico. render.ts dispara pdf()/
-  // screenshot() con waitUntil:"load" y SIN JS (no hay document.fonts.ready que
-  // esperar), así que con swap el PDF "fiel" podía salir en fuente genérica en
-  // silencio. Las fuentes son data: (decodifican en <100ms, sin red), así que
-  // block muestra el texto correcto enseguida sin FOIT visible.
+  // fuente en vez de pintar el fallback genérico. El renderer también espera
+  // document.fonts.ready y comprueba los fallos de carga. No habilita scripts
+  // del documento; la evaluación de diagnóstico la ejecuta Puppeteer.
   return `@font-face{font-family:'${family}';font-style:${ff.style};font-weight:${ff.weight};font-display:block;src:url(data:font/woff2;base64,${data}) format('woff2');}`;
 }
 
@@ -129,6 +129,12 @@ export function fontFaceCss(ids: Array<FontId | null | undefined>): string {
     for (const ff of entry.files) blocks.push(fontFaceBlock(entry.family, ff));
   }
   return blocks.join("\n");
+}
+
+export function fontVariants(ids: Array<FontId | null | undefined>): FontVariant[] {
+  return [...new Set(ids)].flatMap(id => id ? FONT_REGISTRY[id].files.map(file => ({
+    family: FONT_REGISTRY[id].family, weight: file.weight, style: file.style,
+  })) : []);
 }
 
 // Re-export para consumidores del server (prompt de generación, tests).

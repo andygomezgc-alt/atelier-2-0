@@ -13,7 +13,7 @@ import type {
 import { computeRecipeCost } from "./products/cost";
 import { computeRecipeAllergens } from "./products/allergens-recipe";
 import type { Allergen } from "@atelier/shared";
-import { MenuStyleSpecSchema } from "@atelier/shared";
+import { MenuStyleSpecSchema, MenuServiceChargesSchema, can } from "@atelier/shared";
 
 // ─────────── Includes (re-use in Prisma queries) ───────────
 
@@ -54,6 +54,8 @@ const recipeIngredientsForCostInclude = {
         pezzaturaMax: true,
         // Fase 1 alérgenos: heredado al plato vía computeRecipeAllergens.
         allergen: true,
+        allergens: true,
+        allergensReviewed: true,
       },
     },
   },
@@ -78,14 +80,16 @@ export const recipeDetailInclude = {
   recipeIngredients: recipeIngredientsForCostInclude,
 } as const;
 
+export const activeMenuItemsWhere = { recipe: { deletedAt: null } } as const;
+
 export const menuListInclude = {
-  _count: { select: { items: true } },
+  _count: { select: { items: { where: activeMenuItemsWhere } } },
 } as const;
 
 export const menuDetailInclude = {
   items: {
     // Caso simétrico: una receta en papelera queda fuera del detalle del menú.
-    where: { recipe: { deletedAt: null } },
+    where: activeMenuItemsWhere,
     orderBy: { order: "asc" },
     include: {
       // Fase 2 alérgenos — para que cada item del menú llegue con
@@ -95,6 +99,7 @@ export const menuDetailInclude = {
       recipe: {
         select: {
           title: true,
+          contentJson: true,
           manualAllergens: true,
           recipeIngredients: recipeIngredientsForCostInclude,
         },
@@ -187,6 +192,8 @@ type RecipeIngredientRow = {
         pezzaturaMax: { toString(): string } | null;
         // Fase 1 alérgenos.
         allergen: Allergen | null;
+        allergens?: Allergen[];
+        allergensReviewed?: boolean;
       }
     | null;
 };
@@ -222,6 +229,7 @@ function mapIngredientsForCost(rows: RecipeIngredientRow[]) {
 }
 
 type RecipeListRow = {
+  contentJson?: unknown;
   id: string;
   title: string;
   state: string;
@@ -251,9 +259,10 @@ export function projectRecipeListItem(r: RecipeListRow): RecipeListItem {
   const allergensResult = computeRecipeAllergens(
     (r.recipeIngredients ?? []).map((ing) => ({
       productId: ing.product?.id ?? null,
-      product: ing.product ? { allergen: ing.product.allergen } : null,
+      product: ing.product,
     })),
     r.manualAllergens ?? [],
+    r.contentJson,
   );
   return {
     id: r.id,
@@ -264,10 +273,13 @@ export function projectRecipeListItem(r: RecipeListRow): RecipeListItem {
     authorName: r.author?.name ?? r.author?.email ?? "—",
     updatedAt: r.updatedAt.toISOString(),
     perPortionCents: cost.perPortionCents,
+    costStatus: cost.status,
     salePrice: r.salePrice,
     portions: r.portions,
     allergens: allergensResult.allergens,
     unlinkedIngredients: allergensResult.unlinkedIngredients,
+    unreviewedIngredients: allergensResult.unreviewedIngredients,
+    allergensComplete: allergensResult.allergensComplete,
   };
 }
 
@@ -374,6 +386,7 @@ export function projectMenuListItem(m: MenuListRow): MenuListItem {
 }
 
 type MenuDetailRow = {
+  serviceCharges?: unknown;
   id: string;
   name: string;
   season: string | null;
@@ -388,10 +401,12 @@ type MenuDetailRow = {
     customName: string | null;
     customDesc: string | null;
     price: number;
+    priceUnit?: string;
     order: number;
     recipe:
       | {
           title: string;
+          contentJson?: unknown;
           // Fase 2 alérgenos — los necesitamos por item para computar
           // `allergens` por plato en la projection. recipeIngredients reusa el
           // include de costo (que ya trae product.allergen desde Fase 1).
@@ -422,6 +437,7 @@ export function projectMenuDetail(m: MenuDetailRow): MenuDetail {
       : null;
   const specParse = MenuStyleSpecSchema.safeParse(m.restaurant?.menuStyleSpec ?? null);
   return {
+    serviceCharges: MenuServiceChargesSchema.parse(m.serviceCharges ?? []),
     id: m.id,
     name: m.name,
     season: m.season,
@@ -441,11 +457,12 @@ export function projectMenuDetail(m: MenuDetailRow): MenuDetail {
         ? computeRecipeAllergens(
             (it.recipe.recipeIngredients ?? []).map((ing) => ({
               productId: ing.product?.id ?? null,
-              product: ing.product ? { allergen: ing.product.allergen } : null,
+              product: ing.product,
             })),
             it.recipe.manualAllergens ?? [],
+            it.recipe.contentJson,
           )
-        : { allergens: [] as Allergen[], unlinkedIngredients: 0 };
+        : { allergens: [] as Allergen[], unlinkedIngredients: 0, unreviewedIngredients: 0, allergensComplete: false };
       return {
         id: it.id,
         recipeId: it.recipeId,
@@ -453,11 +470,15 @@ export function projectMenuDetail(m: MenuDetailRow): MenuDetail {
         name: it.customName ?? it.recipe?.title ?? "",
         description: it.customDesc ?? "",
         price: it.price,
+        priceUnit: it.priceUnit === "kg" ? "kg" : "portion",
         order: it.order,
         // Exponer el flag permite que el compositor staff sepa cuándo el
         // nombre está pisado y muestre el toggle para revertir.
         customName: it.customName,
         allergens: allergensResult.allergens,
+        unlinkedIngredients: allergensResult.unlinkedIngredients,
+        unreviewedIngredients: allergensResult.unreviewedIngredients,
+        allergensComplete: allergensResult.allergensComplete,
         manualAllergens: it.recipe?.manualAllergens ?? [],
       };
     }),
@@ -500,13 +521,13 @@ type RestaurantRow = {
   }>;
 };
 
-export function projectRestaurant(r: RestaurantRow): RestaurantResponse {
+export function projectRestaurant(r: RestaurantRow, role: MeResponse["role"]): RestaurantResponse {
   return {
     id: r.id,
     name: r.name,
     identityLine: r.identityLine,
     photoUrl: r.photoUrl,
-    inviteCode: r.inviteCode,
+    inviteCode: can(role, "view_invite_code") ? r.inviteCode : "",
     staff: r.users.map((u) => ({
       id: u.id,
       name: u.name ?? u.email ?? "",

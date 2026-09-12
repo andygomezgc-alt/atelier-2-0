@@ -73,7 +73,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const ctx = await requireAuth(req);
+  const ctx = await requireAuth(req, "view_staff_recipe");
   if (isNextResponse(ctx)) return ctx;
   if (!ctx.restaurantId)
     return new Response(JSON.stringify({ error: "Not in a restaurant" }), { status: 403 });

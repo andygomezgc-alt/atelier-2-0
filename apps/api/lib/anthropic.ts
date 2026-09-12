@@ -1,8 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync } from "fs";
 import { join } from "path";
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
 
 const SYSTEM_PROMPT_PATH = join(process.cwd(), "lib", "anthropic-system.md");
 
@@ -12,14 +9,6 @@ function loadSystemPrompt(): string {
   cachedSystemPrompt = readFileSync(SYSTEM_PROMPT_PATH, "utf-8");
   return cachedSystemPrompt;
 }
-
-export const MODEL_IDS = {
-  haiku: "claude-haiku-4-5",
-  sonnet: "claude-sonnet-5",
-  opus: "claude-opus-5",
-} as const;
-
-type ModelKey = keyof typeof MODEL_IDS;
 
 type RestaurantContext = {
   name: string;
@@ -37,6 +26,7 @@ export function buildSystemBlocks(
   restaurant: RestaurantContext,
   recentRecipes: RecentRecipe[],
   pinnedIdea: string | null,
+  culinaryMemory?: string | null,
 ) {
   const principles = loadSystemPrompt();
 
@@ -59,7 +49,9 @@ export function buildSystemBlocks(
 
   // Dynamic context — recent recipes + pinned idea. Not cached.
   const dynamicLines: string[] = [];
-  if (recentRecipes.length > 0) {
+  if (culinaryMemory !== undefined && culinaryMemory !== null) {
+    if (culinaryMemory) dynamicLines.push(culinaryMemory);
+  } else if (recentRecipes.length > 0) {
     dynamicLines.push("# Recetas recientes del cuaderno");
     for (const r of recentRecipes.slice(0, 8)) {
       dynamicLines.push(`- ${r.title} (${r.state})`);
@@ -85,13 +77,7 @@ export function buildSystemBlocks(
 // ~10% del precio en vez de reprocesarse entero. Un breakpoint por mensaje
 // quemaría el tope de 4 por request sin ganar nada — el prefijo es acumulativo.
 //
-// Dos límites conocidos, ninguno rompe nada (si no cachea, no cobra premium):
-//  - Por debajo del mínimo cacheable del modelo no entra y no avisa: 512 tokens
-//    en Opus 5, 1024 en Sonnet 5, 4096 en Haiku 4.5. En Haiku el hilo corto
-//    nunca va a llegar.
-//  - La ruta manda una ventana deslizante de los últimos 20 mensajes. Pasados
-//    esos 20, cada turno tira el más viejo y cambia el prefijo del hilo, así
-//    que desde ahí solo siguen cacheando los bloques de sistema.
+// El proveedor decide si el prefijo cumple el mínimo de caché del modelo.
 export function buildMessageBlocks(messages: Msg[]) {
   const last = messages.length - 1;
   return messages.map((m, i) =>
@@ -108,21 +94,4 @@ export function buildMessageBlocks(messages: Msg[]) {
         }
       : { role: m.role, content: m.content },
   );
-}
-
-export function streamMessage({
-  model,
-  system,
-  messages,
-}: {
-  model: ModelKey;
-  system: ReturnType<typeof buildSystemBlocks>;
-  messages: Msg[];
-}) {
-  return client.messages.stream({
-    model: MODEL_IDS[model],
-    max_tokens: 2048,
-    system,
-    messages,
-  });
 }

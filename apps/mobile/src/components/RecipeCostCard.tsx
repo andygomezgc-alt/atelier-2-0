@@ -7,8 +7,7 @@
 //   - Costo por porción es la lectura principal (serif grande). Total y
 //     food cost % en segunda línea pequeña.
 //   - Food cost % solo si hay salePrice cargado.
-//   - portions=null → asume 1 al calcular (el backend ya lo hace), pero
-//     mostramos "Sin porciones definidas" como hint sutil.
+//   - portions=null → muestra el total de la elaboración, sin inventar porciones.
 //   - Si missingPriceCount + unmeasuredCount + unlinkedCount > 0 → aviso
 //     "N ingredientes sin costo" con tap → /productos?filter=sin-precio.
 //   - Inputs de portions / salePrice editables tap-to-edit (Modal con
@@ -58,8 +57,6 @@ function RecipeCostCardImpl({
   const [editing, setEditing] = useState<"portions" | "salePrice" | null>(null);
   const [editValue, setEditValue] = useState("");
   const [saving, setSaving] = useState(false);
-
-  if (recipe.recipeIngredients.length === 0) return null;
 
   const c = recipe.cost;
   const portions = recipe.portions ?? 1;
@@ -131,13 +128,15 @@ function RecipeCostCardImpl({
     router.push("/productos?filter=sin-precio" as never);
   }, [router]);
 
+  if (recipe.recipeIngredients.length === 0) return null;
+
   return (
     <View style={styles.card}>
       {/* Hero: costo por porción */}
       <View style={styles.heroRow}>
-        <Text style={styles.eyebrow}>{t("cost_card_per_portion")}</Text>
+        <Text style={styles.eyebrow}>{t(portionsRaw === null ? "cost_card_total" : "cost_card_per_portion")}{missingTotal > 0 ? ` · ${t("cost_partial")}` : ""}</Text>
       </View>
-      <Text style={styles.bigCost}>{formatEuro(c.perPortionCents)}</Text>
+      <Text style={styles.bigCost}>{formatEuro(portionsRaw === null ? c.totalCents : c.perPortionCents)}</Text>
 
       {/* Línea secundaria: total + food cost */}
       <View style={styles.secondaryRow}>

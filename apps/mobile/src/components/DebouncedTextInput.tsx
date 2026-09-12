@@ -17,6 +17,8 @@ const DEBOUNCE_MS = 600;
 export type DebouncedTextInputProps = {
   value: string;
   onSave: (value: string) => void;
+  // Optional immediate draft capture for flows that must flush before export.
+  onDraftChange?: (value: string) => void;
   editable?: boolean;
   placeholder?: string;
   style?: StyleProp<TextStyle>;
@@ -29,6 +31,7 @@ export type DebouncedTextInputProps = {
 export function DebouncedTextInput({
   value,
   onSave,
+  onDraftChange,
   editable = true,
   placeholder,
   style,
@@ -71,6 +74,7 @@ export function DebouncedTextInput({
   function handleChange(next: string) {
     setLocal(next);
     pendingRef.current = next;
+    onDraftChange?.(next);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;

@@ -1,9 +1,11 @@
+import { normalizeChatMode, type ChatMode } from "@atelier/shared";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Image,
+  Keyboard,
   Pressable,
   StyleSheet,
   Text,
@@ -33,6 +35,7 @@ import {
   type ChatMessage,
 } from "@/src/api/conversations";
 import { extractRecipeFromAssistant } from "@/src/api/recipes";
+import { recipeConversationText } from "@/src/lib/recipe-conversation";
 import { showToast } from "@/src/components/Toast";
 import { stripRecipePayload } from "@/src/lib/recipe-payload";
 import { setRecipeDraft } from "@/src/lib/recipe-draft";
@@ -45,16 +48,15 @@ import type { TranslationKey } from "@atelier/i18n";
 import { colors, fonts, fontSizes, radii, spacing, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
 
-type ModelKey = "haiku" | "sonnet" | "opus";
+type ModelKey = ChatMode;
 
 function createClientMessageId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 const MODEL_LABEL_KEYS: Record<ModelKey, TranslationKey> = {
-  haiku: "model_haiku",
-  sonnet: "model_sonnet",
-  opus: "model_opus",
+  daily: "model_daily",
+  creative: "model_creative",
 };
 
 function initials(name: string): string {
@@ -179,11 +181,13 @@ export default function AsistenteScreen() {
     ideaId?: string;
     ideaText?: string;
     conversationId?: string;
+    chatSession?: string;
   }>();
 
   const ideaId = params.ideaId;
   const ideaText = params.ideaText;
   const conversationIdParam = params.conversationId;
+  const chatSession = params.chatSession;
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -195,8 +199,8 @@ export default function AsistenteScreen() {
 
   const userModel: ModelKey =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
-      ? authState.user.defaultModel
-      : "sonnet";
+      ? normalizeChatMode(authState.user.defaultModel)
+      : "daily";
 
   const userName =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -222,6 +226,10 @@ export default function AsistenteScreen() {
 
   const [model, setModel] = useState<ModelKey>(userModel);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationLoading, setConversationLoading] = useState(Boolean(conversationIdParam || ideaId));
+  const [conversationLoadError, setConversationLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const switchingRef = useRef(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [structuring, setStructuring] = useState(false);
@@ -319,8 +327,10 @@ export default function AsistenteScreen() {
   // Cancel any in-flight stream when the screen unmounts.
   useEffect(() => {
     return () => {
+      streamGenRef.current += 1;
       abortRef.current?.abort();
       if (tickerRef.current) clearInterval(tickerRef.current);
+      drainResolveRef.current?.();
     };
   }, []);
 
@@ -334,23 +344,34 @@ export default function AsistenteScreen() {
     setStreaming(false);
     setConversationId(null);
     setMessages([]);
+    setInput("");
+    setConversationLoading(Boolean(conversationIdParam || ideaId));
+    setConversationLoadError(false);
+    switchingRef.current = false;
     resetStream();
     setStreamError(null);
     preloadedIds.current = new Set();
 
     let cancelled = false;
+    const gen = streamGenRef.current;
+    const isCurrent = () => !cancelled && gen === streamGenRef.current;
 
     if (conversationIdParam) {
       (async () => {
         try {
           const msgs = await listMessages(conversationIdParam);
-          if (cancelled) return;
+          if (!isCurrent()) return;
           setConversationId(conversationIdParam);
           preloadedIds.current = new Set(msgs.map((m) => m.id));
           setMessages(msgs);
+          const pending = msgs.at(-1);
+          if (pending?.role === "user" && pending.clientMessageId) setStreamError({ content: pending.content, clientMessageId: pending.clientMessageId, model: userModel });
         } catch (err) {
           if (cancelled) return;
+          setConversationLoadError(true);
           showToast(apiErrorMessage(err, t));
+        } finally {
+          if (!cancelled) setConversationLoading(false);
         }
       })();
       return () => {
@@ -362,13 +383,18 @@ export default function AsistenteScreen() {
       (async () => {
         try {
           const conv = await getConversationByIdea(ideaId);
-          if (cancelled) return;
+          if (!isCurrent()) return;
           setConversationId(conv.id);
           preloadedIds.current = new Set(conv.messages.map((m) => m.id));
           setMessages(conv.messages);
+          const pending = conv.messages.at(-1);
+          if (pending?.role === "user" && pending.clientMessageId) setStreamError({ content: pending.content, clientMessageId: pending.clientMessageId, model: userModel });
         } catch (err) {
           if (cancelled) return;
+          setConversationLoadError(true);
           showToast(apiErrorMessage(err, t));
+        } finally {
+          if (!cancelled) setConversationLoading(false);
         }
       })();
     }
@@ -376,13 +402,15 @@ export default function AsistenteScreen() {
     return () => {
       cancelled = true;
     };
-  }, [ideaId, conversationIdParam, t]);
+  // Language/model changes must not reopen or clear the chef's conversation.
+  }, [ideaId, conversationIdParam, chatSession, loadAttempt]);
 
   const ensureConversation = useCallback(async (): Promise<string | null> => {
     if (conversationId) return conversationId;
     if (!hasRestaurant) return null;
+    const gen = streamGenRef.current;
     const conv = await createConversation({ ideaId: ideaId ?? null, modelUsed: model });
-    setConversationId(conv.id);
+    if (gen === streamGenRef.current) setConversationId(conv.id);
     return conv.id;
   }, [conversationId, ideaId, model, hasRestaurant]);
 
@@ -398,6 +426,7 @@ export default function AsistenteScreen() {
 
     try {
       const convId = await ensureConversation();
+      if (gen !== streamGenRef.current || ac.signal.aborted) return;
       const previewHistory = convId
         ? undefined
         : messages
@@ -408,6 +437,7 @@ export default function AsistenteScreen() {
         text,
         modelToUse,
         (delta) => {
+          if (gen !== streamGenRef.current || ac.signal.aborted) return;
           if (streamTargetRef.current === "") selection();
           streamTargetRef.current += delta;
           startTicker();
@@ -443,6 +473,7 @@ export default function AsistenteScreen() {
         },
       ]);
     } catch (err) {
+      if (gen !== streamGenRef.current) return;
       if (err instanceof Error && err.name === "AbortError") return;
       // P1-8 — CUALQUIER error del stream que no sea un abort (corte de red real,
       // error del server a mitad, o el timeout de inactividad) va al banner con
@@ -464,7 +495,7 @@ export default function AsistenteScreen() {
 
   async function handleSend() {
     const text = input.trim();
-    if (!text || streaming) return;
+    if (!text || streaming || structuring || conversationLoading || conversationLoadError || switchingRef.current || abortRef.current) return;
     tapLight();
     setInput("");
     const clientMessageId = createClientMessageId();
@@ -480,7 +511,7 @@ export default function AsistenteScreen() {
   }
 
   function handleMic() {
-    if (streaming) return;
+    if (streaming || structuring || conversationLoading || conversationLoadError || switchingRef.current) return;
     if (listening) {
       stopMic();
       return;
@@ -490,8 +521,40 @@ export default function AsistenteScreen() {
   }
 
   async function retryStream() {
-    if (!streamError || streaming) return;
+    if (!streamError || streaming || switchingRef.current || abortRef.current) return;
     await runStream(streamError.content, streamError.model, streamError.clientMessageId);
+  }
+
+  function changeConversation(action: () => void) {
+    if (streaming || structuring || listening || switchingRef.current || abortRef.current) return;
+    const proceed = () => {
+      switchingRef.current = true;
+      // Invalidate old asynchronous work before navigation commits its params.
+      streamGenRef.current += 1;
+      Keyboard.dismiss();
+      action();
+    };
+    const warning = !conversationId && messages.length > 0
+      ? "chat_leave_unsaved"
+      : streamError ? "chat_leave_pending"
+      : input.trim() ? "chat_leave_draft" : null;
+    if (!warning) { proceed(); return; }
+    Alert.alert(t("chat_leave_title"), t(warning), [
+      { text: t("confirm_cancel"), style: "cancel" },
+      { text: t("chat_leave_confirm"), style: "destructive", onPress: proceed },
+    ]);
+  }
+
+  function startNewChat() {
+    changeConversation(() => {
+      router.setParams({
+        ideaId: undefined,
+        ideaText: undefined,
+        conversationId: undefined,
+        // A new value also resets a chat whose URL already has no conversation.
+        chatSession: createClientMessageId(),
+      });
+    });
   }
 
   // Sin restaurante, ensureConversationForSave hace lazy-create + crea
@@ -524,7 +587,7 @@ export default function AsistenteScreen() {
   }
 
   async function saveAsRecipe() {
-    if (messages.length === 0) return;
+    if (messages.length === 0 || streaming || structuring || streamError || switchingRef.current) return;
     const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
     if (!lastAssistant) return;
 
@@ -536,17 +599,16 @@ export default function AsistenteScreen() {
         return;
       }
 
-      // Bloque 3 (Opción A) — el system prompt ya NO le pide al modelo emitir
-      // <recipe_payload>. El guardado siempre pasa por la extracción Haiku
-      // (validada 10/10 en A-01), que estructura el texto visible en el JSON
-      // que el form espera. Robusto frente al cap de effort:low de Sonnet.
-      // stripRecipePayload() queda como defensivo por si un mensaje histórico
-      // todavía trae un payload viejo persistido en DB.
-      const recipeText = stripRecipePayload(lastAssistant.content);
+      // Extract the latest complete recipe together with subsequent revisions.
+      // Bound the context without silently cutting ingredients or later changes.
+      let recipeText: string;
+      try { recipeText = recipeConversationText(messages); }
+      catch { showToast(t("recipe_context_too_long")); return; }
       try {
         const ex = await extractRecipeFromAssistant(recipeText);
         setRecipeDraft({
           title: ex.title,
+          portions: ex.portions ?? null,
           contentJson: ex.contentJson,
           recipeIngredients: ex.recipeIngredients,
           pendingMatches: ex.pendingMatches,
@@ -601,26 +663,20 @@ export default function AsistenteScreen() {
   // delta. Aparece debajo del último mensaje del chef y desaparece apenas
   // llega texto.
   const awaitingFirstDelta = streaming && streamShown.length === 0;
+  const navigationBusy = streaming || structuring || listening;
+  const composerBusy = streaming || structuring || conversationLoading || conversationLoadError;
   const showSaveButton =
     !streaming && !streamError && messages.some((m) => m.role === "assistant");
 
   return (
     <SafeAreaView edges={["top"]} style={styles.root}>
-      {/* HEADER del mockup: eyebrow + saludo serif italiano + pill historial + avatar */}
+      {/* Saludo y perfil; las dos acciones del chat tienen su propia fila. */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerEyebrow}>{t("header_asistente_eyebrow")}</Text>
           <Text style={styles.headerGreet}>{t("chat_greet")}</Text>
         </View>
         <View style={styles.headerRight}>
-          <Pressable
-            style={styles.historyPill}
-            onPress={() => setHistoryOpen(true)}
-            accessibilityLabel={t("chat_history")}
-          >
-            <Ionicons name="time-outline" size={14} color={colors.ink} />
-            <Text style={styles.historyLabel}>{t("chat_history")}</Text>
-          </Pressable>
           <Pressable
             style={styles.avatar}
             onPress={() => setProfileOpen(true)}
@@ -634,19 +690,43 @@ export default function AsistenteScreen() {
           </Pressable>
         </View>
       </View>
+      <View style={styles.chatActions}>
+        <Pressable
+          style={({ pressed }) => [styles.historyPill, styles.newChatPill, (pressed || navigationBusy) && styles.actionDimmed]}
+          onPress={startNewChat}
+          disabled={navigationBusy}
+          accessibilityRole="button"
+          accessibilityLabel={t("chat_new")}
+          accessibilityState={{ disabled: navigationBusy }}
+        >
+          <Ionicons name="add-outline" size={18} color={colors.paper} />
+          <Text style={[styles.historyLabel, styles.newChatLabel]}>{t("chat_new")}</Text>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.historyPill, (pressed || navigationBusy) && styles.actionDimmed]}
+          onPress={() => setHistoryOpen(true)}
+          disabled={navigationBusy}
+          accessibilityRole="button"
+          accessibilityLabel={t("chat_history")}
+          accessibilityState={{ disabled: navigationBusy }}
+        >
+          <Ionicons name="time-outline" size={18} color={colors.ink} />
+          <Text style={styles.historyLabel}>{t("chat_history")}</Text>
+        </Pressable>
+      </View>
       <View style={styles.divider} />
 
       <PreviousChatsSheet
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         onPick={(conv) => {
-          router.replace({
-            pathname: "/(tabs)/asistente",
-            params: {
-              conversationId: conv.id,
-              ...(conv.ideaText ? { ideaText: conv.ideaText } : {}),
-            },
-          });
+          if (conv.id === conversationId) return;
+          changeConversation(() => router.setParams({
+            ideaId: undefined,
+            ideaText: conv.ideaText ?? undefined,
+            conversationId: conv.id,
+            chatSession: createClientMessageId(),
+          }));
         }}
       />
       <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} />
@@ -663,7 +743,7 @@ export default function AsistenteScreen() {
         ) : null}
 
         <View style={styles.modelRow}>
-          {(["haiku", "sonnet", "opus"] as const).map((m) => (
+          {(["daily", "creative"] as const).map((m) => (
             <Pressable
               key={m}
               style={[styles.modelChip, model === m && styles.modelChipActive]}
@@ -677,7 +757,11 @@ export default function AsistenteScreen() {
         </View>
 
         <View style={{ flex: 1 }}>
-          {messages.length === 0 && !streaming ? (
+          {conversationLoading ? (
+            <ActivityIndicator style={{ flex: 1 }} color={colors.terracota} />
+          ) : conversationLoadError ? (
+            <NetworkError onRetry={() => setLoadAttempt((attempt) => attempt + 1)} />
+          ) : messages.length === 0 && !streaming ? (
             <Empty
               icon="chatbubble-outline"
               title={t("empty_chat_title")}
@@ -758,11 +842,11 @@ export default function AsistenteScreen() {
           {speechAvailable ? (
             <Pressable
               onPress={handleMic}
-              disabled={streaming}
+              disabled={composerBusy}
               style={[
                 styles.micBtn,
                 listening && styles.micBtnActive,
-                streaming && styles.micBtnDisabled,
+                composerBusy && styles.micBtnDisabled,
               ]}
               accessibilityLabel={listening ? t("chat_mic_stop") : t("chat_mic_label")}
             >
@@ -780,10 +864,10 @@ export default function AsistenteScreen() {
             placeholderTextColor={colors.mute}
             style={styles.composerInput}
             multiline
-            editable={!streaming}
+            editable={!composerBusy}
           />
           <SendButton
-            disabled={!input.trim() || streaming}
+            disabled={!input.trim() || composerBusy || listening}
             streaming={streaming}
             onPress={handleSend}
           />
@@ -821,6 +905,16 @@ const styles = StyleSheet.create({
     lineHeight: fontSizes.serifXl * 1.2,
   },
   headerRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  chatActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.md,
+  },
+  newChatPill: { backgroundColor: colors.teal, borderColor: colors.teal },
+  newChatLabel: { color: colors.paper },
+  actionDimmed: { opacity: 0.5 },
   historyPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -828,7 +922,8 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     borderColor: colors.edge,
     borderRadius: radii.pill,
-    paddingHorizontal: 10,
+    minHeight: 48,
+    paddingHorizontal: 14,
     paddingVertical: 6,
   },
   historyLabel: {

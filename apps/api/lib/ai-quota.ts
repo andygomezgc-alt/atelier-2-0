@@ -1,4 +1,5 @@
-// Tope diario de llamadas a la IA por usuario (clave ANTHROPIC del server).
+// Tope diario de acciones técnicas de IA por usuario. El chat tiene su propia
+// cuota semanal en ai/budget.ts; no incrementa este contador de solicitudes.
 // Cierra el agujero de "cualquiera con cuenta puede loopear y vaciar la clave
 // compartida" (auditoría jul 2026, urgencia #1).
 //
@@ -7,6 +8,7 @@
 // como tope de costo global; este sí, porque el estado vive en la base.
 
 import { prisma } from "@atelier/db";
+import { isAiOwner } from "./ai/budget";
 
 // Un chef real hace unas pocas acciones de IA por día. 120 deja margen enorme
 // para un día intenso y aun así corta en seco a quien intente abusar. Se puede
@@ -37,6 +39,7 @@ export function secondsToUtcMidnight(now: number = Date.now()): number {
  * exacto).
  */
 export async function reserveAiCall(userId: string): Promise<QuotaResult> {
+  const exempt = await isAiOwner(userId);
   const day = utcDay();
   const row = await prisma.aiUsage.upsert({
     where: { userId_day: { userId, day } },
@@ -45,7 +48,7 @@ export async function reserveAiCall(userId: string): Promise<QuotaResult> {
     select: { requestCount: true },
   });
 
-  if (row.requestCount > AI_DAILY_LIMIT) {
+  if (!exempt && row.requestCount > AI_DAILY_LIMIT) {
     return { ok: false, retryAfter: secondsToUtcMidnight(), limit: AI_DAILY_LIMIT };
   }
   return { ok: true, used: row.requestCount, limit: AI_DAILY_LIMIT };
@@ -63,16 +66,19 @@ export async function recordAiTokens(
 ): Promise<void> {
   const day = utcDay();
   try {
-    await prisma.aiUsage.update({
+    const input = Math.max(0, Math.round(inputTokens));
+    const output = Math.max(0, Math.round(outputTokens));
+    await prisma.aiUsage.upsert({
       where: { userId_day: { userId, day } },
-      data: {
-        inputTokens: { increment: Math.max(0, Math.round(inputTokens)) },
-        outputTokens: { increment: Math.max(0, Math.round(outputTokens)) },
+      create: { userId, day, inputTokens: input, outputTokens: output },
+      update: {
+        inputTokens: { increment: input },
+        outputTokens: { increment: output },
       },
     });
   } catch {
-    // La fila existe siempre (reserveAiCall corre antes), pero si por lo que sea
-    // no está, no queremos tumbar la respuesta por telemetría de costo.
+    // El chat puede ser la primera acción del día, sin reserveAiCall previo.
+    // Un fallo de telemetría no debe tumbar una respuesta válida.
   }
 }
 

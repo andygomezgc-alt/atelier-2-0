@@ -35,10 +35,16 @@ export async function POST(
     prisma.recipe.findUnique({ where: { id: parse.data.recipeId } }),
   ]);
 
-  if (!menu || menu.restaurantId !== ctx.restaurantId)
+  if (!menu || menu.restaurantId !== ctx.restaurantId || menu.deletedAt != null)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!recipe || recipe.restaurantId !== ctx.restaurantId || recipe.deletedAt !== null)
     return NextResponse.json({ error: "Recipe not in restaurant" }, { status: 404 });
+
+  if (parse.data.sectionId && !(await prisma.menuSection.count({
+    where: { id: parse.data.sectionId, menuFolderId: menuId },
+  }))) {
+    return NextResponse.json({ error: "invalid_section_reference" }, { status: 400 });
+  }
 
   // P2-4: el cálculo de nextOrder (findFirst) y el create van DENTRO de la
   // misma transacción Serializable — cierra la ventana donde dos requests
@@ -64,6 +70,7 @@ export async function POST(
               customName: parse.data.customName ?? null,
               customDesc: parse.data.customDesc ?? null,
               price: parse.data.price,
+              priceUnit: parse.data.priceUnit ?? "portion",
               order: nextOrder,
             },
           });

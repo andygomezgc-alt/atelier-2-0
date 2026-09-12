@@ -16,10 +16,32 @@ const unlinked = (): IngredientForAllergens => ({
 });
 
 describe("computeRecipeAllergens", () => {
+  test("un producto compuesto puede declarar varios alérgenos", () => {
+    const result = computeRecipeAllergens([{ productId: "sauce", product: { allergen: "milk", allergens: ["milk", "eggs", "mustard"], allergensReviewed: true } }], ["eggs"]);
+    expect(result.allergens).toEqual(["eggs", "milk", "mustard"]);
+    expect(result.allergensComplete).toBe(true);
+  });
+  test("distingue ninguno declarado de no revisado", () => {
+    expect(computeRecipeAllergens([linked(null)], []).allergensComplete).toBe(false);
+    expect(computeRecipeAllergens([{ productId: "salt", product: { allergen: null, allergens: [], allergensReviewed: true } }], []).allergensComplete).toBe(true);
+  });
+  test("las sugerencias y los manuales no completan una revisión pendiente", () => {
+    const result = computeRecipeAllergens([linked("milk")], ["eggs"]);
+    expect(result.allergens).toEqual(["eggs", "milk"]);
+    expect(result.unreviewedIngredients).toBe(1);
+    expect(result.allergensComplete).toBe(false);
+  });
+  test("cuenta ingredientes legacy sin filas estructuradas y productos ausentes", () => {
+    const result = computeRecipeAllergens([{ productId: "missing", product: null }], [], { ingredients: ["sal", "pimienta"] });
+    expect(result.unlinkedIngredients).toBe(2);
+    expect(result.allergensComplete).toBe(false);
+  });
   test("sin ingredientes ni manuales → vacío + 0 huérfanos", () => {
     expect(computeRecipeAllergens([], [])).toEqual({
       allergens: [],
       unlinkedIngredients: 0,
+      unreviewedIngredients: 0,
+      allergensComplete: false,
     });
   });
 

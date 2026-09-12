@@ -1,13 +1,17 @@
 import { NextRequest } from "next/server";
-import Anthropic, { APIUserAbortError } from "@anthropic-ai/sdk";
-import { prisma, Prisma } from "@atelier/db";
-import { PostMessageRequestSchema } from "@atelier/shared";
+import { chatMemory } from "@/lib/culinary-memory/service";
+import { prisma } from "@atelier/db";
+import { PostMessageRequestSchema, can } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
-import { buildMessageBlocks, buildSystemBlocks, MODEL_IDS, type Msg } from "@/lib/anthropic";
-import { reserveAiCall, recordAiTokens, aiQuotaExceededResponse } from "@/lib/ai-quota";
+import { buildSystemBlocks, type Msg } from "@/lib/anthropic";
+import { recordAiTokens } from "@/lib/ai-quota";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
+import { streamChat } from "@/lib/ai/chat";
+import { chatConfig, providerConfigured } from "@/lib/ai/config";
 
+import { beginChatTurn, finishChatTurn, releaseChatTurn, type ChatTurn } from "@/lib/chat-turn";
+
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 export async function GET(
@@ -27,7 +31,7 @@ export async function GET(
   const messages = await prisma.message.findMany({
     where: { conversationId: id },
     orderBy: { createdAt: "asc" },
-    select: { id: true, role: true, content: true, createdAt: true },
+    select: { id: true, role: true, content: true, createdAt: true, clientMessageId: true },
   });
 
   return Response.json(
@@ -35,6 +39,7 @@ export async function GET(
       id: m.id,
       role: m.role,
       content: m.content,
+      clientMessageId: m.clientMessageId,
       createdAt: m.createdAt.toISOString(),
     })),
   );
@@ -60,16 +65,26 @@ export async function POST(
   if (!isPreview && !ctx.restaurantId)
     return new Response(JSON.stringify({ error: "Not in a restaurant" }), { status: 403 });
 
-  const body = await req.json();
+  if (isPreview && ctx.restaurantId && !can(ctx.role, "capture_idea")) return Response.json({ error: "Forbidden" }, { status: 403 });
+
+  const body = await req.json().catch(() => null);
   const parse = PostMessageRequestSchema.safeParse(body);
   if (!parse.success)
     return new Response(JSON.stringify({ error: parse.error.flatten() }), { status: 400 });
+
+  const model = parse.data.model ?? "daily";
+  const config = chatConfig(model);
+  if (!providerConfigured(config.provider)) return Response.json({
+    error: "El asistente todavía no está configurado. Inténtalo más tarde.", code: "ai_provider_unconfigured",
+  }, { status: 503 });
 
   let restaurant: { name: string; identityLine: string | null } | null = null;
   let recentRecipes: { title: string; state: string }[] = [];
   let messages: Msg[] = [];
   let pinnedIdeaText: string | null = null;
 
+  let turn: ChatTurn | undefined;
+  try {
   if (isPreview) {
     // Restaurante placeholder — el chef todavía no le puso nombre.
     restaurant = { name: "Tu cocina", identityLine: null };
@@ -96,8 +111,6 @@ export async function POST(
       messages.push({ role: "user", content: parse.data.content });
     }
 
-    const quota = await reserveAiCall(ctx.userId);
-    if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
   } else {
     const conv = await prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -108,32 +121,9 @@ export async function POST(
 
     pinnedIdeaText = conv.idea?.text ?? null;
 
-    // Chequeamos el tope diario antes de persistir el mensaje del user para no
-    // dejar un mensaje huérfano sin respuesta si rebota el 429.
-    const quota = await reserveAiCall(ctx.userId);
-    if (!quota.ok) return aiQuotaExceededResponse(quota.retryAfter);
-
-    // Persist user message before streaming. A retry keeps the same
-    // clientMessageId: the unique constraint raises P2002, which means the turn
-    // is already present and we can safely make a fresh model call.
-    try {
-      await prisma.message.create({
-        data: {
-          conversationId,
-          role: "user",
-          content: parse.data.content,
-          ...(parse.data.clientMessageId
-            ? { clientMessageId: parse.data.clientMessageId }
-            : {}),
-        },
-      });
-    } catch (err) {
-      const isDuplicateClientMessage =
-        parse.data.clientMessageId &&
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === "P2002";
-      if (!isDuplicateClientMessage) throw err;
-    }
+    const started = await beginChatTurn(conversationId, ctx.restaurantId, parse.data.content, parse.data.clientMessageId);
+    if (started instanceof Response) return started;
+    turn = started;
 
     // Build context: recent recipes + pinned idea.
     const [r, recent, history] = await Promise.all([
@@ -147,9 +137,9 @@ export async function POST(
         take: 8,
         select: { title: true, state: true },
       }),
-      // Sliding window: solo re-enviamos los últimos 20 mensajes a Claude. Más
+      // Sliding window: solo re-enviamos los últimos 20 mensajes al modelo. Más
       // allá de ese tope la conversación crece linealmente en costo/latencia sin
-      // agregar señal útil (Claude ya tiene los principios estables y la idea
+      // agregar señal útil (el modelo ya tiene los principios estables y la idea
       // anclada en el system prompt). Fetched desc para que `take` aplique al
       // final cronológico; revertimos abajo antes de armar el array de messages.
       prisma.message.findMany({
@@ -160,8 +150,7 @@ export async function POST(
       }),
     ]);
 
-    if (!r)
-      return new Response(JSON.stringify({ error: "Restaurant not found" }), { status: 404 });
+    if (!r) throw new Error("Restaurant not found");
 
     restaurant = r;
     recentRecipes = recent;
@@ -172,18 +161,28 @@ export async function POST(
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
   }
 
-  const system = buildSystemBlocks(restaurant, recentRecipes, pinnedIdeaText);
-  // El mobile siempre manda `model` explícito (apps/mobile/src/api/conversations.ts).
-  // Si un cliente futuro lo omite, default a Sonnet — barato/rápido para chat.
-  // No usamos conv.modelUsed como fallback para evitar perpetuar Opus en turnos
-  // cortos cuando la conversación fue creada con Opus para una pregunta puntual.
-  const model = parse.data.model ?? "sonnet";
+  } catch (error) {
+    if (turn) await releaseChatTurn(turn).catch(() => undefined);
+    throw error;
+  }
 
+  let system;
+  try {
+    const memory = ctx.restaurantId ? await chatMemory(ctx.restaurantId).catch(() => "") : null;
+    system = buildSystemBlocks(restaurant, recentRecipes, pinnedIdeaText, memory);
+  }
+  catch (error) {
+    if (turn) await releaseChatTurn(turn).catch(() => undefined);
+    throw error;
+  }
   const start = Date.now();
 
   // SSE stream — wire client AbortSignal so closing the connection cancels the
-  // Anthropic upstream call (avoids burning tokens after the client disconnects).
+  // provider upstream call (avoids burning tokens after the client disconnects).
+  const downstream = new AbortController();
+  const signal = AbortSignal.any([req.signal, downstream.signal]);
   const stream = new ReadableStream({
+    cancel() { downstream.abort(); },
     async start(controller) {
       const encoder = new TextEncoder();
       let assistantText = "";
@@ -193,14 +192,9 @@ export async function POST(
       let aborted = false;
       let errored = false;
 
-      // A-05 — heartbeat cada 8s ANTES de que llegue el primer delta del
-      // modelo. Mantiene viva la conexión y resetea el inactivity timer del
-      // cliente (35s); también es la señal con la que mobile decide cuándo
-      // mostrar el indicador "Atelier piensa •••". Se cancela apenas el
-      // modelo emite el primer texto.
-      let firstDeltaReceived = false;
+      // Keep the connection alive during reasoning and the final database write.
       const heartbeatInterval = setInterval(() => {
-        if (firstDeltaReceived || aborted || errored) return;
+        if (aborted || errored) return;
         try {
           controller.enqueue(
             encoder.encode(
@@ -213,51 +207,19 @@ export async function POST(
       }, 8_000);
 
       try {
-        // Server's Anthropic key.
-        const anthroStream = anthropic.messages.stream(
-          {
-            model: MODEL_IDS[model],
-            // A-01b — antes 2048: las recetas largas (texto visible +
-            // bloque <recipe_payload> al final) se cortaban en el cap.
-            // Se cobra por tokens generados, no por max; los chats
-            // simples no notan diferencia. Opus 5 piensa por defecto y
-            // max_tokens cubre pensamiento + texto en el mismo presupuesto:
-            // con 4096 la receta se cortaría a media respuesta.
-            max_tokens: model === "opus" ? 16384 : 4096,
-            system,
-            // Breakpoint de caché en el último mensaje: el turno siguiente lee
-            // el hilo previo desde caché en vez de reprocesarlo entero.
-            messages: buildMessageBlocks(messages),
-            // Sonnet 5 defaults to effort=high; force low for chat workloads
-            // to keep the cost/latency profile. Opus 5 uses its defaults
-            // (adaptive thinking + effort=high) so "máxima profundidad" stays
-            // meaningful — el pensamiento no se emite (display=omitted) y el
-            // heartbeat cubre la pausa extra antes del primer delta de texto.
-            // Haiku 4.5 does not support effort and would 400 if set.
-            ...(model === "sonnet" && {
-              thinking: { type: "disabled" as const },
-              output_config: { effort: "low" as const },
-            }),
-          },
-          { signal: req.signal },
-        );
-
-        for await (const event of anthroStream) {
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            if (!firstDeltaReceived) firstDeltaReceived = true;
-            assistantText += event.delta.text;
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "delta", text: event.delta.text })}\n\n`,
-              ),
-            );
+        for await (const event of streamChat({ model, system, messages, signal, userId: ctx.userId })) {
+          if (event.type === "usage") {
+            inputTokens = event.usage.inputTokens;
+            outputTokens = event.usage.outputTokens;
+            cachedTokens = event.usage.cachedTokens;
+          } else {
+            assistantText += event.text;
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "delta", text: event.text })}\n\n`));
           }
         }
 
-        const final = await anthroStream.finalMessage();
-        inputTokens = final.usage.input_tokens;
-        outputTokens = final.usage.output_tokens;
-        cachedTokens = final.usage.cache_read_input_tokens ?? 0;
+        if (!assistantText.trim()) throw new Error("chat_response_incomplete");
+        if (turn) await finishChatTurn(turn, assistantText, config.model, { inputTokens, outputTokens, cachedTokens, latencyMs: Date.now() - start });
 
         controller.enqueue(
           encoder.encode(
@@ -270,7 +232,7 @@ export async function POST(
           ),
         );
       } catch (err) {
-        if (err instanceof APIUserAbortError || req.signal.aborted) {
+        if (signal.aborted) {
           aborted = true;
         } else {
           errored = true;
@@ -281,7 +243,8 @@ export async function POST(
           const message = extractFriendlyError(rawMessage);
           console.error(
             JSON.stringify({
-              evt: "anthropic_stream_error",
+              evt: "ai_stream_error",
+              provider: config.provider,
               model,
               message,
               raw: rawMessage,
@@ -295,32 +258,16 @@ export async function POST(
           } catch {}
         }
       } finally {
-        // A-05: parar heartbeats en cualquier salida (delta llegó, abort, error).
+        // Always stop heartbeats when the stream completes or fails.
         clearInterval(heartbeatInterval);
 
-        // Persistence policy: only persist the assistant turn on a clean completion.
-        // On abort/error we skip persistence rather than storing partial text — the
-        // Message schema has no "partial"/"error" flag and adding one requires a
-        // Prisma migration (out of scope for this fix). The client can retry.
-        // A-12: en modo preview NO persistimos — el cliente va a subir el
-        // historial entero con /messages/bulk cuando cree el restaurante.
-        if (!isPreview && assistantText && !aborted && !errored) {
-          await prisma.message.create({
-            data: {
-              conversationId,
-              role: "assistant",
-              content: assistantText,
-              inputTokens: inputTokens ?? null,
-              outputTokens: outputTokens ?? null,
-              cachedTokens: cachedTokens ?? null,
-              latencyMs: Date.now() - start,
-            },
-          });
-        }
+        if (turn) await releaseChatTurn(turn).catch(() => undefined);
         // Log per-message telemetry to server stdout (brief sec. 10).
         console.log(
           JSON.stringify({
-            evt: "anthropic_message",
+            evt: "ai_message",
+            provider: config.provider,
+            modelId: config.model,
             model,
             input_tokens: inputTokens,
             output_tokens: outputTokens,
@@ -330,10 +277,9 @@ export async function POST(
             partial_chars: aborted || errored ? assistantText.length : undefined,
           }),
         );
-        // Sumar tokens gastados al contador diario (best-effort, ya reservamos
-        // el slot antes de arrancar el stream).
+        // Telemetría diaria; la cuota del chat es semanal y la protege streamChat.
         if (inputTokens || outputTokens) {
-          await recordAiTokens(ctx.userId, inputTokens ?? 0, outputTokens ?? 0);
+          await recordAiTokens(ctx.userId, inputTokens ?? 0, outputTokens ?? 0).catch(() => undefined);
         }
         try {
           controller.close();

@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { renderElegant } from "./templates";
+import { renderElegant, PRICE } from "./templates";
 import type { Allergen } from "@atelier/shared";
 
 const baseDish = {
@@ -36,6 +36,19 @@ const baseInput = {
 };
 
 describe("PDF templates — Fase 2 alérgenos", () => {
+  test("los precios conservan céntimos y dos decimales como la carta de referencia", () => {
+    expect(PRICE(1250)).toBe("12,50 €");
+    expect(PRICE(1299)).toBe("12,99 €");
+    expect(PRICE(1200)).toBe("12,00 €");
+    expect(PRICE(0)).toBe("0,00 €");
+    expect(renderElegant({ ...baseInput, unsectioned: [{ ...baseDish, price: 1250 }] })).toContain("12,50 €");
+  });
+  test("imprime precios por kg y cargos sin recetas ni alérgenos", () => {
+    const html = renderElegant({ ...baseInput, sections: [], unsectioned: [{ ...baseDish, name: "Pesce", price: 6000, priceSuffix: "/ kg" }],
+      serviceCharges: [{ name: "Coperto", price: 400, description: "", allergens: [], priceSuffix: "a persona" }] });
+    expect(html).toContain("60,00 € / kg"); expect(html).toContain("4,00 € a persona");
+    expect(html).toContain("Coperto"); expect(html).not.toContain('<div class="legend">');
+  });
   test("sin alérgenos y toggle ON → NO renderea .dish-allergens ni .legend", () => {
     const html = renderElegant(baseInput);
     expect(html).not.toContain('<div class="dish-allergens">');

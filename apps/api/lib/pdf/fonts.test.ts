@@ -21,6 +21,11 @@ describe("FONT_REGISTRY", () => {
 });
 
 describe("fontFaceCss", () => {
+  test("embebe las variantes finas reales de Lato sin simular otro peso", () => {
+    const css = fontFaceCss(["lato"]);
+    expect(css).toContain("font-style:italic;font-weight:100;");
+    expect(css).toContain("font-style:normal;font-weight:300;");
+  });
   test("emite @font-face con woff2 base64 inline de las familias pedidas", () => {
     const css = fontFaceCss(["playfair-display"]);
     expect(css).toContain("@font-face");
@@ -31,8 +36,7 @@ describe("fontFaceCss", () => {
   test("dedup e ignora null/undefined", () => {
     const css = fontFaceCss(["lato", "lato", null, undefined]);
     const familyDecls = css.match(/font-family:'Lato'/g) ?? [];
-    // Lato trae 3 archivos (400/700/italic) → 3 @font-face, no 6.
-    expect(familyDecls.length).toBe(3);
+    expect(familyDecls.length).toBe(FONT_REGISTRY.lato.files.length);
   });
 
   test("string vacío si no se pide nada", () => {

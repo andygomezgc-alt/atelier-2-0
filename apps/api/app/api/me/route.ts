@@ -190,6 +190,7 @@ export async function DELETE(req: NextRequest) {
         stripeSubscriptionId: string | null;
         photoUrl: string | null;
         menuStyleRefUrl: string | null;
+        menuStyleVersions?: { refUrl: string | null }[];
       }
     | null = null;
   let stripeCanceledNow = false;
@@ -197,7 +198,7 @@ export async function DELETE(req: NextRequest) {
   if (expectedCase === "C" && expectedRestaurantId) {
     restaurant = await prisma.restaurant.findUnique({
       where: { id: expectedRestaurantId },
-      select: { stripeSubscriptionId: true, photoUrl: true, menuStyleRefUrl: true },
+      select: { stripeSubscriptionId: true, photoUrl: true, menuStyleRefUrl: true, menuStyleVersions: { select: { refUrl: true } } },
     });
     if (!restaurant) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -309,6 +310,7 @@ export async function DELETE(req: NextRequest) {
     originalUser.photoUrl,
     restaurant?.photoUrl,
     restaurant?.menuStyleRefUrl,
+    ...(restaurant?.menuStyleVersions ?? []).map(v => v.refUrl),
   ]);
   logger.info("account_deleted", { userId: ctx.userId, case: expectedCase });
   return new NextResponse(null, { status: 204 });

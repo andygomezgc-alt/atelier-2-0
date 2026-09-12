@@ -168,6 +168,10 @@ export const PATCH = withAuth(
           notas: body.notas === undefined ? undefined : body.notas,
           estado: body.estado ?? undefined,
           aliases: body.aliases ?? undefined,
+          allergens: body.allergens,
+          allergen: body.allergens === undefined ? undefined : body.allergens[0] ?? null,
+          allergensReviewed: body.allergens !== undefined ? true
+            : nextName !== existing.name || (body.proveedor !== undefined && body.proveedor !== existing.proveedor) ? false : undefined,
           criticality: nextCriticality,
           criticalityManual: nextCriticalityManual,
         },

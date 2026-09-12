@@ -22,10 +22,12 @@ import { useI18n } from "@/src/hooks/useI18n";
 import { showToast } from "@/src/components/Toast";
 import { createProduct } from "@/src/api/products";
 import { PezzaturaField } from "@/src/components/PezzaturaField";
+import { ProductAllergensEditor } from "@/src/components/ProductAllergensEditor";
 import type {
   ProductCategory,
   ProductUnit,
   CreateProductRequest,
+  Allergen,
 } from "@atelier/shared";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { parseEurosToCents } from "@/src/lib/money";
@@ -52,7 +54,7 @@ function parseMermaPct(input: string): number | null {
   if (!input.trim()) return null;
   const normalized = input.replace(",", ".").trim();
   const n = Number(normalized);
-  if (!Number.isFinite(n) || n < 0 || n > 100) return null;
+  if (!Number.isFinite(n) || n < 0 || n >= 100) return null;
   return n;
 }
 
@@ -75,6 +77,7 @@ export default function NuevoProductoScreen() {
   const [notas, setNotas] = useState("");
   const [aliasesInput, setAliasesInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [allergens, setAllergens] = useState<Allergen[] | undefined>(undefined);
 
   const handleSave = useCallback(async () => {
     if (saving) return;
@@ -85,6 +88,10 @@ export default function NuevoProductoScreen() {
     }
     const cents = parseEurosToCents(precioInput) ?? 0; // 0 = pendiente de precio
     const merma = parseMermaPct(mermaInput); // null si vacío → server usa default por categoría
+    if (mermaInput.trim() && merma === null) {
+      showToast(t("merma_invalid"));
+      return;
+    }
 
     const aliases = aliasesInput
       .split(",")
@@ -92,6 +99,7 @@ export default function NuevoProductoScreen() {
       .filter((a) => a.length > 0);
 
     const payload: CreateProductRequest = {
+      allergens,
       name: trimmedName,
       category,
       // pezzaturaInput se manda al server; el server parsea y persiste
@@ -127,6 +135,7 @@ export default function NuevoProductoScreen() {
     proveedor,
     notas,
     aliasesInput,
+    allergens,
     router,
     t,
   ]);
@@ -142,7 +151,7 @@ export default function NuevoProductoScreen() {
           <Text style={styles.label}>{t("producto_form_name_label")}</Text>
           <TextInput
             value={name}
-            onChangeText={setName}
+            onChangeText={(value) => { setName(value); setAllergens(undefined); }}
             placeholder={t("producto_form_name_placeholder")}
             placeholderTextColor={colors.mute}
             style={styles.input}
@@ -238,7 +247,7 @@ export default function NuevoProductoScreen() {
           <Text style={styles.label}>{t("producto_form_proveedor_label")}</Text>
           <TextInput
             value={proveedor}
-            onChangeText={setProveedor}
+            onChangeText={(value) => { setProveedor(value); setAllergens(undefined); }}
             placeholder={t("producto_form_proveedor_placeholder")}
             placeholderTextColor={colors.mute}
             style={styles.input}
@@ -258,6 +267,8 @@ export default function NuevoProductoScreen() {
           />
 
           {/* Notas */}
+          <ProductAllergensEditor allergens={allergens} reviewed={allergens !== undefined} disabled={saving}
+            onSave={async (values) => setAllergens(values)} />
           <Text style={styles.label}>{t("producto_form_notas_label")}</Text>
           <TextInput
             value={notas}

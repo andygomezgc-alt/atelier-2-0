@@ -19,6 +19,7 @@
 import type { Allergen, MenuStyleSpec } from "@atelier/shared";
 
 export type Dish = {
+  priceSuffix?: string;
   name: string;
   description: string;
   price: number; // cents
@@ -34,6 +35,7 @@ export type Section = {
 };
 
 export type RenderInput = {
+  serviceCharges?: Dish[];
   restaurantName: string;
   menuName: string;
   season: string | null;
@@ -57,7 +59,9 @@ export type Theme = {
   footer?: string;
 };
 
-export const PRICE = (cents: number) => `${(cents / 100).toFixed(0)} €`;
+// Keep cents: a menu price of 12.50 must never be printed as 13.
+export const PRICE = (cents: number) => `${(cents / 100).toFixed(2).replace(".", ",")} €`;
+export const DISH_PRICE = (dish: Dish) => PRICE(dish.price) + (dish.priceSuffix ? ` ${escape(dish.priceSuffix)}` : "");
 
 const ESCAPE: Record<string, string> = {
   "&": "&amp;",
@@ -173,14 +177,14 @@ function renderMenu(input: RenderInput, theme: Theme): string {
     .map(
       (s) =>
         theme.sectionHeader(s.name) +
-        s.dishes.map((d) => theme.dish(filterAllergens(d), PRICE(d.price))).join(""),
+        s.dishes.map((d) => theme.dish(filterAllergens(d), DISH_PRICE(d))).join(""),
     )
     .join("");
 
   // Unsectioned dishes go at the end without a header — matches what the
   // preview shows when items haven't been assigned to a section yet.
   const unsectionedHtml = unsectioned
-    .map((d) => theme.dish(filterAllergens(d), PRICE(d.price)))
+    .map((d) => theme.dish(filterAllergens(d), DISH_PRICE(d)))
     .join("");
 
   // Leyenda al pie — unión de TODOS los alérgenos de los platos visibles del
@@ -213,7 +217,8 @@ function renderMenu(input: RenderInput, theme: Theme): string {
   // El contenido principal (header + secciones + platos) va dentro de
   // .menu-content para que flex 1 lo expanda y la leyenda quede pegada al
   // fondo via margin-top: auto.
-  const main = `<div class="menu-content">${header}${sectionsHtml}${unsectionedHtml}</div>`;
+  const charges = (input.serviceCharges ?? []).map(d => theme.dish({ ...d, allergens: [] }, DISH_PRICE(d))).join("");
+  const main = `<div class="menu-content">${header}${sectionsHtml}${unsectionedHtml}${charges ? `<div class="menu-service-charges">${charges}</div>` : ""}</div>`;
   const inner = main + legendHtml + (theme.footer ?? "");
   const body = theme.frame ? theme.frame(inner) : inner;
   return `<!doctype html><html><head>${SHARED_HEAD}${theme.css}</head><body>

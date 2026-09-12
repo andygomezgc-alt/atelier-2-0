@@ -16,7 +16,15 @@ export async function GET(req: NextRequest) {
     where: { restaurantId: ctx.restaurantId },
     orderBy: { createdAt: "desc" },
     take: 50,
-    include: { idea: { select: { text: true } } },
+    include: {
+      idea: { select: { text: true } },
+      messages: {
+        where: { role: "user" },
+        orderBy: { createdAt: "asc" },
+        take: 1,
+        select: { content: true },
+      },
+    },
   });
 
   return NextResponse.json(
@@ -24,6 +32,7 @@ export async function GET(req: NextRequest) {
       id: c.id,
       modelUsed: c.modelUsed,
       ideaText: c.idea?.text ?? null,
+      title: (c.idea?.text || c.messages[0]?.content || "").replace(/\s+/g, " ").trim().slice(0, 140) || null,
       createdAt: c.createdAt.toISOString(),
     })),
   );

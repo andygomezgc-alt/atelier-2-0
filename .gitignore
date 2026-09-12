@@ -28,6 +28,25 @@ Thumbs.db
 packages/db/generated/
 *.db
 *.db-journal
+*.dump*
+atelier-db-*.json
+output/postgresql-tools/
+output/postgresql18-tools/
+output/postgresql-*-binaries.zip
+output/atelier-backups/
+# Artefactos de revisión, diagnósticos y datos operativos: solo locales.
+/output/
+/tmp/
+/apps/api/land-*.png
+
+# Material de firma y credenciales móviles: nunca versionar.
+**/credentials.json
+*.p8
+*.p12
+*.jks
+*.keystore
+*.key
+*.mobileprovision
 
 # editor
 .vscode/
@@ -46,6 +65,8 @@ apps/mobile/.expo-shared/
 
 # tests
 coverage/
+/tmp/pdfs/
+/tmp/android-menu-style-*/
 .env*.local
 # rotaciones de secretos — backups locales temporales no deben ir al repo
 .env*.local.bak.*

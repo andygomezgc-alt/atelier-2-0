@@ -98,19 +98,21 @@ export function getAuthActions() {
   return {
     refreshMe: refreshMeImpl,
     patchLocalUser: patchLocalUserImpl,
-    signOut: signOutImpl,
+    signOut: () => signOutImpl(),
   };
 }
 
 // signOut imperativo reutilizable: lo usa el hook y el handler global de 401
 // (sesión inválida). Idempotente: llamarlo ya deslogueado no hace daño.
-async function signOutImpl(): Promise<void> {
+async function signOutImpl(preserveQueuedIdeas = false): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => null);
   await SecureStore.deleteItemAsync(APPLE_USER_ID_KEY).catch(() => null);
   try {
-    const keys = await AsyncStorage.getAllKeys();
-    const queueKeys = keys.filter((key) => key.startsWith("atelier.idea_queue."));
-    if (queueKeys.length > 0) await AsyncStorage.multiRemove(queueKeys);
+    if (!preserveQueuedIdeas) {
+      const keys = await AsyncStorage.getAllKeys();
+      const queueKeys = keys.filter((key) => key.startsWith("atelier.idea_queue."));
+      if (queueKeys.length > 0) await AsyncStorage.multiRemove(queueKeys);
+    }
   } catch {
     // Best effort: un fallo de storage no debe impedir cerrar la sesión.
   }
@@ -322,7 +324,7 @@ export async function bootstrap() {
     // reintenta sin perder la sesión). El 401 de un request en vivo ya tiene su
     // vía por `setUnauthorizedHandler`; esto cubre el 401 del bootstrap.
     if (err instanceof ApiError && err.status === 401) {
-      await signOutImpl();
+      await signOutImpl(true);
     } else {
       setState({ status: "offline" });
     }
@@ -343,7 +345,8 @@ function ensureBootstrapped() {
   // Cualquier request autenticado que reciba 401 (token vencido a los 30d o
   // tokenVersion revocado) desloguea limpio en vez de dejar la sesión zombi.
   setUnauthorizedHandler(() => {
-    void signOutImpl();
+    // Expiry must not delete pending work. Queue keys remain scoped to the owner.
+    void signOutImpl(true);
   });
   bootstrap();
 }
@@ -386,7 +389,7 @@ export function useAuth() {
   // a /api/me extra que dispararía `refreshMe`.
   const patchLocalUser = useCallback(patchLocalUserImpl, []);
 
-  const signOut = useCallback(signOutImpl, []);
+  const signOut = useCallback(() => signOutImpl(), []);
 
   const retryBootstrap = useCallback(retryBootstrapImpl, []);
 

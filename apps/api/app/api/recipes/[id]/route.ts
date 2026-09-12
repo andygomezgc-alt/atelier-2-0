@@ -4,34 +4,8 @@ import { PatchRecipeRequestSchema, can } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 import { projectRecipeDetail, recipeDetailInclude } from "@/lib/projections";
-import { parseIngredient } from "@/lib/products/parser";
+import { lockRecipeSave, resolveIngredientDrafts, RecipeSaveError } from "@/lib/products/recipe-save";
 import type { Prisma } from "@atelier/db";
-
-// Sub-paso 6 — auto-enrich: si el cliente manda recipeIngredients sin
-// qty/unit explícitos, el server los parsea del rawText. Mismo helper que
-// /api/recipes (POST). Si después estos crecen, los extraigo a lib/.
-function autoEnrich(ing: {
-  rawText: string;
-  qty?: number | null;
-  unit?: string | null;
-  pezzatura?: string | null;
-}): { qty: number | null; unit: string | null; pezzatura: string | null } {
-  const hasQty = ing.qty !== undefined && ing.qty !== null;
-  const hasUnit = ing.unit !== undefined && ing.unit !== null;
-  if (hasQty && hasUnit) {
-    return {
-      qty: ing.qty ?? null,
-      unit: ing.unit ?? null,
-      pezzatura: ing.pezzatura ?? null,
-    };
-  }
-  const parsed = parseIngredient(ing.rawText);
-  return {
-    qty: hasQty ? (ing.qty ?? null) : parsed.quantity,
-    unit: hasUnit ? (ing.unit ?? null) : parsed.unit,
-    pezzatura: ing.pezzatura ?? null,
-  };
-}
 
 // P2-1 (auditoría jul 2026): señal tipada para abortar el PATCH desde dentro
 // de la transacción cuando la relectura de `state` revela que la receta se
@@ -45,7 +19,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const ctx = await requireAuth(req);
+  const ctx = await requireAuth(req, "view_staff_recipe");
   if (isNextResponse(ctx)) return ctx;
   if (!ctx.restaurantId)
     return NextResponse.json({ error: "Not in a restaurant" }, { status: 403 });
@@ -174,28 +148,10 @@ export async function PATCH(
   // las filas existentes (delete + insert) dentro de la misma transacción
   // que el update del Recipe — atómico.
   if (parse.data.recipeIngredients !== undefined) {
-    const productIds = parse.data.recipeIngredients
-      .map((i) => i.productId)
-      .filter((id): id is string => typeof id === "string" && id.length > 0);
-    if (productIds.length > 0) {
-      const count = await prisma.product.count({
-        where: {
-          id: { in: productIds },
-          restaurantId: ctx.restaurantId,
-          deletedAt: null,
-        },
-      });
-      if (count !== new Set(productIds).size) {
-        return NextResponse.json(
-          { error: "invalid_product_reference" },
-          { status: 400 },
-        );
-      }
-    }
-
     let updated;
     try {
       updated = await prisma.$transaction(async (tx) => {
+        await lockRecipeSave(tx, ctx.restaurantId);
         // P2-1 (bugs): releer `state` DENTRO de la transacción. El gate de
         // arriba vio el snapshot de antes del parseo; si otra request aprobó
         // la receta en el medio, esta relectura es la vinculante.
@@ -211,32 +167,16 @@ export async function PATCH(
         });
         if (result.count === 0) return null;
 
+        const rows = await resolveIngredientDrafts(tx, ctx.restaurantId, parse.data.recipeIngredients!);
         await tx.recipeIngredient.deleteMany({ where: { recipeId: id } });
-        if (parse.data.recipeIngredients!.length > 0) {
-          await tx.recipeIngredient.createMany({
-            data: parse.data.recipeIngredients!.map((ing, idx) => {
-              const enriched = autoEnrich(ing);
-              return {
-                recipeId: id,
-                productId: ing.productId ?? null,
-                position: idx,
-                rawText: ing.rawText,
-                qty: enriched.qty,
-                unit: enriched.unit,
-                pezzatura: enriched.pezzatura,
-                mermaOverridePct: ing.mermaOverridePct ?? null,
-                // Entrega A.5, Fase 7 — override del peso por pieza.
-                pesoCalculoG: ing.pesoCalculoG ?? null,
-              };
-            }),
-          });
-        }
+        if (rows.length) await tx.recipeIngredient.createMany({ data: rows.map(row => ({ ...row, recipeId: id })) });
         return tx.recipe.findUnique({
           where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
           include: recipeDetailInclude,
         });
-      });
+      }, { timeout: 30_000, maxWait: 10_000 });
     } catch (err) {
+      if (err instanceof RecipeSaveError) return NextResponse.json({ error: err.code }, { status: err.status });
       if (err instanceof ApprovedConflictError) {
         return NextResponse.json(
           { error: "Solo el admin puede modificar recetas aprobadas", code: "approved_conflict" },

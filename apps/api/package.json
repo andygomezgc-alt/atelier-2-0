@@ -17,6 +17,7 @@
     "@atelier/i18n": "workspace:*",
     "@atelier/shared": "workspace:*",
     "@auth/prisma-adapter": "^2.11.0",
+    "@napi-rs/canvas": "^0.1.97",
     "@sentry/nextjs": "^10.65.0",
     "@sparticuz/chromium": "^148.0.0",
     "@vercel/blob": "^2.3.0",

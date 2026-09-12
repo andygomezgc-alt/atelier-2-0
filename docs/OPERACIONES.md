@@ -10,6 +10,8 @@
 
 Última revisión: 2026-07-11.
 
+**Actualización de copias, 10-09-2026:** ya existe una copia real cifrada de producción con sus archivos Blob, verificada por descifrado. Para comandos y estado vigentes de respaldo prevalece [Copias y restauración](COPIAS-Y-RESTAURACION-2026-09-10.md); para despliegues/ramas y versiones actuales prevalece [Continuidad](CONTINUIDAD-ATELIER-2026-09-09.md). Los apartados históricos siguientes no sustituyen esos informes. La programación y custodia externa de las copias siguen pendientes.
+
 ---
 
 ## Índice
@@ -46,10 +48,10 @@ Atelier tiene cuatro piezas. Así se conectan:
                                              └───────────────────┘
 ```
 
-- **App móvil (el teléfono del chef).** Un APK de Android hecho con Expo. Es lo
-  que el chef instala. Andy y los chefs del piloto son Android; **no hay iPhone
-  en el piloto** (no hay cuenta Apple todavía). El APK apunta al backend por la
-  dirección `https://atelier-2-0-mu.vercel.app`.
+- **App móvil (el teléfono del chef).** El piloto incluye Android e iPhone,
+  confirmado por el usuario el 10-09-2026. Ya existe cuenta Apple y app iOS;
+  se actualizará junto con el APK Android. Ambas usan el backend
+  `https://atelier-2-0-mu.vercel.app`. Véase [preparación del piloto](PREPARACION-PILOTO-2026-09-10.md).
 
 - **Backend (la API).** Vive en **Vercel**, proyecto **`atelier-2-0`**. Es el
   cerebro: guarda recetas, habla con la IA, manda los correos de acceso. Su
@@ -504,6 +506,8 @@ Estas son las cuentas de las que depende Atelier. Todas están a nombre de Andy.
 
 ### Copias de seguridad (estado 2026-07-12)
 
+**Actualización 10-09-2026:** el script actual genera archivos nativos `.dump` con manifiesto de integridad, y existe restauración a una base nueva y vacía. Ensayo con 25 tablas y 51 filas sintéticas verificado. Los JSON históricos descritos debajo siguen siendo antecedentes; no confundirlos con un respaldo actualizado y automático. Procedimiento y límites: [Copias y restauración](COPIAS-Y-RESTAURACION-2026-09-10.md).
+
 - **✅ Keystore de EAS — RESPALDADO.** Copia local en
   `C:\Users\Utente\Desktop\ATELIER-BACKUPS\keystore-eas\` (el `.jks` + un
   `.txt` con sus contraseñas). **Tarea de Andy: copiar esa carpeta a 2 lugares
@@ -581,9 +585,9 @@ llevarse una sorpresa.
   export del recetario (PDF) y del banco (PDF/CSV) ya están en la rama con sus
   pruebas — llegan a los chefs con la próxima horneada + deploy.
 
-- **iPhone fuera del piloto.** No hay cuenta Apple; el login con Google y el
-  resto están cableados para iOS pero **no se pueden probar** hasta resolver la
-  cuenta Apple. El piloto va 100% por APK Android.
+- **iPhone incluido en el piloto (actualización 10-09-2026).** Cuenta y app
+  existentes. Último build iOS observado: 8, del 30 de julio. Falta actualizar,
+  verificar distribución en TestFlight y probar los flujos actuales en un iPhone.
 
 ---
 

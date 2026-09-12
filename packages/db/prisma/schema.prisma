@@ -132,6 +132,8 @@ enum PlanStatus {
 }
 
 model Restaurant {
+  culinaryMemory CulinaryMemory?
+  culinaryMemoryRuns CulinaryMemoryRun[]
   id              String   @id @default(cuid())
   name            String
   identityLine    String?
@@ -153,6 +155,8 @@ model Restaurant {
   menuStyleTheme  Json?
   // Foto de referencia subida a Blob (best-effort; puede quedar null).
   menuStyleRefUrl String?
+  menuStyleVersionId String?
+  menuStyleVersions MenuStyleVersion[]
 
   // ─────────── Suscripción (Stripe) ───────────
   plan                 PlanTier   @default(pilot)
@@ -164,6 +168,7 @@ model Restaurant {
 
   users         User[]
   ideas         Idea[]
+  ideaCreateReceipts IdeaCreateReceipt[]
   conversations Conversation[]
   recipes       Recipe[]
   menuFolders   MenuFolder[]
@@ -200,6 +205,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   ideas           Idea[]
+  ideaCreateReceipts IdeaCreateReceipt[]
   conversations   Conversation[]
   recipes         Recipe[]         @relation("RecipeAuthor")
   approvedRecipes Recipe[]         @relation("RecipeApprovedBy")
@@ -207,6 +213,8 @@ model User {
   // Auth.js (NextAuth) relations — populated by the @auth/prisma-adapter
   accounts Account[]
   sessions Session[]
+  aiGenerations AiGeneration[]
+  aiChatQuota AiChatQuota?
 
   auditLogs AuditLog[] @relation("AuditLogActor")
 
@@ -229,11 +237,14 @@ model Idea {
   createdAt    DateTime   @default(now())
 
   conversation Conversation?
+  createReceipt IdeaCreateReceipt?
 
   @@index([restaurantId, createdAt])
 }
 
 model Conversation {
+  generationId String?
+  generationStartedAt DateTime?
   id           String     @id @default(cuid())
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
@@ -252,6 +263,8 @@ model Conversation {
 }
 
 model Message {
+  responseToId String? @unique
+  modelId String?
   id              String       @id @default(cuid())
   conversationId  String
   conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -270,9 +283,9 @@ model Message {
   @@index([conversationId, createdAt])
 }
 
-/// Contador diario por usuario de llamadas a la IA hechas con la clave
-/// ANTHROPIC del server. Protege contra que una sola cuenta agote la
-/// clave compartida. Una fila por (userId, día-UTC). Ver lib/ai-quota.ts.
+/// Cuota diaria de acciones técnicas y telemetría de tokens de todos los chats
+/// y acciones. Los chats tienen cuotas semanales en AiChatQuota y registros
+/// de generación en AiGeneration. Una fila por (userId, día-UTC).
 model AiUsage {
   id           String   @id @default(cuid())
   userId       String
@@ -289,6 +302,9 @@ model AiUsage {
 }
 
 model Recipe {
+  clientRequestId String?
+  requestHash String?
+  @@unique([restaurantId, authorId, clientRequestId])
   id           String     @id @default(cuid())
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
@@ -352,6 +368,7 @@ model MenuFolder {
   // preview chef siempre los muestra completos; este flag solo afecta
   // al render del PDF cliente (apps/api/lib/pdf).
   showAllergensInPdf Boolean   @default(true)
+  serviceCharges    Json      @default("[]")
   // Papelera: borrado suave. null = activo; fecha = en la papelera (restaurable).
   deletedAt         DateTime?
   createdAt         DateTime   @default(now())
@@ -403,6 +420,7 @@ model MenuItem {
   customName   String?
   customDesc   String?      @db.Text
   price        Int
+  priceUnit    String       @default("portion")
   order        Int
 
   @@index([menuFolderId, order])
@@ -410,6 +428,122 @@ model MenuItem {
   // "En qué menús está esta receta" (recipeDetailInclude) hace reverse-lookup
   // por recipeId en cada detalle de receta — sin este índice era scan de tabla.
   @@index([recipeId])
+}
+
+// Pilot allowance is retained after account deletion and never renews itself.
+model AiBudget {
+  id String @id
+  limitMicros Int
+  spentMicros Int @default(0)
+  heldMicros Int @default(0)
+  startsAt DateTime
+  endsAt DateTime
+  warnedAt DateTime?
+  blockedAt DateTime?
+  generations AiGeneration[]
+}
+
+model AiGeneration {
+  id String @id
+  budgetId String
+  budget AiBudget @relation(fields: [budgetId], references: [id], onDelete: Restrict)
+  userId String?
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  task String
+  model String
+  status String @default("reserved")
+  reservedMicros Int
+  chargedMicros Int?
+  inputCeiling Int
+  outputCeiling Int
+  inputTokens Int?
+  outputTokens Int?
+  cachedTokens Int?
+  cacheWriteTokens Int?
+  createdAt DateTime @default(now())
+  finishedAt DateTime?
+  @@index([budgetId, status])
+  @@index([userId])
+}
+
+model AiChatQuota {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Legacy fields retained for deployment compatibility; no longer enforced.
+  day String
+  dailyCount Int @default(0)
+  dailyAt DateTime[] @default([])
+  creativeAt DateTime[] @default([])
+}
+
+// A receipt survives deletion of the idea: a delayed offline retry cannot recreate it.
+model IdeaCreateReceipt {
+  id              String   @id @default(cuid())
+  restaurantId    String
+  restaurant      Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  authorId        String
+  author          User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  clientRequestId String   @db.VarChar(100)
+  requestHash     String   @db.VarChar(64)
+  ideaId          String?  @unique
+  idea            Idea?    @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+
+  @@unique([restaurantId, authorId, clientRequestId])
+  @@index([authorId])
+}
+
+model CulinaryMemory {
+  restaurantId String @id
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  enabled Boolean @default(false)
+  version Int @default(0)
+  learned Json @default("[]")
+  corrections Json @default("[]")
+  excludedKeys String[] @default([])
+  inputHash String?
+  dirtyRevision Int @default(0)
+  checkedRevision Int @default(-1)
+  nextCheckAt DateTime @default(now())
+  lastAttemptAt DateTime?
+  updatedAt DateTime?
+  lockToken String?
+  lockExpiresAt DateTime?
+  @@index([enabled, nextCheckAt])
+}
+
+model CulinaryMemoryRun {
+  id String @id @default(cuid())
+  restaurantId String
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  finishedAt DateTime?
+  provider String
+  model String
+  status String
+  inputTokens Int @default(0)
+  outputTokens Int @default(0)
+  reasoningTokens Int @default(0)
+  errorCode String?
+  @@index([restaurantId, createdAt])
+}
+
+model MenuStyleVersion {
+  id           String @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String
+  spec         Json
+  theme        Json?
+  refUrl       String?
+  sourceHash   String?
+  mimeType     String?
+  createdAt    DateTime @default(now())
+  activatedAt  DateTime?
+  discardedAt  DateTime?
+
+  @@index([restaurantId, createdAt])
+  @@index([restaurantId, sourceHash])
 }
 
 // ─────────── Auth.js (NextAuth) tables ───────────
@@ -521,6 +655,9 @@ model Product {
   // ej. aceite de oliva = null). El plato calcula sus alérgenos uniendo
   // este campo de cada ingrediente enlazado + Recipe.manualAllergens.
   allergen Allergen?
+  // Explicitly reviewed supplier/product information. The legacy hint is retained.
+  allergens Allergen[] @default([])
+  allergensReviewed Boolean @default(false)
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())

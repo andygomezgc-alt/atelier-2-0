@@ -5,6 +5,8 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "@/src/hooks/useI18n";
+import { useAuth } from "@/src/hooks/useAuth";
+import { can } from "@atelier/shared";
 import { colors, fontSizes, fonts, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
 
 const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -18,6 +20,8 @@ const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
 export default function TabsLayout() {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
+  const { state } = useAuth();
+  const viewer = (state.status === "signed-in" || state.status === "needs-restaurant") && state.user.restaurantId != null && !can(state.user.role, "view_staff_recipe");
 
   return (
     <Tabs
@@ -52,7 +56,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="inicio" options={{ title: t("tab_inicio") }} />
       <Tabs.Screen name="asistente" options={{ title: t("tab_asistente") }} />
-      <Tabs.Screen name="recetas" options={{ title: t("tab_recetas") }} />
+      <Tabs.Screen name="recetas" options={{ title: t("tab_recetas"), href: viewer ? null : undefined }} />
       <Tabs.Screen name="menus" options={{ title: t("tab_menus") }} />
       <Tabs.Screen name="casa" options={{ title: t("tab_casa") }} />
     </Tabs>

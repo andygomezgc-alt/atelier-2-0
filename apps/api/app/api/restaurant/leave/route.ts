@@ -123,6 +123,7 @@ export async function POST(req: NextRequest) {
       stripeSubscriptionId: true,
       photoUrl: true,
       menuStyleRefUrl: true,
+      menuStyleVersions: { select: { refUrl: true } },
     },
   });
   if (!restaurant) {
@@ -187,7 +188,7 @@ export async function POST(req: NextRequest) {
   );
   if (mismatch) return caseChanged(mismatch);
 
-  await deleteBlobs([restaurant.photoUrl, restaurant.menuStyleRefUrl]);
+  await deleteBlobs([restaurant.photoUrl, restaurant.menuStyleRefUrl, ...(restaurant.menuStyleVersions ?? []).map(v => v.refUrl)]);
 
   logger.info("restaurant_deleted", { restaurantId, actorId: ctx.userId });
   return NextResponse.json({ action: "deleted" });

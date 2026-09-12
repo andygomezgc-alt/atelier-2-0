@@ -33,6 +33,41 @@ function ing(
   };
 }
 
+describe("cost audit regressions", () => {
+  it("no calcula coste por ración ni porcentaje sin porciones", () => {
+    const r = computeRecipeCost({ ingredients: [ing({})], portions: null, salePriceCents: 2000 });
+    expect(r.totalCents).toBe(1000);
+    expect(r.perPortionCents).toBeNull();
+    expect(r.foodCostPct).toBeNull();
+  });
+  it("marca el coste parcial y no publica un porcentaje incompleto", () => {
+    const r = computeRecipeCost({ ingredients: [ing({}), ing({ product: null })], portions: 2, salePriceCents: 2000 });
+    expect(r.totalCents).toBe(1000);
+    expect(r.status).toBe("partial");
+    expect(r.foodCostPct).toBeNull();
+  });
+  it("un rendimiento cero no produce un coste finito de ingrediente", () => {
+    const r = computeRecipeCost({ ingredients: [ing({ productOverrides: { mermaPct: 100 } })], portions: 1, salePriceCents: 2000 });
+    expect(r.totalCents).toBeNull();
+    expect(r.unmeasuredCount).toBe(1);
+  });
+  it.each(["l", "ml", "caja"] as const)("does not convert pieces to %s from weight", (unit) => {
+    const r = computeRecipeCost({ ingredients: [ing({ qty: 2, unit: "piezas", pesoCalculoG: 100, productOverrides: { unidadCompra: unit } })], portions: 1, salePriceCents: null });
+    expect(r.totalCents).toBeNull();
+    expect(r.unmeasuredCount).toBe(1);
+  });
+  it.each(["l", "ml", "caja", "cucharada"])("does not treat %s as grams", (unit) => {
+    const r = computeRecipeCost({ ingredients: [ing({ qty: 100, unit, pesoCalculoG: 100, productOverrides: { unidadCompra: "unidad" } })], portions: 1, salePriceCents: null });
+    expect(r.totalCents).toBeNull();
+  });
+  it("keeps fractional cents until the recipe total", () => {
+    const r = computeRecipeCost({ ingredients: [ing({ qty: 1000, unit: "g", productOverrides: { unidadCompra: "g", precioCompra: 1, mermaPct: 20 } })], portions: 4, salePriceCents: 1000 });
+    expect(r.totalCents).toBe(1250);
+    expect(r.perPortionCents).toBe(313);
+    expect(r.foodCostPct).toBe(31);
+  });
+});
+
 describe("computeRecipeCost — caso peso/peso (sin cambios)", () => {
   it("recipe kg + producto kg + merma 0 → cost directo", () => {
     const r = computeRecipeCost({

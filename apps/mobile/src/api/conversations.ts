@@ -28,17 +28,19 @@ export type ConversationSummary = {
   id: string;
   modelUsed: string;
   ideaText: string | null;
+  title?: string | null;
   createdAt: string;
 };
 
 export type ChatMessage = {
+  clientMessageId?: string | null;
   id: string;
   role: "user" | "assistant";
   content: string;
   createdAt: string;
 };
 
-export const createConversation = (body: { ideaId?: string | null; modelUsed: "haiku" | "sonnet" | "opus" }) =>
+export const createConversation = (body: { ideaId?: string | null; modelUsed: "daily" | "creative" | "haiku" | "sonnet" | "opus" }) =>
   apiFetch<{ id: string }>("/api/conversations", {
     method: "POST",
     body: JSON.stringify(body),
@@ -130,7 +132,7 @@ export function parseSseEvent(data: string): SseEvent | null {
 export async function streamMessage(
   conversationId: string | null,
   content: string,
-  model: "haiku" | "sonnet" | "opus",
+  model: "daily" | "creative" | "haiku" | "sonnet" | "opus",
   onDelta: (delta: string) => void,
   signal?: AbortSignal,
   history?: Array<{ role: "user" | "assistant"; content: string }>,
@@ -223,7 +225,11 @@ export async function streamMessage(
     es.addEventListener("error", (event) => {
       if (timedOut || aborted) return; // already settled
       const ev = event as { type: string; message?: string; xhrStatus?: number };
-      const msg = ev.message || `stream_error${ev.xhrStatus ? `_${ev.xhrStatus}` : ""}`;
+      let msg = ev.message || `stream_error${ev.xhrStatus ? `_${ev.xhrStatus}` : ""}`;
+      try {
+        const body = JSON.parse(msg);
+        if (typeof body?.code === "string") msg = body.code;
+      } catch { /* Non-JSON transport error. */ }
       settle(() => reject(new StreamInterruptedError(msg, full)));
     });
   });

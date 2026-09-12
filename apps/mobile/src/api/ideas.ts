@@ -11,8 +11,14 @@ export type Idea = {
 
 export const listIdeas = () => apiFetch<Idea[]>("/api/ideas");
 
-export const createIdea = (text: string) =>
-  apiFetch<Idea>("/api/ideas", { method: "POST", body: JSON.stringify({ text }) });
+export type IdeaSaveRequest = {
+  clientRequestId: string;
+  expectedRestaurantId: string;
+  expectedAuthorId: string;
+};
+
+export const createIdea = (text: string, request: IdeaSaveRequest) =>
+  apiFetch<Idea>("/api/ideas", { method: "POST", body: JSON.stringify({ text, ...request }) });
 
 export const patchIdea = (
   id: string,

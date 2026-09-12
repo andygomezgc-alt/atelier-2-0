@@ -1,14 +1,13 @@
 // A-01 Opción A — extracción desacoplada del chat.
 //
 // El Asistente, al "Guardar como receta", manda acá el texto visible de la
-// receta (ya sin <recipe_payload>). Estructuramos con Haiku + tool use
-// forzado (garantía técnica de JSON), corremos el MISMO matching contra el
+// receta (ya sin <recipe_payload>). Estructuramos con GLM + JSON validado, corremos el MISMO matching contra el
 // banco que el upload de PDF, y devolvemos la MISMA shape
 // (ExtractedRecipeResponse) — así el formulario de revisión /recetas/nueva
 // lo consume igual que el flujo PDF. NO persiste la receta: el chef revisa
 // y luego POST /api/recipes.
 //
-// Usa la clave Anthropic del server (extractRecipeFromText): la extracción
+// Usa la clave GLM del server (extractRecipeFromText): la extracción
 // es infraestructura de la app (decisión A-01).
 //
 // El bloque de matching está duplicado del upload route a propósito: son
@@ -23,7 +22,8 @@ import { logger } from "@/lib/logger";
 import { extractRecipeFromText } from "@/lib/recipe-extraction";
 import { findMatch, type MatchCandidate } from "@/lib/products/matching";
 import { parseIngredient } from "@/lib/products/parser";
-import { reserveAiCall, aiQuotaExceededResponse } from "@/lib/ai-quota";
+import { reserveAiCall, aiQuotaExceededResponse, recordAiTokens } from "@/lib/ai-quota";
+import { budgetErrorResponse } from "@/lib/ai/budget-policy";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   const start = Date.now();
   try {
     const [extracted, productList] = await Promise.all([
-      extractRecipeFromText(parsed.data.text),
+      extractRecipeFromText(parsed.data.text, usage => recordAiTokens(ctx.userId, usage.inputTokens, usage.outputTokens).catch(() => undefined)),
       ctx.restaurantId
         ? prisma.product.findMany({
             where: {
@@ -112,6 +112,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       title: extracted.title,
+      portions: extracted.portions ?? null,
       contentJson: {
         ingredients: extracted.ingredients,
         method: extracted.method,
@@ -121,6 +122,8 @@ export async function POST(req: NextRequest) {
       pendingMatches,
     });
   } catch (err) {
+    const budgetResponse = budgetErrorResponse(err);
+    if (budgetResponse) return budgetResponse;
     const message =
       err instanceof Error ? err.message : "Error al estructurar la receta";
     logger.error("recipe_extract_failed", {

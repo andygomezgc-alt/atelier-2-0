@@ -120,6 +120,7 @@ function bumpProductCache(p: ProductFull): ProductFull {
   invalidate("products:list");
   invalidate(`products:history:${p.id}`);
   invalidate("recipes:");
+  invalidate("menus:");
   return p;
 }
 

@@ -11,6 +11,7 @@ vi.mock("expo-secure-store", () => ({
 
 import { apiErrorMessage } from "../api-error";
 import { ApiError } from "@/src/api/client";
+import { t } from "@atelier/i18n";
 
 // Mock minimal de `t` — devuelve el key entre corchetes. Suficiente para
 // validar que el helper hace el lookup correcto sin acoplarnos al texto
@@ -20,6 +21,15 @@ function tStub(key: string) {
 }
 
 describe("apiErrorMessage (A-11)", () => {
+  it.each(["es", "it", "en"] as const)("translates the weekly quota in %s for HTTP and streamed errors", language => {
+    const translate = (key: Parameters<typeof t>[0]) => t(key, language);
+    for (const error of [new Error("ai_daily_weekly_limit"), new ApiError(429, "fallback", "ai_daily_weekly_limit")]) {
+      const message = apiErrorMessage(error, translate);
+      expect(message).toContain("140");
+      expect(message).toContain("7");
+      expect(message).not.toMatch(/mañana|domani|tomorrow|ai_daily_weekly_limit/);
+    }
+  });
   it("usa el code cuando viene de ApiError", () => {
     const err = new ApiError(401, "Token expirado", "token_expired");
     expect(apiErrorMessage(err, tStub as never)).toBe("[error_token_expired]");

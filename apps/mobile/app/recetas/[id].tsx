@@ -196,6 +196,7 @@ export default function RecipeDetailScreen() {
       title: recipe.title,
       contentJson: recipe.contentJson,
       editId: recipe.id,
+      portions: recipe.portions,
       // Bug A fix (Andy 2026-05-17): pasamos los recipeIngredients con
       // productId ya resuelto. Sin esto, el editor recibía solo los strings
       // de contentJson.ingredients, los marcaba como productId=null, y el
@@ -205,6 +206,10 @@ export default function RecipeDetailScreen() {
       // recetas migradas no duplica nada al guardar sin cambios.
       recipeIngredients: recipe.recipeIngredients.map((ri) => ({
         rawText: ri.rawText,
+        qty: ri.qty,
+        unit: ri.unit,
+        pezzatura: ri.pezzatura,
+        mermaOverridePct: ri.mermaOverridePct,
         productId: ri.product?.id ?? null,
         // Entrega A.5, Fase 7: preservar el override para que al re-guardar
         // sin cambios no se pierda. Si el chef lo modificó en el editor, el
@@ -302,6 +307,12 @@ export default function RecipeDetailScreen() {
             }
           }}
         />
+
+        {!recipe.allergensComplete && (
+          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sans, paddingVertical: spacing.md }}>
+            {t("allergens_incomplete")}
+          </Text>
+        )}
 
         {recipe.state === "approved" ? (
           <View style={styles.menusSection}>

@@ -34,6 +34,7 @@ import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { NetworkError } from "@/src/components/NetworkError";
 import { EditableCell } from "@/src/components/EditableCell";
 import { YieldTestForm } from "@/src/components/YieldTestForm";
+import { ProductAllergensEditor } from "@/src/components/ProductAllergensEditor";
 import { DebouncedTextInput } from "@/src/components/DebouncedTextInput";
 import { ChoiceSheet, type ChoiceOption } from "@/src/components/ChoiceSheet";
 import { useI18n, dateLocale } from "@/src/hooks/useI18n";
@@ -71,13 +72,13 @@ const UNIT_SHORT: Record<ProductUnit, string> = {
 function parseMermaPct(input: string): number | null {
   if (!input.trim()) return null;
   const n = Number(input.replace(",", ".").trim());
-  if (!Number.isFinite(n) || n < 0 || n > 100) return null;
+  if (!Number.isFinite(n) || n < 0 || n >= 100) return null;
   return n;
 }
 
-function realCostLocal(cents: number, mermaPct: number): number {
-  if (mermaPct >= 100) return cents;
-  return Math.ceil(cents / (1 - mermaPct / 100));
+function realCostLocal(cents: number, mermaPct: number): number | null {
+  if (mermaPct >= 100) return null;
+  return cents / (1 - mermaPct / 100);
 }
 
 export default function ProductoDetailScreen() {
@@ -474,7 +475,7 @@ export default function ProductoDetailScreen() {
         <View style={styles.bigStatBlock}>
           <Text style={styles.eyebrow}>{t("producto_real_cost_label")}</Text>
           <Text style={styles.bigStat}>
-            {noPrice ? "—" : formatEuros(product.realCost)}
+            {noPrice || product.realCost === null ? "—" : formatEuros(product.realCost, 4)}
             <Text style={styles.bigStatUnit}>{noPrice ? "" : ` / ${unitShort} útil`}</Text>
           </Text>
         </View>
@@ -509,6 +510,8 @@ export default function ProductoDetailScreen() {
         </View>
 
         {/* Aviso de precio viejo (>7 días). Solo aparece si hay precio. */}
+        <ProductAllergensEditor allergens={product.allergens} reviewed={product.allergensReviewed} disabled={!canEditFields}
+          onSave={async (allergens) => { setProduct(await patchProduct(product.id, { allergens })); }} />
         {priceIsOld ? (
           <Text style={styles.priceOldHint}>
             {t("producto_price_old_indicator", { days: daysSincePrice.toString() })}

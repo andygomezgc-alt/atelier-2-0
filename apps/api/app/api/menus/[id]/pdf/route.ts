@@ -2,12 +2,14 @@ import { NextRequest } from "next/server";
 import { prisma } from "@atelier/db";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { TEMPLATES, renderCustom } from "@/lib/pdf/templates";
-import { renderGeneratedTheme } from "@/lib/pdf/theme-render";
+import { renderGeneratedTheme, validateThemeStructure } from "@/lib/pdf/theme-render";
+import { sanitizeTheme } from "@/lib/pdf/theme-sanitize";
 import { renderHtmlToPdf } from "@/lib/pdf/render";
 import { computeRecipeAllergens } from "@/lib/products/allergens-recipe";
 import { logger } from "@/lib/logger";
+import { activeMenuItemsWhere } from "@/lib/projections";
 import type { ClientOverrides, Allergen } from "@atelier/shared";
-import { ALLERGEN_ORDER, MenuStyleSpecSchema, MenuCustomThemeSchema } from "@atelier/shared";
+import { ALLERGEN_ORDER, MenuStyleSpecSchema, MenuCustomThemeSchema, MenuServiceChargesSchema, can } from "@atelier/shared";
 import { t, type Language } from "@atelier/i18n";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +27,8 @@ export async function GET(
 
   const { searchParams } = new URL(req.url);
   const styleParam = searchParams.get("style");
+  const versionId = searchParams.get("styleVersionId");
+  if (versionId && !can(ctx.role, "edit_menu")) return Response.json({ error: "Forbidden", code: "forbidden" }, { status: 403 });
 
   const menu = await prisma.menuFolder.findUnique({
     where: { id },
@@ -41,17 +45,19 @@ export async function GET(
       },
       sections: { orderBy: { order: "asc" }, select: { id: true, name: true } },
       items: {
+        where: activeMenuItemsWhere,
         orderBy: { order: "asc" },
         include: {
           // Fase 2 alérgenos — incluir lo necesario para computeRecipeAllergens.
           recipe: {
             select: {
               title: true,
+              contentJson: true,
               manualAllergens: true,
               recipeIngredients: {
                 select: {
                   productId: true,
-                  product: { select: { id: true, allergen: true } },
+                  product: { select: { id: true, allergen: true, allergens: true, allergensReviewed: true } },
                 },
               },
             },
@@ -62,26 +68,36 @@ export async function GET(
     },
   });
 
-  if (!menu || menu.restaurantId !== ctx.restaurantId)
+  if (!menu || menu.restaurantId !== ctx.restaurantId || menu.deletedAt != null)
     return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
 
-  const style = (styleParam ?? menu.presentationStyle) as string;
-  // "Estilo fiel": si el estilo efectivo es custom, se prefiere el theme HTML/CSS
-  // generado (menuStyleTheme). Si no valida, se cae al spec de tokens
-  // (renderCustom); si tampoco, al fallback elegant. Nunca 500 por dato corrupto.
+  const previewVersion = versionId ? await prisma.menuStyleVersion.findFirst({
+    where: { id: versionId, restaurantId: ctx.restaurantId, discardedAt: null },
+  }) : null;
+  if (versionId && !previewVersion) return Response.json({ error: "Not found" }, { status: 404 });
+  const style = previewVersion ? "custom" : (styleParam ?? menu.presentationStyle) as string;
+  // Una plantilla inválida debe avisar: sustituirla por otra alteraría la carta
+  // impresa sin que el chef lo haya elegido. Los estilos antiguos que solo
+  // guardaban tokens siguen usando su renderer original.
   type Render = (input: Parameters<typeof renderCustom>[0]) => string;
   let renderer: Render;
   if (style === "custom") {
-    const themeParse = MenuCustomThemeSchema.safeParse(menu.restaurant?.menuStyleTheme);
-    const specParse = MenuStyleSpecSchema.safeParse(menu.restaurant?.menuStyleSpec);
-    if (themeParse.success) {
-      const theme = themeParse.data;
-      renderer = (input) => renderGeneratedTheme(input, theme);
-    } else if (specParse.success) {
-      const spec = specParse.data;
-      renderer = (input) => renderCustom(input, spec);
-    } else {
-      renderer = TEMPLATES.elegant;
+    const rawTheme = previewVersion ? previewVersion.theme : menu.restaurant?.menuStyleTheme;
+    const rawSpec = previewVersion ? previewVersion.spec : menu.restaurant?.menuStyleSpec;
+    if (rawTheme == null && rawSpec == null) {
+      return Response.json({ error: "Carga un estilo de menú antes de exportar con Tu estilo.", code: "menu_style_not_configured" }, { status: 422 });
+    }
+    try {
+      if (rawTheme != null) {
+        const theme = sanitizeTheme(MenuCustomThemeSchema.parse(rawTheme));
+        validateThemeStructure(theme);
+        renderer = (input) => renderGeneratedTheme(input, theme);
+      } else {
+        const spec = MenuStyleSpecSchema.parse(rawSpec);
+        renderer = (input) => renderCustom(input, spec);
+      }
+    } catch {
+      return Response.json({ error: "La plantilla guardada necesita revisión. Vuelve a cargar el estilo o elige otra plantilla.", code: "menu_style_invalid" }, { status: 422 });
     }
   } else {
     renderer = TEMPLATES[style as keyof typeof TEMPLATES] ?? TEMPLATES.elegant;
@@ -102,7 +118,7 @@ export async function GET(
 
   const dishesBySection = new Map<
     string | null,
-    Array<{ name: string; description: string; price: number; allergens: Allergen[] }>
+    Array<{ name: string; description: string; price: number; priceSuffix?: string; allergens: Allergen[] }>
   >();
   for (const it of menu.items) {
     const sectionKey = it.sectionId ?? null;
@@ -112,16 +128,22 @@ export async function GET(
       ? computeRecipeAllergens(
           (it.recipe.recipeIngredients ?? []).map((ing) => ({
             productId: ing.productId,
-            product: ing.product ? { allergen: ing.product.allergen } : null,
+            product: ing.product,
           })),
           it.recipe.manualAllergens ?? [],
+          it.recipe.contentJson,
         )
-      : { allergens: [] as Allergen[], unlinkedIngredients: 0 };
+      : { allergens: [] as Allergen[], unlinkedIngredients: 0, allergensComplete: false };
+
+    if (menu.showAllergensInPdf && !allergensResult.allergensComplete) {
+      return Response.json({ error: "Allergen information requires review", code: "allergens_incomplete", recipeId: it.recipeId }, { status: 422 });
+    }
 
     list.push({
       name: ov.items?.[it.id]?.name ?? it.customName ?? it.recipe?.title ?? "",
       description: ov.items?.[it.id]?.description ?? it.customDesc ?? "",
       price: ov.items?.[it.id]?.price ?? it.price,
+      priceSuffix: it.priceUnit === "kg" ? "/ kg" : undefined,
       allergens: allergensResult.allergens,
     });
     dishesBySection.set(sectionKey, list);
@@ -134,6 +156,10 @@ export async function GET(
   const unsectioned = dishesBySection.get(null) ?? [];
 
   const renderInput: Parameters<typeof renderCustom>[0] = {
+    serviceCharges: MenuServiceChargesSchema.parse(menu.serviceCharges ?? []).map(charge => ({
+      name: charge.name, price: charge.price, description: "", allergens: [],
+      priceSuffix: charge.perPerson ? t("menu_charge_per_person", lang) : undefined,
+    })),
     restaurantName: ov.restaurantName ?? menu.restaurant?.name ?? "",
     menuName: ov.menuName ?? menu.name,
     season: ov.subtitle ?? menu.season,
@@ -144,10 +170,7 @@ export async function GET(
     allergenLabels,
   };
 
-  // El renderer puede tirar en RENDER-TIME (p.ej. renderGeneratedTheme leyendo un
-  // woff2 ausente del bundle → readFileSync ENOENT). Igual que un theme/spec
-  // corrupto cae a elegant en la selección de renderer, un fallo en render-time
-  // cae a elegant acá: el invariante es "nunca 500 por el estilo de la casa".
+  // Incluye los errores al cargar fuentes: informar sin imprimir otro diseño.
   let html: string;
   try {
     html = renderer(renderInput);
@@ -157,7 +180,10 @@ export async function GET(
       menuId: id,
       style,
     });
-    html = TEMPLATES.elegant(renderInput);
+    return Response.json({
+      error: "No se pudo generar el PDF con la plantilla elegida.",
+      ...(style === "custom" ? { code: "menu_style_invalid" } : {}),
+    }, { status: style === "custom" ? 422 : 500 });
   }
 
   let pdf: Buffer;
@@ -179,7 +205,9 @@ export async function GET(
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `inline; filename="${encodeURIComponent(menu.name)}.pdf"`,
-      "Cache-Control": "private, max-age=60",
+      // Después de editar platos/precios o cambiar la plantilla, una preview
+      // debe mostrar el PDF actual incluso al reutilizar la misma URL.
+      "Cache-Control": "private, no-store",
     },
   });
 }

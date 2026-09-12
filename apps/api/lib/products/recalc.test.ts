@@ -45,6 +45,18 @@ describe("defaultCriticality (pura)", () => {
 });
 
 describe("recalcCriticalityForRestaurant", () => {
+  it("uses actual quantities and aggregates repeated ingredients", async () => {
+    const product = (precioCompra: number) => ({ precioCompra, mermaPct: 0, unidadCompra: "kg", pezzaturaMode: null, pezzaturaMin: null, pezzaturaMax: null });
+    const row = (productId: string, qty: number, price: number) => ({ recipeId: "R1", productId, qty, unit: "g", mermaOverridePct: null, pesoCalculoG: null, product: product(price) });
+    db.product.findMany.mockResolvedValue([
+      { id: "pepper", name: "pimienta", category: "especia", criticality: "baja", criticalityManual: false, recipeIngredients: [{ recipeId: "R1" }] },
+      { id: "rice", name: "arroz", category: "seco", criticality: "media", criticalityManual: false, recipeIngredients: [{ recipeId: "R1" }] },
+    ]);
+    db.recipeIngredient.findMany.mockResolvedValue([row("pepper", 1, 3000), row("rice", 500, 500), row("rice", 500, 500)]);
+    const rep = await recalcCriticalityForRestaurant("r1", null, { dryRun: true });
+    expect(rep.changes.find(c => c.productId === "pepper")).toBeUndefined();
+    expect(rep.changes.find(c => c.productId === "rice")?.maxShare).toBeCloseTo(500 / 503);
+  });
   // R1: productA (100€, sin merma) + productB (10€) → total 110.
   // share A = 100/110 = 0.909 (>15% → económico → alta)
   // share B = 10/110  = 0.091 (≤15% → default por categoría)
@@ -67,8 +79,8 @@ describe("recalcCriticalityForRestaurant", () => {
       },
     ]);
     db.recipeIngredient.findMany.mockResolvedValue([
-      { recipeId: "R1", productId: "A", product: { precioCompra: 100, mermaPct: 0 } },
-      { recipeId: "R1", productId: "B", product: { precioCompra: 10, mermaPct: 0 } },
+      { recipeId: "R1", productId: "A", qty: 1, unit: "kg", product: { precioCompra: 100, mermaPct: 0, unidadCompra: "kg" } },
+      { recipeId: "R1", productId: "B", qty: 1, unit: "kg", product: { precioCompra: 10, mermaPct: 0, unidadCompra: "kg" } },
     ]);
   }
 

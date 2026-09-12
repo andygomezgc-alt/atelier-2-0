@@ -18,5 +18,9 @@ apps/mobile/assets/*.png
 # Secrets sitting untracked in the tree (graphify's secret scanner also catches these).
 .env*
 
+# Generated diagnostics and private operational backups are not source code.
+output/
+tmp/
+
 # Test fixtures: truncated recipe text for parser tests, no architectural meaning.
 __fixtures__/

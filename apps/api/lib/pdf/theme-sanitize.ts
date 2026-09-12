@@ -68,6 +68,7 @@ export function sanitizeTheme(theme: MenuCustomTheme): MenuCustomTheme {
     frameHtml: theme.frameHtml == null ? null : sanitizeFragment(theme.frameHtml),
     headerHtml: sanitizeFragment(theme.headerHtml),
     sectionHeaderHtml: sanitizeFragment(theme.sectionHeaderHtml),
+    sectionHtml: theme.sectionHtml == null ? theme.sectionHtml : sanitizeFragment(theme.sectionHtml),
     dishHtml: sanitizeFragment(theme.dishHtml),
     footerHtml: theme.footerHtml == null ? null : sanitizeFragment(theme.footerHtml),
   };

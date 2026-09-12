@@ -1,11 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 // Mocks elevados (el factory de vi.mock se iza sobre los consts).
 const { db, guard, quota, anthro, streamMock, PrismaClientKnownRequestError } = vi.hoisted(() => {
   const db = {
-    conversation: { findUnique: vi.fn() },
-    message: { create: vi.fn(), findMany: vi.fn() },
+    conversation: { findUnique: vi.fn(), updateMany: vi.fn() },
+    message: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
+    $transaction: vi.fn(),
     restaurant: { findUnique: vi.fn() },
     recipe: { findMany: vi.fn() },
   };
@@ -72,23 +73,16 @@ vi.mock("@/lib/anthropic", async () => {
     MODEL_IDS: { haiku: "h", sonnet: "s", opus: "o" },
   };
 });
-vi.mock("@anthropic-ai/sdk", () => ({
-  default: anthro.Anthropic,
-  APIUserAbortError: anthro.APIUserAbortError,
-}));
+vi.mock("@/lib/ai/chat", () => ({ streamChat: streamMock }));
+afterEach(() => vi.unstubAllEnvs());
+
 
 import * as route from "../route";
 
-function anthropicStream(deltas: string[], usage: { in: number; out: number }) {
-  return {
-    async *[Symbol.asyncIterator]() {
-      for (const t of deltas)
-        yield { type: "content_block_delta", delta: { type: "text_delta", text: t } };
-    },
-    finalMessage: async () => ({
-      usage: { input_tokens: usage.in, output_tokens: usage.out, cache_read_input_tokens: 0 },
-    }),
-  };
+async function* providerStream(deltas: string[], usage: { in: number; out: number }, incomplete = false) {
+  for (const text of deltas) yield { type: "delta", text };
+  yield { type: "usage", usage: { inputTokens: usage.in, outputTokens: usage.out, cachedTokens: 0, reasoningTokens: 0 } };
+  if (incomplete) throw new Error("chat_response_incomplete");
 }
 
 function post(body: unknown, id = "conv-1") {
@@ -106,8 +100,22 @@ const assistantCreate = () =>
   );
 
 beforeEach(() => {
+  vi.stubEnv("GEMINI_API_KEY", "test-gemini");
+  vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic");
+  const stored: Array<Record<string, any>> = [];
+  db.conversation.updateMany.mockReset().mockResolvedValue({ count: 1 });
+  db.$transaction.mockReset().mockImplementation(async cb => cb(db));
   db.conversation.findUnique.mockReset();
-  db.message.create.mockReset().mockResolvedValue({});
+  db.message.create.mockReset().mockImplementation(async ({ data }) => {
+    const row = { ...data, id: `message-${stored.length}` };
+    stored.push(row);
+    return row;
+  });
+  db.message.findUnique.mockReset().mockImplementation(async ({ where }) => {
+    if (where.responseToId) return stored.find(row => row.responseToId === where.responseToId) ?? null;
+    return stored.find(row => row.conversationId === where.conversationId_clientMessageId.conversationId && row.clientMessageId === where.conversationId_clientMessageId.clientMessageId) ?? null;
+  });
+  db.message.findFirst.mockReset().mockImplementation(async () => stored.at(-1) ?? null);
   db.message.findMany.mockReset().mockResolvedValue([]);
   db.restaurant.findUnique.mockReset().mockResolvedValue({ name: "Kokoo", identityLine: null });
   db.recipe.findMany.mockReset().mockResolvedValue([]);
@@ -127,8 +135,53 @@ beforeEach(() => {
 });
 
 describe("POST chat — persistencia", () => {
+  it("retries a failed assistant save without duplicating the user's message", async () => {
+    const create = db.message.create.getMockImplementation()!;
+    let fail = true;
+    db.message.create.mockImplementation(async args => {
+      if (args.data.role === "assistant" && fail) { fail = false; throw new Error("temporary write failure"); }
+      return create(args);
+    });
+    streamMock.mockImplementation(() => providerStream(["Recipe"], { in: 20, out: 5 }));
+    const body = { content: "recipe", clientMessageId: "retry-failed-save" };
+    expect(await (await post(body)).text()).toContain('"type":"error"');
+    expect(await (await post(body)).text()).toContain('"type":"done"');
+    expect(db.message.create.mock.calls.filter(([args]) => args.data.role === "user")).toHaveLength(1);
+  });
+  it("does not answer a different newer turn when retrying an old unanswered message", async () => {
+    db.message.findUnique.mockResolvedValueOnce({ id: "old-user", role: "user", content: "old" }).mockResolvedValueOnce(null);
+    db.message.findFirst.mockResolvedValueOnce({ id: "newer-user" });
+    expect((await post({ content: "old", clientMessageId: "old-request" })).status).toBe(409);
+    expect(streamMock).not.toHaveBeenCalled();
+    expect(quota.reserveAiCall).not.toHaveBeenCalled();
+  });
+  it("a restaurant viewer cannot bypass chat permission through preview", async () => {
+    guard.requireAuth.mockResolvedValue({ userId: "u1", restaurantId: "r1", role: "viewer" });
+    expect((await post({ content: "recipe" }, "preview")).status).toBe(403);
+    expect(quota.reserveAiCall).not.toHaveBeenCalled();
+  });
+  it("no anuncia done si falla la persistencia de la respuesta", async () => {
+    db.message.create.mockImplementation(async ({ data }) => {
+      if (data.role === "assistant") throw new Error("database unavailable");
+      return { id: "user-message" };
+    });
+    streamMock.mockReturnValue(providerStream(["Receta"], { in: 20, out: 5 }));
+    const response = await post({ content: "receta", clientMessageId: "persist-failure" });
+    const wire = await response.text();
+    expect(wire).not.toContain('"type":"done"');
+    expect(wire).toContain('"type":"error"');
+  });
+
+  it("no da por completa una respuesta cortada por el límite de tokens", async () => {
+    streamMock.mockReturnValue(providerStream(["Receta incompleta"], { in: 20, out: 4096 }, true));
+    const response = await post({ content: "receta", clientMessageId: "truncated" });
+    const wire = await response.text();
+    expect(wire).not.toContain('"type":"done"');
+    expect(wire).toContain('"type":"error"');
+    expect(assistantCreate()).toBeUndefined();
+  });
   it("persiste un clientMessageId nuevo junto al mensaje del user", async () => {
-    streamMock.mockReturnValue(anthropicStream(["Listo"], { in: 20, out: 5 }));
+    streamMock.mockReturnValue(providerStream(["Listo"], { in: 20, out: 5 }));
 
     const res = await post({
       content: "buenas",
@@ -150,45 +203,42 @@ describe("POST chat — persistencia", () => {
     });
   });
 
-  it("si se repite el clientMessageId ignora P2002 y vuelve a responder el stream", async () => {
-    const persistedClientIds = new Set<string>();
-    db.message.create.mockImplementation(
-      async ({ data }: { data: { role: string; clientMessageId?: string } }) => {
-        if (data.role === "user" && data.clientMessageId) {
-          if (persistedClientIds.has(data.clientMessageId)) {
-            throw new PrismaClientKnownRequestError("P2002");
-          }
-          persistedClientIds.add(data.clientMessageId);
-        }
-        return {};
-      },
-    );
-    streamMock.mockImplementation(() => anthropicStream(["Listo"], { in: 20, out: 5 }));
-    const body = {
-      content: "buenas",
-      model: "sonnet",
-      clientMessageId: "client-message-duplicate",
-    };
-
-    const first = await post(body);
-    await first.text();
+  it("replays an already saved response without another model call or quota reservation", async () => {
+    streamMock.mockImplementation(() => providerStream(["Listo"], { in: 20, out: 5 }));
+    const body = { content: "buenas", model: "sonnet", clientMessageId: "retry-id" };
+    await (await post(body)).text();
     const retry = await post(body);
-    const retryStream = await retry.text();
+    expect(await retry.text()).toContain('"replayed":true');
+    expect(streamMock).toHaveBeenCalledTimes(1);
+    expect(quota.reserveAiCall).not.toHaveBeenCalled();
+    expect(db.message.create.mock.calls.filter(([arg]) => arg.data.role === "assistant")).toHaveLength(1);
+  });
 
-    expect(retry.status).toBe(200);
-    expect(retryStream).toContain('"type":"delta"');
-    expect(retryStream).toContain('"type":"done"');
-    expect(persistedClientIds).toEqual(new Set([body.clientMessageId]));
-    expect(streamMock).toHaveBeenCalledTimes(2);
-    expect(
-      db.message.create.mock.calls.filter(
-        (c) => (c[0] as { data: { role: string } }).data.role === "assistant",
-      ),
-    ).toHaveLength(2);
+  it("rejects simultaneous turns before calling the model or reserving quota", async () => {
+    db.conversation.updateMany.mockResolvedValue({ count: 0 });
+    expect((await post({ content: "hello", clientMessageId: "busy-turn-id" })).status).toBe(409);
+    expect(streamMock).not.toHaveBeenCalled();
+    expect(quota.reserveAiCall).not.toHaveBeenCalled();
+  });
+
+  it("rejects reuse of a request identifier with different content", async () => {
+    streamMock.mockImplementation(() => providerStream(["Listo"], { in: 20, out: 5 }));
+    await (await post({ content: "one", clientMessageId: "same-turn-id" })).text();
+    expect((await post({ content: "two", clientMessageId: "same-turn-id" })).status).toBe(409);
+    expect(streamMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("an expired worker cannot commit over a newer generation", async () => {
+    db.conversation.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValue({ count: 0 });
+    streamMock.mockReturnValue(providerStream(["old response"], { in: 20, out: 5 }));
+    const wire = await (await post({ content: "hello" })).text();
+    expect(wire).toContain('"type":"error"');
+    expect(wire).not.toContain('"type":"done"');
+    expect(assistantCreate()).toBeUndefined();
   });
 
   it("al completar limpio persiste la respuesta del asistente con sus tokens", async () => {
-    streamMock.mockReturnValue(anthropicStream(["Hola ", "chef"], { in: 100, out: 20 }));
+    streamMock.mockReturnValue(providerStream(["Hola ", "chef"], { in: 100, out: 20 }));
 
     const res = await post({ content: "buenas", model: "sonnet" });
     expect(res.status).toBe(200);
@@ -209,7 +259,7 @@ describe("POST chat — persistencia", () => {
   it("si se corta a mitad (abort) NO persiste la respuesta parcial", async () => {
     streamMock.mockReturnValue({
       async *[Symbol.asyncIterator]() {
-        yield { type: "content_block_delta", delta: { type: "text_delta", text: "parcial" } };
+        yield { type: "delta", text: "parcial" };
         throw new anthro.APIUserAbortError("client aborted");
       },
       finalMessage: async () => ({ usage: {} }),
@@ -222,64 +272,45 @@ describe("POST chat — persistencia", () => {
     expect(quota.recordAiTokens).not.toHaveBeenCalled();
   });
 
-  it("con el tope diario agotado responde 429 y no persiste nada", async () => {
+  it.each(["conv-1", "preview"])("%s chat is not blocked by the old 120/day technical quota", async id => {
     quota.reserveAiCall.mockResolvedValue({ ok: false, retryAfter: 3600, limit: 120 });
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    const res = await post({ content: "buenas", model: "daily" }, id);
+    expect(await res.text()).toContain('"type":"done"');
+    expect(quota.reserveAiCall).not.toHaveBeenCalled();
+    expect(streamMock).toHaveBeenCalledWith(expect.objectContaining({ model: "daily", userId: "u1" }));
+  });
 
-    const res = await post({ content: "buenas", model: "sonnet" });
-    expect(res.status).toBe(429);
-    const body = await res.json();
-    expect(body.code).toBe("ai_daily_limit");
-    expect(db.message.create).not.toHaveBeenCalled();
-    expect(streamMock).not.toHaveBeenCalled();
+  it.each(["conv-1", "preview"])("%s forwards the weekly denial and keeps the chat retryable", async id => {
+    streamMock.mockImplementation(async function* () { throw new Error("ai_daily_weekly_limit"); });
+    const res = await post({ content: "receta", model: "daily" }, id);
+    const wire = await res.text();
+    expect(wire).toContain('"type":"error","message":"ai_daily_weekly_limit"');
+    expect(wire).not.toContain('"type":"done"');
+    expect(assistantCreate()).toBeUndefined();
+    if (id !== "preview") expect(db.conversation.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: { generationId: null, generationStartedAt: null } }));
   });
 });
 
-describe("POST chat — payload del modelo", () => {
-  const payload = () => streamMock.mock.calls[0]?.[0] as {
-    model: string;
-    max_tokens: number;
-    messages: { role: string; content: unknown }[];
-  };
-
-  it("manda el hilo con breakpoint de caché en el último mensaje", async () => {
-    db.message.findMany.mockResolvedValue([
-      // La ruta pide desc y revierte: el más nuevo va primero acá.
-      { role: "user", content: "y sin lácteos?" },
-      { role: "assistant", content: "probá con jengibre" },
-      { role: "user", content: "una crema de calabaza" },
-    ]);
-    streamMock.mockReturnValue(anthropicStream(["ok"], { in: 10, out: 2 }));
-
-    await (await post({ content: "y sin lácteos?", model: "sonnet" })).text();
-
-    const { messages } = payload();
-    expect(messages.at(-1)).toEqual({
-      role: "user",
-      content: [
-        { type: "text", text: "y sin lácteos?", cache_control: { type: "ephemeral" } },
-      ],
-    });
-    // Los anteriores viajan planos: un solo breakpoint, el prefijo es acumulativo.
-    expect(messages.slice(0, -1).map((m) => m.content)).toEqual([
-      "una crema de calabaza",
-      "probá con jengibre",
-    ]);
+describe("POST chat — selección de proveedor", () => {
+  it.each([["daily", "gemini-3.8-flash"], ["sonnet", "gemini-3.8-flash"], ["haiku", "gemini-3.8-flash"], ["creative", "claude-opus-5"], ["opus", "claude-opus-5"]])("%s conserva el modelo real en la conversación", async (model, expected) => {
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    expect(await (await post({ content: "receta", model })).text()).toContain('"type":"done"');
+    expect(streamMock.mock.calls[0]![0].model).toBe(model);
+    expect(assistantCreate()?.[0].data.modelId).toBe(expected);
   });
-
-  it("le da a Opus presupuesto para pensar + responder sin cortarse", async () => {
-    streamMock.mockReturnValue(anthropicStream(["ok"], { in: 10, out: 2 }));
-
-    await (await post({ content: "buenas", model: "opus" })).text();
-
-    // Opus 5 piensa por defecto y max_tokens cubre pensamiento + texto.
-    expect(payload().max_tokens).toBeGreaterThan(4096);
+  it("usa Diario por defecto sin reservar una segunda llamada", async () => {
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    await (await post({ content: "receta" })).text();
+    expect(streamMock.mock.calls[0]![0].model).toBe("daily");
+    expect(quota.reserveAiCall).not.toHaveBeenCalled();
   });
-
-  it("sonnet y haiku se quedan en el presupuesto de chat", async () => {
-    streamMock.mockReturnValue(anthropicStream(["ok"], { in: 10, out: 2 }));
-
-    await (await post({ content: "buenas", model: "haiku" })).text();
-
-    expect(payload().max_tokens).toBe(4096);
+  it("falta de clave no consume cuota ni persiste un turno", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "");
+    const res = await post({ content: "receta", model: "daily" });
+    expect(res.status).toBe(503);
+    expect(quota.reserveAiCall).not.toHaveBeenCalled();
+    expect(db.message.create).not.toHaveBeenCalled();
+    expect(streamMock).not.toHaveBeenCalled();
   });
 });

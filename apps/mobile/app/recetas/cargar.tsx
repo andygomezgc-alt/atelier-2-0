@@ -66,6 +66,7 @@ export default function CargarRecetaScreen() {
       // pendingMatches (probables que el chef confirma al abrir el form).
       setRecipeDraft({
         title: extracted.title,
+        portions: extracted.portions ?? null,
         contentJson: extracted.contentJson,
         recipeIngredients: extracted.recipeIngredients,
         pendingMatches: extracted.pendingMatches,
@@ -144,6 +145,7 @@ export default function CargarRecetaScreen() {
       const extracted = await importRecipeFromGDoc(gdocUrl.trim());
       setRecipeDraft({
         title: extracted.title,
+        portions: extracted.portions ?? null,
         contentJson: extracted.contentJson,
         recipeIngredients: extracted.recipeIngredients,
         pendingMatches: extracted.pendingMatches,

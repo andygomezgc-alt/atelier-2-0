@@ -6,6 +6,7 @@
   "outputDirectory": ".next",
   "regions": ["fra1"],
   "crons": [
+    { "path": "/api/cron/culinary-memory", "schedule": "0 5 * * *" },
     {
       "path": "/api/cron/recalc-criticality",
       "schedule": "0 4 * * 1"

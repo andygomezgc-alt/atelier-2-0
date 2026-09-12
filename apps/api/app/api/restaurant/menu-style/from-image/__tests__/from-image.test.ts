@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { createHash } from "node:crypto";
 
 const { db, guard, extract, generate, blob, quota, pdf, prismaNs } = vi.hoisted(() => ({
-  db: { restaurant: { update: vi.fn(), findUnique: vi.fn() } },
+  db: { menuStyleVersion: { findFirst: vi.fn(), create: vi.fn(), count: vi.fn() }, restaurant: { update: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn() } },
   guard: {
     requireAuth: vi.fn(),
     isNextResponse: (v: unknown) =>
@@ -10,8 +11,8 @@ const { db, guard, extract, generate, blob, quota, pdf, prismaNs } = vi.hoisted(
   },
   extract: { extractMenuStyle: vi.fn() },
   generate: { generateMenuTheme: vi.fn() },
-  blob: { uploadPhoto: vi.fn() },
-  quota: { reserveAiCall: vi.fn() },
+  blob: { uploadPhoto: vi.fn(), deleteBlobs: vi.fn() },
+  quota: { reserveAiCall: vi.fn(), recordAiTokens: vi.fn() },
   pdf: { getDocumentProxy: vi.fn() },
   // Sentinel de Prisma.DbNull (SQL NULL en Json?) para el path de fallo.
   prismaNs: { DbNull: Symbol("DbNull") },
@@ -30,10 +31,11 @@ vi.mock("@/lib/pdf/theme-generate", () => ({
 }));
 vi.mock("@/lib/blob", () => ({
   uploadPhoto: blob.uploadPhoto,
-  deleteBlobs: vi.fn(async () => {}),
+  deleteBlobs: blob.deleteBlobs,
 }));
 vi.mock("@/lib/ai-quota", () => ({
   reserveAiCall: quota.reserveAiCall,
+  recordAiTokens: quota.recordAiTokens,
   aiQuotaExceededResponse: (retryAfter: number) =>
     new Response(JSON.stringify({ code: "ai_daily_limit" }), {
       status: 429,
@@ -44,6 +46,8 @@ vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: 
 // getDocumentProxy real de recipe-extraction.ts pesa (parsea el PDF de
 // verdad); acá sólo nos interesa numPages, así que lo mockeamos.
 vi.mock("unpdf", () => ({ getDocumentProxy: pdf.getDocumentProxy }));
+
+vi.mock("@/lib/ai/media", () => ({ visionParts: vi.fn(async () => []) }));
 
 import * as route from "../route";
 
@@ -69,11 +73,11 @@ const THEME = {
   fontTitle: "playfair-display",
   fontBody: "lato",
   fontAccent: null,
-  css: ".menu{color:#111}",
+  css: ".menu{color:#111;font-family:'Lato',sans-serif;padding:12mm}",
   frameHtml: null,
   headerHtml: "<h1>{{MENU_NAME}}</h1>",
   sectionHeaderHtml: "<div>{{SECTION_NAME}}</div>",
-  dishHtml: "<div>{{DISH_NAME}}</div>",
+  dishHtml: "<div>{{DISH_NAME}} {{PRICE}}</div>",
   footerHtml: null,
 };
 
@@ -95,7 +99,11 @@ function postWithFile(bytes: Uint8Array<ArrayBuffer>, mime = "image/jpeg") {
 }
 
 beforeEach(() => {
+  db.menuStyleVersion.findFirst.mockReset().mockResolvedValue(null);
+  db.menuStyleVersion.create.mockReset().mockResolvedValue({ id: "v1" });
+  db.menuStyleVersion.count.mockReset().mockResolvedValue(0);
   db.restaurant.update.mockReset().mockResolvedValue({ id: "r1" });
+  db.restaurant.updateMany.mockReset().mockResolvedValue({ count: 1 });
   db.restaurant.findUnique.mockReset().mockResolvedValue({ menuStyleRefUrl: null });
   guard.requireAuth
     .mockReset()
@@ -103,63 +111,89 @@ beforeEach(() => {
   extract.extractMenuStyle.mockReset().mockResolvedValue(SPEC);
   generate.generateMenuTheme.mockReset().mockResolvedValue({ theme: THEME, refined: true });
   blob.uploadPhoto.mockReset().mockResolvedValue("https://blob.local/menu-style/r1/x.jpg");
+  blob.deleteBlobs.mockReset().mockResolvedValue(undefined);
   quota.reserveAiCall.mockReset().mockResolvedValue({ ok: true, used: 1, limit: 120 });
+  quota.recordAiTokens.mockReset().mockResolvedValue(undefined);
   // Como pdf.js real: DETACHA el typed array recibido (transfer al worker)
   // antes de resolver. Regresión: la ruta debe pasarle una COPIA a unpdf.
   pdf.getDocumentProxy.mockReset().mockImplementation(async (input: Uint8Array) => {
     (input.buffer as ArrayBuffer).transfer?.();
-    return { numPages: 3 };
+    return { numPages: 3, destroy: vi.fn(async () => {}),
+      getPage: async () => ({ getViewport: () => ({ width: 612.283, height: 841.9 }), cleanup: vi.fn() }) };
   });
 });
 
 describe("POST /api/restaurant/menu-style/from-image", () => {
-  it("happy path: extrae, sube ref best-effort y persiste el spec en el restaurante", async () => {
+  it.each([
+    ["bistro", 148, 210], ["brasserie", 297, 210], ["cafe", 210, 297],
+  ])("conserva el formato y aísla la propuesta del restaurante %s", async (restaurantId, widthMm, heightMm) => {
+    guard.requireAuth.mockResolvedValue({ userId: "chef", restaurantId, role: "chef_executive" });
+    pdf.getDocumentProxy.mockResolvedValue({ numPages: 2, destroy: vi.fn(),
+      getPage: async () => ({ getViewport: () => ({ width: Number(widthMm) * 72 / 25.4, height: Number(heightMm) * 72 / 25.4 }), cleanup: vi.fn() }),
+    });
+    expect((await postWithFile(PDF_BYTES, "application/pdf")).status).toBe(200);
+    expect(db.menuStyleVersion.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ restaurantId }) }));
+    expect(db.menuStyleVersion.create).toHaveBeenCalledWith({ data: expect.objectContaining({ restaurantId }) });
+    expect(generate.generateMenuTheme.mock.calls[0]![2].referenceGeometry.pages).toEqual([{ widthMm, heightMm }, { widthMm, heightMm }]);
+    expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+  it("reutiliza una propuesta idéntica sin cuota, IA ni otra subida", async () => {
+    const sha256 = createHash("sha256").update(JPEG_BYTES).digest("hex");
+    db.menuStyleVersion.findFirst.mockResolvedValue({ id: "saved", spec: SPEC,
+      theme: { ...THEME, reference: { sha256, mimeType: "image/jpeg", refined: true } } });
     const res = await postWithFile(JPEG_BYTES);
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.spec).toEqual(SPEC);
-
-    expect(quota.reserveAiCall).toHaveBeenCalledWith("u1");
-    const updateArg = db.restaurant.update.mock.calls[0]![0];
-    expect(updateArg.where).toEqual({ id: "r1" });
-    expect(updateArg.data.menuStyleSpec).toEqual(SPEC);
-    expect(updateArg.data.menuStyleRefUrl).toBe("https://blob.local/menu-style/r1/x.jpg");
+    expect(await res.json()).toMatchObject({ versionId: "saved", spec: SPEC, reused: true });
+    expect(quota.reserveAiCall).not.toHaveBeenCalled();
+    expect(generate.generateMenuTheme).not.toHaveBeenCalled();
+    expect(blob.uploadPhoto).not.toHaveBeenCalled();
+    expect(db.menuStyleVersion.create).not.toHaveBeenCalled();
   });
-
-  it("estilo fiel OK: guarda el theme junto al spec y responde themeGenerated:true", async () => {
+  it("convierte la caché anterior en propuesta sin cambiar el estilo activo", async () => {
+    const sha256 = createHash("sha256").update(JPEG_BYTES).digest("hex");
+    db.restaurant.findUnique.mockResolvedValue({ menuStyleSpec: SPEC,
+      menuStyleTheme: { ...THEME, reference: { sha256, mimeType: "image/jpeg", refined: true } }, menuStyleRefUrl: "https://blob.local/saved.jpg" });
+    const res = await postWithFile(JPEG_BYTES);
+    expect(await res.json()).toMatchObject({ versionId: "v1", reused: true });
+    expect(quota.reserveAiCall).not.toHaveBeenCalled();
+    expect(db.menuStyleVersion.create).toHaveBeenCalledWith({ data: expect.objectContaining({ refUrl: "https://blob.local/saved.jpg" }) });
+    expect(db.restaurant.updateMany).not.toHaveBeenCalled();
+  });
+  it("crea una propuesta aunque el estilo activo haya cambiado durante la generación", async () => {
     const res = await postWithFile(JPEG_BYTES);
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.themeGenerated).toBe(true);
-
-    expect(generate.generateMenuTheme).toHaveBeenCalledWith(expect.any(Uint8Array), "image/jpeg");
-    const updateArg = db.restaurant.update.mock.calls[0]![0];
-    expect(updateArg.data.menuStyleSpec).toEqual(SPEC);
-    expect(updateArg.data.menuStyleTheme).toEqual(THEME);
+    expect(await res.json()).toMatchObject({ versionId: "v1", spec: SPEC, reused: false });
+    expect(db.restaurant.update).not.toHaveBeenCalled();
+    expect(db.restaurant.updateMany).not.toHaveBeenCalled();
+    expect(db.menuStyleVersion.create).toHaveBeenCalledWith({ data: expect.objectContaining({ restaurantId: "r1", spec: SPEC, theme: expect.objectContaining(THEME), refUrl: "https://blob.local/menu-style/r1/x.jpg" }) });
   });
-
-  it("generación del theme revienta → 200, themeGenerated:false y menuStyleTheme:null (limpia el viejo)", async () => {
+  it("limpia una referencia huérfana si falla guardar la propuesta", async () => {
+    db.menuStyleVersion.create.mockRejectedValue(new Error("db unavailable"));
+    expect((await postWithFile(JPEG_BYTES)).status).toBe(422);
+    expect(blob.deleteBlobs).toHaveBeenCalledWith(["https://blob.local/menu-style/r1/x.jpg"]);
+  });
+  it("conserva la referencia si el commit se confirmó pese a perder su respuesta", async () => {
+    db.menuStyleVersion.create.mockRejectedValue(new Error("connection closed after commit"));
+    db.menuStyleVersion.count.mockResolvedValue(1);
+    expect((await postWithFile(JPEG_BYTES)).status).toBe(422);
+    expect(blob.deleteBlobs).not.toHaveBeenCalled();
+  });
+  it("conserva la referencia ante un commit incierto", async () => {
+    db.menuStyleVersion.create.mockRejectedValue(new Error("db unavailable"));
+    db.menuStyleVersion.count.mockRejectedValue(new Error("db unavailable"));
+    expect((await postWithFile(JPEG_BYTES)).status).toBe(422);
+    expect(blob.deleteBlobs).not.toHaveBeenCalled();
+  });
+  it("si falla generar el tema no cambia el estilo anterior", async () => {
     generate.generateMenuTheme.mockRejectedValue(new Error("modelo caído"));
-    const res = await postWithFile(JPEG_BYTES);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.spec).toEqual(SPEC);
-    expect(body.themeGenerated).toBe(false);
-
-    const updateArg = db.restaurant.update.mock.calls[0]![0];
-    // El spec se persiste igual; el theme se limpia con Prisma.DbNull (SQL NULL;
-    // spec nuevo + theme viejo sería inconsistente).
-    expect(updateArg.data.menuStyleSpec).toEqual(SPEC);
-    expect(updateArg.data.menuStyleTheme).toBe(prismaNs.DbNull);
+    expect((await postWithFile(JPEG_BYTES)).status).toBe(422);
+    expect(db.menuStyleVersion.create).not.toHaveBeenCalled();
+    expect(db.restaurant.updateMany).not.toHaveBeenCalled();
   });
-
-  it("si Blob no está configurado (uploadPhoto → null) persiste el spec sin refUrl", async () => {
+  it("puede guardar una propuesta sin blob si el almacenamiento no está configurado", async () => {
     blob.uploadPhoto.mockResolvedValue(null);
-    const res = await postWithFile(JPEG_BYTES);
-    expect(res.status).toBe(200);
-    const updateArg = db.restaurant.update.mock.calls[0]![0];
-    expect(updateArg.data.menuStyleSpec).toEqual(SPEC);
-    expect("menuStyleRefUrl" in updateArg.data).toBe(false);
+    expect((await postWithFile(JPEG_BYTES)).status).toBe(200);
+    expect(db.menuStyleVersion.create).toHaveBeenCalledWith({ data: expect.objectContaining({ spec: SPEC, refUrl: null }) });
   });
 
   it("magic bytes malos → 415 sin gastar cuota ni llamar al extractor", async () => {
@@ -183,16 +217,18 @@ describe("POST /api/restaurant/menu-style/from-image", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.spec).toEqual(SPEC);
-    expect(extract.extractMenuStyle).toHaveBeenCalledWith(expect.any(Uint8Array), "application/pdf");
+    expect(extract.extractMenuStyle).toHaveBeenCalledWith(expect.any(Uint8Array), "application/pdf", expect.objectContaining({ onUsage: expect.any(Function) }));
     // Regresión: pdf.js detacha el array que se le pasa — el extractor debe
     // recibir el buffer ORIGINAL con sus bytes, no uno vaciado por unpdf.
     expect(extract.extractMenuStyle.mock.calls[0]![0].byteLength).toBeGreaterThan(0);
-    const updateArg = db.restaurant.update.mock.calls[0]![0];
-    expect(updateArg.data.menuStyleSpec).toEqual(SPEC);
+    expect(generate.generateMenuTheme.mock.calls[0]![2].referenceGeometry.pages).toHaveLength(3);
+    expect(generate.generateMenuTheme.mock.calls[0]![2].referenceGeometry.pages[0]).toEqual({ widthMm: 216, heightMm: 297 });
+    const createArg = db.menuStyleVersion.create.mock.calls[0]![0];
+    expect(createArg.data.spec).toEqual(SPEC);
   });
 
   it("PDF con más de 10 páginas → 413 sin gastar cuota ni llamar al extractor", async () => {
-    pdf.getDocumentProxy.mockResolvedValue({ numPages: 11 });
+    pdf.getDocumentProxy.mockResolvedValue({ numPages: 11, destroy: vi.fn(async () => {}) });
     const res = await postWithFile(PDF_BYTES, "application/pdf");
     expect(res.status).toBe(413);
     const body = await res.json();
@@ -239,12 +275,12 @@ describe("POST /api/restaurant/menu-style/from-image", () => {
     expect(db.restaurant.update).not.toHaveBeenCalled();
   });
 
-  it("extractor falla → 422 con code recipe_extraction_failed y no persiste", async () => {
+  it("extractor falla → 422 con code menu_style_extraction_failed y no persiste", async () => {
     extract.extractMenuStyle.mockRejectedValue(new Error("foto ilegible"));
     const res = await postWithFile(JPEG_BYTES);
     expect(res.status).toBe(422);
     const body = await res.json();
-    expect(body.code).toBe("recipe_extraction_failed");
+    expect(body.code).toBe("menu_style_extraction_failed");
     expect(db.restaurant.update).not.toHaveBeenCalled();
   });
 

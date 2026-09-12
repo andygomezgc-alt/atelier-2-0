@@ -4,6 +4,7 @@
   },
   "build": {
     "pilot": {
+      "autoIncrement": true,
       "distribution": "internal",
       "android": {
         "buildType": "apk"

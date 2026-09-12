@@ -111,10 +111,14 @@ describe("useAuth bootstrap (P1-4)", () => {
   });
 
   it("fetchMe rechaza ApiError 401 → borra token y desloguea", async () => {
+    const queueKey = "atelier.idea_queue.v2.user-a.restaurant-a";
+    h.asyncStorage.set(queueKey, "pending work");
     h.fetchMe.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
     await bootstrap();
     expect(getAuthState()).toEqual({ status: "signed-out" });
     expect(h.deleteItemAsync).toHaveBeenCalledWith(TOKEN_KEY);
+    expect(h.asyncStorage.get(queueKey)).toBe("pending work");
+    expect(h.multiRemove).not.toHaveBeenCalled();
   });
 
   it("fetchMe rechaza ApiError 500 → offline, conserva token (no es sesión inválida)", async () => {

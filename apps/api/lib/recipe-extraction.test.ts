@@ -1,15 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+vi.mock("./ai/budget", () => ({ reserveGeneration: vi.fn().mockResolvedValue({ id: "reservation" }), settleGeneration: vi.fn().mockResolvedValue(undefined) }));
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-// Mock del SDK Anthropic — `create` compartido, hoisted para que vi.mock
-// (que se eleva sobre los imports) pueda referenciarlo.
-const { create } = vi.hoisted(() => ({ create: vi.fn() }));
-vi.mock("@anthropic-ai/sdk", () => ({
-  default: class {
-    messages = { create };
-  },
-}));
+const create = vi.fn();
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
 
 import {
   extractRecipeFromText,
@@ -32,19 +28,40 @@ const arroz = readFileSync(
   "utf8",
 );
 
-function toolUse(input: unknown) {
-  return { content: [{ type: "tool_use", name: "emit_recipe", input }] };
+function jsonReply(input: unknown, usage = {}, finish_reason = "stop") {
+  return { choices: [{ finish_reason, message: { content: JSON.stringify(input) } }], usage };
 }
 
 beforeEach(() => {
   create.mockReset();
-  process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+  vi.stubEnv("ZAI_API_KEY", "glm-test-key");
+  vi.stubGlobal("fetch", vi.fn(async (_url, init) => Response.json(await create(JSON.parse(init.body)))));
 });
 
 describe("extractRecipeFromText — A-01 (extracción desacoplada)", () => {
-  it("devuelve receta validada desde el tool_use forzado", async () => {
+  it("conserva la ficha completa aunque GLM añada un bloque JSON y comas finales", async () => {
+    const expected = { title: "Ricciola al ponzu", portions: 4, ingredients: ["600 g ricciola", "40 ml ponzu, frío"],
+      method: ['Cortar sin marcar. El texto ",}" se conserva.', "Aliñar al pase."], notes: "Mantener las cantidades." };
+    const formatted = JSON.stringify(expected).replace(/}$/, ",}");
+    create.mockResolvedValue({ choices: [{ finish_reason: "stop", message: { content: `\x60\x60\x60json\n${formatted}\n\x60\x60\x60` } }] });
+    expect(await extractRecipeFromText("Receta para cuatro personas")).toEqual(expected);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+  it("normalizar el formato no permite guardar una ficha sin ingredientes ni método", async () => {
+    create.mockResolvedValue({ choices: [{ finish_reason: "stop", message: { content: '\x60\x60\x60json\n{"title":"Incompleta",}\n\x60\x60\x60' } }] });
+    await expect(extractRecipeFromText("Receta incompleta")).rejects.toThrow("Receta estructurada inválida");
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+  it("preserves explicit portions and leaves unspecified portions unknown", async () => {
+    const recipe = { title: "Arroz", ingredients: ["400 g arroz"], method: ["Cocer"], notes: "" };
+    create.mockResolvedValue(jsonReply({ ...recipe, portions: 4 }));
+    expect(await extractRecipeFromText("Arroz para cuatro personas")).toHaveProperty("portions", 4);
+    create.mockResolvedValue(jsonReply(recipe));
+    expect(await extractRecipeFromText("Arroz")).toHaveProperty("portions", null);
+  });
+  it("devuelve receta validada desde el JSON estructurado", async () => {
     create.mockResolvedValue(
-      toolUse({
+      jsonReply({
         title: "Arroz Meloso de Mariscos y Ñoras",
         ingredients: ["Arroz Carnaroli 320 g", "Gambas rojas 8 u"],
         method: ["Hacer el sofrito", "Nacarar el arroz"],
@@ -57,15 +74,15 @@ describe("extractRecipeFromText — A-01 (extracción desacoplada)", () => {
     expect(r.method.length).toBe(2);
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: "claude-haiku-4-5",
-        tool_choice: { type: "tool", name: "emit_recipe" },
+        model: "glm-5.3-flash",
+        response_format: { type: "json_object" },
       }),
     );
   });
 
   it("regresión: el título es el plato real, NO el mensaje del usuario", async () => {
     create.mockResolvedValue(
-      toolUse({
+      jsonReply({
         title: "Arroz Meloso de Mariscos y Ñoras",
         ingredients: ["Ñoras 2 u"],
         method: ["Hidratar las ñoras"],
@@ -77,14 +94,14 @@ describe("extractRecipeFromText — A-01 (extracción desacoplada)", () => {
     expect(r.title).toContain("Arroz Meloso");
   });
 
-  it("sin tool_use en la respuesta → error", async () => {
+  it("sin JSON en la respuesta → error", async () => {
     create.mockResolvedValue({ content: [{ type: "text", text: "nope" }] });
     await expect(extractRecipeFromText(arroz)).rejects.toThrow();
   });
 
-  it("tool_use con shape inválida → error (Zod lo rechaza)", async () => {
+  it("JSON con shape inválida → error (Zod lo rechaza)", async () => {
     create.mockResolvedValue(
-      toolUse({ title: "", ingredients: "no-es-array" }),
+      jsonReply({ title: "", ingredients: "no-es-array" }),
     );
     await expect(extractRecipeFromText(arroz)).rejects.toThrow();
   });
@@ -94,10 +111,10 @@ describe("extractRecipeFromText — A-01 (extracción desacoplada)", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
-  it("sin ANTHROPIC_API_KEY en el server → error claro", async () => {
-    delete process.env.ANTHROPIC_API_KEY;
+  it("sin ZAI_API_KEY en el server → error claro", async () => {
+    vi.stubEnv("ZAI_API_KEY", "");
     await expect(extractRecipeFromText(arroz)).rejects.toThrow(
-      /ANTHROPIC_API_KEY/,
+      /ai_provider_unconfigured/,
     );
   });
 });
@@ -137,9 +154,9 @@ describe("fileMatchesMime — magic bytes de imagen", () => {
 });
 
 describe("extractRecipeFromImage — visión (server-only)", () => {
-  it("devuelve receta validada desde el tool_use forzado", async () => {
+  it("devuelve receta validada desde el JSON estructurado", async () => {
     create.mockResolvedValue(
-      toolUse({
+      jsonReply({
         title: "Tarta de manzana",
         ingredients: ["Manzanas 4 u", "Harina 200 g"],
         method: ["Pelar las manzanas", "Hornear 40 min"],
@@ -155,26 +172,26 @@ describe("extractRecipeFromImage — visión (server-only)", () => {
     expect(r.method.length).toBe(2);
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: "claude-haiku-4-5",
-        tool_choice: { type: "tool", name: "emit_recipe" },
+        model: "glm-5.3-flash",
+        response_format: { type: "json_object" },
       }),
     );
   });
 
-  it("tool_use con shape inválida (falta campo) → error", async () => {
+  it("JSON con shape inválida (falta campo) → error", async () => {
     create.mockResolvedValue(
-      toolUse({ title: "Sin ingredientes", method: ["Paso"], notes: "" }),
+      jsonReply({ title: "Sin ingredientes", method: ["Paso"], notes: "" }),
     );
     await expect(
       extractRecipeFromImage(new Uint8Array([0xff, 0xd8, 0xff]), "image/jpeg"),
     ).rejects.toThrow();
   });
 
-  it("sin ANTHROPIC_API_KEY → error, sin llamar al modelo", async () => {
-    delete process.env.ANTHROPIC_API_KEY;
+  it("sin ZAI_API_KEY → error, sin llamar al modelo", async () => {
+    vi.stubEnv("ZAI_API_KEY", "");
     await expect(
       extractRecipeFromImage(new Uint8Array([0xff, 0xd8, 0xff]), "image/jpeg"),
-    ).rejects.toThrow(/ANTHROPIC_API_KEY/);
+    ).rejects.toThrow(/ai_provider_unconfigured/);
     expect(create).not.toHaveBeenCalled();
   });
 });

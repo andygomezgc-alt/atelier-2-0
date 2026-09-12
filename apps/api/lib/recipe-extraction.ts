@@ -3,13 +3,14 @@
 //  1. Parse the file to plain text (unpdf for PDF, mammoth for DOCX).
 //  2. Ask an LLM to coerce that text into our RecipeContent shape.
 //  3. Validate the LLM response with Zod so the caller can trust it.
-// Uses the server's Anthropic key + Haiku 4.5 (fast/cheap; the task is
-// structured extraction, not deep reasoning).
+// Structured extraction uses the server GLM provider; costs and saves remain local rules.
 //
 // TODO v2: add Google Drive OAuth flow so the user can pick files directly
 // from Drive without going through the device file picker.
 
-import Anthropic from "@anthropic-ai/sdk";
+import { generateGlmJson } from "./ai/glm";
+import { visionParts } from "./ai/media";
+import type { UsageCallback } from "./ai/types";
 import { extractText, getDocumentProxy } from "unpdf";
 import mammoth from "mammoth";
 import { z } from "zod";
@@ -72,6 +73,7 @@ export function fileMatchesMime(buffer: Uint8Array, mime: string): boolean {
 }
 
 const ExtractedRecipeSchema = z.object({
+  portions: z.number().int().positive().max(1000).nullable().optional().default(null),
   title: z.string().min(1).max(200),
   ingredients: z.array(z.string().min(1).max(500)).max(50),
   method: z.array(z.string().min(1).max(500)).max(50),
@@ -83,6 +85,7 @@ export type ExtractedRecipe = z.infer<typeof ExtractedRecipeSchema>;
 const PROMPT = `Extraé esta receta del texto siguiente. Devolvé SOLO un objeto JSON con esta forma exacta:
 {
   "title": "Nombre claro de la receta",
+  "portions": null,
   "ingredients": ["Ingrediente 1 con cantidad", "Ingrediente 2 con cantidad"],
   "method": ["Paso 1...", "Paso 2..."],
   "notes": "Notas, tips o técnica opcional. Si no hay, devolvé string vacía."
@@ -90,6 +93,7 @@ const PROMPT = `Extraé esta receta del texto siguiente. Devolvé SOLO un objeto
 
 Reglas:
 - Si la receta no tiene título visible, inventá uno descriptivo basado en los ingredientes principales.
+- portions: número de raciones/personas explícito (entero de 1 a 1000); null si no se indica. No lo inventes ni confundas piezas con raciones.
 - Cada ingrediente como string separado en \`ingredients\`, en el orden del original.
 - Cada paso del método como string separado en \`method\`, en orden.
 - No incluyas markdown, no expliques, no agregues texto fuera del JSON.
@@ -100,15 +104,19 @@ TEXTO:
 export async function extractRecipeFromFile(
   buffer: Uint8Array,
   mimeType: string,
+  onUsage?: UsageCallback,
 ): Promise<ExtractedRecipe> {
   const text = await fileToText(buffer, mimeType);
-  if (!text.trim()) throw new Error("El archivo no contiene texto legible");
+  if (!text.trim()) {
+    if (mimeType === PDF_MIME) return extractRecipeFromImage(buffer, mimeType, onUsage);
+    throw new Error("El archivo no contiene texto legible");
+  }
 
   // Safety cap: keep prompts predictable in size. ~30k chars ≈ 8k tokens.
   const truncated = text.length > 30_000 ? text.slice(0, 30_000) : text;
 
-  const raw = await callForExtraction(PROMPT, truncated);
-  const parsed = ExtractedRecipeSchema.safeParse(parseJsonLoose(raw));
+  const raw = await generateGlmJson({ task: "extraction", system: PROMPT, content: truncated, schema: EMIT_RECIPE_TOOL.input_schema, onUsage, incompleteCode: "recipe_extraction_incomplete" });
+  const parsed = ExtractedRecipeSchema.safeParse(raw);
   if (!parsed.success) {
     throw new Error(
       `No se pudo interpretar la receta del archivo: ${parsed.error.issues
@@ -119,12 +127,7 @@ export async function extractRecipeFromFile(
   return parsed.data;
 }
 
-// --- Extracción desde TEXTO (Asistente → "Guardar como receta", A-01). ---
-// Usa la clave del server + Haiku con TOOL USE FORZADO. Decisión A-01 "Opción A":
-// la extracción es infraestructura de la app, no el servicio personal del
-// chef; y el tool use forzado da garantía técnica de JSON parseable (no
-// "esperanza" de que el modelo cumpla un formato de texto). Validado en
-// datos reales (Arroz Meloso truncado + Ricciola): Haiku 10/10.
+// Schema shared by text, image and file extraction; Zod validates every response.
 const EMIT_RECIPE_TOOL = {
   name: "emit_recipe",
   description:
@@ -132,6 +135,10 @@ const EMIT_RECIPE_TOOL = {
   input_schema: {
     type: "object" as const,
     properties: {
+      portions: {
+        type: ["integer", "null"], minimum: 1, maximum: 1000,
+        description: "Raciones/personas indicadas explícitamente. Null si no constan; no inferir de cantidades ni confundir piezas con raciones.",
+      },
       title: {
         type: "string",
         description:
@@ -152,161 +159,50 @@ const EMIT_RECIPE_TOOL = {
         description: "Notas/técnica/servicio. String vacía si no hay.",
       },
     },
-    required: ["title", "ingredients", "method", "notes"],
+    required: ["title", "ingredients", "method", "notes", "portions"],
   },
 } as const;
 
 const EXTRACT_TEXT_SYSTEM =
-  "Sos un extractor de recetas. Convertí el texto de receta a la herramienta emit_recipe. " +
+  "Sos un extractor de recetas. Convertí el texto de receta al objeto JSON solicitado. " +
   "`title` = el nombre real del plato tal como aparece en el texto (un encabezado, normalmente en negrita), " +
   "NUNCA una pregunta, instrucción o mensaje del usuario. Si el texto está incompleto o truncado, " +
-  "extraé lo que haya. No expliques nada fuera de la herramienta.";
+  "extraé lo que haya. Si recibes una conversación CHEF/ASISTENTE, reconstruye la última receta completa " +
+  "e incorpora los cambios posteriores solicitados y acordados, conservando ingredientes, cantidades, raciones y pasos no modificados. " +
+  "No mezcles platos diferentes ni inventes cantidades ausentes. No expliques nada fuera del JSON.";
 
-export async function extractRecipeFromText(
-  recipeText: string,
-): Promise<ExtractedRecipe> {
+export async function extractRecipeFromText(recipeText: string, onUsage?: UsageCallback): Promise<ExtractedRecipe> {
   const text = recipeText.trim();
   if (!text) throw new Error("Texto de receta vacío");
-  const truncated = text.length > 30_000 ? text.slice(0, 30_000) : text;
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey)
-    throw new Error("ANTHROPIC_API_KEY no configurada en el servidor");
-
-  const client = new Anthropic({ apiKey });
-  const msg = await client.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 4096,
-    system: EXTRACT_TEXT_SYSTEM,
-    tools: [EMIT_RECIPE_TOOL as unknown as Anthropic.Tool],
-    tool_choice: { type: "tool", name: "emit_recipe" },
-    messages: [{ role: "user", content: truncated }],
-  });
-
-  const block = msg.content.find((b) => b.type === "tool_use");
-  if (!block || block.type !== "tool_use")
-    throw new Error("El modelo no devolvió el bloque estructurado");
-
-  const parsed = ExtractedRecipeSchema.safeParse(block.input);
-  if (!parsed.success)
-    throw new Error(
-      `Receta estructurada inválida: ${parsed.error.issues
-        .map((i) => i.message)
-        .join(", ")}`,
-    );
-  return parsed.data;
+  if (text.length > 30_000) throw new Error("recipe_context_too_long");
+  return validateRecipe(await generateGlmJson({ task: "extraction", system: EXTRACT_TEXT_SYSTEM,
+    schema: EMIT_RECIPE_TOOL.input_schema, content: text, onUsage, incompleteCode: "recipe_extraction_incomplete" }));
 }
 
-// --- Extracción desde IMAGEN (foto de receta, cámara o galería). ---
-// Clave Anthropic del server + Haiku visión, con tool use forzado. Como en A-01,
-// la extracción es infraestructura de la app. No pasa por fileToText: el modelo
-// de visión lee la foto directamente.
-export async function extractRecipeFromImage(
-  buffer: Uint8Array,
-  mimeType: string,
-): Promise<ExtractedRecipe> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey)
-    throw new Error("ANTHROPIC_API_KEY no configurada en el servidor");
+export async function extractRecipeFromImage(buffer: Uint8Array, mimeType: string, onUsage?: UsageCallback): Promise<ExtractedRecipe> {
+  const parts = await visionParts(buffer, mimeType);
+  return validateRecipe(await generateGlmJson({ task: "extraction", system: EXTRACT_TEXT_SYSTEM,
+    schema: EMIT_RECIPE_TOOL.input_schema, content: [...parts, { type: "text", text: "Extrae la receta de esta foto. Si no contiene una receta legible, devuelve el título 'Sin receta' y arrays vacíos." }],
+    onUsage, incompleteCode: "recipe_extraction_incomplete" }));
+}
 
-  const base64 = Buffer.from(buffer).toString("base64");
-
-  const client = new Anthropic({ apiKey });
-  const msg = await client.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 4096,
-    system: EXTRACT_TEXT_SYSTEM,
-    tools: [EMIT_RECIPE_TOOL as unknown as Anthropic.Tool],
-    tool_choice: { type: "tool", name: "emit_recipe" },
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: mimeType as "image/jpeg" | "image/png" | "image/webp",
-              data: base64,
-            },
-          },
-          {
-            type: "text",
-            text: "Extraé la receta de esta foto. Si la imagen no contiene una receta legible, devolvé el título 'Sin receta' y arrays vacíos.",
-          },
-        ],
-      },
-    ],
-  });
-
-  const block = msg.content.find((b) => b.type === "tool_use");
-  if (!block || block.type !== "tool_use")
-    throw new Error("El modelo no devolvió el bloque estructurado");
-
-  const parsed = ExtractedRecipeSchema.safeParse(block.input);
-  if (!parsed.success)
-    throw new Error(
-      `Receta estructurada inválida: ${parsed.error.issues
-        .map((i) => i.message)
-        .join(", ")}`,
-    );
+function validateRecipe(raw: unknown): ExtractedRecipe {
+  const parsed = ExtractedRecipeSchema.safeParse(raw);
+  if (!parsed.success) throw new Error(`Receta estructurada inválida: ${parsed.error.issues.map(i => i.message).join(", ")}`);
   return parsed.data;
 }
 
 async function fileToText(buffer: Uint8Array, mimeType: string): Promise<string> {
   if (mimeType === PDF_MIME) {
-    const doc = await getDocumentProxy(buffer);
-    const out = await extractText(doc, { mergePages: true });
-    return Array.isArray(out.text) ? out.text.join("\n") : out.text;
+    const doc = await getDocumentProxy(new Uint8Array(buffer));
+    try {
+      const out = await extractText(doc, { mergePages: true });
+      return Array.isArray(out.text) ? out.text.join("\n") : out.text;
+    } finally { await doc.destroy(); }
   }
   if (mimeType === DOCX_MIME) {
     const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) });
     return result.value;
   }
   throw new Error(`Tipo de archivo no soportado: ${mimeType}`);
-}
-
-// Strip optional ```json fences before JSON.parse. LLMs add them despite the
-// "no markdown" instruction.
-function parseJsonLoose(raw: string): unknown {
-  let s = raw.trim();
-  if (s.startsWith("```")) {
-    s = s.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
-  }
-  return JSON.parse(s);
-}
-
-// `instructions` es el prefix estable (cacheable). `fileText` cambia por
-// upload. max_tokens=2048 es holgado: el output es JSON de ~200-400 tokens
-// incluso con recetas grandes (50 ingredientes + 50 pasos).
-async function callForExtraction(
-  instructions: string,
-  fileText: string,
-): Promise<string> {
-  const MAX_OUTPUT_TOKENS = 2048;
-
-  // Server's Anthropic key, Haiku 4.5 (cheap + fast).
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY no configurada en el servidor");
-  const client = new Anthropic({ apiKey });
-  const msg = await client.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: MAX_OUTPUT_TOKENS,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: instructions, cache_control: { type: "ephemeral" } },
-          { type: "text", text: fileText },
-        ],
-      },
-    ],
-  });
-  return firstTextBlock(msg);
-}
-
-function firstTextBlock(msg: Anthropic.Message): string {
-  const block = msg.content.find((b) => b.type === "text");
-  if (!block || block.type !== "text") throw new Error("Sin respuesta de texto");
-  return block.text;
 }

@@ -106,7 +106,7 @@ function buildFilters(filter: FilterId, q: string): ListProductFilters {
 // el valor canónico después.
 function realCostLocal(cents: number, mermaPct: number): number {
   if (mermaPct >= 100) return cents;
-  return Math.ceil(cents / (1 - mermaPct / 100));
+  return cents / (1 - mermaPct / 100);
 }
 
 // ProductDetail (full) → ProductListItem (lo que vive en el array de items).
@@ -149,7 +149,7 @@ const UNIT_SHORT: Record<ProductUnit, string> = {
 };
 
 function formatRealCost(cents: number, unit: ProductUnit): string {
-  return formatEurosPerUnit(cents, UNIT_SHORT[unit]);
+  return formatEurosPerUnit(cents, UNIT_SHORT[unit], 4);
 }
 
 export default function ProductosScreen() {
@@ -549,7 +549,7 @@ const ProductRow = memo(function ProductRow({
           readOnly={isArchived}
         />
         <Text style={styles.realCost}>
-          {hasPrice ? formatRealCost(item.realCost, item.unidadCompra) : ""}
+          {hasPrice && item.realCost !== null ? formatRealCost(item.realCost, item.unidadCompra) : "—"}
         </Text>
       </View>
 

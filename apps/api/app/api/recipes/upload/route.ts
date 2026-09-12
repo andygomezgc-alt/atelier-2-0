@@ -22,7 +22,8 @@ import {
 } from "@/lib/recipe-extraction";
 import { findMatch, type MatchCandidate } from "@/lib/products/matching";
 import { parseIngredient } from "@/lib/products/parser";
-import { reserveAiCall, aiQuotaExceededResponse } from "@/lib/ai-quota";
+import { reserveAiCall, aiQuotaExceededResponse, recordAiTokens } from "@/lib/ai-quota";
+import { budgetErrorResponse } from "@/lib/ai/budget-policy";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -84,8 +85,8 @@ export async function POST(req: NextRequest) {
     // terminar el LLM.
     const [extracted, productList] = await Promise.all([
       isImage
-        ? extractRecipeFromImage(buffer, mime)
-        : extractRecipeFromFile(buffer, mime),
+        ? extractRecipeFromImage(buffer, mime, usage => recordAiTokens(ctx.userId, usage.inputTokens, usage.outputTokens).catch(() => undefined))
+        : extractRecipeFromFile(buffer, mime, usage => recordAiTokens(ctx.userId, usage.inputTokens, usage.outputTokens).catch(() => undefined)),
       ctx.restaurantId
         ? prisma.product.findMany({
             where: {
@@ -148,6 +149,7 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({
       title: extracted.title,
+      portions: extracted.portions ?? null,
       contentJson: {
         ingredients: extracted.ingredients,
         method: extracted.method,
@@ -157,6 +159,8 @@ export async function POST(req: NextRequest) {
       pendingMatches,
     });
   } catch (err) {
+    const budgetResponse = budgetErrorResponse(err);
+    if (budgetResponse) return budgetResponse;
     const message = err instanceof Error ? err.message : "Error al procesar archivo";
     logger.error("recipe_upload_failed", {
       userId: ctx.userId,

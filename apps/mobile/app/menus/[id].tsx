@@ -70,13 +70,15 @@ import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { SectionPickerSheet } from "@/src/components/SectionPickerSheet";
 import { SectionPresetSheet } from "@/src/components/SectionPresetSheet";
 import { RecipeBankPickerSheet } from "@/src/components/RecipeBankPickerSheet";
+import { MenuChargesSheet } from "@/src/components/MenuChargesSheet";
 import { StylePreviewSheet } from "@/src/components/StylePreviewSheet";
-import { TOKEN_KEY } from "@/src/api/client";
-import { can, type MenuStyle, type MenuStyleSpec } from "@atelier/shared";
+import { ApiError, TOKEN_KEY } from "@/src/api/client";
+import { can, type ApiErrorCode, type MenuStyle } from "@atelier/shared";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { apiErrorMessage } from "@/src/lib/api-error";
 import { centsFromInput, formatPrice } from "@/src/lib/money";
 import { sanitizeFilename } from "@/src/lib/export-file";
+import { menuStyleImageMime } from "@/src/lib/menu-style-file";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
 const API = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
@@ -182,6 +184,7 @@ type DishCardProps = {
   onSaveName: (itemId: string, value: string) => void;
   onSaveDesc: (itemId: string, value: string) => void;
   onSavePrice: (itemId: string, value: string) => void;
+  onSavePriceUnit: (itemId: string, unit: "portion" | "kg") => void;
   onClearCustomName: (itemId: string) => void;
   onOpenSectionPicker: (itemId: string) => void;
   onReorder: (itemId: string, dir: "up" | "down") => void;
@@ -206,12 +209,14 @@ const DishCard = memo(function DishCard({
   onSaveName,
   onSaveDesc,
   onSavePrice,
+  onSavePriceUnit,
   onClearCustomName,
   onOpenSectionPicker,
   onReorder,
   onDelete,
   onViewRecipe,
 }: DishCardProps) {
+  const { t } = useI18n();
   const handleSaveName = useCallback((v: string) => onSaveName(dish.id, v), [onSaveName, dish.id]);
   const handleSaveDesc = useCallback((v: string) => onSaveDesc(dish.id, v), [onSaveDesc, dish.id]);
   const handleSavePrice = useCallback((v: string) => onSavePrice(dish.id, v), [onSavePrice, dish.id]);
@@ -288,7 +293,10 @@ const DishCard = memo(function DishCard({
             style={styles.priceInput}
             maxLength={10}
           />
-          <Text style={styles.priceUnit}>€</Text>
+          <Pressable disabled={!canEdit} accessibilityRole="button" accessibilityLabel={t("menu_price_unit")}
+            hitSlop={12} onPress={() => onSavePriceUnit(dish.id, dish.priceUnit === "kg" ? "portion" : "kg")}>
+            <Text style={styles.priceUnit}>{dish.priceUnit === "kg" ? "€/kg" : "€"}</Text>
+          </Pressable>
         </View>
       </View>
 
@@ -356,7 +364,8 @@ export default function MenuDetailScreen() {
   const [styleUploading, setStyleUploading] = useState(false);
   // "Tu estilo" — spec a previsualizar en el sheet "Así quedó tu estilo".
   // Se llena tras una extracción exitosa, o al reabrir el chip custom activo.
-  const [stylePreview, setStylePreview] = useState<MenuStyleSpec | null>(null);
+  const [chargesOpen, setChargesOpen] = useState(false);
+  const [stylePreview, setStylePreview] = useState(false);
 
   const role =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -440,30 +449,14 @@ export default function MenuDetailScreen() {
     [id, t, reload],
   );
 
-  // "Tu estilo" — sube la foto ya elegida/tomada. `activateStyle` solo aplica
-  // en la primera captura (todavía no hay hasCustomStyle): en la re-captura
-  // el menú ya está en "custom", así que solo hace falta refrescar + avisar.
-  // Éxito con spec en mano → abre el sheet de preview en vez del toast de
-  // siempre (el toast queda como fallback si no hay spec o falló la activación).
+  // La captura crea una propuesta; el estilo activo solo cambia al confirmarla.
   const handleStyleCaptureUri = useCallback(
-    async (uri: string, mime: string, activateStyle: boolean) => {
+    async (uri: string, mime: string, _activateStyle: boolean) => {
       setStyleUploading(true);
-      try {
-        const spec = await uploadMenuStyleFile(uri, mime);
-        const activated = activateStyle ? await handleStyleChange("custom") : true;
-        await reload({ silent: true });
-        if (spec && activated) {
-          setStylePreview(spec);
-        } else {
-          showToast(t("toast_menu_style_created"));
-        }
-      } catch (err) {
-        showToast(apiErrorMessage(err, t));
-      } finally {
-        setStyleUploading(false);
-      }
-    },
-    [handleStyleChange, reload, t],
+      try { await uploadMenuStyleFile(uri, mime); setStylePreview(true); }
+      catch (err) { showToast(apiErrorMessage(err, t)); }
+      finally { setStyleUploading(false); }
+    }, [t],
   );
 
   const handleCaptureStylePhoto = useCallback(
@@ -474,11 +467,11 @@ export default function MenuDetailScreen() {
         showToast(t("cargar_permiso_camara"));
         return;
       }
-      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.6 });
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 1 });
       if (result.canceled) return;
       const asset = result.assets[0];
       if (!asset) return;
-      await handleStyleCaptureUri(asset.uri, "image/jpeg", activateStyle);
+      await handleStyleCaptureUri(asset.uri, menuStyleImageMime(asset), activateStyle);
     },
     [styleUploading, t, handleStyleCaptureUri],
   );
@@ -491,11 +484,11 @@ export default function MenuDetailScreen() {
         showToast(t("cargar_permiso_galeria"));
         return;
       }
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.6 });
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1 });
       if (result.canceled) return;
       const asset = result.assets[0];
       if (!asset) return;
-      await handleStyleCaptureUri(asset.uri, "image/jpeg", activateStyle);
+      await handleStyleCaptureUri(asset.uri, menuStyleImageMime(asset), activateStyle);
     },
     [styleUploading, t, handleStyleCaptureUri],
   );
@@ -607,6 +600,14 @@ export default function MenuDetailScreen() {
     },
     [menu, t, reload],
   );
+
+  const handleSavePriceUnit = useCallback(async (itemId: string, priceUnit: "portion" | "kg") => {
+    if (!id) return;
+    try {
+      await patchMenuItem(id, itemId, { priceUnit });
+      setMenu(m => m ? { ...m, items: m.items.map(it => it.id === itemId ? { ...it, priceUnit } : it) } : m);
+    } catch (err) { showToast(apiErrorMessage(err, t)); }
+  }, [id, t]);
 
   const handleSaveItemPrice = useCallback(
     async (itemId: string, value: string) => {
@@ -816,23 +817,36 @@ export default function MenuDetailScreen() {
   // Bug #3: filename preserva acentos / ñ.
   // styleOverride — el sheet de preview de "Tu estilo" fuerza "custom" al
   // pedir el PDF real, sin depender de que el menú ya haya cambiado de estilo.
-  const exportPdf = useCallback(async (styleOverride?: MenuStyle) => {
-    if (!menu || exporting) return;
+  const exportPdf = useCallback(async (styleOverride?: MenuStyle, styleVersionId?: string) => {
+    if (!menu || exporting) return false;
     setExporting(true);
     try {
       const token = await SecureStore.getItemAsync(TOKEN_KEY);
-      const url = `${API}/api/menus/${menu.id}/pdf?style=${styleOverride ?? menu.presentationStyle}`;
+      const url = `${API}/api/menus/${menu.id}/pdf?style=${styleOverride ?? menu.presentationStyle}${styleVersionId ? `&styleVersionId=${encodeURIComponent(styleVersionId)}` : ""}`;
       const fileUri = `${FileSystem.cacheDirectory}${encodeURIComponent(sanitizeFilename(menu.name))}.pdf`;
       const dl = await FileSystem.downloadAsync(url, fileUri, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
-      if (dl.status !== 200) throw new Error("Export failed");
+      if (dl.status !== 200) {
+        let message = `HTTP ${dl.status}`;
+        let code: ApiErrorCode | undefined;
+        try {
+          const body = JSON.parse(await FileSystem.readAsStringAsync(dl.uri));
+          if (typeof body?.error === "string") message = body.error;
+          if (typeof body?.code === "string") code = body.code as ApiErrorCode;
+        } catch {}
+        await FileSystem.deleteAsync(dl.uri, { idempotent: true }).catch(() => undefined);
+        throw new ApiError(dl.status, message, code);
+      }
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(dl.uri, { mimeType: "application/pdf" });
         showToast(t("toast_pdf_shared"));
+        return true;
       }
+      return false;
     } catch (err) {
       showToast(apiErrorMessage(err, t));
+      return false;
     } finally {
       setExporting(false);
     }
@@ -998,7 +1012,7 @@ export default function MenuDetailScreen() {
                   if (!canEdit) return;
                   // Chip custom ya activo → reabre la preview en vez de no-opear.
                   if (isCustom && active) {
-                    if (menu.menuStyleSpec) setStylePreview(menu.menuStyleSpec);
+                    setStylePreview(true);
                     return;
                   }
                   if (isCustom && !menu.hasCustomStyle) {
@@ -1102,6 +1116,7 @@ export default function MenuDetailScreen() {
                           onSaveName={handleSaveItemName}
                           onSaveDesc={handleSaveItemDesc}
                           onSavePrice={handleSaveItemPrice}
+                    onSavePriceUnit={handleSavePriceUnit}
                           onClearCustomName={handleClearCustomName}
                           onOpenSectionPicker={handleOpenSectionPickerForItem}
                           onReorder={handleReorderItem}
@@ -1146,6 +1161,7 @@ export default function MenuDetailScreen() {
                     onSaveName={handleSaveItemName}
                     onSaveDesc={handleSaveItemDesc}
                     onSavePrice={handleSaveItemPrice}
+                    onSavePriceUnit={handleSavePriceUnit}
                     onClearCustomName={handleClearCustomName}
                     onOpenSectionPicker={handleOpenSectionPickerForItem}
                     onReorder={handleReorderItem}
@@ -1174,6 +1190,13 @@ export default function MenuDetailScreen() {
           </>
         )}
 
+        {(menu.serviceCharges ?? []).map(charge => <View key={charge.id} style={{ paddingVertical: spacing.sm }}>
+          <Text style={styles.addSectionLabel}>{charge.name} · {formatPrice(charge.price)} €{charge.perPerson ? ` · ${t("menu_charge_per_person")}` : ""}</Text>
+        </View>)}
+        {canEdit ? <View style={{ gap: spacing.sm, paddingVertical: spacing.md }}>
+          <Button label={t("menu_charges")} variant="secondary" onPress={() => setChargesOpen(true)} />
+          <Button label={t("menu_style_history")} variant="secondary" disabled={styleUploading} onPress={() => setStylePreview(true)} />
+        </View> : null}
         {/* Bloque 5: el botón de "Vista cliente / PDF" se movió al header.
             Lo eliminamos del pie para no duplicar. */}
       </ScrollView>
@@ -1186,18 +1209,22 @@ export default function MenuDetailScreen() {
         onClose={() => setPreviewOpen(false)}
         onChanged={() => reload({ silent: true })}
         onDownload={async () => {
-          await exportPdf();
-          setPreviewOpen(false);
+          if (await exportPdf()) setPreviewOpen(false);
         }}
       />
 
       <StylePreviewSheet
-        open={stylePreview !== null}
-        spec={stylePreview}
+        open={stylePreview}
+        menuId={menu.id}
+        hasCustomStyle={menu.hasCustomStyle}
         exporting={exporting}
-        onClose={() => setStylePreview(null)}
-        onViewPdf={() => void exportPdf("custom")}
+        onClose={() => setStylePreview(false)}
+        onApplied={() => reload({ silent: true })}
+        onViewPdf={versionId => exportPdf("custom", versionId)}
       />
+
+      <MenuChargesSheet open={chargesOpen} menuId={menu.id} charges={menu.serviceCharges ?? []}
+        onClose={() => setChargesOpen(false)} onSaved={() => reload({ silent: true })} />
 
       <SectionPickerSheet
         open={sectionPickerForItem !== null}

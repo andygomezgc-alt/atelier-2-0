@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
 
   if (!restaurant) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json(projectRestaurant(restaurant));
+  return NextResponse.json(projectRestaurant(restaurant, ctx.role));
 }
 
 export async function POST(req: NextRequest) {
@@ -141,5 +141,5 @@ export async function PATCH(req: NextRequest) {
     include: restaurantInclude,
   });
 
-  return NextResponse.json(projectRestaurant(restaurant));
+  return NextResponse.json(projectRestaurant(restaurant, ctx.role));
 }

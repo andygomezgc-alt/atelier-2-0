@@ -76,6 +76,9 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
     take: 500,
     // Select mínimo: exactamente los campos que consume projectProductListItem.
     select: {
+      allergen: true,
+      allergens: true,
+      allergensReviewed: true,
       id: true,
       name: true,
       category: true,
@@ -184,6 +187,9 @@ export const POST = withAuth(
           notas: body.notas ?? null,
           estado: body.estado ?? "activo",
           aliases: body.aliases ?? [],
+          allergens: body.allergens ?? [],
+          allergensReviewed: body.allergens !== undefined,
+          allergen: body.allergens?.[0] ?? null,
           // Si el chef forzó una criticidad en el create (raro), la respetamos
           // y marcamos manual. Si no, usamos el auto-cálculo.
           criticality: body.criticality ?? autoCrit,

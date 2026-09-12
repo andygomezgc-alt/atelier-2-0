@@ -13,12 +13,14 @@
 //   3. ConfirmMatchSheet (Sí/No):
 //      - Sí: linkear + agregar rawText como alias del producto (best-effort).
 //      - No: tratar como "none" → se crea borrador.
-//   4. Cuando la cola está vacía, creamos los drafts pendientes en paralelo
-//      y disparamos el create/patch de la receta con recipeIngredients.
+//   4. Cuando la cola está vacía, enviamos la receta y los productos pendientes
+//      en una transacción del servidor. Los reintentos conservan el envío original.
 
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -39,17 +41,18 @@ import { ConfirmMatchSheet } from "@/src/components/ConfirmMatchSheet";
 import { PezzaturaPendienteModal } from "@/src/components/PezzaturaPendienteModal";
 import { PesoCalculoEditor } from "@/src/components/PesoCalculoEditor";
 import { useI18n } from "@/src/hooks/useI18n";
-import { useAuth } from "@/src/hooks/useAuth";
+import { useAuth, getCurrentIdentity } from "@/src/hooks/useAuth";
 import { createRecipe, patchRecipe } from "@/src/api/recipes";
 import {
-  createProductFromRaw,
   listProducts,
   matchProducts,
   patchProduct,
   getProduct,
 } from "@/src/api/products";
 import { showToast } from "@/src/components/Toast";
+import { recipeIngredientPayload } from "@/src/lib/recipe-editor";
 import { consumeRecipeDraft } from "@/src/lib/recipe-draft";
+import { recipeDraftKey, loadRecipeDraft, saveRecipeDraft, clearRecipeDraft } from "@/src/lib/recipe-autosave";
 import {
   can,
   parseIngredient,
@@ -59,6 +62,7 @@ import type {
   ProductCategory,
   ProductListItem,
   RecipeIngredientInput,
+  CreateRecipeRequest,
 } from "@atelier/shared";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
@@ -84,8 +88,17 @@ export default function NuevaRecetaScreen() {
   ]);
   const [method, setMethod] = useState<string[]>([""]);
   const [notes, setNotes] = useState("");
+  const [portionsText, setPortionsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  const [clientRequestId, setClientRequestId] = useState(() => `${Date.now()}-${Math.random().toString(36).slice(2, 14)}`);
+  const saveRequestRef = useRef<CreateRecipeRequest | undefined>(undefined);
+  const saveFingerprintRef = useRef<string | undefined>(undefined);
+  const [incomingDraft] = useState(consumeRecipeDraft);
+  const [draftReady, setDraftReady] = useState(false);
+  const autosaveKey = useRef<string | null>(null);
+  const savedRef = useRef(false);
+  const storageWarningShown = useRef(false);
 
   // Estado del flujo de matching durante el save.
   const [pendingMatches, setPendingMatches] = useState<PendingMatch[]>([]);
@@ -224,9 +237,10 @@ export default function NuevaRecetaScreen() {
 
   // Pre-fill desde upload o "Modificar receta".
   useEffect(() => {
-    const draft = consumeRecipeDraft();
+    const draft = incomingDraft;
     if (!draft) return;
     setTitle(draft.title);
+    setPortionsText(draft.portions == null ? "" : String(draft.portions));
     // Preferencia de fuente:
     //  1. draft.recipeIngredients (Fase 3): viene del upload server con
     //     productIds ya pre-set para matches exactos. Es la mejor info.
@@ -236,6 +250,7 @@ export default function NuevaRecetaScreen() {
     let fromDraft: IngredientValue[];
     if (draft.recipeIngredients && draft.recipeIngredients.length > 0) {
       fromDraft = draft.recipeIngredients.map((r) => ({
+        ...r,
         rawText: r.rawText,
         productId: r.productId ?? null,
         // Fase 7: pre-fill del override cuando "Modificar receta" abre una
@@ -260,6 +275,84 @@ export default function NuevaRecetaScreen() {
     if (draft.sourceConversationId) setSourceConversationId(draft.sourceConversationId);
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const identity = getCurrentIdentity();
+    if (!identity) { setDraftReady(true); return; }
+    const key = recipeDraftKey(identity, incomingDraft?.editId ?? null);
+    void (async () => {
+      try {
+        const stored = await loadRecipeDraft(key);
+        if (!active) return;
+        if (stored) {
+          const recover = await new Promise<boolean>((resolve) => Alert.alert(
+            t("recipe_draft_recover_title"), t("recipe_draft_recover_body"),
+            [
+              { text: t("recipe_draft_discard"), style: "destructive", onPress: () => resolve(false) },
+              { text: t("recipe_draft_recover"), onPress: () => resolve(true) },
+            ], { cancelable: false },
+          ));
+          if (!active) return;
+          if (recover) {
+            setTitle(stored.title); setIngredients(stored.ingredients); setMethod(stored.method);
+            setNotes(stored.notes); setPortionsText(stored.portionsText);
+            setEditId(stored.editId); setSourceConversationId(stored.sourceConversationId);
+            if (stored.clientRequestId) setClientRequestId(stored.clientRequestId);
+            saveRequestRef.current = stored.saveRequest;
+            saveFingerprintRef.current = stored.saveFingerprint;
+          } else {
+            await clearRecipeDraft(key);
+          }
+        }
+        if (active) autosaveKey.current = key;
+      } catch {
+        if (active) showToast(t("recipe_draft_storage_error"));
+      } finally {
+        if (active) setDraftReady(true);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady || !autosaveKey.current || savedRef.current) return;
+    // Persist raw text as well as product links and overrides, including incomplete edits.
+    const isEmpty = !title && !notes && !portionsText && !ingredients.some(i => i.rawText) && !method.some(Boolean);
+    void (isEmpty ? clearRecipeDraft(autosaveKey.current) : saveRecipeDraft(autosaveKey.current, editorSnapshot()))
+      .catch(() => {
+        if (!storageWarningShown.current) {
+          storageWarningShown.current = true;
+          showToast(t("recipe_draft_storage_error"));
+        }
+      });
+  }, [draftReady, title, ingredients, method, notes, portionsText, editId, sourceConversationId, clientRequestId]);
+
+  function formFingerprint() {
+    return JSON.stringify({ title, ingredients, method, notes, portionsText, editId, sourceConversationId });
+  }
+
+  function editorSnapshot() {
+    return { title, ingredients, method, notes, portionsText, editId, sourceConversationId, clientRequestId,
+      saveRequest: saveRequestRef.current, saveFingerprint: saveFingerprintRef.current };
+  }
+
+  async function submitRecipe(payload: CreateRecipeRequest) {
+    if (editId) await patchRecipe(editId, payload);
+    else await createRecipe(payload);
+    await finishDraft();
+    showToast(t("toast_recipe_saved"));
+    if (editId) router.replace({ pathname: "/recetas/[id]", params: { id: editId } });
+    else router.replace("/(tabs)/recetas");
+  }
+
+  async function finishDraft() {
+    savedRef.current = true;
+    if (autosaveKey.current) {
+      // A local cleanup failure must not turn a successful server save into a retry.
+      await clearRecipeDraft(autosaveKey.current).catch(() => showToast(t("recipe_draft_cleanup_error")));
+    }
+  }
+
   const role =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
       ? authState.user.role
@@ -270,15 +363,27 @@ export default function NuevaRecetaScreen() {
     if (saving) return;
     const cleanTitle = title.trim();
     if (!cleanTitle) return;
+    const portions = portionsText.trim();
+    if (portions && (!/^\d+$/.test(portions) || Number(portions) < 1 || Number(portions) > 1000)) {
+      showToast(t("recipe_portions_invalid"));
+      return;
+    }
+    Keyboard.dismiss();
     setSaving(true);
 
     try {
+      if (saveRequestRef.current && saveFingerprintRef.current === formFingerprint()) {
+        await submitRecipe(saveRequestRef.current);
+        setSaving(false);
+        return;
+      }
       // Snapshot de ingredientes con rawText limpio (descartamos los vacíos).
       // pesoCalculoG (Entrega A.5, Fase 7) viaja en el snapshot para que
       // el server lo persista en RecipeIngredient cuando finalize() construye
       // el payload del create/patch.
       const working = ingredients
         .map((i) => ({
+          ...i,
           rawText: i.rawText.trim(),
           productId: i.productId,
           pesoCalculoG: i.pesoCalculoG ?? null,
@@ -386,36 +491,14 @@ export default function NuevaRecetaScreen() {
     const { workingIngredients, draftIndices } = flowStateRef.current;
 
     try {
-      if (draftIndices.length > 0) {
-        // Sub-paso 6 Bug B fix (Andy 2026-05-17): usamos createProductFromRaw
-        // para que el server aplique parseIngredient + categorizeFromName +
-        // defaultPurchaseUnit + defaultMermaPct + defaultCriticality sobre
-        // el rawText. Antes hardcodeábamos category="otro", unidadCompra=
-        // "unidad" y name=rawText con cantidad pegada — chapuza que duplicaba
-        // todo lo que ya estaba migrado vía pipelines distintos.
-        const created = await Promise.all(
-          draftIndices.map((idx) =>
-            createProductFromRaw(workingIngredients[idx]!.rawText),
-          ),
-        );
-        created.forEach((p, k) => {
-          const idx = draftIndices[k]!;
-          workingIngredients[idx]!.productId = p.id;
-        });
-      }
+      // Product drafts are created inside the recipe transaction on the server.
+      for (const idx of draftIndices) workingIngredients[idx]!.createProductDraft = true;
 
-      const recipeIngredients: RecipeIngredientInput[] = workingIngredients.map(
-        (i) => ({
-          rawText: i.rawText,
-          productId: i.productId,
-          // Entrega A.5, Fase 7: el override viaja al server vía workingIngredients
-          // (poblado en handleSave) y persiste en RecipeIngredient.pesoCalculoG.
-          pesoCalculoG: i.pesoCalculoG ?? null,
-        }),
-      );
+      const recipeIngredients: RecipeIngredientInput[] = workingIngredients.map(recipeIngredientPayload);
 
       const payload = {
         title: title.trim(),
+        portions: portionsText.trim() ? Number(portionsText) : null,
         contentJson: {
           ingredients: workingIngredients.map((i) => i.rawText),
           method: method.map((m) => m.trim()).filter(Boolean),
@@ -424,24 +507,24 @@ export default function NuevaRecetaScreen() {
         recipeIngredients,
       };
 
-      if (editId) {
-        await patchRecipe(editId, payload);
-        showToast(t("toast_recipe_saved"));
-        router.replace({ pathname: "/recetas/[id]", params: { id: editId } });
-      } else {
-        await createRecipe({
-          ...payload,
-          ...(sourceConversationId ? { sourceConversationId } : {}),
-        });
-        showToast(t("toast_recipe_saved"));
-        router.replace("/(tabs)/recetas");
-      }
+      const request: CreateRecipeRequest = { ...payload, clientRequestId,
+        ...(sourceConversationId ? { sourceConversationId } : {}),
+      };
+      saveRequestRef.current = request;
+      saveFingerprintRef.current = formFingerprint();
+      if (autosaveKey.current) await saveRecipeDraft(autosaveKey.current, editorSnapshot())
+        .catch(() => showToast(t("recipe_draft_storage_error")));
+      await submitRecipe(request);
     } catch (err) {
       showToast(apiErrorMessage(err, t));
     } finally {
       flowStateRef.current = null;
       setSaving(false);
     }
+  }
+
+  if (!draftReady) {
+    return <Screen title={t("recetas_nueva_title")} back onBack={() => router.back()}><ActivityIndicator /></Screen>;
   }
 
   if (!canEdit) {
@@ -462,6 +545,7 @@ export default function NuevaRecetaScreen() {
   return (
     <Screen title={screenTitle} back onBack={() => router.back()}>
       <ScrollView
+        pointerEvents={saving ? "none" : "auto"}
         style={{ flex: 1 }}
         contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + kb }]}
         keyboardShouldPersistTaps="handled"
@@ -469,6 +553,7 @@ export default function NuevaRecetaScreen() {
           <View>
             <Eyebrow>{t("recetas_form_title_label")}</Eyebrow>
             <TextInput
+              editable={!saving}
               value={title}
               onChangeText={setTitle}
               placeholder={t("recetas_form_title_placeholder")}
@@ -477,6 +562,21 @@ export default function NuevaRecetaScreen() {
               multiline
               scrollEnabled={false}
               textAlignVertical="top"
+            />
+          </View>
+
+          <View>
+            <Eyebrow>{t("cost_card_edit_portions_title")}</Eyebrow>
+            <TextInput
+              editable={!saving}
+              value={portionsText}
+              onChangeText={setPortionsText}
+              keyboardType="number-pad"
+              maxLength={4}
+              accessibilityLabel={t("cost_card_edit_portions_title")}
+              placeholder={t("cost_card_edit_portions_placeholder")}
+              placeholderTextColor={colors.mute}
+              style={styles.titleInput}
             />
           </View>
 
@@ -501,6 +601,7 @@ export default function NuevaRecetaScreen() {
               return (
                 <View key={idx} style={styles.ingredientRow}>
                   <IngredientAutocomplete
+                    editable={!saving}
                     value={it}
                     onChange={(next) =>
                       setIngredients((prev) =>
@@ -573,6 +674,7 @@ export default function NuevaRecetaScreen() {
               <View key={idx} style={styles.row}>
                 <Text style={styles.step}>{idx + 1}.</Text>
                 <TextInput
+                  editable={!saving}
                   value={it}
                   onChangeText={(v) =>
                     setMethod((prev) => prev.map((p, i) => (i === idx ? v : p)))
@@ -606,6 +708,7 @@ export default function NuevaRecetaScreen() {
           <View>
             <Eyebrow>{t("section_note")}</Eyebrow>
             <TextInput
+              editable={!saving}
               value={notes}
               onChangeText={setNotes}
               placeholder={t("recetas_form_notes_placeholder")}

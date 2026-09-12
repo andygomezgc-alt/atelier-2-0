@@ -100,6 +100,7 @@ async function main() {
       continue;
     }
     const real = realCost(precio!, merma!);
+    if (real === null) { unmeasured++; continue; }
     const ingCost = real * factor;
     total += ingCost;
     computable++;

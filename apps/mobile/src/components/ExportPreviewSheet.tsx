@@ -28,7 +28,7 @@ import { patchRestaurant } from "@/src/api/auth";
 import { DebouncedTextInput } from "./DebouncedTextInput";
 import { showToast } from "./Toast";
 import { Button } from "./Button";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { BottomSheet } from "./BottomSheet";
 import { AllergenIcon } from "./AllergenIcon";
@@ -38,6 +38,7 @@ import { ALLERGEN_ORDER, type Allergen } from "@atelier/shared";
 import { centsFromInput, formatPrice } from "@/src/lib/money";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
+import { createPreviewSaveQueue, flushPreviewChanges } from "@/src/lib/menu-preview-save";
 
 /**
  * Sets `current[key] = value` unless the value equals `canonical` or is
@@ -95,8 +96,8 @@ type Props = {
   exporting: boolean;
   canEdit: boolean;
   onClose: () => void;
-  onDownload: () => void;
-  onChanged: () => void; // padre debe recargar el menú tras el PATCH
+  onDownload: () => void | Promise<void>;
+  onChanged: () => void | Promise<void>; // padre debe recargar el menú tras el PATCH
 };
 
 export function ExportPreviewSheet({
@@ -110,6 +111,85 @@ export function ExportPreviewSheet({
 }: Props) {
   const { t } = useI18n();
   const { state: authState, patchLocalUser } = useAuth();
+  const [preparingDownload, setPreparingDownload] = useState(false);
+  const [, refreshDraft] = useState(0);
+  const preparingDownloadRef = useRef(false);
+  const pendingMutations = useRef(new Set<Promise<unknown>>());
+  const canonicalRestaurantName =
+    authState.status === "signed-in" || authState.status === "needs-restaurant"
+      ? authState.user.restaurantName ?? ""
+      : "";
+  const saver = useMemo(() => createPreviewSaveQueue({
+    overrides: menu.clientOverrides ?? {} as ClientOverrides,
+    restaurantName: canonicalRestaurantName,
+    showAllergens: menu.showAllergensInPdf,
+  }, async (next, previous) => {
+    if (next.restaurantName !== previous.restaurantName) {
+      await patchRestaurant({ name: next.restaurantName });
+      patchLocalUser({ restaurantName: next.restaurantName });
+    }
+    if (JSON.stringify(next.overrides) !== JSON.stringify(previous.overrides)) {
+      await patchClientOverrides(menu.id, next.overrides);
+    }
+    if (next.showAllergens !== previous.showAllergens) {
+      await patchMenu(menu.id, { showAllergensInPdf: next.showAllergens });
+    }
+  }), [menu.id]);
+  // React subscribes to this boolean only: a toggle updates immediately,
+  // while typing into another field keeps its existing local render boundary.
+  const showAllergens = useSyncExternalStore(
+    saver.subscribe,
+    () => saver.get().showAllergens,
+    () => saver.get().showAllergens,
+  );
+  const editsEnabled = canEdit && !preparingDownload && !exporting;
+
+  async function flushEdits() {
+    try {
+      await saver.flush();
+      await onChanged();
+    } catch (err) {
+      showToast(apiErrorMessage(err, t));
+    }
+  }
+
+  async function trackMutation<T>(request: Promise<T>): Promise<T> {
+    pendingMutations.current.add(request);
+    try { return await request; }
+    finally { pendingMutations.current.delete(request); }
+  }
+
+  async function handleDownload() {
+    if (preparingDownloadRef.current || exporting) return;
+    preparingDownloadRef.current = true;
+    setPreparingDownload(true);
+    try {
+      // Draft callbacks run on each keystroke; this includes text whose
+      // debounce or blur has not fired yet, as well as earlier HTTP writes.
+      await flushPreviewChanges(saver.flush, pendingMutations.current, onChanged);
+      await onDownload();
+    } catch (err) {
+      showToast(apiErrorMessage(err, t));
+    } finally {
+      preparingDownloadRef.current = false;
+      setPreparingDownload(false);
+    }
+  }
+
+  async function handleClose() {
+    if (preparingDownloadRef.current || exporting) return;
+    preparingDownloadRef.current = true;
+    setPreparingDownload(true);
+    try {
+      await flushPreviewChanges(saver.flush, pendingMutations.current, onChanged);
+      onClose();
+    } catch (err) {
+      showToast(apiErrorMessage(err, t));
+    } finally {
+      preparingDownloadRef.current = false;
+      setPreparingDownload(false);
+    }
+  }
   // Fase 2 alérgenos — qué plato abrió el "+" para agregar manual. Guardamos
   // solo el ID (no el snapshot) para que el sheet del picker refleje los
   // updates optimistas del estado local.
@@ -145,7 +225,7 @@ export function ExportPreviewSheet({
     const nextManual: Allergen[] = [...currentManual, allergen];
     setManualOverrides((prev) => ({ ...prev, [d.recipeId]: nextManual }));
     try {
-      await patchRecipe(d.recipeId, { addManualAllergen: allergen });
+      await trackMutation(patchRecipe(d.recipeId, { addManualAllergen: allergen }));
       // Reconciliación silenciosa: el padre re-fetchea, el menu prop refresca,
       // y el override local sigue siendo consistente con el server.
       onChanged();
@@ -162,7 +242,7 @@ export function ExportPreviewSheet({
     const nextManual = currentManual.filter((a) => a !== allergen);
     setManualOverrides((prev) => ({ ...prev, [d.recipeId]: nextManual }));
     try {
-      await patchRecipe(d.recipeId, { removeManualAllergen: allergen });
+      await trackMutation(patchRecipe(d.recipeId, { removeManualAllergen: allergen }));
       onChanged();
     } catch (err) {
       setManualOverrides((prev) => ({ ...prev, [d.recipeId]: currentManual }));
@@ -175,68 +255,54 @@ export function ExportPreviewSheet({
   // partimos limpio.
   const prevOpenRef = useRef(open);
   useEffect(() => {
+    if (!prevOpenRef.current && open) {
+      saver.sync({
+        overrides: menu.clientOverrides ?? {},
+        restaurantName: canonicalRestaurantName,
+        showAllergens: menu.showAllergensInPdf,
+      });
+      refreshDraft((revision) => revision + 1);
+    }
     if (prevOpenRef.current && !open) {
       setManualOverrides({});
       setPickerDishId(null);
     }
     prevOpenRef.current = open;
-  }, [open]);
+  }, [open, saver, menu.clientOverrides, menu.showAllergensInPdf, canonicalRestaurantName]);
   async function handleToggleAllergens(next: boolean) {
-    try {
-      await patchMenu(menu.id, { showAllergensInPdf: next });
-      onChanged();
-    } catch (err) {
-      showToast(apiErrorMessage(err, t));
-    }
+    saver.update((draft) => ({ ...draft, showAllergens: next }));
+    await flushEdits();
   }
   // WYSIWYG: si toggle OFF, ni iconos por plato ni leyenda al pie. El "+"
   // tampoco aparece — si el chef apaga el toggle es porque NO va a mostrar
   // alérgenos en este menú.
-  const showAllergens = menu.showAllergensInPdf;
-
-  const canonicalRestaurantName =
-    authState.status === "signed-in" || authState.status === "needs-restaurant"
-      ? authState.user.restaurantName ?? ""
-      : "";
-
-  const overrides: ClientOverrides = menu.clientOverrides ?? {};
+  const overrides: ClientOverrides = saver.get().overrides;
 
   // Display values: override > canonical (staff). El compositor staff lee
   // los canonical (MenuItem.customName, etc), por eso jamás ve estos cambios.
-  const restaurantNameDisp = overrides.restaurantName ?? canonicalRestaurantName;
+  const restaurantNameDisp = overrides.restaurantName ?? saver.get().restaurantName;
   const menuNameDisp = overrides.menuName ?? menu.name;
 
-  async function saveOverrides(next: ClientOverrides) {
-    try {
-      await patchClientOverrides(menu.id, next);
-      onChanged();
-    } catch (err) {
-      showToast(apiErrorMessage(err, t));
-    }
+  function changeOverrides(change: (current: ClientOverrides) => ClientOverrides) {
+    saver.update((draft) => ({ ...draft, overrides: change(draft.overrides) }));
   }
 
   // Caso especial: el nombre del restaurante PISA Restaurant.name (admin),
   // no `clientOverrides`. Eso preserva la semántica "es el restaurante" —
   // pero NO hacemos refreshMe (round-trip extra), mutamos el state local de
   // useAuth con el nuevo nombre que ya pegamos al server.
-  async function onSaveRestaurantName(v: string) {
+  function onDraftRestaurantName(v: string) {
     const cleaned = v.trim();
-    if (!cleaned || cleaned === canonicalRestaurantName) return;
-    try {
-      await patchRestaurant({ name: cleaned });
-      patchLocalUser({ restaurantName: cleaned });
-    } catch (err) {
-      showToast(apiErrorMessage(err, t));
-    }
+    saver.update((draft) => ({ ...draft, restaurantName: cleaned || canonicalRestaurantName }));
   }
 
-  const onSaveMenuName = (v: string) =>
-    void saveOverrides(withTop(overrides, "menuName", v, menu.name));
+  const onDraftMenuName = (v: string) =>
+    changeOverrides((current) => withTop(current, "menuName", v, menu.name));
 
-  const onSaveSectionName = (sectionId: string, canonicalName: string, v: string) =>
-    void saveOverrides(
+  const onDraftSectionName = (sectionId: string, canonicalName: string, v: string) =>
+    changeOverrides((current) =>
       withNested<{ name: string | undefined }>(
-        overrides,
+        current,
         "sections",
         sectionId,
         "name",
@@ -245,10 +311,10 @@ export function ExportPreviewSheet({
       ),
     );
 
-  const onSaveItemName = (itemId: string, canonical: string, v: string) =>
-    void saveOverrides(
+  const onDraftItemName = (itemId: string, canonical: string, v: string) =>
+    changeOverrides((current) =>
       withNested<{ name: string | undefined; description: string | undefined; price: number | undefined }>(
-        overrides,
+        current,
         "items",
         itemId,
         "name",
@@ -256,10 +322,10 @@ export function ExportPreviewSheet({
         canonical,
       ),
     );
-  const onSaveItemDesc = (itemId: string, canonical: string, v: string) =>
-    void saveOverrides(
+  const onDraftItemDesc = (itemId: string, canonical: string, v: string) =>
+    changeOverrides((current) =>
       withNested<{ name: string | undefined; description: string | undefined; price: number | undefined }>(
-        overrides,
+        current,
         "items",
         itemId,
         "description",
@@ -267,10 +333,10 @@ export function ExportPreviewSheet({
         canonical,
       ),
     );
-  const onSaveItemPrice = (itemId: string, canonical: number, v: string) =>
-    void saveOverrides(
+  const onDraftItemPrice = (itemId: string, canonical: number, v: string) =>
+    changeOverrides((current) =>
       withNested<{ name: string | undefined; description: string | undefined; price: number | undefined }>(
-        overrides,
+        current,
         "items",
         itemId,
         "price",
@@ -306,8 +372,14 @@ export function ExportPreviewSheet({
 
   return (
     <>
-    <BottomSheet open={open} onClose={onClose}>
+    <BottomSheet open={open} onClose={handleClose}>
       <ScrollView contentContainerStyle={styles.previewBox} keyboardShouldPersistTaps="handled">
+        {showAllergens && menu.items.some(item => !item.allergensComplete) && (
+          <Text style={{ color: colors.inkSoft, fontFamily: fonts.sans, paddingVertical: spacing.md }}>
+            {t("allergens_incomplete")}{"\n"}
+            {menu.items.filter(item => !item.allergensComplete).map(item => item.name).join(", ")}
+          </Text>
+        )}
         {/* Fase 2 alérgenos — toggle global del PDF cliente. ON por default.
             WYSIWYG: si OFF, el preview no muestra iconos ni leyenda (refleja
             lo que verá el cliente en el PDF). */}
@@ -316,6 +388,7 @@ export function ExportPreviewSheet({
             <Text style={styles.toggleLabel}>{t("menu_show_allergens_toggle")}</Text>
             <Switch
               value={showAllergens}
+              disabled={!editsEnabled}
               onValueChange={(v) => void handleToggleAllergens(v)}
               trackColor={{ false: colors.edge, true: colors.teal }}
               thumbColor={colors.paper}
@@ -325,18 +398,20 @@ export function ExportPreviewSheet({
 
         <DebouncedTextInput
           value={restaurantNameDisp}
-          onSave={onSaveRestaurantName}
+          onSave={() => void flushEdits()}
+          onDraftChange={onDraftRestaurantName}
           style={styles.restaurantName}
-          editable={canEdit}
+          editable={editsEnabled && (authState.status === "signed-in" || authState.status === "needs-restaurant") && authState.user.role === "admin"}
           placeholder={t("profile_restaurant")}
           maxLength={100}
         />
 
         <DebouncedTextInput
           value={menuNameDisp}
-          onSave={onSaveMenuName}
+          onSave={() => void flushEdits()}
+          onDraftChange={onDraftMenuName}
           style={styles.menuName}
-          editable={canEdit}
+          editable={editsEnabled}
           placeholder={t("recetas_form_title_placeholder")}
           multiline
           maxLength={120}
@@ -350,9 +425,10 @@ export function ExportPreviewSheet({
               <View style={styles.sectionHeader}>
                 <DebouncedTextInput
                   value={sectionNameDisp}
-                  onSave={(v) => onSaveSectionName(sec.id, sec.name, v)}
+                  onSave={() => void flushEdits()}
+                  onDraftChange={(v) => onDraftSectionName(sec.id, sec.name, v)}
                   style={styles.sectionName}
-                  editable={canEdit}
+                  editable={editsEnabled}
                   placeholder={t("section_name_placeholder")}
                   maxLength={120}
                 />
@@ -365,13 +441,15 @@ export function ExportPreviewSheet({
                     nameDisp={o?.name ?? d.name}
                     descDisp={o?.description ?? d.description}
                     priceDisp={o?.price ?? d.price}
+                    priceUnit={d.priceUnit}
                     allergens={getEffectiveAllergens(d)}
-                    canEdit={canEdit}
+                    canEdit={editsEnabled}
                     showAllergens={showAllergens}
                     onAddAllergenPress={() => setPickerDishId(d.id)}
-                    onSaveName={(v) => onSaveItemName(d.id, d.name, v)}
-                    onSaveDesc={(v) => onSaveItemDesc(d.id, d.description, v)}
-                    onSavePrice={(v) => onSaveItemPrice(d.id, d.price, v)}
+                    onSave={() => void flushEdits()}
+                    onDraftName={(v) => onDraftItemName(d.id, d.name, v)}
+                    onDraftDesc={(v) => onDraftItemDesc(d.id, d.description, v)}
+                    onDraftPrice={(v) => onDraftItemPrice(d.id, d.price, v)}
                   />
                 );
               })}
@@ -390,19 +468,25 @@ export function ExportPreviewSheet({
                   nameDisp={o?.name ?? d.name}
                   descDisp={o?.description ?? d.description}
                   priceDisp={o?.price ?? d.price}
+                    priceUnit={d.priceUnit}
                   allergens={getEffectiveAllergens(d)}
-                  canEdit={canEdit}
+                  canEdit={editsEnabled}
                   showAllergens={showAllergens}
                   onAddAllergenPress={() => setPickerDishId(d.id)}
-                  onSaveName={(v) => onSaveItemName(d.id, d.name, v)}
-                  onSaveDesc={(v) => onSaveItemDesc(d.id, d.description, v)}
-                  onSavePrice={(v) => onSaveItemPrice(d.id, d.price, v)}
+                  onSave={() => void flushEdits()}
+                  onDraftName={(v) => onDraftItemName(d.id, d.name, v)}
+                  onDraftDesc={(v) => onDraftItemDesc(d.id, d.description, v)}
+                  onDraftPrice={(v) => onDraftItemPrice(d.id, d.price, v)}
                 />
               );
             })}
           </View>
         ) : null}
 
+        {(menu.serviceCharges ?? []).map(charge => <View key={charge.id} style={styles.dishRow}>
+          <Text style={styles.dishName}>{charge.name}</Text>
+          <Text style={styles.dishPrice}>{formatPrice(charge.price)} €{charge.perPerson ? ` · ${t("menu_charge_per_person")}` : ""}</Text>
+        </View>)}
         {showAllergens && menuAllergens.length > 0 ? (
           <View style={styles.allergenLegend}>
             <Text style={styles.allergenLegendTitle}>
@@ -424,10 +508,10 @@ export function ExportPreviewSheet({
 
       <View style={styles.footer}>
         <Button
-          label={exporting ? "…" : t("export_preview_download")}
+          label={exporting || preparingDownload ? "…" : t("export_preview_download")}
           iconLeft="download-outline"
-          onPress={onDownload}
-          disabled={exporting || menu.items.length === 0}
+          onPress={() => void handleDownload()}
+          disabled={exporting || preparingDownload || menu.items.length === 0}
         />
       </View>
     </BottomSheet>
@@ -462,25 +546,29 @@ function DishRow({
   nameDisp,
   descDisp,
   priceDisp,
+  priceUnit,
   allergens,
   canEdit,
   showAllergens,
   onAddAllergenPress,
-  onSaveName,
-  onSaveDesc,
-  onSavePrice,
+  onSave,
+  onDraftName,
+  onDraftDesc,
+  onDraftPrice,
 }: {
   nameDisp: string;
   descDisp: string;
   priceDisp: number;
+  priceUnit?: string;
   allergens: Allergen[];
   canEdit: boolean;
   // WYSIWYG con el toggle global del menú. Si false, ni iconos ni "+".
   showAllergens: boolean;
   onAddAllergenPress: () => void;
-  onSaveName: (v: string) => void;
-  onSaveDesc: (v: string) => void;
-  onSavePrice: (v: string) => void;
+  onSave: () => void;
+  onDraftName: (v: string) => void;
+  onDraftDesc: (v: string) => void;
+  onDraftPrice: (v: string) => void;
 }) {
   const { t } = useI18n();
   // Bloque 5 — layout centrado (mockup): nombre serif italic, descripción
@@ -494,7 +582,8 @@ function DishRow({
     <View style={styles.dishRow}>
       <DebouncedTextInput
         value={nameDisp}
-        onSave={onSaveName}
+        onSave={onSave}
+        onDraftChange={onDraftName}
         style={styles.dishName}
         editable={canEdit}
         placeholder={t("recetas_form_title_placeholder")}
@@ -504,7 +593,8 @@ function DishRow({
       {descDisp || canEdit ? (
         <DebouncedTextInput
           value={descDisp}
-          onSave={onSaveDesc}
+          onSave={onSave}
+          onDraftChange={onDraftDesc}
           style={styles.dishDesc}
           editable={canEdit}
           placeholder={t("recetas_form_notes_placeholder")}
@@ -515,14 +605,15 @@ function DishRow({
       <View style={styles.priceBox}>
         <DebouncedTextInput
           value={formatPrice(priceDisp)}
-          onSave={onSavePrice}
+          onSave={onSave}
+          onDraftChange={onDraftPrice}
           style={styles.dishPrice}
           editable={canEdit}
           keyboardType="numeric"
           placeholder="0"
           maxLength={10}
         />
-        <Text style={styles.priceUnit}>€</Text>
+        <Text style={styles.priceUnit}>{priceUnit === "kg" ? "€/kg" : "€"}</Text>
       </View>
       {showAllergens && (allergens.length > 0 || canEdit) ? (
         <View style={styles.dishAllergens}>

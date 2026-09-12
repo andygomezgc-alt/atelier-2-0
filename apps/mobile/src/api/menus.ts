@@ -3,7 +3,9 @@ import { cached, invalidate, setCached } from "./cache";
 import * as FileSystem from "expo-file-system/legacy";
 import * as SecureStore from "@/src/lib/secure-storage";
 import {
-  MenuStyleSpecSchema,
+  MenuStyleUploadResponseSchema,
+  type MenuStyleUploadResponse,
+  type MenuStyleHistory,
   type MenuListItem,
   type MenuDetail,
   type CreateMenuRequest,
@@ -16,7 +18,6 @@ import {
   type PatchMenuSectionRequest,
   type ClientOverrides,
   type PatchClientOverridesRequest,
-  type MenuStyleSpec,
   type ApiErrorCode,
 } from "@atelier/shared";
 
@@ -163,20 +164,18 @@ export const patchClientOverrides = async (
   return bumpMenuCache(result);
 };
 
-// La extracción visión del server tarda 10-40s; 90s da margen de sobra antes
-// de cancelar la tarea y devolver un timeout accionable (el chef puede
-// reintentar en vez de esperar indefinidamente).
-const STYLE_UPLOAD_TIMEOUT_MS = 90_000;
+// Generación y revisión visual: respetar el presupuesto de 300s del servidor.
+const STYLE_UPLOAD_TIMEOUT_MS = 310_000;
 
 // "Tu estilo" — sube una foto o PDF de la carta real; el server (visión)
-// extrae los tokens de estilo y los persiste en Restaurant.menuStyleSpec
-// (estilo DE LA CASA, no por menú). createUploadTask (en vez de uploadAsync)
+// extrae el estilo y guarda una propuesta pendiente de revisión.
+// createUploadTask (en vez de uploadAsync)
 // da una tarea cancelable: así el timeout de arriba puede cortar el upload
 // en vez de dejarlo colgado si el server nunca responde.
 export async function uploadMenuStyleFile(
   uri: string,
   mimeType: string,
-): Promise<MenuStyleSpec | null> {
+): Promise<MenuStyleUploadResponse> {
   const base = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
   const token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
 
@@ -226,21 +225,27 @@ export async function uploadMenuStyleFile(
 
   invalidate("menus:");
 
-  // Guard del JSON en el camino de éxito: con un 2xx el estilo YA quedó
-  // persistido en el server — un body malformado no debe lanzar (el caller
-  // mostraría toast de error sobre una operación que salió bien).
+  // La propuesta puede estar guardada aunque falle leer la respuesta.
+  // El historial permite recuperarla sin volver a llamar al modelo.
   let rawSpec: unknown = null;
   try {
-    rawSpec = JSON.parse(res.body)?.spec;
+    rawSpec = JSON.parse(res.body);
   } catch {}
 
-  const parsed = MenuStyleSpecSchema.safeParse(rawSpec);
+  const parsed = MenuStyleUploadResponseSchema.safeParse(rawSpec);
   if (!parsed.success) {
-    // El server ya valida el spec antes de persistirlo — esto no debería
-    // pasar nunca. Si pasa, no rompemos el flujo (el estilo ya quedó
-    // guardado): solo perdemos la preview inmediata.
     console.warn("menu_style_spec_unparseable", parsed.error);
-    return null;
+    throw new ApiError(502, "Invalid style response", "menu_style_extraction_failed");
   }
   return parsed.data;
 }
+
+export const getMenuStyleHistory = () => apiFetch<MenuStyleHistory>("/api/restaurant/menu-style");
+export const activateMenuStyleVersion = async (versionId: string, expectedActiveVersionId: string | null, menuId: string) => {
+  const result = await apiFetch(`/api/restaurant/menu-style/${encodeURIComponent(versionId)}`, {
+    method: "POST", body: JSON.stringify({ expectedActiveVersionId, menuId }),
+  });
+  invalidate("menus:");
+  return result;
+};
+export const discardMenuStyleVersion = (versionId: string) => apiFetch(`/api/restaurant/menu-style/${encodeURIComponent(versionId)}`, { method: "DELETE" });

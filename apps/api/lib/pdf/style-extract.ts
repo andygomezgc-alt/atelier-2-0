@@ -1,16 +1,9 @@
-// "Tu estilo" — extrae los tokens de estilo (MenuStyleSpec) de una FOTO o un
-// PDF de la carta real del restaurante. Mismo patrón que extractRecipeFromImage
-// (lib/recipe-extraction.ts): SIEMPRE server-only (clave Anthropic del
-// server — es infraestructura de la app), tool use FORZADO para
-// garantizar JSON parseable, y validación
-// Zod antes de devolver. Modelo: Sonnet (mejor ojo de diseño que Haiku; es
-// UNA llamada por configuración de la casa, no un flujo de alto volumen).
-
-import Anthropic from "@anthropic-ai/sdk";
+import { generateGlmJson } from "../ai/glm";
+import { visionParts } from "../ai/media";
+import type { AiPart } from "../ai/types";
 import { MenuStyleSpecSchema, type MenuStyleSpec } from "@atelier/shared";
 
-// input_schema replica 1:1 los enums y rangos de MenuStyleSpecSchema — el
-// tool use fuerza la forma y el Zod de abajo la garantiza.
+// El esquema se envía como JSON Schema; Zod valida la respuesta antes de guardarla.
 const EMIT_STYLE_TOOL = {
   name: "emit_menu_style",
   description:
@@ -78,49 +71,14 @@ function buildPrompt(isPdf: boolean): string {
 export async function extractMenuStyle(
   buffer: Uint8Array,
   mimeType: string,
+  options?: { sourceParts?: AiPart[]; onUsage?: (input: number, output: number) => Promise<void> | void },
 ): Promise<MenuStyleSpec> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey)
-    throw new Error("ANTHROPIC_API_KEY no configurada en el servidor");
-
-  const isPdf = mimeType === "application/pdf";
-  const base64 = Buffer.from(buffer).toString("base64");
-
-  // PDF → bloque `document` (visión de páginas renderizadas, soportado nativo
-  // por el SDK); cualquier otro mime → bloque `image` como antes.
-  const fileBlock: Anthropic.ContentBlockParam = isPdf
-    ? {
-        type: "document",
-        source: { type: "base64", media_type: "application/pdf", data: base64 },
-      }
-    : {
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: mimeType as "image/jpeg" | "image/png" | "image/webp",
-          data: base64,
-        },
-      };
-
-  const client = new Anthropic({ apiKey });
-  const msg = await client.messages.create({
-    model: "claude-sonnet-5",
-    max_tokens: 2048,
-    tools: [EMIT_STYLE_TOOL as unknown as Anthropic.Tool],
-    tool_choice: { type: "tool", name: "emit_menu_style" },
-    messages: [
-      {
-        role: "user",
-        content: [fileBlock, { type: "text", text: buildPrompt(isPdf) }],
-      },
-    ],
+  const raw = await generateGlmJson({ task: "menuStyle", system: buildPrompt(mimeType === "application/pdf"),
+    schema: EMIT_STYLE_TOOL.input_schema, content: options?.sourceParts ?? await visionParts(buffer, mimeType),
+    incompleteCode: "Análisis del estilo incompleto",
+    onUsage: async usage => { try { await options?.onUsage?.(usage.inputTokens, usage.outputTokens); } catch { /* Telemetry must not discard a valid result. */ } },
   });
-
-  const block = msg.content.find((b) => b.type === "tool_use");
-  if (!block || block.type !== "tool_use")
-    throw new Error("El modelo no devolvió el bloque estructurado");
-
-  const parsed = MenuStyleSpecSchema.safeParse(block.input);
+  const parsed = MenuStyleSpecSchema.safeParse(raw);
   if (!parsed.success)
     throw new Error(
       `Estilo extraído inválido: ${parsed.error.issues

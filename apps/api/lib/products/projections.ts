@@ -2,9 +2,7 @@
 //
 // Costo real (realCost) se calcula en read-time como:
 //   precioCompra / (1 - mermaPct/100)
-// Si mermaPct >= 100 (caso extremo / dato corrupto), devolvemos precioCompra
-// como fallback en lugar de Infinity. La capa Zod + CHECK constraints en DB
-// ya impiden valores fuera de rango en escritura, pero el read es defensivo.
+// Un rendimiento útil cero devuelve null, también para datos antiguos.
 //
 // Precios se manejan en centavos enteros (mismo patrón que MenuItem.price).
 // merma se guarda como Decimal(5,2) en Postgres; Prisma lo trae como
@@ -12,14 +10,7 @@
 
 import type { Product } from "@atelier/db";
 import type { ProductDetail, ProductListItem } from "@atelier/shared";
-
-// Costo real en centavos. Redondea hacia arriba para no subestimar (mejor
-// pasarse de cauto en costeo que quedar corto).
-function computeRealCost(precioCompraCents: number, mermaPct: number): number {
-  if (mermaPct >= 100) return precioCompraCents;
-  const yieldRatio = 1 - mermaPct / 100;
-  return Math.ceil(precioCompraCents / yieldRatio);
-}
+import { realCost } from "./cost";
 
 // Subconjunto de campos que projectProductListItem realmente lee. Permite que
 // GET /api/products use un `select` mínimo en vez de traer la fila completa.
@@ -39,7 +30,7 @@ type ProductListSource = Pick<
   | "criticality"
   | "estado"
   | "precioActualizadoAt"
->;
+> & Partial<Pick<Product, "allergen" | "allergens" | "allergensReviewed">>;
 
 export function projectProductListItem(
   p: ProductListSource,
@@ -47,6 +38,8 @@ export function projectProductListItem(
 ): ProductListItem {
   const mermaPctNum = Number(p.mermaPct);
   return {
+    allergens: p.allergens?.length || p.allergensReviewed ? (p.allergens ?? []) : p.allergen ? [p.allergen] : [],
+    allergensReviewed: p.allergensReviewed ?? false,
     id: p.id,
     name: p.name,
     category: p.category,
@@ -62,7 +55,7 @@ export function projectProductListItem(
     pezzaturaMax: p.pezzaturaMax ? Number(p.pezzaturaMax) : null,
     unidadCompra: p.unidadCompra,
     precioCompra: p.precioCompra,
-    realCost: computeRealCost(p.precioCompra, mermaPctNum),
+    realCost: realCost(p.precioCompra, mermaPctNum),
     mermaPct: mermaPctNum,
     mermaOrigen: p.mermaOrigen,
     criticality: p.criticality,

@@ -11,8 +11,12 @@ const workspaceRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
 
-// 1. Watch every workspace package so edits hot-reload.
-config.watchFolders = [workspaceRoot];
+// Watch shared source and pnpm dependencies, without crawling unrelated
+// backend builds, knowledge graphs or nested worktrees on Windows.
+config.watchFolders = [
+  path.resolve(workspaceRoot, "packages"),
+  path.resolve(workspaceRoot, "node_modules"),
+];
 
 // 2. Resolve modules from the project's own node_modules first, then the
 //    workspace root. pnpm hoists nothing, so both must be searched.

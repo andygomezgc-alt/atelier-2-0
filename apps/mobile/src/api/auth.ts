@@ -10,7 +10,7 @@ export type MeUser = {
   bio: string | null;
   role: "admin" | "chef_executive" | "sous_chef" | "viewer";
   languagePref: "es" | "it" | "en";
-  defaultModel: "haiku" | "sonnet" | "opus";
+  defaultModel: "daily" | "creative" | "haiku" | "sonnet" | "opus";
   restaurantId: string | null;
   restaurantName: string | null;
   plan: "pilot" | "founder" | "early" | "pro" | null;
@@ -127,7 +127,7 @@ export function patchMe(data: {
   name?: string;
   bio?: string;
   languagePref?: "es" | "it" | "en";
-  defaultModel?: "haiku" | "sonnet" | "opus";
+  defaultModel?: "daily" | "creative" | "haiku" | "sonnet" | "opus";
 }): Promise<MeUser> {
   return apiFetch("/api/me", { method: "PATCH", body: JSON.stringify(data) });
 }

@@ -35,11 +35,11 @@
 
 import type { ProductUnit, PezzaturaMode } from "@atelier/shared";
 
-// `realCost` redondea hacia arriba en centavos enteros (igual que projections.ts).
-// Si mermaPct >= 100 (caso defensivo) no aplica merma — el precio crudo es el real.
-export function realCost(precioCompraCents: number, mermaPct: number): number {
-  if (mermaPct >= 100) return precioCompraCents;
-  return Math.ceil(precioCompraCents / (1 - mermaPct / 100));
+// Conserva fracciones de centavo: redondeamos solo al sumar la receta.
+// Rendimiento cero o datos inválidos no tienen un precio útil calculable.
+export function realCost(precioCompraCents: number, mermaPct: number): number | null {
+  if (!Number.isFinite(mermaPct) || mermaPct < 0 || mermaPct >= 100) return null;
+  return precioCompraCents / (1 - mermaPct / 100);
 }
 
 // Conversión entre unidades del mismo tipo (peso o volumen). Devuelve un
@@ -87,6 +87,7 @@ export type RecipeIngredientForCost = {
 export type IngredientCostWarning = "wide_range";
 
 export type RecipeCostBreakdown = {
+  status: "complete" | "partial" | "unavailable";
   totalCents: number | null;        // null si no hay ningún ingrediente computable
   perPortionCents: number | null;   // null si totalCents es null
   foodCostPct: number | null;       // null si no hay salePrice O totalCents es null
@@ -101,6 +102,8 @@ export type RecipeCostBreakdown = {
   // Warnings por índice del ingrediente (mismo orden que input.ingredients).
   // projectRecipeDetail los aplica al recipeIngredient correspondiente.
   warningsByIdx: Map<number, IngredientCostWarning>;
+  // Importes sin redondear para la criticidad económica; no se exponen en API.
+  costsByIdx: Map<number, number>;
 };
 
 export type RecipeCostInput = {
@@ -154,6 +157,7 @@ export function computeRecipeCost(input: RecipeCostInput): RecipeCostBreakdown {
   let unlinkedCount = 0;
   let wideRangeCount = 0;
   const warningsByIdx = new Map<number, IngredientCostWarning>();
+  const costsByIdx = new Map<number, number>();
   const totalIngredients = input.ingredients.length;
 
   const KNOWN: ReadonlySet<ProductUnit> = new Set([
@@ -192,7 +196,7 @@ export function computeRecipeCost(input: RecipeCostInput): RecipeCostBreakdown {
       // Caso trivial: chef compra unidades, receta cuenta unidades.
       // Sin merma (la pieza entera ya está pagada).
       ingCost = ing.qty * ing.product.precioCompra;
-    } else if (isRecipePiece && !isCompraPiece) {
+    } else if (isRecipePiece && (ing.product.unidadCompra === "kg" || ing.product.unidadCompra === "g")) {
       // Receta cuenta piezas, producto se compra por peso (kg/g).
       // Necesita pezzatura. Sin merma — el chef compra piezas enteras
       // y "paga" la merma cuando las desconcha/limpia.
@@ -212,7 +216,7 @@ export function computeRecipeCost(input: RecipeCostInput): RecipeCostBreakdown {
       ) {
         warning = "wide_range";
       }
-    } else if (!isRecipePiece && isCompraPiece) {
+    } else if ((recipeUnitRaw === "kg" || recipeUnitRaw === "g") && isCompraPiece) {
       // Receta usa peso (kg/g), producto se compra por unidad.
       // Necesita pezzatura inversa: cuántas piezas representa el peso.
       // Sin merma — el chef compra piezas enteras.
@@ -252,7 +256,7 @@ export function computeRecipeCost(input: RecipeCostInput): RecipeCostBreakdown {
           ? ing.mermaOverridePct
           : ing.product.mermaPct;
       const realPerPurchaseUnit = realCost(ing.product.precioCompra, merma);
-      ingCost = realPerPurchaseUnit * qtyInPurchaseUnit;
+      ingCost = realPerPurchaseUnit === null ? null : realPerPurchaseUnit * qtyInPurchaseUnit;
     }
 
     if (ingCost === null) {
@@ -260,6 +264,7 @@ export function computeRecipeCost(input: RecipeCostInput): RecipeCostBreakdown {
       continue;
     }
     computableTotalCents += ingCost;
+    costsByIdx.set(idx, ingCost);
     computableCount++;
     if (warning) {
       warningsByIdx.set(idx, warning);
@@ -269,9 +274,10 @@ export function computeRecipeCost(input: RecipeCostInput): RecipeCostBreakdown {
 
   const totalCents =
     computableCount > 0 ? Math.round(computableTotalCents) : null;
-  const portions = input.portions && input.portions > 0 ? input.portions : 1;
+  const status = computableCount === 0 ? "unavailable" : computableCount < totalIngredients ? "partial" : "complete";
+  const portions = input.portions && input.portions > 0 ? input.portions : null;
   const perPortionCents =
-    totalCents !== null ? Math.round(totalCents / portions) : null;
+    totalCents !== null && portions !== null ? Math.round(totalCents / portions) : null;
   // Food cost POR RACIÓN (decisión de producto): `salePriceCents` es el PVP de
   // UNA porción, como en cualquier restaurante. El % compara el coste POR RACIÓN
   // contra ese PVP, no el coste de la tanda entera (que inflaba el % ×porciones).
@@ -280,11 +286,12 @@ export function computeRecipeCost(input: RecipeCostInput): RecipeCostBreakdown {
   // Ej.: receta 4 porciones, coste total 20€ (2000c), PVP ración 10€ (1000c)
   //      → 2000/(4*1000) = 0,5 → 50%.
   const foodCostPct =
-    totalCents !== null && input.salePriceCents && input.salePriceCents > 0
+    status === "complete" && totalCents !== null && portions !== null && input.salePriceCents && input.salePriceCents > 0
       ? Math.round((totalCents / (portions * input.salePriceCents)) * 100)
       : null;
 
   return {
+    status,
     totalCents,
     perPortionCents,
     foodCostPct,
@@ -295,5 +302,6 @@ export function computeRecipeCost(input: RecipeCostInput): RecipeCostBreakdown {
     unlinkedCount,
     wideRangeCount,
     warningsByIdx,
+    costsByIdx,
   };
 }

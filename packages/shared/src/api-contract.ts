@@ -62,6 +62,7 @@ export const MenuCustomThemeSchema = z.object({
   headerHtml: z.string().min(10).max(4000),
   // {{SECTION_NAME}}
   sectionHeaderHtml: z.string().min(5).max(2000),
+  sectionHtml: z.string().max(3000).nullable().optional(),
   // {{DISH_NAME}} {{DISH_DESC}} {{PRICE}} {{ALLERGENS_HTML}}
   dishHtml: z.string().min(10).max(3000),
   footerHtml: z.string().max(2000).nullable(),
@@ -69,7 +70,7 @@ export const MenuCustomThemeSchema = z.object({
 
 export const IdeaStatusSchema = z.enum(["open", "in_chat", "archived"]);
 export const LanguageSchema = z.enum(["es", "it", "en"]);
-export const ModelSchema = z.enum(["haiku", "sonnet", "opus"]);
+export const ModelSchema = z.enum(["daily", "creative", "haiku", "sonnet", "opus"]);
 // Plan del restaurante (Restaurant.plan / Restaurant.planStatus en Prisma).
 export const PlanTierSchema = z.enum(["pilot", "founder", "early", "pro"]);
 export const PlanStatusSchema = z.enum(["trial", "active", "past_due", "canceled"]);
@@ -161,7 +162,7 @@ export const DeleteMeRequestSchema = z.object({
 
 export const CreateRestaurantRequestSchema = z.object({
   name: z.string().min(1).max(100),
-  identityLine: z.string().max(500).optional(),
+  identityLine: z.string().max(1000).optional(),
 });
 
 export const JoinRestaurantRequestSchema = z.object({
@@ -187,13 +188,13 @@ export type JoinRestaurantResponse = z.infer<typeof JoinRestaurantResponseSchema
 
 export const PatchRestaurantRequestSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  identityLine: z.string().max(500).nullable().optional(),
+  identityLine: z.string().max(1000).nullable().optional(),
 });
 
 export const RestaurantResponseSchema = z.object({
   id: z.string().max(100),
   name: z.string().max(100),
-  identityLine: z.string().max(500).nullable(),
+  identityLine: z.string().max(1000).nullable(),
   photoUrl: z.string().max(2048).nullable(),
   inviteCode: z.string().max(20),
   staff: z.array(
@@ -213,7 +214,10 @@ export const PatchStaffMemberRequestSchema = z.object({
 // ─────────── /api/ideas ───────────
 
 export const CreateIdeaRequestSchema = z.object({
-  text: z.string().min(1).max(2000),
+  text: z.string().trim().min(1).max(2000),
+  clientRequestId: z.string().min(1).max(100).optional(),
+  expectedRestaurantId: z.string().min(1).max(100).optional(),
+  expectedAuthorId: z.string().min(1).max(100).optional(),
 });
 
 export const PatchIdeaRequestSchema = z
@@ -264,6 +268,28 @@ export const PostMessageRequestSchema = z.object({
 // `t("error_<code>")` sobre el `error` textual (que sigue presente como
 // fallback retro-compatible para clientes que no lean el code).
 export const ApiErrorCodeSchema = z.enum([
+  "ai_budget_exhausted",
+  "ai_budget_expired",
+  "ai_budget_unavailable",
+  "ai_daily_chat_limit",
+  "ai_daily_weekly_limit",
+  "ai_creative_limit",
+  "ai_provider_unconfigured",
+  "memory_conflict",
+  "menu_style_invalid",
+  "menu_style_not_configured",
+  "menu_style_changed",
+  "menu_style_not_found",
+  "menu_style_active",
+  "menu_style_extraction_failed",
+  "recipe_save_conflict",
+  "idea_save_conflict",
+  "idea_owner_changed",
+  "idea_already_deleted",
+  "invalid_conversation_reference",
+  "chat_in_progress",
+  "chat_request_conflict",
+  "allergens_incomplete",
   "email_invalid",
   "rate_limited",
   "email_send_failed",
@@ -318,12 +344,13 @@ export type BulkMessagesRequest = z.infer<typeof BulkMessagesRequestSchema>;
 // porque hoy el form solo captura el nombre; Fase 4 los va a llenar desde
 // la respuesta estructurada del asistente.
 export const RecipeIngredientInputSchema = z.object({
+  createProductDraft: z.boolean().optional(),
   rawText: z.string().min(1).max(500),
   productId: z.string().nullable().optional(),
   qty: z.number().nonnegative().nullable().optional(),
   unit: z.string().max(50).nullable().optional(),
   pezzatura: z.string().max(100).nullable().optional(),
-  mermaOverridePct: z.number().min(0).max(100).nullable().optional(),
+  mermaOverridePct: z.number().min(0).lt(100).nullable().optional(),
   // Entrega A.5, Fase 7 — override de "peso por pieza" en gramos para
   // esta receta puntual. Solo tiene sentido cuando unit=piezas y el
   // producto tiene pezzatura cargada. Null = usar punto medio del banco.
@@ -334,6 +361,8 @@ export const RecipeIngredientInputSchema = z.object({
 });
 
 export const CreateRecipeRequestSchema = z.object({
+  clientRequestId: z.string().min(1).max(100).optional(),
+  portions: z.number().int().positive().max(1000).nullable().optional(),
   title: z.string().min(1).max(200),
   contentJson: RecipeContentSchema,
   // Cuando viene presente, el server crea filas en RecipeIngredient con el
@@ -394,6 +423,7 @@ export const RecipeListItemSchema = z.object({
   // receta puede no tener `portions` o `salePrice` cargados, o los
   // ingredientes no ser computables (sin productos enlazados / sin precio).
   perPortionCents: z.number().nullable(),
+  costStatus: z.enum(["complete", "partial", "unavailable"]).optional(),
   salePrice: z.number().int().nonnegative().nullable(), // centavos
   portions: z.number().int().positive().nullable(),
   // Fase 1 alérgenos — unión de los `Product.allergen` de los ingredientes
@@ -405,6 +435,8 @@ export const RecipeListItemSchema = z.object({
   // los consumers nuevos.
   allergens: z.array(AllergenSchema).default([]),
   unlinkedIngredients: z.number().int().nonnegative().default(0),
+  unreviewedIngredients: z.number().int().nonnegative().optional(),
+  allergensComplete: z.boolean().optional(),
 });
 
 // Línea de ingrediente en la response de detalle. Incluye la info del
@@ -477,12 +509,42 @@ export const RecipeDetailSchema = RecipeListItemSchema.extend({
 
 // ─────────── /api/menus ───────────
 
+export const MenuPriceUnitSchema = z.enum(["portion", "kg"]);
+export const MenuServiceChargeSchema = z.object({
+  id: z.string().min(1).max(100),
+  name: z.string().trim().min(1).max(100),
+  price: z.number().int().nonnegative().max(1_000_000),
+  perPerson: z.boolean(),
+});
+export const MenuServiceChargesSchema = z.array(MenuServiceChargeSchema).max(20)
+  .refine((rows) => new Set(rows.map(r => r.id)).size === rows.length, "duplicate_charge_id");
+export type MenuServiceCharge = z.infer<typeof MenuServiceChargeSchema>;
+export type MenuPriceUnit = z.infer<typeof MenuPriceUnitSchema>;
+
+export const MenuStyleVersionSummarySchema = z.object({
+  id: z.string(), name: z.string(), createdAt: z.string(), activatedAt: z.string().nullable(),
+  refUrl: z.string().nullable(), mimeType: z.string().nullable(), isActive: z.boolean(),
+});
+export const MenuStyleHistorySchema = z.object({
+  activeVersionId: z.string().nullable(), versions: z.array(MenuStyleVersionSummarySchema),
+});
+export const ActivateMenuStyleSchema = z.object({
+  expectedActiveVersionId: z.string().min(1).max(100).nullable(),
+  menuId: z.string().min(1).max(100).optional(),
+});
+export const MenuStyleUploadResponseSchema = z.object({
+  versionId: z.string(), spec: MenuStyleSpecSchema, reused: z.boolean(),
+});
+export type MenuStyleHistory = z.infer<typeof MenuStyleHistorySchema>;
+export type MenuStyleUploadResponse = z.infer<typeof MenuStyleUploadResponseSchema>;
+
 export const CreateMenuRequestSchema = z.object({
   name: z.string().min(1).max(120),
   season: z.string().max(60).optional(),
 });
 
 export const PatchMenuRequestSchema = z.object({
+  serviceCharges: MenuServiceChargesSchema.optional(),
   name: z.string().min(1).max(120).optional(),
   season: z.string().max(60).optional(),
   presentationStyle: MenuStyleSchema.optional(),
@@ -547,6 +609,7 @@ export const MenuListItemSchema = z.object({
 });
 
 export const MenuDishSchema = z.object({
+  priceUnit: MenuPriceUnitSchema.optional(),
   id: z.string().max(100),
   recipeId: z.string().max(100),
   // sectionId is nullable: items existed before sections were introduced and
@@ -566,6 +629,9 @@ export const MenuDishSchema = z.object({
   // pantallas viejas que no consumen el campo no rompen la validación.
   allergens: z.array(AllergenSchema).default([]),
   // Subset de `allergens` que fueron agregados a mano (no heredados). El
+  unlinkedIngredients: z.number().int().nonnegative().optional(),
+  unreviewedIngredients: z.number().int().nonnegative().optional(),
+  allergensComplete: z.boolean().optional(),
   // MenuAllergenPickerSheet usa esta distinción: en heredados el chip queda
   // disabled (corregir = editar el producto), en manuales habilita el remove.
   manualAllergens: z.array(AllergenSchema).default([]),
@@ -610,6 +676,7 @@ export const ClientOverridesSchema = z.object({
 export const PatchClientOverridesRequestSchema = ClientOverridesSchema;
 
 export const MenuDetailSchema = z.object({
+  serviceCharges: MenuServiceChargesSchema.optional(),
   id: z.string().max(100),
   name: z.string().max(120),
   season: z.string().max(60).nullable(),
@@ -635,6 +702,7 @@ export const MenuDetailSchema = z.object({
 });
 
 export const AddMenuItemRequestSchema = z.object({
+  priceUnit: MenuPriceUnitSchema.optional(),
   recipeId: z.string().max(100),
   sectionId: z.string().max(100).nullable().optional(),
   customName: z.string().max(200).optional(),
@@ -644,6 +712,7 @@ export const AddMenuItemRequestSchema = z.object({
 });
 
 export const PatchMenuItemRequestSchema = z.object({
+  priceUnit: MenuPriceUnitSchema.optional(),
   sectionId: z.string().max(100).nullable().optional(),
   customName: z.string().max(200).nullable().optional(),
   customDesc: z.string().max(1000).nullable().optional(),
@@ -672,6 +741,7 @@ const mermaPctSchema = z.number().min(0).max(100);
 const precioSchema = z.number().int().min(0);
 
 export const CreateProductRequestSchema = z.object({
+  allergens: z.array(AllergenSchema).max(14).transform(values => [...new Set(values)]).optional(),
   name: z.string().min(1).max(200),
   category: ProductCategorySchema,
   pezzatura: z.string().max(100).nullable().optional(),
@@ -683,7 +753,7 @@ export const CreateProductRequestSchema = z.object({
   pezzaturaInput: z.string().max(100).nullable().optional(),
   unidadCompra: ProductUnitSchema,
   precioCompra: precioSchema,
-  mermaPct: mermaPctSchema.optional(),
+  mermaPct: mermaPctSchema.lt(100).optional(),
   mermaOrigen: MermaOrigenSchema.optional(),
   proveedor: z.string().max(200).nullable().optional(),
   notas: z.string().max(2000).nullable().optional(),
@@ -694,6 +764,7 @@ export const CreateProductRequestSchema = z.object({
 });
 
 export const PatchProductRequestSchema = z.object({
+  allergens: z.array(AllergenSchema).max(14).transform(values => [...new Set(values)]).optional(),
   name: z.string().min(1).max(200).optional(),
   category: ProductCategorySchema.optional(),
   pezzatura: z.string().max(100).nullable().optional(),
@@ -704,7 +775,7 @@ export const PatchProductRequestSchema = z.object({
   pezzaturaInput: z.string().max(100).nullable().optional(),
   unidadCompra: ProductUnitSchema.optional(),
   precioCompra: precioSchema.optional(),
-  mermaPct: mermaPctSchema.optional(),
+  mermaPct: mermaPctSchema.lt(100).optional(),
   mermaOrigen: MermaOrigenSchema.optional(),
   proveedor: z.string().max(200).nullable().optional(),
   notas: z.string().max(2000).nullable().optional(),
@@ -717,6 +788,8 @@ export const PatchProductRequestSchema = z.object({
 });
 
 export const ProductListItemSchema = z.object({
+  allergens: z.array(AllergenSchema).optional(),
+  allergensReviewed: z.boolean().optional(),
   id: z.string().max(100),
   name: z.string().max(200),
   category: ProductCategorySchema,
@@ -728,7 +801,7 @@ export const ProductListItemSchema = z.object({
   pezzaturaMax: z.number().nullable(),
   unidadCompra: ProductUnitSchema,
   precioCompra: precioSchema,
-  realCost: precioSchema, // computed: precioCompra / (1 - mermaPct/100)
+  realCost: z.number().finite().nonnegative().nullable(), // null si no hay rendimiento útil
   mermaPct: mermaPctSchema,
   mermaOrigen: MermaOrigenSchema,
   criticality: CriticalitySchema,

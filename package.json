@@ -19,7 +19,15 @@
     "db:migrate": "pnpm --filter @atelier/db exec prisma migrate dev",
     "db:migrate:deploy": "pnpm --filter @atelier/db exec prisma migrate deploy",
     "db:seed": "pnpm --filter @atelier/db db:seed",
-    "db:studio": "pnpm --filter @atelier/db exec prisma studio"
+    "db:studio": "pnpm --filter @atelier/db exec prisma studio",
+    "db:backup": "node scripts/db-backup.mjs",
+    "db:restore": "node scripts/db-restore.mjs",
+    "test:backup": "node scripts/check-db-backup.mjs",
+    "backup:production": "node scripts/backup-production.mjs",
+    "backup:unpack": "node scripts/backup-unpack.mjs",
+    "test:backup-encryption": "node --test scripts/check-backup-encryption.test.mjs",
+    "test:backup-sync": "node --test scripts/check-backup-sync.test.mjs",
+    "backup:daily": "node scripts/backup-daily.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

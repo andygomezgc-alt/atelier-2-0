@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
   // incluye a todos los roles (admin/chef_executive/sous_chef/viewer), así que
   // esto no cambia quién puede exportar; solo centraliza el rechazo de
   // usuarios sin restaurante en requireAuth.
-  const ctx = await requireAuth(req, "export_pdf");
+  const ctx = await requireAuth(req, "view_staff_recipe");
   if (isNextResponse(ctx)) return ctx;
   if (!ctx.restaurantId)
     return new Response(JSON.stringify({ error: "Not in a restaurant" }), { status: 403 });

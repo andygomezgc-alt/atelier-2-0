@@ -46,6 +46,8 @@ export async function POST(
       proveedor: source.proveedor,
       notas: source.notas,
       allergen: source.allergen,
+      allergens: source.allergens,
+      allergensReviewed: false,
       estado: "borrador",
       aliases: [],
       criticality: source.criticality,

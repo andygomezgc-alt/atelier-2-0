@@ -22,6 +22,28 @@ type KnownApiErrorCode =
 // Mapeo exhaustivo (typecheck force: si se agrega un code en shared sin la
 // key i18n correspondiente, TS rompe).
 const CODE_TO_KEY: Record<KnownApiErrorCode, TranslationKey> = {
+  ai_budget_exhausted: "ai_budget_exhausted",
+  ai_budget_expired: "ai_budget_expired",
+  ai_budget_unavailable: "ai_budget_unavailable",
+  ai_daily_chat_limit: "ai_daily_chat_limit",
+  ai_daily_weekly_limit: "ai_daily_weekly_limit",
+  ai_creative_limit: "ai_creative_limit",
+  ai_provider_unconfigured: "ai_provider_unconfigured",
+  memory_conflict: "memory_conflict",
+  menu_style_invalid: "menu_style_invalid",
+  menu_style_not_configured: "menu_style_not_configured",
+  menu_style_changed: "menu_style_changed",
+  menu_style_not_found: "menu_style_not_found",
+  menu_style_active: "menu_style_active",
+  menu_style_extraction_failed: "menu_style_extraction_failed",
+  recipe_save_conflict: "recipe_save_conflict",
+  idea_save_conflict: "idea_save_conflict",
+  idea_owner_changed: "idea_owner_changed",
+  idea_already_deleted: "idea_already_deleted",
+  invalid_conversation_reference: "error_forbidden",
+  chat_in_progress: "chat_in_progress",
+  chat_request_conflict: "chat_request_conflict",
+  allergens_incomplete: "allergens_incomplete",
   email_invalid: "error_email_invalid",
   rate_limited: "error_rate_limited",
   email_send_failed: "error_email_send_failed",
@@ -60,6 +82,11 @@ export function apiErrorMessage(err: unknown, t: T): string {
   // NetworkError.message es un code interno (network_unreachable /
   // request_timeout), no texto para humanos.
   if (err instanceof NetworkError) return t("error_network");
-  if (err instanceof Error) return err.message;
+  if (err instanceof Error) {
+    if (err.message.startsWith("ai_provider_http_") || ["ai_response_blocked", "ai_stream_invalid", "ai_response_invalid", "chat_context_too_long"].includes(err.message) || err.name === "TimeoutError") return t("ai_provider_failed");
+    if (err.message === "chat_response_incomplete" || err.message === "chat_generation_expired") return t("chat_response_incomplete");
+    const key = CODE_TO_KEY[err.message as KnownApiErrorCode];
+    return key ? t(key) : err.message;
+  }
   return t("error_network");
 }

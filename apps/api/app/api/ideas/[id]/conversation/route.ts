@@ -51,7 +51,7 @@ export async function GET(
     include: {
       messages: {
         orderBy: { createdAt: "asc" },
-        select: { id: true, role: true, content: true, createdAt: true },
+        select: { id: true, role: true, content: true, createdAt: true, clientMessageId: true },
       },
     },
   });
@@ -68,7 +68,7 @@ export async function GET(
         include: {
           messages: {
             orderBy: { createdAt: "asc" },
-            select: { id: true, role: true, content: true, createdAt: true },
+            select: { id: true, role: true, content: true, createdAt: true, clientMessageId: true },
           },
         },
       });
@@ -85,7 +85,7 @@ export async function GET(
         include: {
           messages: {
             orderBy: { createdAt: "asc" },
-            select: { id: true, role: true, content: true, createdAt: true },
+            select: { id: true, role: true, content: true, createdAt: true, clientMessageId: true },
           },
         },
       });
@@ -102,6 +102,7 @@ export async function GET(
       id: m.id,
       role: m.role,
       content: m.content,
+      clientMessageId: m.clientMessageId,
       createdAt: m.createdAt.toISOString(),
     })),
   });
