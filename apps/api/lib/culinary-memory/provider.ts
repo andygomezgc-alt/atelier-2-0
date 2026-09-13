@@ -8,7 +8,14 @@ export type MemoryUsage = { inputTokens: number; outputTokens: number; reasoning
 export const GeneratedMemorySchema = z.object({ trends: z.array(z.object({
   key: MemoryKeySchema, text: z.string().trim().min(1).max(160), sources: z.array(z.number().int().min(1).max(20)).min(3).max(20),
 })).max(4) });
-export type MemoryInput = { evidence: Evidence[]; identity: string | null; corrections: MemoryPreference[]; excluded: string[]; language: string };
+export type MemoryInput = {
+  evidence: Evidence[];
+  identity: string | null;
+  corrections: MemoryPreference[];
+  excluded: string[];
+  language: string;
+  signal?: AbortSignal;
+};
 export type MemoryGenerator = (input: MemoryInput, onUsage: (usage: MemoryUsage) => Promise<void>) => Promise<z.infer<typeof GeneratedMemorySchema>>;
 export function memoryProviderConfig(): { model: string; provider: string } | null {
   return providerConfigured("zai") ? aiConfig("memory") : null;
@@ -34,6 +41,7 @@ export const generateMemory: MemoryGenerator = async (input, onUsage) => {
   if (!memoryProviderConfig()) throw new Error("memory_provider_unconfigured");
   const raw = await generateGlmJson({ task: "memory", system: SYSTEM, content: memoryPayload(input),
     incompleteCode: "memory_response_incomplete",
+    signal: input.signal,
     onUsage: usage => onUsage({ inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens }),
   });
   return GeneratedMemorySchema.parse(raw);

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 // Mocks elevados (el factory de vi.mock se iza sobre los consts).
-const { db, guard, quota, anthro, streamMock, PrismaClientKnownRequestError } = vi.hoisted(() => {
+const { db, guard, quota, anthro, streamMock, memoryChat, buildSystem, PrismaClientKnownRequestError } = vi.hoisted(() => {
   const db = {
     conversation: { findUnique: vi.fn(), updateMany: vi.fn() },
     message: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
@@ -45,6 +45,8 @@ const { db, guard, quota, anthro, streamMock, PrismaClientKnownRequestError } = 
     quota,
     anthro: { Anthropic, APIUserAbortError },
     streamMock,
+    memoryChat: vi.fn(),
+    buildSystem: vi.fn(() => [{ type: "text", text: "sys" }]),
     PrismaClientKnownRequestError,
   };
 });
@@ -62,13 +64,14 @@ vi.mock("@/lib/ai-quota", () => ({
   recordAiTokens: quota.recordAiTokens,
   aiQuotaExceededResponse: quota.aiQuotaExceededResponse,
 }));
+vi.mock("@/lib/culinary-memory/service", () => ({ chatMemory: memoryChat }));
 // buildSystemBlocks queda stubbeado (lee el .md del disco), pero
 // buildMessageBlocks corre de verdad: así el test comprueba que el breakpoint
 // de caché llega al payload y no solo que la ruta llama a un stub.
 vi.mock("@/lib/anthropic", async () => {
   const actual = await vi.importActual<typeof import("@/lib/anthropic")>("@/lib/anthropic");
   return {
-    buildSystemBlocks: () => [{ type: "text", text: "sys" }],
+    buildSystemBlocks: buildSystem,
     buildMessageBlocks: actual.buildMessageBlocks,
     MODEL_IDS: { haiku: "h", sonnet: "s", opus: "o" },
   };
@@ -119,6 +122,8 @@ beforeEach(() => {
   db.message.findMany.mockReset().mockResolvedValue([]);
   db.restaurant.findUnique.mockReset().mockResolvedValue({ name: "Kokoo", identityLine: null });
   db.recipe.findMany.mockReset().mockResolvedValue([]);
+  memoryChat.mockReset().mockResolvedValue(null);
+  buildSystem.mockClear();
   guard.requireAuth.mockReset().mockResolvedValue({
     userId: "u1",
     restaurantId: "r1",
@@ -293,6 +298,27 @@ describe("POST chat — persistencia", () => {
 });
 
 describe("POST chat — selección de proveedor", () => {
+  it("avoids loading or adding recent titles when useful memory is ready", async () => {
+    memoryChat.mockResolvedValue("Técnicas de brasa");
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    await (await post({ content: "receta" })).text();
+    expect(db.recipe.findMany).not.toHaveBeenCalled();
+    expect(buildSystem).toHaveBeenCalledWith(expect.anything(), [], null, "Técnicas de brasa");
+  });
+
+  it.each([
+    ["empty", "resolve"],
+    ["failure", "reject"],
+  ])("falls back to recent titles when memory is %s", async (_label, outcome) => {
+    db.recipe.findMany.mockResolvedValue([{ title: "Receta reciente", state: "approved" }]);
+    if (outcome === "reject") memoryChat.mockRejectedValue(new Error("database unavailable"));
+    else memoryChat.mockResolvedValue("");
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    await (await post({ content: "receta" })).text();
+    expect(db.recipe.findMany).toHaveBeenCalledTimes(1);
+    expect(buildSystem).toHaveBeenCalledWith(expect.anything(), [{ title: "Receta reciente", state: "approved" }], null, null);
+  });
+
   it.each([["daily", "gemini-3.8-flash"], ["sonnet", "gemini-3.8-flash"], ["haiku", "gemini-3.8-flash"], ["creative", "claude-opus-5"], ["opus", "claude-opus-5"]])("%s conserva el modelo real en la conversación", async (model, expected) => {
     streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
     expect(await (await post({ content: "receta", model })).text()).toContain('"type":"done"');

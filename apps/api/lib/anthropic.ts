@@ -47,11 +47,21 @@ export function buildSystemBlocks(
     cache_control: { type: "ephemeral" as const },
   };
 
-  // Dynamic context — recent recipes + pinned idea. Not cached.
+  const blocks: Array<
+    | { type: "text"; text: string; cache_control: { type: "ephemeral" } }
+    | { type: "text"; text: string }
+  > = [staticBlock, identityBlock];
+
+  // A useful memory is stable across turns and gets the third system
+  // breakpoint. Changing or deleting it changes this prefix immediately.
+  if (culinaryMemory) {
+    blocks.push({ type: "text", text: culinaryMemory, cache_control: { type: "ephemeral" } });
+  }
+
+  // Recent titles are a cheap fallback only when no useful memory exists.
+  // The pinned idea remains after the stable memory and is intentionally live.
   const dynamicLines: string[] = [];
-  if (culinaryMemory !== undefined && culinaryMemory !== null) {
-    if (culinaryMemory) dynamicLines.push(culinaryMemory);
-  } else if (recentRecipes.length > 0) {
+  if (!culinaryMemory && recentRecipes.length > 0) {
     dynamicLines.push("# Recetas recientes del cuaderno");
     for (const r of recentRecipes.slice(0, 8)) {
       dynamicLines.push(`- ${r.title} (${r.state})`);
@@ -62,10 +72,6 @@ export function buildSystemBlocks(
     dynamicLines.push(pinnedIdea);
   }
 
-  const blocks: Array<
-    | { type: "text"; text: string; cache_control: { type: "ephemeral" } }
-    | { type: "text"; text: string }
-  > = [staticBlock, identityBlock];
   if (dynamicLines.length > 0) {
     blocks.push({ type: "text", text: dynamicLines.join("\n") });
   }

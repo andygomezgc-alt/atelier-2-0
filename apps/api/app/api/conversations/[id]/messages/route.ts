@@ -80,6 +80,7 @@ export async function POST(
 
   let restaurant: { name: string; identityLine: string | null } | null = null;
   let recentRecipes: { title: string; state: string }[] = [];
+  let culinaryMemory: string | null = null;
   let messages: Msg[] = [];
   let pinnedIdeaText: string | null = null;
 
@@ -126,16 +127,10 @@ export async function POST(
     turn = started;
 
     // Build context: recent recipes + pinned idea.
-    const [r, recent, history] = await Promise.all([
+    const [r, history, preparedMemory] = await Promise.all([
       prisma.restaurant.findUnique({
         where: { id: ctx.restaurantId },
         select: { name: true, identityLine: true },
-      }),
-      prisma.recipe.findMany({
-        where: { restaurantId: ctx.restaurantId, deletedAt: null },
-        orderBy: { updatedAt: "desc" },
-        take: 8,
-        select: { title: true, state: true },
       }),
       // Sliding window: solo re-enviamos los últimos 20 mensajes al modelo. Más
       // allá de ese tope la conversación crece linealmente en costo/latencia sin
@@ -148,12 +143,21 @@ export async function POST(
         take: 20,
         select: { role: true, content: true },
       }),
+      chatMemory(ctx.restaurantId).catch(() => null),
     ]);
 
     if (!r) throw new Error("Restaurant not found");
 
     restaurant = r;
-    recentRecipes = recent;
+    culinaryMemory = preparedMemory || null;
+    if (!culinaryMemory) {
+      recentRecipes = await prisma.recipe.findMany({
+        where: { restaurantId: ctx.restaurantId, deletedAt: null },
+        orderBy: { updatedAt: "desc" },
+        take: 8,
+        select: { title: true, state: true },
+      });
+    }
     messages = history
       .slice()
       .reverse()
@@ -168,8 +172,7 @@ export async function POST(
 
   let system;
   try {
-    const memory = ctx.restaurantId ? await chatMemory(ctx.restaurantId).catch(() => "") : null;
-    system = buildSystemBlocks(restaurant, recentRecipes, pinnedIdeaText, memory);
+    system = buildSystemBlocks(restaurant, recentRecipes, pinnedIdeaText, culinaryMemory);
   }
   catch (error) {
     if (turn) await releaseChatTurn(turn).catch(() => undefined);

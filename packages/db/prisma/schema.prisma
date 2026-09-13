@@ -502,10 +502,15 @@ model CulinaryMemory {
   corrections Json @default("[]")
   excludedKeys String[] @default([])
   inputHash String?
+  preparedContext String? @db.Text
+  preparedRevision Int @default(-1)
+  preparedVersion Int @default(-1)
   dirtyRevision Int @default(0)
   checkedRevision Int @default(-1)
   nextCheckAt DateTime @default(now())
   lastAttemptAt DateTime?
+  cycleStartedAt DateTime?
+  retryAt DateTime?
   updatedAt DateTime?
   lockToken String?
   lockExpiresAt DateTime?
@@ -521,11 +526,15 @@ model CulinaryMemoryRun {
   provider String
   model String
   status String
+  cycleStartedAt DateTime?
+  isRetry Boolean @default(false)
   inputTokens Int @default(0)
   outputTokens Int @default(0)
   reasoningTokens Int @default(0)
   errorCode String?
+  publishedTrends Json?
   @@index([restaurantId, createdAt])
+  @@index([createdAt])
 }
 
 model MenuStyleVersion {

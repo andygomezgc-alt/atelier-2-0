@@ -1,5 +1,7 @@
 # Memoria culinaria — cierre de validación
 
+Validación histórica de calidad y publicación del 9 de septiembre. Las correcciones posteriores y sus nuevas pruebas están en [Correcciones de memoria del 13 de septiembre](CORRECCIONES-MEMORIA-2026-09-13.md).
+
 ## Problema encontrado y corrección
 
 La prueba real inicial con GLM 5.3 Flash mostró dos errores semánticos que no aparecían en las pruebas con proveedores simulados: añadía detalles de emplatado y temporada ausentes en las fuentes y describía una supuesta técnica común entre tres recetas sin relación. El formato y las referencias eran válidos, pero la inferencia no lo era.

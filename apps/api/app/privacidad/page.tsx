@@ -21,7 +21,7 @@ export default function PrivacidadPage() {
         Política de privacidad
       </h1>
       <p style={{ fontFamily: "system-ui, sans-serif", fontSize: 13, color: muted, margin: "0 0 32px" }}>
-        Última actualización: 11 de septiembre de 2026
+        Última actualización: 13 de septiembre de 2026
       </p>
 
       <h2 style={h2Style}>Responsable</h2>
@@ -59,6 +59,13 @@ export default function PrivacidadPage() {
         Podés corregirlas, excluirlas o borrarlas y desactivar el aprendizaje.
         Desactivarlo no borra por sí solo las preferencias ya guardadas.
         Este contexto orienta respuestas; no entrena un modelo propio de Atelier.
+      </p>
+      <p style={pStyle}>
+        Conservamos un registro técnico breve de las tendencias publicadas para
+        revisar errores del aprendizaje. La revisión diaria elimina de la base
+        activa el contenido de ese registro que supera los 30 días. Al borrar la
+        memoria también se elimina ese contenido histórico; los registros de
+        consumo se conservan por separado.
       </p>
 
       <h2 style={h2Style}>Con quién trabajamos</h2>

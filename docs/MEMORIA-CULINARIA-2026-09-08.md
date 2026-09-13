@@ -1,5 +1,7 @@
 # Memoria culinaria — implementación
 
+Actualización del 13 de septiembre: las [correcciones de fiabilidad](CORRECCIONES-MEMORIA-2026-09-13.md) describen las nuevas huellas, contexto preparado, respaldo con recetas recientes, reintento acotado e historial técnico. Ese documento prevalece para estos comportamientos; el texto inferior conserva las decisiones originales.
+
 Actualización de calidad del 9 de septiembre: realizadas las pruebas reales con GLM y el recorrido hasta un chat Gemini. Se corrigieron generalizaciones sin respaldo y se redujo a cuatro tendencias automáticas por generación. Estado detallado y publicación en [Validación de memoria](VALIDACION-MEMORIA-2026-09-09.md). El texto inferior conserva el registro original de implementación.
 
 Actualización del 9 de septiembre: la migración de memoria ya está aplicada a producción y el proveedor GLM está configurado con paquete activo. Véase [Activación de IA](ACTIVACION-IA-2026-09-09.md). Se conserva la preferencia de aprendizaje de cada restaurante. El texto siguiente registra el estado de la implementación antes de su publicación.

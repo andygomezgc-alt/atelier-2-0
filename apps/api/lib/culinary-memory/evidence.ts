@@ -4,14 +4,23 @@ import { z } from "zod";
 import { MemoryPreferenceSchema } from "@atelier/shared";
 
 export const StoredFactsSchema = z.array(MemoryPreferenceSchema.extend({
-  sources: z.array(z.object({ id: z.string(), hash: z.string() })).min(3).max(20),
+  sources: z.array(z.object({ id: z.string(), hash: z.string(), version: z.literal(2).optional() })).min(3).max(20),
 })).max(8);
 export type StoredFact = z.infer<typeof StoredFactsSchema>[number];
 export type EvidenceRecipe = {
   id: string; title: string; state: string; contentJson: unknown; updatedAt: Date;
   recipeIngredients: { rawText: string }[];
 };
-export type Evidence = { id: string; state: string; hash: string; duplicateKey: string; title: string; ingredients: string[]; method: string[] };
+export type Evidence = {
+  id: string;
+  state: string;
+  hash: string;
+  legacyHashes: { approved: string; in_test: string };
+  duplicateKey: string;
+  title: string;
+  ingredients: string[];
+  method: string[];
+};
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const normalize = (s: string) => s.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 const strings = (x: unknown) => Array.isArray(x) ? x.filter((v): v is string => typeof v === "string") : [];
@@ -23,8 +32,18 @@ export function recipeEvidence(recipe: EvidenceRecipe): Evidence {
   const method = strings(content.method).map(normalize);
   // Cantidades y rendimiento no convierten un escalado en otra elaboración.
   const duplicateKey = digest({ ingredients: [...ingredients].sort(), method: method.map(s => s.replace(/\d+(?:[.,]\d+)?/g, "#")) });
-  return { id: recipe.id, state: recipe.state, title: recipe.title, ingredients, method,
-    duplicateKey, hash: digest({ title: recipe.title, ingredients, method, state: recipe.state }) };
+  // v2 identifica sólo el contenido culinario. Renombrar o aprobar una receta
+  // no invalida una fuente que sigue describiendo la misma elaboración.
+  const hash = digest({ ingredients, method });
+  return {
+    id: recipe.id, state: recipe.state, title: recipe.title, ingredients, method, duplicateKey, hash,
+    // Los hashes anteriores no tenían versión y mezclaban título/estado. Se
+    // aceptan sólo cuando uno puede recalcularse exactamente con datos actuales.
+    legacyHashes: {
+      approved: digest({ title: recipe.title, ingredients, method, state: "approved" }),
+      in_test: digest({ title: recipe.title, ingredients, method, state: "in_test" }),
+    },
+  };
 }
 
 export function selectEvidence(recipes: EvidenceRecipe[]): Evidence[] {
@@ -43,10 +62,34 @@ export function evidenceHash(evidence: Evidence[], identity: string | null, corr
 }
 
 export function validFacts(facts: StoredFact[], evidence: Evidence[]): StoredFact[] {
+  return assessFacts(facts, evidence).valid;
+}
+
+export function assessFacts(facts: StoredFact[], evidence: Evidence[]): { valid: StoredFact[]; migrated: StoredFact[] } {
   const byId = new Map(evidence.map(e => [e.id, e]));
-  return facts.filter(f => new Set(f.sources.flatMap(s => {
-    const e = byId.get(s.id); return e && e.hash === s.hash ? [e.duplicateKey] : [];
-  })).size >= 3);
+  const valid: StoredFact[] = [];
+  const migrated = facts.map(fact => ({
+    ...fact,
+    sources: fact.sources.map(source => {
+      const current = byId.get(source.id);
+      if (source.version === 2 || !current) return source;
+      return source.hash === current.legacyHashes.approved || source.hash === current.legacyHashes.in_test
+        ? { id: current.id, hash: current.hash, version: 2 as const }
+        : source;
+    }),
+  }));
+  for (const fact of migrated) {
+    const matched = fact.sources.flatMap(source => {
+      const current = byId.get(source.id);
+      return current && source.version === 2 && source.hash === current.hash
+        ? [{ source, duplicateKey: current.duplicateKey }]
+        : [];
+    });
+    if (new Set(matched.map(item => item.duplicateKey)).size >= 3) {
+      valid.push({ ...fact, sources: matched.map(item => item.source) });
+    }
+  }
+  return { valid, migrated };
 }
 
 export function memoryContext(corrections: MemoryPreference[], facts: StoredFact[], excluded: string[]): string {
