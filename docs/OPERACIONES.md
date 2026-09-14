@@ -388,8 +388,9 @@ una columna nueva). Hay un flujo estricto para que prod nunca se rompa.
 6. **Prod NO se toca.** Se aplica sola en el próximo `vercel --prod` (el build
    corre `pnpm db:migrate:deploy`).
 
-Hoy hay **15 migraciones** aplicadas en prod. La última fue
-`20260710000000_menu_soft_delete` (la papelera de menús).
+Hoy hay **30 migraciones** aplicadas en prod. La última es
+`20260913010000_culinary_memory_reliability` (memoria culinaria preparada,
+reintentos e historial técnico).
 
 <details>
 <summary><b>Para técnicos</b></summary>

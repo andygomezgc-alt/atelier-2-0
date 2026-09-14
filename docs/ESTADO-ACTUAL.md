@@ -1,12 +1,12 @@
-# Estado actual de Atelier — 13 de septiembre de 2026
+# Estado actual de Atelier — 14 de septiembre de 2026
 
-Punto de entrada al retomar el proyecto. Después de sincronizar carpeta original y repositorio, el usuario autorizó **corregir los seis pasos de la auditoría de memoria culinaria** y pidió expresamente un agente GPT-5.6 Sol con razonamiento ultra. La implementación está terminada y validada localmente; falta publicar el servidor y la migración. No activar cobros ni ampliar funciones ajenas a la memoria. [Correcciones y validación de memoria](CORRECCIONES-MEMORIA-2026-09-13.md).
+Punto de entrada al retomar el proyecto. El usuario autorizó **corregir y publicar los seis pasos de la auditoría de memoria culinaria** con GPT-5.6 Sol en ultra. La implementación y la migración están publicadas y verificadas en producción. No activar cobros ni ampliar funciones ajenas a la memoria. [Correcciones y validación de memoria](CORRECCIONES-MEMORIA-2026-09-13.md).
 
 ## Código y trabajo guardado
 
 - Carpeta original: `C:/Users/Utente/Desktop/atelier-2-0`.
 - Repositorio: `https://github.com/andygomezgc-alt/atelier-2-0`, rama de trabajo `main`.
-- Último commit consolidado/publicado: `466a1de`. Las correcciones de memoria del 13 de septiembre permanecen como cambios locales revisados, sin nuevo commit, push ni despliegue.
+- Último commit consolidado/publicado: `6d22033` (`fix(auth): update Prisma adapter security patch`). Incluye los parches de memoria, dependencias de ejecución y autenticación; `origin/main` está sincronizado.
 - Se consolidan mejoras del piloto acumuladas: guardado e historial del chat, memoria culinaria, costes y productos, menú y PDF multirrestaurante, permisos, modelos de IA, cuotas y presupuesto, copias cifradas, privacidad y distribución móvil.
 - Landing preparada para presentar Atelier y solicitar acceso por correo. Diseño aprobado por el usuario. `/` y `/pro` comparten la presentación. Ejemplo visual de demostración; no se presenta como captura real.
 - Oferta propuesta: Pro a 49 €/mes más IVA; fundador a 24,50 €/mes más IVA durante los primeros tres meses de suscripción, luego tarifa normal. No descuento perpetuo.
@@ -15,7 +15,7 @@ Punto de entrada al retomar el proyecto. Después de sincronizar carpeta origina
 
 ## Producción y distribución comprobadas antes de esta sincronización
 
-- API pública: `https://atelier-2-0-mu.vercel.app`. Último despliegue verificado: `dpl_EH6DcTAhVXfHpCYsfKaVAduq8CeP` (11 de septiembre, privacidad y eliminación). Publicar código en Git no equivale por sí solo a verificar un despliegue nuevo.
+- API pública: `https://atelier-2-0-mu.vercel.app`. Despliegue verificado: `dpl_3N5eiTeGEywzzSKn2UVPKpikzfzi` (14 de septiembre, memoria, autenticación y parches de ejecución). `/api/health` devuelve HTTP 200; la migración de memoria está aplicada.
 - Android 0.1.0, versionCode **4**, build EAS `782dbc73-f0db-45f3-9034-819726775775` terminado. [APK](https://expo.dev/artifacts/eas/HYTsna9LezSg-EbPdwDpywLo1mLNPA9Wd5DG3ebHWEY.apk).
 - iPhone 0.1.0, build **9**, revisión beta aprobada e `IN_BETA_TESTING` para Chefs. [TestFlight público](https://testflight.apple.com/join/kY83jmnk).
 - No hace falta reconstruir las apps por los cambios de la landing o por guardar el repositorio. La prueba física con los chefs sigue siendo necesaria.
@@ -35,10 +35,9 @@ Punto de entrada al retomar el proyecto. Después de sincronizar carpeta origina
 - Revisión del contenido preparado para Git sin coincidencias de claves locales ni credenciales reales; los ejemplos ficticios de `.env.example` se conservaron.
 - Git local y remoto partían del mismo commit `8af2105`. Se conserva el historial existente; no hay force-push ni limpieza de archivos de trabajo.
 
-## Pendiente cuando el usuario decida continuar
+## Siguiente fase cuando el usuario decida continuar
 
-1. Publicar las correcciones de memoria y `20260913010000_culinary_memory_reliability`. Validación local: 704 pruebas API, build/tipos correctos, 11 grupos PostgreSQL más legacy/restauración; esquema QA eliminado. Revisar empaquetado Linux, configuración efectiva de duración y logs del cron en Vercel. Un aprendizaje real completado el 10 de septiembre ya se comprobó por sólo lectura.
-2. Prueba real del piloto Android/iPhone: acceso, equipo, chat, recetas, costes, memoria y escaneo de distintos menús. Las correcciones actuales son de servidor y no requieren reconstruir las apps.
+1. Prueba real del piloto Android/iPhone: acceso, equipo, chat, recetas, costes, memoria y escaneo de distintos menús. Las correcciones actuales son de servidor y no requieren reconstruir las apps.
 3. Recorrido web autenticado del administrador para contratar/cancelar, conservando los accesos móviles existentes.
 4. Configuración e integración completa en Stripe de prueba: tres meses de descuento, tarifa normal en el cuarto, cancelación, impagos y reintentos. No hay compra real validada todavía.
 5. Condiciones y límites comerciales definitivos con datos de consumo del piloto; revisión fiscal y del recorrido de compra por plataforma antes de vender.

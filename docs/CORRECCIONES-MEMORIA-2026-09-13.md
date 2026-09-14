@@ -1,6 +1,6 @@
 # Correcciones de memoria culinaria — 13 de septiembre de 2026
 
-Estado: **implementación local terminada y validada**, realizada por GPT-5.6 Sol con razonamiento ultra y revisión independiente. No se ha publicado este cambio ni aplicado su nueva migración a producción. No se hicieron commits ni push.
+Estado: **publicado y verificado en producción el 14 de septiembre de 2026**, realizado por GPT-5.6 Sol con razonamiento ultra y revisión independiente. El código de memoria está en `6d22033`; Vercel sirve `dpl_3N5eiTeGEywzzSKn2UVPKpikzfzi` bajo `https://atelier-2-0-mu.vercel.app`.
 
 ## Alcance autorizado
 
@@ -55,6 +55,6 @@ El usuario pidió verificar una auditoría externa, revisar primero el plan y de
 
 ## Publicación
 
-Pendiente publicar el código y la migración en el servidor. El build de Vercel ejecuta `prisma migrate deploy`; la migración es aditiva y se probó sobre el esquema anterior. Comprobar el empaquetado Linux, la salud del servidor y el próximo registro del programador después del despliegue. Confirmar también el límite efectivo de ejecución del proyecto en el panel.
+Publicación completada. El build de Vercel ejecutó `prisma migrate deploy`; la migración `20260913010000_culinary_memory_reliability` quedó aplicada en producción sin rollback. El despliegue está `Ready`, usa Node 24, Fluid Compute y el cron de memoria `0 5 * * *`; la función publicada tiene timeout de 300 s en `fra1`. La comprobación pública del 14 de septiembre devolvió `/api/health` HTTP 200 con base de datos y los tres proveedores configurados, privacidad HTTP 200, rutas de memoria y cron sin credenciales HTTP 401. La validación automática de compilación, tipos, migraciones y 704 pruebas sigue verde. El escáner de dependencias queda rojo por siete avisos transitorios sin parche compatible o que requieren actualizar herramientas mayores (`deepmerge-ts`, `extract-zip`, `image-size`, Vite y Vitest); se conserva visible y documentado, sin falsear un estado verde.
 
 No hacen falta cambios de proveedores, claves, nuevas pantallas ni reconstruir APK/TestFlight para estas correcciones. La documentación y la privacidad se actualizaron junto con la implementación.
