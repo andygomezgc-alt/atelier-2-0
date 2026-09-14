@@ -1,6 +1,6 @@
 # Correcciones de memoria culinaria — 13 de septiembre de 2026
 
-Estado: **publicado y verificado en producción el 14 de septiembre de 2026**, realizado por GPT-5.6 Sol con razonamiento ultra y revisión independiente. El código de memoria está en `6d22033`; Vercel sirve `dpl_3N5eiTeGEywzzSKn2UVPKpikzfzi` bajo `https://atelier-2-0-mu.vercel.app`.
+Estado: **publicado y verificado en producción el 14 de septiembre de 2026**, realizado por GPT-5.6 Sol con razonamiento ultra y revisión independiente. El código de memoria está en `6d22033`; Vercel lo sirve bajo `https://atelier-2-0-mu.vercel.app` (el despliegue documental posterior es `dpl_ADb18gvje4CdBCbFbzqByHainDJ8`).
 
 ## Alcance autorizado
 
