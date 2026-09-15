@@ -1,0 +1,42 @@
+# Avisos de seguridad ACEPTADOS por el job dependency-scan de CI.
+#
+# Revisados el 15-09-2026 con los datos de OSV: ninguno está en código que
+# atienda peticiones en producción y ninguno tiene arreglo sin saltar de
+# versión mayor. Cada excepción caduca sola: al pasar ignoreUntil el aviso
+# vuelve a poner CI en rojo y obliga a revisarlo. Un aviso NUEVO lo pone en
+# rojo desde el primer día. Actualizar vitest a la 3 elimina los dos primeros.
+
+[[IgnoredVulns]]
+id = "GHSA-5xrq-8626-4rwp"
+ignoreUntil = 2026-12-15
+reason = "vitest 2.1.9, solo pruebas: afecta al servidor de Vitest UI, que el proyecto no usa. Arreglo en vitest 3.2.6 (versión mayor)."
+
+[[IgnoredVulns]]
+id = "GHSA-fx2h-pf6j-xcff"
+ignoreUntil = 2026-12-15
+reason = "vite 5.4.21, solo lo trae vitest 2: afecta al servidor de desarrollo de Vite en Windows, que no se expone. Arreglo en vite 6.4.3 (versión mayor)."
+
+[[IgnoredVulns]]
+id = "GHSA-ggr8-5vv4-36mx"
+ignoreUntil = 2026-12-15
+reason = "deepmerge-ts 7.1.5, lo usa la configuración de la CLI de Prisma al generar y migrar; no recibe datos de usuarios. Arreglo solo en deepmerge-ts 8.0.0, que tiene que adoptar Prisma."
+
+[[IgnoredVulns]]
+id = "GHSA-7pqw-9j4j-h8q3"
+ignoreUntil = 2026-12-15
+reason = "extract-zip 2.0.1, lo trae @puppeteer/browsers para instalar navegadores; en Vercel los PDF usan @sparticuz/chromium y el servidor no descomprime archivos de usuarios. Sin versión corregida."
+
+[[IgnoredVulns]]
+id = "GHSA-jmr9-qjv8-65gv"
+ignoreUntil = 2026-12-15
+reason = "extract-zip 2.0.1, mismo caso que GHSA-7pqw-9j4j-h8q3. Sin versión corregida."
+
+[[IgnoredVulns]]
+id = "GHSA-5p2g-fcmc-qvqq"
+ignoreUntil = 2026-12-15
+reason = "image-size 1.2.1, lo usa Metro al empaquetar la app móvil con imágenes del propio repositorio; no procesa imágenes de usuarios. Sin versión corregida."
+
+[[IgnoredVulns]]
+id = "GHSA-w3rx-r6r6-pgpr"
+ignoreUntil = 2026-12-15
+reason = "image-size 1.2.1, mismo caso que GHSA-5p2g-fcmc-qvqq. Sin versión corregida."

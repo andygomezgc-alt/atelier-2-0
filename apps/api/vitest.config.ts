@@ -1,8 +1,13 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 
 export default defineConfig({
-  test: { environment: "node", globals: false },
+  test: {
+    environment: "node",
+    globals: false,
+    // Las pruebas contra PostgreSQL real solo corren a propósito (CULINARY_MEMORY_IT=1).
+    exclude: process.env.CULINARY_MEMORY_IT === "1" ? configDefaults.exclude : [...configDefaults.exclude, "**/*.integration.test.ts"],
+  },
   resolve: {
     alias: [
       {
