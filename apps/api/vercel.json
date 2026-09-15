@@ -5,6 +5,7 @@
   "buildCommand": "cd ../.. && pnpm db:generate && pnpm db:migrate:deploy && pnpm --filter api build",
   "outputDirectory": ".next",
   "regions": ["fra1"],
+  "git": { "deploymentEnabled": { "main": true, "**": false } },
   "crons": [
     { "path": "/api/cron/culinary-memory", "schedule": "0 5 * * *" },
     {

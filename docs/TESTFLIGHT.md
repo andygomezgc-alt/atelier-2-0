@@ -30,7 +30,7 @@ El acceso con Apple necesita dos elementos distintos: la **capacidad de la app i
 
 ### 2. Configurar los secretos del servidor
 
-Agregar estas variables en el entorno del servidor (Vercel Production y cualquier Preview donde se vaya a probar). Son secretos del backend: **ninguna** debe llevar el prefijo `EXPO_PUBLIC_` ni entrar en el bundle móvil.
+Agregar estas variables en el entorno del servidor (Vercel Production; desde el 15-09-2026 las ramas no despliegan vistas previas). Son secretos del backend: **ninguna** debe llevar el prefijo `EXPO_PUBLIC_` ni entrar en el bundle móvil.
 
 | Variable | Qué contiene |
 |---|---|

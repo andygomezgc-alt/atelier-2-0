@@ -1,5 +1,7 @@
 # Correcciones de memoria culinaria — 13 de septiembre de 2026
 
+Actualización del 15 de septiembre: los grupos de integración que estaban en `tmp/` pasaron al repositorio en `apps/api/lib/culinary-memory/memory.integration.test.ts` y CI los ejecuta contra su PostgreSQL. Los siete avisos del escáner quedaron aceptados con motivo y caducidad (15-12-2026) en `osv-scanner.toml`, de modo que un aviso nuevo vuelve a poner CI en rojo. Véase [Estado actual](ESTADO-ACTUAL.md).
+
 Estado: **publicado y verificado en producción el 14 de septiembre de 2026**, realizado por GPT-5.6 Sol con razonamiento ultra y revisión independiente. El código de memoria está en `6d22033`; Vercel lo sirve bajo `https://atelier-2-0-mu.vercel.app` (el despliegue documental posterior es `dpl_ADb18gvje4CdBCbFbzqByHainDJ8`).
 
 ## Alcance autorizado

@@ -64,6 +64,13 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # Memoria culinaria contra el Postgres de servicio: triggers SQL, carreras
+      # y recuperación que las pruebas con mocks no cubren. IA simulada.
+      - name: Culinary memory integration (PostgreSQL)
+        run: pnpm --filter api exec vitest run lib/culinary-memory/memory.integration.test.ts
+        env:
+          CULINARY_MEMORY_IT: "1"
+
   # P1-3 (auditoría jul 2026): sustituye a `pnpm audit`, roto localmente porque
   # el endpoint que usaba fue retirado. osv-scanner lee pnpm-lock.yaml directo
   # contra la base de datos de OSV/GHSA — no depende de ese endpoint.
@@ -85,9 +92,10 @@ jobs:
       # osv-scanner devuelve exit code != 0 en cuanto encuentra CUALQUIER
       # vulnerabilidad (sin importar severidad) — el `|| true` evita que este
       # paso corte el job; el gate real de severidad va en el paso de abajo.
+      # osv-scanner.toml lista los avisos aceptados, cada uno con motivo y caducidad.
       - name: Run osv-scanner against pnpm-lock.yaml
         run: |
-          ./osv-scanner scan source --lockfile=pnpm-lock.yaml --format=json --output-file=osv-results.json || true
+          ./osv-scanner scan source --config=osv-scanner.toml --lockfile=pnpm-lock.yaml --format=json --output-file=osv-results.json || true
 
       # Solo bloqueamos CI por HIGH/CRITICAL: low/moderate son ruido constante
       # en cualquier monorepo JS y no ameritan romper el build. Node ya viene
