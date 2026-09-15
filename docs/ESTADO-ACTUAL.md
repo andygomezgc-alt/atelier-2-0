@@ -1,21 +1,23 @@
-# Estado actual de Atelier — 14 de septiembre de 2026
+# Estado actual de Atelier — 15 de septiembre de 2026
 
-Punto de entrada al retomar el proyecto. El usuario autorizó **corregir y publicar los seis pasos de la auditoría de memoria culinaria** con GPT-5.6 Sol en ultra. La implementación y la migración están publicadas y verificadas en producción. No activar cobros ni ampliar funciones ajenas a la memoria. [Correcciones y validación de memoria](CORRECCIONES-MEMORIA-2026-09-13.md).
+Punto de entrada al retomar el proyecto. El usuario autorizó **corregir y publicar los seis pasos de la auditoría de memoria culinaria** con GPT-5.6 Sol en ultra. La implementación y la migración están publicadas y verificadas en producción. El 15 de septiembre se cerraron los cabos sueltos que no dependen del usuario: pruebas de integración en CI y excepciones del escáner con caducidad. No activar cobros ni ampliar funciones ajenas a la memoria. [Correcciones y validación de memoria](CORRECCIONES-MEMORIA-2026-09-13.md).
 
 ## Código y trabajo guardado
 
 - Carpeta original: `C:/Users/Utente/Desktop/atelier-2-0`.
 - Repositorio: `https://github.com/andygomezgc-alt/atelier-2-0`, rama de trabajo `main`.
-- Último commit consolidado/publicado: `6d22033` (`fix(auth): update Prisma adapter security patch`). Incluye los parches de memoria, dependencias de ejecución y autenticación; `origin/main` está sincronizado.
+- Código de la app publicado: `6d22033` (`fix(auth): update Prisma adapter security patch`). Incluye los parches de memoria, dependencias de ejecución y autenticación. Los commits posteriores son de documentación, pruebas y CI, sin cambios en la app.
+- Pruebas de integración de memoria sobre PostgreSQL real en `apps/api/lib/culinary-memory/memory.integration.test.ts` (15 casos: reserva concurrente, triggers, reintento, recuperación, retención, borrado, papelera y huellas antiguas). CI las ejecuta contra su Postgres; `pnpm test` no las incluye. Solo aceptan bases en localhost o un host de pruebas escrito expresamente; nunca producción.
+- Escáner de dependencias: siete avisos aceptados con motivo y caducidad **15-12-2026** en `osv-scanner.toml` (herramientas de build/pruebas, sin arreglo compatible). Cualquier aviso nuevo pone CI en rojo.
 - Se consolidan mejoras del piloto acumuladas: guardado e historial del chat, memoria culinaria, costes y productos, menú y PDF multirrestaurante, permisos, modelos de IA, cuotas y presupuesto, copias cifradas, privacidad y distribución móvil.
 - Landing preparada para presentar Atelier y solicitar acceso por correo. Diseño aprobado por el usuario. `/` y `/pro` comparten la presentación. Ejemplo visual de demostración; no se presenta como captura real.
 - Oferta propuesta: Pro a 49 €/mes más IVA; fundador a 24,50 €/mes más IVA durante los primeros tres meses de suscripción, luego tarifa normal. No descuento perpetuo.
 - Backend de pagos preparado: checkout y portal de administrador, validación de precio/cupón, confirmación de pago real y webhook resistente a reentregas y eventos antiguos. `BILLING_CHECKOUT_ENABLED` permanece apagado por defecto. [Alcance y pendientes de pagos](PREPARACION-PAGOS-2026-09-12.md).
 - Los archivos de claves, variables privadas, firma de apps, bases de datos, copias, diagnósticos y artefactos temporales se conservan localmente y se excluyen del repositorio.
 
-## Producción y distribución comprobadas antes de esta sincronización
+## Producción y distribución comprobadas
 
-- API pública: `https://atelier-2-0-mu.vercel.app`. Despliegue verificado: `dpl_3N5eiTeGEywzzSKn2UVPKpikzfzi` (14 de septiembre, memoria, autenticación y parches de ejecución). `/api/health` devuelve HTTP 200; la migración de memoria está aplicada.
+- API pública: `https://atelier-2-0-mu.vercel.app`. Despliegue verificado: `dpl_3N5eiTeGEywzzSKn2UVPKpikzfzi` (14 de septiembre, memoria, autenticación y parches de ejecución). `/api/health` devuelve HTTP 200; la migración de memoria está aplicada. Los despliegues posteriores publican el mismo código de la app. En este equipo la CLI de Vercel necesita volver a iniciar sesión (`vercel login`) para consultar despliegues y configuración.
 - Android 0.1.0, versionCode **4**, build EAS `782dbc73-f0db-45f3-9034-819726775775` terminado. [APK](https://expo.dev/artifacts/eas/HYTsna9LezSg-EbPdwDpywLo1mLNPA9Wd5DG3ebHWEY.apk).
 - iPhone 0.1.0, build **9**, revisión beta aprobada e `IN_BETA_TESTING` para Chefs. [TestFlight público](https://testflight.apple.com/join/kY83jmnk).
 - No hace falta reconstruir las apps por los cambios de la landing o por guardar el repositorio. La prueba física con los chefs sigue siendo necesaria.
@@ -30,16 +32,24 @@ Punto de entrada al retomar el proyecto. El usuario autorizó **corregir y publi
 
 ## Comprobaciones al guardar el estado
 
-- TypeScript correcto en base de datos, idiomas, contratos compartidos, API y móvil.
+- 15 de septiembre: TypeScript de API correcto; API 704/704, móvil 148/148 y contratos 253/253. Integración de memoria 15/15 sobre la base de **pruebas** (tras aplicarle la migración `20260913010000_culinary_memory_reliability`, ya presente en producción), sin restos de datos al terminar. Se comprobó que las pruebas detectan fallos: al reintroducir el título y el estado en la huella falla la de aprobar/renombrar, y al quitar la condición de la reserva falla la de concurrencia.
+- 12 de septiembre: TypeScript correcto en base de datos, idiomas, contratos compartidos, API y móvil.
 - 1.082 pruebas pasadas sumando API (676), móvil (148), contratos (253) e idiomas (5). La ejecución conjunta agotó el tiempo de inicialización de dos grupos de API; sus 16 pruebas pasaron al repetirse de forma aislada. No se cambió el código para ocultar esos tiempos de espera.
 - Revisión del contenido preparado para Git sin coincidencias de claves locales ni credenciales reales; los ejemplos ficticios de `.env.example` se conservaron.
 - Git local y remoto partían del mismo commit `8af2105`. Se conserva el historial existente; no hay force-push ni limpieza de archivos de trabajo.
 
+## Antes de invitar a los chefs (lo hace el usuario)
+
+- Entrar con Google en un móvil contra el servidor actual. Sus piezas tienen pruebas, pero la ruta `/api/mobile/auth/google` no tiene prueba propia y ninguna prueba usa el Google real; en Android es el único acceso.
+- `vercel login` en este equipo y confirmar la duración máxima efectiva de funciones y Fluid Compute: el cron de memoria cuenta con 300 segundos.
+- Decidir si se simplifica la coordinación del aprendizaje nocturno. Recomendación: dejarla mientras funcione; las pruebas de integración permiten simplificarla después sin trabajar a ciegas.
+- Antes del 15-12-2026, revisar las excepciones de `osv-scanner.toml`. Actualizar vitest a la versión 3 elimina dos.
+
 ## Siguiente fase cuando el usuario decida continuar
 
 1. Prueba real del piloto Android/iPhone: acceso, equipo, chat, recetas, costes, memoria y escaneo de distintos menús. Las correcciones actuales son de servidor y no requieren reconstruir las apps.
-3. Recorrido web autenticado del administrador para contratar/cancelar, conservando los accesos móviles existentes.
-4. Configuración e integración completa en Stripe de prueba: tres meses de descuento, tarifa normal en el cuarto, cancelación, impagos y reintentos. No hay compra real validada todavía.
-5. Condiciones y límites comerciales definitivos con datos de consumo del piloto; revisión fiscal y del recorrido de compra por plataforma antes de vender.
+2. Recorrido web autenticado del administrador para contratar/cancelar, conservando los accesos móviles existentes.
+3. Configuración e integración completa en Stripe de prueba: tres meses de descuento, tarifa normal en el cuarto, cancelación, impagos y reintentos. No hay compra real validada todavía.
+4. Condiciones y límites comerciales definitivos con datos de consumo del piloto; revisión fiscal y del recorrido de compra por plataforma antes de vender.
 
 Los documentos fechados conservan el historial. Este archivo y las notas posteriores prevalecen sobre sus pendientes antiguos.
