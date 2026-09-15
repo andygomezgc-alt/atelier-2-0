@@ -1,12 +1,12 @@
 # Estado actual de Atelier — 15 de septiembre de 2026
 
-Punto de entrada al retomar el proyecto. El usuario autorizó **corregir y publicar los seis pasos de la auditoría de memoria culinaria** con GPT-5.6 Sol en ultra. La implementación y la migración están publicadas y verificadas en producción. El 15 de septiembre se cerraron los cabos sueltos que no dependen del usuario: pruebas de integración en CI y excepciones del escáner con caducidad. No activar cobros ni ampliar funciones ajenas a la memoria. [Correcciones y validación de memoria](CORRECCIONES-MEMORIA-2026-09-13.md).
+Punto de entrada al retomar el proyecto. El usuario autorizó **corregir y publicar los seis pasos de la auditoría de memoria culinaria** con GPT-5.6 Sol en ultra. La implementación y la migración están publicadas y verificadas en producción. El 15 de septiembre se cerraron los cabos sueltos que no dependen del usuario: pruebas de integración en CI, excepciones del escáner con caducidad, configuración de Vercel verificada y vistas previas de ramas apagadas. No activar cobros ni ampliar funciones ajenas a la memoria. [Correcciones y validación de memoria](CORRECCIONES-MEMORIA-2026-09-13.md).
 
 ## Código y trabajo guardado
 
 - Carpeta original: `C:/Users/Utente/Desktop/atelier-2-0`.
 - Repositorio: `https://github.com/andygomezgc-alt/atelier-2-0`, rama de trabajo `main`.
-- Código de la app publicado: `6d22033` (`fix(auth): update Prisma adapter security patch`). Incluye los parches de memoria, dependencias de ejecución y autenticación. Los commits posteriores son de documentación, pruebas y CI, sin cambios en la app.
+- Código de la app publicado: `6d22033` (`fix(auth): update Prisma adapter security patch`). Incluye los parches de memoria, dependencias de ejecución y autenticación. Los commits posteriores son de documentación, pruebas, CI y configuración de despliegue, sin cambios en la app.
 - Pruebas de integración de memoria sobre PostgreSQL real en `apps/api/lib/culinary-memory/memory.integration.test.ts` (15 casos: reserva concurrente, triggers, reintento, recuperación, retención, borrado, papelera y huellas antiguas). CI las ejecuta contra su Postgres; `pnpm test` no las incluye. Solo aceptan bases en localhost o un host de pruebas escrito expresamente; nunca producción.
 - Escáner de dependencias: siete avisos aceptados con motivo y caducidad **15-12-2026** en `osv-scanner.toml` (herramientas de build/pruebas, sin arreglo compatible). Cualquier aviso nuevo pone CI en rojo.
 - Se consolidan mejoras del piloto acumuladas: guardado e historial del chat, memoria culinaria, costes y productos, menú y PDF multirrestaurante, permisos, modelos de IA, cuotas y presupuesto, copias cifradas, privacidad y distribución móvil.
@@ -17,7 +17,8 @@ Punto de entrada al retomar el proyecto. El usuario autorizó **corregir y publi
 
 ## Producción y distribución comprobadas
 
-- API pública: `https://atelier-2-0-mu.vercel.app`. Despliegue verificado: `dpl_3N5eiTeGEywzzSKn2UVPKpikzfzi` (14 de septiembre, memoria, autenticación y parches de ejecución). `/api/health` devuelve HTTP 200; la migración de memoria está aplicada. Los despliegues posteriores publican el mismo código de la app. En este equipo la CLI de Vercel necesita volver a iniciar sesión (`vercel login`) para consultar despliegues y configuración.
+- API pública: `https://atelier-2-0-mu.vercel.app`. Despliegue verificado: `dpl_3N5eiTeGEywzzSKn2UVPKpikzfzi` (14 de septiembre, memoria, autenticación y parches de ejecución). `/api/health` devuelve HTTP 200; la migración de memoria está aplicada. Los despliegues posteriores publican el mismo código de la app.
+- Vercel, verificado el 15 de septiembre con la sesión de la CLI: plan Hobby, Fluid Compute activo, límite de 300 segundos por función y Node 24, así que el cron de memoria dispone de sus 300 segundos. Solo `main` despliega (`git.deploymentEnabled` en `apps/api/vercel.json`): las vistas previas de ramas fallaban desde julio porque su entorno no tiene `DATABASE_URL`, y CI ya valida cada PR. El entorno de vista previa aún guarda las claves de Apple y el acceso al almacén de fotos de producción; no se usan mientras las vistas previas sigan apagadas.
 - Android 0.1.0, versionCode **4**, build EAS `782dbc73-f0db-45f3-9034-819726775775` terminado. [APK](https://expo.dev/artifacts/eas/HYTsna9LezSg-EbPdwDpywLo1mLNPA9Wd5DG3ebHWEY.apk).
 - iPhone 0.1.0, build **9**, revisión beta aprobada e `IN_BETA_TESTING` para Chefs. [TestFlight público](https://testflight.apple.com/join/kY83jmnk).
 - No hace falta reconstruir las apps por los cambios de la landing o por guardar el repositorio. La prueba física con los chefs sigue siendo necesaria.
@@ -41,7 +42,6 @@ Punto de entrada al retomar el proyecto. El usuario autorizó **corregir y publi
 ## Antes de invitar a los chefs (lo hace el usuario)
 
 - Entrar con Google en un móvil contra el servidor actual. Sus piezas tienen pruebas, pero la ruta `/api/mobile/auth/google` no tiene prueba propia y ninguna prueba usa el Google real; en Android es el único acceso.
-- `vercel login` en este equipo y confirmar la duración máxima efectiva de funciones y Fluid Compute: el cron de memoria cuenta con 300 segundos.
 - Decidir si se simplifica la coordinación del aprendizaje nocturno. Recomendación: dejarla mientras funcione; las pruebas de integración permiten simplificarla después sin trabajar a ciegas.
 - Antes del 15-12-2026, revisar las excepciones de `osv-scanner.toml`. Actualizar vitest a la versión 3 elimina dos.
 
