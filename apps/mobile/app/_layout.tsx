@@ -12,6 +12,7 @@ import {
   CrimsonPro_500Medium_Italic,
 } from "@expo-google-fonts/crimson-pro";
 import { useAuth } from "@/src/hooks/useAuth";
+import { nextRoute } from "@/src/lib/auth-route";
 import { useI18n } from "@/src/hooks/useI18n";
 import { ToastHost } from "@/src/components/Toast";
 import { Button } from "@/src/components/Button";
@@ -29,30 +30,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (state.status === "loading") return;
     const sub = segments as readonly string[];
-    const inAuthGroup = sub[0] === "(auth)";
 
-    // A-12: signed-out → login. needs-restaurant ya NO se redirige forzado a
-    // choose-flow: el chef entra directo a las tabs y la app se autoexplica
-    // con los subtítulos por sección. El alta del sitio se dispara al primer
-    // intento de guardar algo (lazy create vía LazyRestaurantHost) o
-    // explícitamente desde el lobby en Casa.
-    // "auth" es el alias del deep link del magic link (app/auth.tsx): su
-    // Redirect a verify corre en el mismo commit que este efecto; si acá
-    // forzáramos login, pisaríamos esa navegación y el token se perdería.
-    if (state.status === "signed-out" && !inAuthGroup && sub[0] !== "auth") {
-      router.replace("/(auth)/login");
-    } else if (state.status === "needs-restaurant" && inAuthGroup) {
-      // A-12: el chef en needs-restaurant cae en INICIO, no en Casa.
-      // Filosofía: la app se autoexplica con los subtítulos por sección y el
-      // chef navega libre; el alta del sitio se dispara recién al guardar
-      // (idea, receta, menú) o explícitamente desde el lobby de Casa.
-      // Permitimos `join-with-code` y `create-restaurant` por si llegó por
-      // ese deep-link.
-      const allow = sub[1] === "join-with-code" || sub[1] === "create-restaurant";
-      if (!allow) router.replace("/(tabs)/inicio");
-    } else if (state.status === "signed-in" && inAuthGroup) {
-      router.replace("/(tabs)/inicio");
-    }
+    // La regla vive en `nextRoute` (probada en src/lib/__tests__/auth-route.test.ts):
+    // sin sesión → login; sin restaurante → crear o unirse con código, sin entrar
+    // a las pestañas; con restaurante → Inicio al salir del onboarding.
+    const destino = nextRoute(state.status, sub);
+    if (destino) router.replace(destino as Parameters<typeof router.replace>[0]);
   }, [state, segments, router]);
 
   return <>{children}</>;

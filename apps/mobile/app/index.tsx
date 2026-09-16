@@ -38,6 +38,8 @@ export default function Index() {
   }
 
   if (state.status === "signed-out") return <Redirect href="/(auth)/login" />;
+  // Sin restaurante no se entra a las pestañas: primero crear o unirse con código.
+  if (state.status === "needs-restaurant") return <Redirect href="/(auth)/choose-flow" />;
   return <Redirect href="/(tabs)/inicio" />;
 }
 
