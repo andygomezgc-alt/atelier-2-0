@@ -1,4 +1,10 @@
 import { useCallback, useRef, useSyncExternalStore } from "react";
+// Import NOMBRADO a propósito: `await import("react-native")` copia todas las
+// exportaciones del paquete y al recorrerlas evalúa el getter obsoleto
+// `PushNotificationIOS`, que en la arquitectura nueva construye un
+// NativeEventEmitter sin módulo nativo. En iOS eso es un error fatal y la app
+// se cerraba nada más abrirla (builds 7 a 9).
+import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "@/src/lib/secure-storage";
 import { TOKEN_KEY, setUnauthorizedHandler, ApiError } from "@/src/api/client";
@@ -232,7 +238,6 @@ function ensureAppleRevokeListener(): Promise<void> {
   if (appleRevokeSubscription) return Promise.resolve();
   if (appleRevokeListenerPromise) return appleRevokeListenerPromise;
   appleRevokeListenerPromise = (async () => {
-    const { Platform } = await import("react-native");
     if (Platform.OS !== "ios") return;
     const AppleAuthentication = await import("expo-apple-authentication");
     appleRevokeSubscription = AppleAuthentication.addRevokeListener(() => {
@@ -250,7 +255,6 @@ function ensureAppleRevokeListener(): Promise<void> {
 
 async function appleCredentialIsAuthorized(appleUserId: string): Promise<boolean | null> {
   try {
-    const { Platform } = await import("react-native");
     if (Platform.OS !== "ios") return true;
     const AppleAuthentication = await import("expo-apple-authentication");
     const state = await AppleAuthentication.getCredentialStateAsync(appleUserId);
