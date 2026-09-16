@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/src/api/client";
 
+// useAuth importa Platform de react-native; el paquete real no carga en Node.
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+
 const h = vi.hoisted(() => {
   const storage = new Map<string, string>();
 
