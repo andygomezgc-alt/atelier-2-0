@@ -1,12 +1,12 @@
-# Estado actual de Atelier — 15 de septiembre de 2026
+# Estado actual de Atelier — 17 de septiembre de 2026
 
-Punto de entrada al retomar el proyecto. El usuario autorizó **corregir y publicar los seis pasos de la auditoría de memoria culinaria** con GPT-5.6 Sol en ultra. La implementación y la migración están publicadas y verificadas en producción. El 15 de septiembre se cerraron los cabos sueltos que no dependen del usuario: pruebas de integración en CI, excepciones del escáner con caducidad, configuración de Vercel verificada y vistas previas de ramas apagadas. No activar cobros ni ampliar funciones ajenas a la memoria. [Correcciones y validación de memoria](CORRECCIONES-MEMORIA-2026-09-13.md).
+Punto de entrada al retomar el proyecto. Entre el 15 y el 17 de septiembre: pruebas de integración de memoria en CI, escáner con excepciones caducables, Vercel revisado y vistas previas apagadas, **arreglado el cierre al abrir la app en iPhone**, restaurado el **arranque obligatorio** de crear o unirse a un restaurante y **revisada la matriz de permisos por rol** con el usuario. Detalle, identificadores y receta de entrega en [Ronda móvil y permisos](RONDA-MOVIL-Y-PERMISOS-2026-09-17.md); memoria culinaria en [sus correcciones](CORRECCIONES-MEMORIA-2026-09-13.md). No activar cobros. La ronda de arreglos móviles sigue abierta: el usuario pidió no hornear más binarios hasta avisar.
 
 ## Código y trabajo guardado
 
 - Carpeta original: `C:/Users/Utente/Desktop/atelier-2-0`.
 - Repositorio: `https://github.com/andygomezgc-alt/atelier-2-0`, rama de trabajo `main`.
-- Código de la app publicado: `6d22033` (`fix(auth): update Prisma adapter security patch`). Incluye los parches de memoria, dependencias de ejecución y autenticación. Los commits posteriores son de documentación, pruebas, CI y configuración de despliegue, sin cambios en la app.
+- Código publicado: `e305004` (`merge: permisos por rol revisados con el usuario`). Incluye memoria culinaria, parches de dependencias y autenticación, el arreglo del cierre en iPhone, el arranque obligatorio y la matriz de permisos nueva. CI en verde y despliegue correcto.
 - Pruebas de integración de memoria sobre PostgreSQL real en `apps/api/lib/culinary-memory/memory.integration.test.ts` (15 casos: reserva concurrente, triggers, reintento, recuperación, retención, borrado, papelera y huellas antiguas). CI las ejecuta contra su Postgres; `pnpm test` no las incluye. Solo aceptan bases en localhost o un host de pruebas escrito expresamente; nunca producción.
 - Escáner de dependencias: siete avisos aceptados con motivo y caducidad **15-12-2026** en `osv-scanner.toml` (herramientas de build/pruebas, sin arreglo compatible). Cualquier aviso nuevo pone CI en rojo.
 - Se consolidan mejoras del piloto acumuladas: guardado e historial del chat, memoria culinaria, costes y productos, menú y PDF multirrestaurante, permisos, modelos de IA, cuotas y presupuesto, copias cifradas, privacidad y distribución móvil.
@@ -19,9 +19,9 @@ Punto de entrada al retomar el proyecto. El usuario autorizó **corregir y publi
 
 - API pública: `https://atelier-2-0-mu.vercel.app`. Despliegue verificado: `dpl_3N5eiTeGEywzzSKn2UVPKpikzfzi` (14 de septiembre, memoria, autenticación y parches de ejecución). `/api/health` devuelve HTTP 200; la migración de memoria está aplicada. Los despliegues posteriores publican el mismo código de la app.
 - Vercel, verificado el 15 de septiembre con la sesión de la CLI: plan Hobby, Fluid Compute activo, límite de 300 segundos por función y Node 24, así que el cron de memoria dispone de sus 300 segundos. Solo `main` despliega (`git.deploymentEnabled` en `apps/api/vercel.json`): las vistas previas de ramas fallaban desde julio porque su entorno no tiene `DATABASE_URL`, y CI ya valida cada PR. Ese mismo día las claves de Apple quedaron solo en Production y el acceso al almacén de fotos en Production y Development (valor comprobado intacto); Preview ya no guarda ninguna variable.
-- Android 0.1.0, versionCode **5**, build EAS `f9029e51-ebb1-4461-b659-08075e54f241` (commit `d36383d`). [APK](https://expo.dev/artifacts/eas/cbFCRLgcXzXES2bgLQix8e7jt_hOSsAthYoXbJakKps.apk), 111.365.214 bytes, descarga comprobada. Sustituye al versionCode 4 (`782dbc73`), que no traía el arranque obligatorio.
-- iPhone 0.1.0, build **11** (EAS `8f42657e-d86a-4fc1-a7f2-279b811d9b1f`, Apple `a6b96744-5f76-445b-b4c1-280eaa1c14b9`, commit `d36383d`), procesada, en los grupos Equipo y Chefs e `IN_BETA_TESTING` desde el 17-09-2026. [TestFlight público](https://testflight.apple.com/join/kY83jmnk), el mismo enlace de siempre. La build 10 sigue disponible y la 9 está rota.
-- Por qué existen las builds 10 y 11. **(a) Cierre al abrir, desde la build 7**. `useAuth.ts` cargaba React Native con un import dinámico y, al recorrer sus exportaciones, evaluaba el getter obsoleto `PushNotificationIOS`, cuyo `NativeEventEmitter` sin módulo nativo es fatal **solo en iOS**; Android no hace esa comprobación, por eso el APK siempre funcionó. Sentry lo registró 27 veces en 4 personas desde julio. Corregido con import nombrado y una prueba que impide reintroducirlo; **confirmado en un iPhone real el 16-09** (abre bien; Sentry no registró ningún cierre desde la build 10). **(b) Primer arranque sin restaurante**: A-12 había quitado el paso obligatorio de crear o unirse, así que el chef caía en Inicio, donde `/api/ideas` responde 403 y la pantalla lo pinta como «Sin conexión». Restaurado el 16-09: sin restaurante se va a crear o unirse con código, con la regla extraída a `nextRoute` y probada. Los roles no cambiaron: crear = admin, unirse con código = Lector, y solo el admin cambia roles.
+- Android 0.1.0, versionCode **6** (commit `e305004`, EAS `63734b36-9f7e-4157-8b89-c4021821daef`): [APK](https://expo.dev/artifacts/eas/bt8AcEIWIYTadfOiTt-AY5nbBVVRwMqcPzygyy5voAA.apk), 111.361.686 bytes, descarga comprobada. **Es el enlace bueno para los chefs Android.**
+- iPhone 0.1.0, build **12** (commit `e305004`, EAS `30031daf-f36c-49b8-9505-7295276f341c`) subida a Apple, **sin revisión externa pedida a propósito** mientras siga la ronda de arreglos: queda para el grupo interno. El [enlace público](https://testflight.apple.com/join/kY83jmnk) sigue sirviendo la build **11**, que ya abre bien y trae el arranque obligatorio. La build 9 y anteriores se cierran al abrir: no repartirlas.
+- Historia de las builds 10 a 12 (cierre al arrancar, arranque obligatorio y permisos), con causas y evidencias: [Ronda móvil y permisos](RONDA-MOVIL-Y-PERMISOS-2026-09-17.md).
 - No hace falta reconstruir las apps por los cambios de la landing o por guardar el repositorio. La prueba física con los chefs sigue siendo necesaria.
 - Acceso actual conservado: Android Google; iPhone Apple y Google. Creador del restaurante administrador; invitado Lector hasta que el administrador cambie su categoría.
 - Permisos por rol, revisados con el usuario el **17-09-2026** (`packages/shared/src/permissions.ts`, exigidos también en el servidor): **exportar PDF** (recetas, recetario, menú, productos) solo admin y chef ejecutivo; **chat Creativo** solo admin y chef ejecutivo, el sous-chef usa el Diario; **el Lector ve y abre recetas** pero no las edita ni exporta; **el sous-chef ya no crea ni edita menús**. Sin cambios: crear restaurante da admin, unirse con código da Lector, y solo el admin cambia roles. «Nuestra cocina» pasó a exigir `capture_idea` para que el Lector siga sin acceder.
@@ -41,15 +41,19 @@ Punto de entrada al retomar el proyecto. El usuario autorizó **corregir y publi
 - Revisión del contenido preparado para Git sin coincidencias de claves locales ni credenciales reales; los ejemplos ficticios de `.env.example` se conservaron.
 - Git local y remoto partían del mismo commit `8af2105`. Se conserva el historial existente; no hay force-push ni limpieza de archivos de trabajo.
 
-## Antes de invitar a los chefs (lo hace el usuario)
+## Antes de invitar a los chefs
 
+- **Primer arranque real de un chef**: crear restaurante o unirse con código. Es el recorrido que quedó arreglado y sin probar por una persona.
+- **Gaia**: salir y entrar con **Google**. El 16-09 entró con Apple ocultando el correo y se creó una cuenta nueva, vacía y sin restaurante (`cmu4e2b770000l1047tuti7k4`); su cuenta real es la de Google, chef ejecutivo en Kokoo. Queda decidir si se borra la duplicada.
+- **Pedir la revisión externa de la build 12** cuando se cierre la ronda de arreglos, para que el enlace público deje de servir la 11. Receta en [Ronda móvil y permisos](RONDA-MOVIL-Y-PERMISOS-2026-09-17.md).
+- **Cargar créditos en Anthropic**: quedan 3,84 USD con la recarga automática desactivada, y el chat Creativo depende de ellos. La estimación del piloto pedía unos 29 USD al mes solo para ese chat.
 - Entrar con Google en un móvil contra el servidor actual. Sus piezas tienen pruebas, pero la ruta `/api/mobile/auth/google` no tiene prueba propia y ninguna prueba usa el Google real; en Android es el único acceso.
 - Decidir si se simplifica la coordinación del aprendizaje nocturno. Recomendación: dejarla mientras funcione; las pruebas de integración permiten simplificarla después sin trabajar a ciegas.
 - Antes del 15-12-2026, revisar las excepciones de `osv-scanner.toml`. Actualizar vitest a la versión 3 elimina dos.
 
 ## Siguiente fase cuando el usuario decida continuar
 
-1. Prueba real del piloto Android/iPhone: acceso, equipo, chat, recetas, costes, memoria y escaneo de distintos menús. Las correcciones actuales son de servidor y no requieren reconstruir las apps.
+1. Prueba real del piloto Android/iPhone: acceso, equipo, chat, recetas, costes, memoria y escaneo de distintos menús, con los permisos nuevos por rol.
 2. Recorrido web autenticado del administrador para contratar/cancelar, conservando los accesos móviles existentes.
 3. Configuración e integración completa en Stripe de prueba: tres meses de descuento, tarifa normal en el cuarto, cancelación, impagos y reintentos. No hay compra real validada todavía.
 4. Condiciones y límites comerciales definitivos con datos de consumo del piloto; revisión fiscal y del recorrido de compra por plataforma antes de vender.
