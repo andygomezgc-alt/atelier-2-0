@@ -84,11 +84,12 @@ Después, para que el enlace público sirva la build nueva, con la clave de App 
 
 Tiempos reales: compilar iOS 7-10 min, Android 10-50 min, **cola de envío de EAS 1 h 30 a 1 h 45 (el cuello de botella)**, procesado de Apple ~7 min, revisión beta externa ~1 min. Subir a App Store Connect desde Windows sin EAS no es viable: exige Transporter, que es de macOS.
 
-## Pendientes al cerrar esta ronda
+## Cierre de los pendientes (comprobado el 17-09 en producción, solo lectura)
 
-1. Que un chef haga el primer arranque real: crear restaurante o unirse con código.
-2. Gaia: salir y entrar con Google; decidir si se borra su cuenta duplicada vacía.
-3. Pedir la revisión externa de la build 12 cuando se cierre la ronda de arreglos (el enlace sigue en la 11).
-4. Cargar créditos en Anthropic antes de repartir el Creativo a los chefs.
-5. Decisión aparcada: la coordinación del aprendizaje nocturno creció en vez de simplificarse (`worker.ts` 77→299 líneas, 8 columnas nuevas). Recomendación: dejarla mientras funcione.
-6. Revisar las excepciones de `osv-scanner.toml` antes del 15-12-2026.
+- **Primer arranque real: hecho.** Mariasole Ricci entró el 16-09 con el código y el admin la subió a sous-chef; Eugenio Sanchote entró el 17-09 y quedó como Lector. Kokoo tiene cinco miembros.
+- **Gaia con Google: hecho** (sesión del 16-09, 21:44). Su cuenta duplicada con Apple sigue existiendo, vacía; borrarla es opcional.
+- **Créditos de Anthropic: cargados**, 23,84 USD. Recarga automática todavía desactivada.
+- **Presupuesto del piloto en marcha:** periodo 16-09 a 16-10-2026, 0,01 € gastados de 50 €, tres generaciones (dos del Diario, una extracción GLM).
+- **Sigue pendiente: la revisión externa de la build 12.** Con el servidor aplicando los permisos nuevos y Mariasole como sous-chef, la build 11 le muestra botones que responden «no tienes permiso».
+- Aparcado: la coordinación del aprendizaje nocturno creció en vez de simplificarse (`worker.ts` 77→299 líneas, 8 columnas nuevas). Recomendación: dejarla mientras funcione.
+- Recordatorio: revisar las excepciones de `osv-scanner.toml` antes del 15-12-2026.

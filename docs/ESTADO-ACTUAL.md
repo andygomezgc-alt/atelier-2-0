@@ -41,13 +41,16 @@ Punto de entrada al retomar el proyecto. Entre el 15 y el 17 de septiembre: prue
 - Revisión del contenido preparado para Git sin coincidencias de claves locales ni credenciales reales; los ejemplos ficticios de `.env.example` se conservaron.
 - Git local y remoto partían del mismo commit `8af2105`. Se conserva el historial existente; no hay force-push ni limpieza de archivos de trabajo.
 
-## Antes de invitar a los chefs
+## El piloto ya arrancó (comprobado el 17-09 en producción, solo lectura)
 
-- **Primer arranque real de un chef**: crear restaurante o unirse con código. Es el recorrido que quedó arreglado y sin probar por una persona.
-- **Gaia**: salir y entrar con **Google**. El 16-09 entró con Apple ocultando el correo y se creó una cuenta nueva, vacía y sin restaurante (`cmu4e2b770000l1047tuti7k4`); su cuenta real es la de Google, chef ejecutivo en Kokoo. Queda decidir si se borra la duplicada.
-- **Pedir la revisión externa de la build 12** cuando se cierre la ronda de arreglos, para que el enlace público deje de servir la 11. Receta en [Ronda móvil y permisos](RONDA-MOVIL-Y-PERMISOS-2026-09-17.md).
-- **Cargar créditos en Anthropic**: quedan 3,84 USD con la recarga automática desactivada, y el chat Creativo depende de ellos. La estimación del piloto pedía unos 29 USD al mes solo para ese chat.
-- Entrar con Google en un móvil contra el servidor actual. Sus piezas tienen pruebas, pero la ruta `/api/mobile/auth/google` no tiene prueba propia y ninguna prueba usa el Google real; en Android es el único acceso.
+- **Equipo de Kokoo: 5 personas.** Andy (admin), «cripto usuario» (admin), Gaia (chef ejecutivo), **Mariasole Ricci (sous-chef, entró el 16-09)** y **Eugenio Sanchote (Lector, entró el 17-09)**. El recorrido de unirse con código y el de que el admin cambie el rol están probados por personas reales, no solo por pruebas.
+- **Gaia ya usa su cuenta de Google** (sesión del 16-09 a las 21:44). Su cuenta duplicada y vacía creada con Apple sigue existiendo (`cmu4e2b770000l1047tuti7k4`): borrarla es opcional.
+- **Presupuesto de IA en marcha:** periodo **16-09 a 16-10-2026**, gastado 0,01 € de 50 €. Tres generaciones: dos del chat Diario y una extracción con GLM.
+- **Anthropic: 23,84 USD de créditos** (se cargaron 20). La recarga automática sigue desactivada, así que el Creativo se detiene al agotarse; la estimación del piloto pedía unos 29 USD al mes solo para ese chat.
+
+## Pendiente
+
+- **Pedir la revisión externa de la build 12** para que el enlace público deje de servir la 11. Importa ahora: el servidor ya aplica los permisos nuevos y Mariasole es sous-chef, así que con la build 11 verá botones de Creativo, menús y PDF que responden «no tienes permiso». Receta en [Ronda móvil y permisos](RONDA-MOVIL-Y-PERMISOS-2026-09-17.md).
 - Decidir si se simplifica la coordinación del aprendizaje nocturno. Recomendación: dejarla mientras funcione; las pruebas de integración permiten simplificarla después sin trabajar a ciegas.
 - Antes del 15-12-2026, revisar las excepciones de `osv-scanner.toml`. Actualizar vitest a la versión 3 elimina dos.
 
