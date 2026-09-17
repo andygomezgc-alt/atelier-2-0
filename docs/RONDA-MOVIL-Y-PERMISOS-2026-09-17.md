@@ -26,7 +26,7 @@ Un chef sin restaurante caía en Inicio, donde `/api/ideas` responde 403 y la pa
 
 Restaurado el 16-09: sin restaurante se va a `(auth)/choose-flow`. La regla salió del componente a `apps/mobile/src/lib/auth-route.ts`, con pruebas, porque ya había cambiado una vez sin que se notara.
 
-Caso real que lo destapó: Gaia entró con Sign in with Apple y «Ocultar mi correo», lo que creó un usuario nuevo (`cmu4e2b770000l1047tuti7k4`, correo `@privaterelay.appleid.com`, rol Lector, sin restaurante). Su cuenta real es la de Google (`cmrv8z6fe0000i504os8xs79a`, chef ejecutivo en Kokoo). **Pendiente:** que salga y entre con Google; la cuenta duplicada vacía sigue existiendo.
+Caso real que lo destapó: Gaia entró con Sign in with Apple y «Ocultar mi correo», lo que creó un usuario nuevo (`cmu4e2b770000l1047tuti7k4`, correo `@privaterelay.appleid.com`, rol Lector, sin restaurante). Su cuenta real es la de Google (`cmrv8z6fe0000i504os8xs79a`, chef ejecutivo en Kokoo). El 16-09 por la noche volvió a entrar con Google, así que su cuenta real quedó en uso; la duplicada de Apple sigue existiendo vacía y borrarla es opcional.
 
 ## 3. Permisos por rol (decisión del 17-09)
 
@@ -67,8 +67,8 @@ Tres cosas que hubo que tocar aparte de la matriz:
 
 ## 6. Gasto de IA
 
-- Presupuesto interno del piloto **sin estrenar**: 50,00 € de 50 €, tabla `AiBudget` vacía. El mes arranca con la primera reserva de generación y dura un mes natural, sin renovación automática. Contabilidad con margen: 1 USD de API descuenta 1,25 € del presupuesto.
-- **Anthropic: 3,84 USD de créditos y recarga automática desactivada** (17-09). La clave de producción «atellier2.0» pertenece a esa misma organización, así que el chat Creativo se queda sin servicio al agotarse. La estimación del piloto pedía unos 29 USD al mes solo para el Creativo. Gemini y Z.AI siguen sin consultar.
+- Presupuesto interno del piloto **en marcha desde el 16-09 a las 21:36Z**, hasta el 16-10: gastado 0,01 € de 50 €, tres generaciones (dos del Diario con Gemini y una extracción con GLM). El mes arrancó con la primera reserva y no se renueva solo. Contabilidad con margen: 1 USD de API descuenta 1,25 € del presupuesto.
+- **Anthropic: 23,84 USD de créditos** tras cargar 20 el 17-09, con la **recarga automática todavía desactivada**. La clave de producción «atellier2.0» pertenece a esa misma organización, así que el chat Creativo se queda sin servicio al agotarse. La estimación del piloto pedía unos 29 USD al mes solo para el Creativo. Gemini y Z.AI siguen sin consultar.
 
 ## 7. Receta de entrega móvil (medida el 16 y 17 de septiembre)
 
