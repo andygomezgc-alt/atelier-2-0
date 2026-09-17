@@ -171,14 +171,16 @@ export default function RecetasScreen() {
       title={t("header_recetas")}
       right={
         <View style={styles.headerActions}>
-          <Pressable
-            hitSlop={8}
-            onPress={handleExportRecipebook}
-            disabled={exporting}
-            accessibilityLabel={t("btn_export_recipebook_pdf")}
-          >
-            <Ionicons name="share-outline" size={20} color={colors.terracota} />
-          </Pressable>
+          {can(role, "export_pdf") ? (
+            <Pressable
+              hitSlop={8}
+              onPress={handleExportRecipebook}
+              disabled={exporting}
+              accessibilityLabel={t("btn_export_recipebook_pdf")}
+            >
+              <Ionicons name="share-outline" size={20} color={colors.terracota} />
+            </Pressable>
+          ) : null}
           {canDelete ? (
             <Pressable
               onPress={() => router.push("/recetas/papelera")}

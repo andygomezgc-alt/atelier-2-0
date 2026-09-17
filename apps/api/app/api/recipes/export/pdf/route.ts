@@ -6,6 +6,7 @@
 
 import { NextRequest } from "next/server";
 import { prisma } from "@atelier/db";
+import { can } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { renderHtmlToPdf } from "@/lib/pdf/render";
 import { logger } from "@/lib/logger";
@@ -90,12 +91,11 @@ function buildHtml(
 }
 
 export async function GET(req: NextRequest) {
-  // P2-3 (auditoría jul 2026): candado de permiso explícito — export_pdf ya
-  // incluye a todos los roles (admin/chef_executive/sous_chef/viewer), así que
-  // esto no cambia quién puede exportar; solo centraliza el rechazo de
-  // usuarios sin restaurante en requireAuth.
   const ctx = await requireAuth(req, "view_staff_recipe");
   if (isNextResponse(ctx)) return ctx;
+  // Desde el 17-09-2026 exportar es solo del admin y del chef ejecutivo: ver
+  // recetas no da derecho a sacar el recetario entero en PDF.
+  if (!can(ctx.role, "export_pdf")) return Response.json({ error: "Forbidden", code: "forbidden" }, { status: 403 });
   if (!ctx.restaurantId)
     return new Response(JSON.stringify({ error: "Not in a restaurant" }), { status: 403 });
 

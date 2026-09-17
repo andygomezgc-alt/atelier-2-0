@@ -410,12 +410,14 @@ export default function RecipeDetailScreen() {
               onPress={() => setScaleOpen(true)}
             />
           ) : null}
-          <Button
-            label={t("btn_ficha_pdf")}
-            iconLeft="share-outline"
-            variant="ghost"
-            onPress={handleSharePdf}
-          />
+          {can(role, "export_pdf") ? (
+            <Button
+              label={t("btn_ficha_pdf")}
+              iconLeft="share-outline"
+              variant="ghost"
+              onPress={handleSharePdf}
+            />
+          ) : null}
         </View>
       </ScrollView>
 

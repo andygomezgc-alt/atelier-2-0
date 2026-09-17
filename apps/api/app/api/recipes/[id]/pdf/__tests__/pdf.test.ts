@@ -29,7 +29,7 @@ function get(id = "rec-1", lang?: string) {
 beforeEach(() => {
   db.recipe.findUnique.mockReset();
   render.renderHtmlToPdf.mockReset().mockResolvedValue(Buffer.from("%PDF-1.4 fake"));
-  guard.requireAuth.mockReset().mockResolvedValue({ userId: "u1", restaurantId: "r1", role: "viewer" });
+  guard.requireAuth.mockReset().mockResolvedValue({ userId: "u1", restaurantId: "r1", role: "chef_executive" });
 });
 
 describe("GET /api/recipes/[id]/pdf", () => {

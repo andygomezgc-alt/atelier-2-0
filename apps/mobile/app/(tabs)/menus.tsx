@@ -244,13 +244,15 @@ export default function MenusScreen() {
                     <Ionicons name="create-outline" size={14} color={colors.paper} />
                     <Text style={styles.btnEditLabel}>{t("menu_btn_edit")}</Text>
                   </Pressable>
-                  <Pressable
-                    style={styles.btnPdf}
-                    onPress={() => void openPreview(m)}
-                  >
-                    <Ionicons name="document-text-outline" size={14} color={colors.paper} />
-                    <Text style={styles.btnPdfLabel}>{t("menu_btn_pdf")}</Text>
-                  </Pressable>
+                  {can(role, "export_pdf") ? (
+                    <Pressable
+                      style={styles.btnPdf}
+                      onPress={() => void openPreview(m)}
+                    >
+                      <Ionicons name="document-text-outline" size={14} color={colors.paper} />
+                      <Text style={styles.btnPdfLabel}>{t("menu_btn_pdf")}</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               </View>
             );

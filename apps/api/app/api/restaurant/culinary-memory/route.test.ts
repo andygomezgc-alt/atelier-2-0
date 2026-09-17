@@ -15,7 +15,7 @@ describe("culinary memory route", () => {
   it("aplica permisos de consulta y edición", async () => {
     auth.mockResolvedValueOnce({ restaurantId: "mine", role: "sous_chef" });
     await GET(new NextRequest("http://local")); expect(get).toHaveBeenCalledWith("mine", false);
-    expect(auth).toHaveBeenCalledWith(expect.anything(), "view_staff_recipe");
+    expect(auth).toHaveBeenCalledWith(expect.anything(), "capture_idea");
     auth.mockResolvedValueOnce(NextResponse.json({}, { status: 403 }));
     expect((await PATCH(req({ expectedVersion: 0 }))).status).toBe(403); expect(patch).not.toHaveBeenCalled();
     expect(auth).toHaveBeenLastCalledWith(expect.anything(), "approve_recipe");

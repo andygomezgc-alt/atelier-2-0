@@ -1,4 +1,4 @@
-import { normalizeChatMode, type ChatMode } from "@atelier/shared";
+import { can, normalizeChatMode, type ChatMode } from "@atelier/shared";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -197,10 +197,20 @@ export default function AsistenteScreen() {
   // El teclado cubre la tab bar: solo hay que compensar lo que sobresale de ella.
   const kbPad = Math.max(0, kb - (TAB_BAR_BASE_HEIGHT + insets.bottom));
 
-  const userModel: ModelKey =
+  const chefRole =
+    authState.status === "signed-in" || authState.status === "needs-restaurant"
+      ? authState.user.role
+      : null;
+  // El Creativo (modelo caro) es del admin y del chef ejecutivo; el sous-chef
+  // usa el Diario. El servidor rechaza igual si alguien fuerza el modo.
+  const puedeCreativo = chefRole != null && can(chefRole, "use_creative_chat");
+
+  const modeloPreferido: ModelKey =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
       ? normalizeChatMode(authState.user.defaultModel)
       : "daily";
+  // Una preferencia vieja de Creativo no vale si el rol ya no lo permite.
+  const userModel: ModelKey = puedeCreativo ? modeloPreferido : "daily";
 
   const userName =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -742,19 +752,21 @@ export default function AsistenteScreen() {
           </View>
         ) : null}
 
-        <View style={styles.modelRow}>
-          {(["daily", "creative"] as const).map((m) => (
-            <Pressable
-              key={m}
-              style={[styles.modelChip, model === m && styles.modelChipActive]}
-              onPress={() => setModel(m)}
-            >
-              <Text style={[styles.modelLabel, model === m && styles.modelLabelActive]}>
-                {t(MODEL_LABEL_KEYS[m])}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        {puedeCreativo ? (
+          <View style={styles.modelRow}>
+            {(["daily", "creative"] as const).map((m) => (
+              <Pressable
+                key={m}
+                style={[styles.modelChip, model === m && styles.modelChipActive]}
+                onPress={() => setModel(m)}
+              >
+                <Text style={[styles.modelLabel, model === m && styles.modelLabelActive]}>
+                  {t(MODEL_LABEL_KEYS[m])}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
 
         <View style={{ flex: 1 }}>
           {conversationLoading ? (

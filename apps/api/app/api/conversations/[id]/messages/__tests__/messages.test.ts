@@ -160,6 +160,23 @@ describe("POST chat — persistencia", () => {
     expect(streamMock).not.toHaveBeenCalled();
     expect(quota.reserveAiCall).not.toHaveBeenCalled();
   });
+  it.each(["sous_chef", "viewer"] as const)("el Creativo está cerrado para %s", async (role) => {
+    guard.requireAuth.mockResolvedValue({ userId: "u1", restaurantId: "r1", role });
+    const res = await post({ content: "idea", model: "creative" });
+    expect(res.status).toBe(403);
+    expect(JSON.parse(await res.text()).code).toBe("forbidden");
+    expect(streamMock).not.toHaveBeenCalled();
+  });
+
+  it("el Diario sigue abierto al sous-chef", async () => {
+    guard.requireAuth.mockResolvedValue({ userId: "u1", restaurantId: "r1", role: "sous_chef" });
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    const res = await post({ content: "idea", model: "daily" });
+    expect(res.status).toBe(200);
+    await res.text();
+    expect(streamMock).toHaveBeenCalled();
+  });
+
   it("a restaurant viewer cannot bypass chat permission through preview", async () => {
     guard.requireAuth.mockResolvedValue({ userId: "u1", restaurantId: "r1", role: "viewer" });
     expect((await post({ content: "recipe" }, "preview")).status).toBe(403);

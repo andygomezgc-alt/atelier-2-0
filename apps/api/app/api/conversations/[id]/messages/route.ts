@@ -74,6 +74,11 @@ export async function POST(
 
   const model = parse.data.model ?? "daily";
   const config = chatConfig(model);
+  // El Creativo (modelo caro) es del admin y del chef ejecutivo; el sous-chef
+  // usa el Diario. Se decide en el servidor: el cliente no manda el rol.
+  if (config.task === "creative" && !can(ctx.role, "use_creative_chat")) {
+    return Response.json({ error: "El chat Creativo está reservado al administrador y al chef ejecutivo.", code: "forbidden" }, { status: 403 });
+  }
   if (!providerConfigured(config.provider)) return Response.json({
     error: "El asistente todavía no está configurado. Inténtalo más tarde.", code: "ai_provider_unconfigured",
   }, { status: 503 });

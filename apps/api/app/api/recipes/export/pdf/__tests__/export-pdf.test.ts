@@ -36,7 +36,7 @@ beforeEach(() => {
     { title: "Tiramisú", portions: 6, contentJson: { ingredients: ["mascarpone"], method: [] } },
   ]);
   render.renderHtmlToPdf.mockReset().mockResolvedValue(Buffer.from("%PDF-1.4 fake"));
-  guard.requireAuth.mockReset().mockResolvedValue({ userId: "u1", restaurantId: "r1", role: "viewer" });
+  guard.requireAuth.mockReset().mockResolvedValue({ userId: "u1", restaurantId: "r1", role: "chef_executive" });
 });
 
 describe("GET /api/recipes/export/pdf", () => {
