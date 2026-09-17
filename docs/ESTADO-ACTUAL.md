@@ -20,7 +20,7 @@ Punto de entrada al retomar el proyecto. Entre el 15 y el 17 de septiembre: prue
 - API pública: `https://atelier-2-0-mu.vercel.app`. Despliegue verificado: `dpl_3N5eiTeGEywzzSKn2UVPKpikzfzi` (14 de septiembre, memoria, autenticación y parches de ejecución). `/api/health` devuelve HTTP 200; la migración de memoria está aplicada. Los despliegues posteriores publican el mismo código de la app.
 - Vercel, verificado el 15 de septiembre con la sesión de la CLI: plan Hobby, Fluid Compute activo, límite de 300 segundos por función y Node 24, así que el cron de memoria dispone de sus 300 segundos. Solo `main` despliega (`git.deploymentEnabled` en `apps/api/vercel.json`): las vistas previas de ramas fallaban desde julio porque su entorno no tiene `DATABASE_URL`, y CI ya valida cada PR. Ese mismo día las claves de Apple quedaron solo en Production y el acceso al almacén de fotos en Production y Development (valor comprobado intacto); Preview ya no guarda ninguna variable.
 - Android 0.1.0, versionCode **6** (commit `e305004`, EAS `63734b36-9f7e-4157-8b89-c4021821daef`): [APK](https://expo.dev/artifacts/eas/bt8AcEIWIYTadfOiTt-AY5nbBVVRwMqcPzygyy5voAA.apk), 111.361.686 bytes, descarga comprobada. **Es el enlace bueno para los chefs Android.**
-- iPhone 0.1.0, build **12** (commit `e305004`, EAS `30031daf-f36c-49b8-9505-7295276f341c`) subida a Apple, **sin revisión externa pedida a propósito** mientras siga la ronda de arreglos: queda para el grupo interno. El [enlace público](https://testflight.apple.com/join/kY83jmnk) sigue sirviendo la build **11**, que ya abre bien y trae el arranque obligatorio. La build 9 y anteriores se cierran al abrir: no repartirlas.
+- iPhone 0.1.0, build **12** (commit `e305004`, EAS `30031daf-f36c-49b8-9505-7295276f341c`, Apple `2a6f5618-ec5d-42c6-9d91-874542900d25`): en los grupos Equipo y Chefs e `IN_BETA_TESTING` desde el 17-09. **El [enlace público](https://testflight.apple.com/join/kY83jmnk) ya la sirve**, con los permisos nuevos. La build 9 y anteriores se cierran al abrir: no repartirlas.
 - Historia de las builds 10 a 12 (cierre al arrancar, arranque obligatorio y permisos), con causas y evidencias: [Ronda móvil y permisos](RONDA-MOVIL-Y-PERMISOS-2026-09-17.md).
 - No hace falta reconstruir las apps por los cambios de la landing o por guardar el repositorio. La prueba física con los chefs sigue siendo necesaria.
 - Acceso actual conservado: Android Google; iPhone Apple y Google. Creador del restaurante administrador; invitado Lector hasta que el administrador cambie su categoría.
@@ -50,7 +50,7 @@ Punto de entrada al retomar el proyecto. Entre el 15 y el 17 de septiembre: prue
 
 ## Pendiente
 
-- **Pedir la revisión externa de la build 12** para que el enlace público deje de servir la 11. Importa ahora: el servidor ya aplica los permisos nuevos y Mariasole es sous-chef, así que con la build 11 verá botones de Creativo, menús y PDF que responden «no tienes permiso». Receta en [Ronda móvil y permisos](RONDA-MOVIL-Y-PERMISOS-2026-09-17.md).
+- Que los chefs actualicen a la build 12 desde TestFlight (Android, al APK versionCode 6): hasta entonces una app vieja muestra botones que el servidor ya rechaza.
 - Decidir si se simplifica la coordinación del aprendizaje nocturno. Recomendación: dejarla mientras funcione; las pruebas de integración permiten simplificarla después sin trabajar a ciegas.
 - Antes del 15-12-2026, revisar las excepciones de `osv-scanner.toml`. Actualizar vitest a la versión 3 elimina dos.
 

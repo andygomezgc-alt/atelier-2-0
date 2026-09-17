@@ -7,7 +7,7 @@ Registro de la ronda completa: pruebas de integración en CI, despliegues de Ver
 | Pieza | Estado | Identificadores |
 | --- | --- | --- |
 | Servidor | Desplegado desde `main` (`e305004`), salud 200 | Solo `main` despliega (`git.deploymentEnabled`) |
-| iPhone | Build **12** subida a Apple, **sin revisión externa pedida**; el enlace público sigue en la **11** | EAS `30031daf-f36c-49b8-9505-7295276f341c`; build 11 = EAS `8f42657e…`, Apple `a6b96744…` |
+| iPhone | Build **12** aprobada y en el enlace público desde el 17-09 | EAS `30031daf-f36c-49b8-9505-7295276f341c`, Apple `2a6f5618-ec5d-42c6-9d91-874542900d25` |
 | Android | APK **versionCode 6** | EAS `63734b36-9f7e-4157-8b89-c4021821daef` · [APK](https://expo.dev/artifacts/eas/bt8AcEIWIYTadfOiTt-AY5nbBVVRwMqcPzygyy5voAA.apk) (111.361.686 bytes) |
 | TestFlight | Enlace inalterado | https://testflight.apple.com/join/kY83jmnk (grupo externo «Chefs», id `2e8fc706-fb85-4543-b841-5b5a6628def9`) |
 
@@ -90,6 +90,6 @@ Tiempos reales: compilar iOS 7-10 min, Android 10-50 min, **cola de envío de EA
 - **Gaia con Google: hecho** (sesión del 16-09, 21:44). Su cuenta duplicada con Apple sigue existiendo, vacía; borrarla es opcional.
 - **Créditos de Anthropic: cargados**, 23,84 USD. Recarga automática todavía desactivada.
 - **Presupuesto del piloto en marcha:** periodo 16-09 a 16-10-2026, 0,01 € gastados de 50 €, tres generaciones (dos del Diario, una extracción GLM).
-- **Sigue pendiente: la revisión externa de la build 12.** Con el servidor aplicando los permisos nuevos y Mariasole como sous-chef, la build 11 le muestra botones que responden «no tienes permiso».
+- **Revisión externa de la build 12: pedida y aprobada el 17-09 a las 21:14Z** (`IN_BETA_TESTING`, grupos Equipo y Chefs). El enlace público ya sirve la 12; solo falta que cada chef actualice.
 - Aparcado: la coordinación del aprendizaje nocturno creció en vez de simplificarse (`worker.ts` 77→299 líneas, 8 columnas nuevas). Recomendación: dejarla mientras funcione.
 - Recordatorio: revisar las excepciones de `osv-scanner.toml` antes del 15-12-2026.
