@@ -338,13 +338,15 @@ export default function ProductosScreen() {
   const canManage = can(role, "edit_restaurant");
   const headerRight = (
     <View style={styles.headerActions}>
-      <Pressable
-        hitSlop={8}
-        onPress={() => setExportOpen(true)}
-        accessibilityLabel={t("export_a11y")}
-      >
-        <Ionicons name="share-outline" size={20} color={colors.terracota} />
-      </Pressable>
+      {can(role, "export_pdf") ? (
+        <Pressable
+          hitSlop={8}
+          onPress={() => setExportOpen(true)}
+          accessibilityLabel={t("export_a11y")}
+        >
+          <Ionicons name="share-outline" size={20} color={colors.terracota} />
+        </Pressable>
+      ) : null}
       {canCreate ? (
         <Pressable
           hitSlop={8}

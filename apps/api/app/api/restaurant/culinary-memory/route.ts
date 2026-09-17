@@ -4,7 +4,9 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { getCulinaryMemory, patchCulinaryMemory, MemoryConflict } from "@/lib/culinary-memory/service";
 export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
-  const ctx = await requireAuth(req, "view_staff_recipe");
+  // Nuestra cocina la consultan quienes cocinan (el Lector no accede, como antes
+  // de que "view_staff_recipe" incluyera a los Lectores).
+  const ctx = await requireAuth(req, "capture_idea");
   if (isNextResponse(ctx)) return ctx;
   if (!ctx.restaurantId) return NextResponse.json({ error: "Not in a restaurant" }, { status: 403 });
   return NextResponse.json(await getCulinaryMemory(ctx.restaurantId, can(ctx.role, "approve_recipe")));

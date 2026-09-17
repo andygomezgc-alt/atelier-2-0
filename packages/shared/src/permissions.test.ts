@@ -8,16 +8,17 @@ const EXPECTED: Record<Permission, ReadonlyArray<typeof ALL_ROLES[number]>> = {
   edit_recipe: ["admin", "chef_executive", "sous_chef"],
   advance_to_test: ["admin", "chef_executive", "sous_chef"],
   approve_recipe: ["admin", "chef_executive"],
-  create_menu: ["admin", "chef_executive", "sous_chef"],
-  edit_menu: ["admin", "chef_executive", "sous_chef"],
+  create_menu: ["admin", "chef_executive"],
+  edit_menu: ["admin", "chef_executive"],
   delete_menu: ["admin"],
-  view_staff_recipe: ["admin", "chef_executive", "sous_chef"],
-  export_pdf: ["admin", "chef_executive", "sous_chef", "viewer"],
+  view_staff_recipe: ["admin", "chef_executive", "sous_chef", "viewer"],
+  export_pdf: ["admin", "chef_executive"],
   view_invite_code: ["admin"],
   manage_members: ["admin"],
   change_role: ["admin"],
   edit_restaurant: ["admin"],
   manage_products: ["admin", "chef_executive", "sous_chef"],
+  use_creative_chat: ["admin", "chef_executive"],
 };
 
 describe("permissions matrix (brief sec. 5)", () => {

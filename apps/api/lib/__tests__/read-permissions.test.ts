@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { can, type Permission } from "@atelier/shared";
-const h = vi.hoisted(() => ({ role: "viewer" as "viewer" | "admin", restaurant: vi.fn(), recipe: vi.fn() }));
+const h = vi.hoisted(() => ({ role: "viewer" as "viewer" | "sous_chef" | "chef_executive" | "admin", restaurant: vi.fn(), recipe: vi.fn() }));
 vi.mock("@atelier/db", () => ({ prisma: { restaurant: { findUnique: h.restaurant }, recipe: { findUnique: h.recipe, findMany: h.recipe } } }));
 vi.mock("@/lib/permissions-guard", () => ({
   requireAuth: async (_req: unknown, permission?: Permission) => permission && !can(h.role, permission)
@@ -33,10 +33,19 @@ describe("server read permissions", () => {
     h.role = "admin";
     expect(await (await getRestaurant(req)).text()).toContain("PRIVATE123");
   });
-  it.each(["detail", "list", "pdf", "export"])("protege recetas: %s", async (kind) => {
-    h.recipe.mockResolvedValue(kind === "list" ? [] : null);
-    const res = kind === "detail" ? await getRecipe(req, { params }) : kind === "list" ? await listRecipes(req) : kind === "pdf" ? await recipePdf(req, { params }) : await recipesPdf(req);
-    expect(res.status).toBe(403);
+  // 17-09-2026: el Lector ve y abre recetas, pero no las exporta; el sous-chef
+  // cocina y tampoco exporta. Exportar es del admin y del chef ejecutivo.
+  it.each(["viewer", "sous_chef"] as const)("exportar recetas está cerrado para %s", async (role) => {
+    h.role = role;
+    for (const salida of [await recipePdf(req, { params }), await recipesPdf(req)]) {
+      expect(salida.status).toBe(403);
+    }
     expect(h.recipe).not.toHaveBeenCalled();
+  });
+  it.each(["detail", "list"])("el Lector pasa el permiso de lectura: %s", async (kind) => {
+    h.recipe.mockResolvedValue(kind === "list" ? [] : null);
+    const res = kind === "detail" ? await getRecipe(req, { params }) : await listRecipes(req);
+    expect(res.status).not.toBe(403);
+    expect(h.recipe).toHaveBeenCalled();
   });
 });

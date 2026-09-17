@@ -1,4 +1,4 @@
-import { normalizeChatMode, type ChatMode } from "@atelier/shared";
+import { can, normalizeChatMode, type ChatMode } from "@atelier/shared";
 import { useEffect, useState } from "react";
 import {
   Image,
@@ -302,11 +302,13 @@ export function ProfileSheet({ open, onClose }: Props) {
                   active={normalizeChatMode(user.defaultModel) === "daily"}
                   onPress={() => handleModelChange("daily")}
                 />
-                <ModelOption
-                  label={t("model_creative")}
-                  active={normalizeChatMode(user.defaultModel) === "creative"}
-                  onPress={() => handleModelChange("creative")}
-                />
+                {can(user.role, "use_creative_chat") ? (
+                  <ModelOption
+                    label={t("model_creative")}
+                    active={normalizeChatMode(user.defaultModel) === "creative"}
+                    onPress={() => handleModelChange("creative")}
+                  />
+                ) : null}
               </Section>
             </>
           ) : null}
