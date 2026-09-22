@@ -86,7 +86,9 @@ async function* streamChatProvider(input: ChatInput, onFinalUsage: (usage: AiUsa
       model: config.model, max_tokens: config.maxTokens,
       system: input.system, messages: buildMessageBlocks(messages),
       thinking: { type: "adaptive", display: "omitted" },
-      output_config: { effort: "high" },
+      // Opus 5.5 razona más que Opus 5 en el mismo nivel: en medio iguala a
+      // Opus 5 en alto con menos tokens, así que responde antes y cuesta menos.
+      output_config: { effort: "medium" },
     }, { signal });
     let usage = emptyUsage();
     for await (const event of upstream) {
@@ -111,6 +113,12 @@ async function* streamChatProvider(input: ChatInput, onFinalUsage: (usage: AiUsa
     };
     if (Number.isSafeInteger(u.input_tokens) && Number.isSafeInteger(u.output_tokens) && finalUsage.inputTokens > 0) onFinalUsage(finalUsage);
     yield { type: "usage", usage: finalUsage };
+    // Los filtros de seguridad del proveedor pueden negarse (en Opus 5.5 hay
+    // uno de biología): se registra la categoría y el chef recibe un aviso.
+    if (final.stop_reason === "refusal") {
+      console.warn(JSON.stringify({ evt: "ai_refusal", provider: config.provider, modelId: config.model, category: final.stop_details?.category ?? null }));
+      throw new Error("chat_refused");
+    }
     if (final.stop_reason !== "end_turn" || !text.trim()) throw new Error("chat_response_incomplete");
     return;
   }

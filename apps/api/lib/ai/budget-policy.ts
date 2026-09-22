@@ -25,6 +25,8 @@ export function budgetErrorResponse(error: unknown): Response | undefined {
 const EUR_ALLOWANCE_PER_USD = 1.25;
 export type Rate = { input: number; output: number; cached: number; cacheWrite: number };
 export function modelRate(model: string, now = new Date()): Rate {
+  // Opus 5.5 lee la caché a 0,05× la entrada; los demás modelos a 0,1×.
+  if (model === "claude-opus-5-5") return { input: 4, output: 20, cached: .2, cacheWrite: 5 };
   if (model === "claude-opus-5") return { input: 5, output: 25, cached: .5, cacheWrite: 6.25 };
   if (model === "gemini-3.8-flash") {
     const factor = now < new Date("2027-01-01T00:00:00Z") ? 1 : 2;

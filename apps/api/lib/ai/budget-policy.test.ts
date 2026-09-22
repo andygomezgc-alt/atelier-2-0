@@ -63,6 +63,10 @@ describe("cost accounting", () => {
   it("separates Opus uncached, five-minute writes and reads", () => {
     expect(usageMicros(modelRate("claude-opus-5", now), { inputTokens: 6000, outputTokens: 6000, cachedTokens: 2000, cacheWriteTokens: 1000, reasoningTokens: 4000 })).toBe(215313);
   });
+  it("prices Opus 5.5 below Opus 5, with cache reads at 0.05x", () => {
+    expect(usageMicros(modelRate("claude-opus-5-5", now), { inputTokens: 6000, outputTokens: 6000, cachedTokens: 2000, cacheWriteTokens: 1000, reasoningTokens: 4000 })).toBe(171750);
+    expect(reservationMicros("claude-opus-5-5", 10000, 16384, now).micros).toBe(472100);
+  });
   it("does not count reasoning twice", () => {
     expect(usageMicros(modelRate("gemini-3.8-flash", now), { inputTokens: 4000, outputTokens: 1500, cachedTokens: 0, reasoningTokens: 1000 })).toBe(10782);
   });

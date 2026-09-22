@@ -248,7 +248,10 @@ export async function POST(
           // Provider errors arrive as deeply-nested JSON strings. Try to peel
           // one or two layers so the toast on mobile shows something readable
           // instead of "{\"error\":{\"message\":\"{\\n  \\\"error\\\":...".
-          const message = extractFriendlyError(rawMessage);
+          // Las apps instaladas no conocen `chat_refused` y muestran el texto tal cual.
+          const message = rawMessage === "chat_refused"
+            ? "El Creativo no puede responder a esta consulta. Reformúlala o pruébala en el Diario."
+            : extractFriendlyError(rawMessage);
           console.error(
             JSON.stringify({
               evt: "ai_stream_error",
