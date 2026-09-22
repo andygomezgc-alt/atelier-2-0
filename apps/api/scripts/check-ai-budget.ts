@@ -34,7 +34,7 @@ async function main() {
     const telemetry = await prisma.aiUsage.findUniqueOrThrow({ where: { userId_day: { userId, day: utcDay() } } });
     assert.equal(telemetry.requestCount, AI_DAILY_LIMIT, "Chat telemetry does not consume technical-action quota");
     assert.equal(telemetry.inputTokens, 1000);
-    const creative = { ...config, task: "creative" as const, model: "claude-opus-5" };
+    const creative = { ...config, task: "creative" as const, model: "claude-opus-5-5" };
     await prisma.aiChatQuota.update({ where: { userId }, data: { creativeAt: Array.from({ length: 7 }, () => new Date(+now - 1000)) } });
     attempts = await Promise.allSettled(Array.from({ length: 5 }, () => reserveGeneration(creative, 1000, userId, now, budgetId)));
     assert.equal(attempts.filter(r => r.status === "fulfilled").length, 1, "Exactly eight Creative responses under concurrency");

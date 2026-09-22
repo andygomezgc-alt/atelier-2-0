@@ -312,6 +312,14 @@ describe("POST chat — persistencia", () => {
     expect(assistantCreate()).toBeUndefined();
     if (id !== "preview") expect(db.conversation.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: { generationId: null, generationStartedAt: null } }));
   });
+
+  it("turns a provider refusal into readable text for installed apps", async () => {
+    streamMock.mockImplementation(async function* () { throw new Error("chat_refused"); });
+    const wire = await (await post({ content: "receta", model: "creative" })).text();
+    expect(wire).toContain('"type":"error","message":"El Creativo no puede responder a esta consulta. Reformúlala o pruébala en el Diario."');
+    expect(wire).not.toContain('"type":"done"');
+    expect(assistantCreate()).toBeUndefined();
+  });
 });
 
 describe("POST chat — selección de proveedor", () => {
@@ -336,7 +344,7 @@ describe("POST chat — selección de proveedor", () => {
     expect(buildSystem).toHaveBeenCalledWith(expect.anything(), [{ title: "Receta reciente", state: "approved" }], null, null);
   });
 
-  it.each([["daily", "gemini-3.8-flash"], ["sonnet", "gemini-3.8-flash"], ["haiku", "gemini-3.8-flash"], ["creative", "claude-opus-5"], ["opus", "claude-opus-5"]])("%s conserva el modelo real en la conversación", async (model, expected) => {
+  it.each([["daily", "gemini-3.8-flash"], ["sonnet", "gemini-3.8-flash"], ["haiku", "gemini-3.8-flash"], ["creative", "claude-opus-5-5"], ["opus", "claude-opus-5-5"]])("%s conserva el modelo real en la conversación", async (model, expected) => {
     streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
     expect(await (await post({ content: "receta", model })).text()).toContain('"type":"done"');
     expect(streamMock.mock.calls[0]![0].model).toBe(model);

@@ -89,7 +89,7 @@ describe("Opus chat adapter", () => {
     const events = await collect(streamChat(input("creative")));
     expect(constructor).toHaveBeenCalledWith(expect.objectContaining({ maxRetries: 0 }));
     const request = opusStream.mock.calls[0]![0];
-    expect(request).toMatchObject({ model: "claude-opus-5", max_tokens: 16384, output_config: { effort: "high" } });
+    expect(request).toMatchObject({ model: "claude-opus-5-5", max_tokens: 16384, output_config: { effort: "medium" } });
     expect(request.messages.at(-1).content[0].cache_control).toEqual({ type: "ephemeral" });
     expect(events.at(-1)).toMatchObject({ type: "usage", usage: { inputTokens: 60, outputTokens: 90, cachedTokens: 30 } });
   });
@@ -101,6 +101,17 @@ describe("Opus chat adapter", () => {
     const events: ChatEvent[] = [];
     await expect((async () => { for await (const e of streamChat(input("opus"))) events.push(e); })()).rejects.toThrow("incomplete");
     expect(events.at(-1)).toMatchObject({ type: "usage", usage: { outputTokens: 16384 } });
+  });
+  it("tells a provider refusal apart from a truncated reply and still settles its usage", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    opusStream.mockReturnValue({
+      async *[Symbol.asyncIterator]() {},
+      finalMessage: async () => ({ stop_reason: "refusal", stop_details: { type: "refusal", category: "bio", explanation: null }, usage: { input_tokens: 10, output_tokens: 3 } }),
+    });
+    await expect(collect(streamChat(input("creative")))).rejects.toThrow("chat_refused");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"category":"bio"'));
+    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 10, outputTokens: 3 }));
+    warn.mockRestore();
   });
 });
 

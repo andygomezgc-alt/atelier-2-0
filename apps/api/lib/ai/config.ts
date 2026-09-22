@@ -5,7 +5,7 @@ export type AiTask = "daily" | "creative" | "extraction" | "menuStyle" | "menuTh
 
 const DEFAULTS = {
   daily: { provider: "gemini", model: "gemini-3.8-flash", env: "AI_CHAT_DAILY_MODEL", maxTokens: 8192, timeoutMs: 240_000 },
-  creative: { provider: "anthropic", model: "claude-opus-5", env: "AI_CHAT_CREATIVE_MODEL", maxTokens: 16384, timeoutMs: 240_000 },
+  creative: { provider: "anthropic", model: "claude-opus-5-5", env: "AI_CHAT_CREATIVE_MODEL", maxTokens: 16384, timeoutMs: 240_000 },
   extraction: { provider: "zai", model: "glm-5.3-flash", env: "AI_EXTRACTION_MODEL", maxTokens: 8192, timeoutMs: 45_000 },
   menuStyle: { provider: "zai", model: "glm-5.3-flash", env: "AI_MENU_STYLE_MODEL", maxTokens: 4096, timeoutMs: 60_000 },
   menuTheme: { provider: "zai", model: "glm-5.3-flash", env: "AI_MENU_THEME_MODEL", maxTokens: 16384, timeoutMs: 80_000 },

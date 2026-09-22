@@ -6,7 +6,7 @@ describe("AI routing configuration", () => {
     expect(chatConfig(mode)).toMatchObject({ provider: "gemini", model: "gemini-3.8-flash" });
   });
   it.each(["creative", "opus"] as const)("routes %s to Opus", mode => {
-    expect(chatConfig(mode)).toMatchObject({ provider: "anthropic", model: "claude-opus-5" });
+    expect(chatConfig(mode)).toMatchObject({ provider: "anthropic", model: "claude-opus-5-5" });
   });
   it("routes all background tasks to GLM with bounded budgets", () => {
     for (const task of ["extraction", "menuStyle", "menuTheme", "memory"] as const) {
