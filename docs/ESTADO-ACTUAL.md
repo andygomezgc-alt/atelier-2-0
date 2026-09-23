@@ -29,7 +29,9 @@ Punto de entrada al retomar el proyecto. **El 22 y 23 de septiembre el chat Crea
 ## IA y copias
 
 - Piloto inicial de unos cinco chefs, presupuesto común de **50 EUR para un mes**, 140 mensajes cotidianos y 8 creativos por chef y periodo de siete días. La cuenta principal está exenta de la cuota de mensajes, pero consume el mismo presupuesto común.
-- Modelos elegidos: Gemini para el Diario, **Opus 5.5 para el Creativo** (`claude-opus-5-5`, esfuerzo medio, desde el 23-09) y GLM para las otras tareas compatibles. En producción, el modelo del Creativo lo fija `AI_CHAT_CREATIVE_MODEL` en Vercel, y la contabilidad del presupuesto rechaza cualquier modelo sin tarifa registrada en `apps/api/lib/ai/budget-policy.ts`. No cambiar proveedores ni gastar tokens para una sincronización.
+- Modelos elegidos: Gemini para el Diario, **Opus 5.5 para el Creativo** (`claude-opus-5-5`, esfuerzo medio, desde el 23-09) y GLM para las otras tareas compatibles. No cambiar proveedores ni gastar tokens para una sincronización.
+- El cambio a Opus 5.5 se comprobó en producción el 23-09 con la primera respuesta real del Creativo: la dio `claude-opus-5-5` en 22 s y se cobró exactamente con su tarifa, 0,059 € de presupuesto. La última respuesta con Opus 5 había costado 0,087 € y tardado 37 s. Para volver atrás basta con el «Instant Rollback» de Vercel.
+- En producción, el modelo del Creativo lo fija `AI_CHAT_CREATIVE_MODEL` en Vercel. La contabilidad del presupuesto rechaza cualquier modelo sin tarifa registrada en `apps/api/lib/ai/budget-policy.ts`.
 - Copia diaria cifrada activa a las 09:00 de Italia. La primera ejecución por horario del 12 de septiembre creó `atelier-2026-09-12T07-01-29-659Z-05586979.atbak` (1.941.037 bytes); archivo y manifiesto observados en Drive y estado `cloud_confirmed` a las 07:02:41 UTC. Se conservan cuatro copias; no hay borrado automático durante el piloto.
 - Clave de recuperación custodiada por separado en Google Password Manager; nunca incluirla en Git ni en Drive junto a las copias. [Operación de copias](COPIAS-DIARIAS-2026-09-11.md).
 
@@ -50,7 +52,6 @@ Punto de entrada al retomar el proyecto. **El 22 y 23 de septiembre el chat Crea
 
 ## Pendiente
 
-- Comprobar en producción, en solo lectura, la primera respuesta real del Creativo con Opus 5.5: debe guardar `modelId = claude-opus-5-5` y cobrarse con su tarifa. Si hiciera falta volver atrás, basta con el «Instant Rollback» de Vercel.
 - Que los chefs actualicen a la build 12 desde TestFlight (Android, al APK versionCode 6): hasta entonces una app vieja muestra botones que el servidor ya rechaza.
 - Decidir si se simplifica la coordinación del aprendizaje nocturno. Recomendación: dejarla mientras funcione; las pruebas de integración permiten simplificarla después sin trabajar a ciegas.
 - Antes del 15-12-2026, revisar las excepciones de `osv-scanner.toml`. Actualizar vitest a la versión 3 elimina dos.
