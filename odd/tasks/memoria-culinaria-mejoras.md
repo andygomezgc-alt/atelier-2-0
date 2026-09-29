@@ -77,5 +77,15 @@ Olas (archivos disjuntos en paralelo): O1 = M3 ‖ M4 · O2 = M1 ‖ M6 · O3 = 
 - **Cierre (padre):** api tsc OK y 758/758; móvil tsc OK y 156/156; shared tsc OK y 257/257; i18n tsc OK; `expo export --platform android` OK (bundle generado, `dist` borrado).
 - **Pendiente:** 4 revisiones RDD abiertas, bloqueadas por el 401 del CLI `claude`; `memory.integration.test.ts` sin correr (requiere Postgres).
 
+- **RDD tras el login de Andy en el CLI `claude`:**
+  - `review-2c728801199705bd` (M4, riesgo alto, 4 lentes): APROBADA y con acuse. Deja 8 avisos no bloqueantes, que quedan como seguimiento:
+    - no se registra qué tendencias se descartan;
+    - una tendencia mal formada de una categoría excluida cuenta como propuesta;
+    - aspectos de legibilidad en worker.ts:168 y provider.ts;
+    - el límite inferior en el script de comprobación.
+  - `review-f16f403dd01d5e3b` (M3–M2, riesgo medio, 1 lente): APROBADA y con acuse. Los 2 avisos se verificaron y no aplican en la práctica: el `catch` libera el turno, el historial nunca está vacío y solo existen los roles user/assistant.
+  - `review-91284509b99b37ed` (`.gitignore` de Andy): APROBADA y con acuse.
+  - Siguen abiertas 3 revisiones de estados intermedios del árbol que ya no existen; no bloquean nada.
+
 ## Siguiente paso
-Andy: iniciar sesión en el CLI `claude` para correr las revisiones pendientes; decidir PR, merge y deploy de la rama. Entrega 2 ("Notas del chef") pendiente.
+Andy decide PR, merge y deploy. La entrega 2 ("Notas del chef") queda pendiente.
