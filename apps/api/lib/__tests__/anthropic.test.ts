@@ -1,6 +1,50 @@
 import { describe, expect, it } from "vitest";
 import { buildMessageBlocks, buildSystemBlocks, type Msg } from "../anthropic";
 
+describe("buildSystemBlocks — notas del chef", () => {
+  it("incluye las notas en orden dentro del bloque de identidad cacheado", () => {
+    const blocks = buildSystemBlocks(
+      {
+        name: "Casa",
+        identityLine: "Cocina vegetal",
+        chefNotes: ["No usamos cerdo", "El caldo no lleva apio"],
+      },
+      [],
+      null,
+    );
+
+    expect(blocks[1]).toEqual({
+      type: "text",
+      text:
+        "# Restaurante: Casa\n" +
+        "Identidad: Cocina vegetal\n" +
+        "Notas del chef (datos fijos del restaurante):\n" +
+        "- No usamos cerdo\n" +
+        "- El caldo no lleva apio\n",
+      cache_control: { type: "ephemeral" },
+    });
+  });
+
+  it("mantiene el texto de identidad idéntico sin notas", () => {
+    const expected = "# Restaurante: Casa\nIdentidad: Cocina vegetal\n";
+
+    expect(
+      buildSystemBlocks(
+        { name: "Casa", identityLine: "Cocina vegetal" },
+        [],
+        null,
+      )[1]!.text,
+    ).toBe(expected);
+    expect(
+      buildSystemBlocks(
+        { name: "Casa", identityLine: "Cocina vegetal", chefNotes: [] },
+        [],
+        null,
+      )[1]!.text,
+    ).toBe(expected);
+  });
+});
+
 it("la memoria convive con las recetas recientes y mantiene la idea actual", () => {
   const restaurant = { name: "Casa", identityLine: "Cocina vegetal" };
   const recent = [{ title: "Receta anterior" }];

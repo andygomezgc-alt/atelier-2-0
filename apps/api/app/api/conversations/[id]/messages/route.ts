@@ -83,7 +83,7 @@ export async function POST(
     error: "El asistente todavía no está configurado. Inténtalo más tarde.", code: "ai_provider_unconfigured",
   }, { status: 503 });
 
-  let restaurant: { name: string; identityLine: string | null } | null = null;
+  let restaurant: { name: string; identityLine: string | null; chefNotes?: string[] } | null = null;
   let recentRecipes: { title: string }[] = [];
   let culinaryMemory: string | null = null;
   let messages: Msg[] = [];
@@ -132,7 +132,7 @@ export async function POST(
     turn = started;
 
     // Build context: recent recipes + pinned idea.
-    const [r, history, total, recent, preparedMemory] = await Promise.all([
+    const [r, history, total, recent, notes, preparedMemory] = await Promise.all([
       prisma.restaurant.findUnique({
         where: { id: ctx.restaurantId },
         select: { name: true, identityLine: true },
@@ -159,12 +159,18 @@ export async function POST(
         take: 8,
         select: { title: true },
       }),
+      prisma.chefNote.findMany({
+        where: { restaurantId: ctx.restaurantId },
+        orderBy: { createdAt: "asc" },
+        take: 10,
+        select: { text: true },
+      }),
       chatMemory(ctx.restaurantId).catch(() => null),
     ]);
 
     if (!r) throw new Error("Restaurant not found");
 
-    restaurant = r;
+    restaurant = { ...r, chefNotes: notes.map((note) => note.text) };
     recentRecipes = recent;
     culinaryMemory = preparedMemory || null;
     messages = stableHistoryWindow(
