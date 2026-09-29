@@ -308,6 +308,7 @@ export const it: EsDict = {
     'Non riesco ad aprire il documento. In Google Docs: Condividi → "Chiunque abbia il link".',
   error_forbidden: "Non hai i permessi per farlo.",
   error_plan_inactive: "Il tuo piano è inattivo. Attivalo per continuare a creare.",
+  error_chef_notes_limit: "Ci sono già 10 note. Eliminane una per aggiungerne un'altra.",
   onboard_choose_title: "Come vuoi iniziare?",
   onboard_create_title: "Crea il mio ristorante",
   onboard_create_sub: "Sarai admin del gruppo",

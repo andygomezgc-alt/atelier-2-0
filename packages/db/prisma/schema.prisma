@@ -134,6 +134,7 @@ enum PlanStatus {
 model Restaurant {
   culinaryMemory CulinaryMemory?
   culinaryMemoryRuns CulinaryMemoryRun[]
+  chefNotes ChefNote[]
   id              String   @id @default(cuid())
   name            String
   identityLine    String?
@@ -535,6 +536,17 @@ model CulinaryMemoryRun {
   publishedTrends Json?
   @@index([restaurantId, createdAt])
   @@index([createdAt])
+}
+
+// Datos fijos que el chef decide recordar desde el chat ("no usamos cerdo").
+// Máximo 10 por restaurante (CHEF_NOTES_MAX en @atelier/shared, se aplica en la API).
+model ChefNote {
+  id           String @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  text         String @db.VarChar(160)
+  createdAt    DateTime @default(now())
+  @@index([restaurantId, createdAt])
 }
 
 model MenuStyleVersion {
