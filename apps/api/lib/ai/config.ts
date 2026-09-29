@@ -9,7 +9,7 @@ const DEFAULTS = {
   extraction: { provider: "zai", model: "glm-5.3-flash", env: "AI_EXTRACTION_MODEL", maxTokens: 8192, timeoutMs: 45_000 },
   menuStyle: { provider: "zai", model: "glm-5.3-flash", env: "AI_MENU_STYLE_MODEL", maxTokens: 4096, timeoutMs: 60_000 },
   menuTheme: { provider: "zai", model: "glm-5.3-flash", env: "AI_MENU_THEME_MODEL", maxTokens: 16384, timeoutMs: 80_000 },
-  memory: { provider: "zai", model: "glm-5.3-flash", env: "CULINARY_MEMORY_MODEL", maxTokens: 4096, timeoutMs: 45_000 },
+  memory: { provider: "zai", model: "glm-5.3-flash", env: "CULINARY_MEMORY_MODEL", maxTokens: 8192, timeoutMs: 45_000 },
 } as const;
 
 export const PROVIDER_KEY_ENV: Record<AiProvider, string> = {

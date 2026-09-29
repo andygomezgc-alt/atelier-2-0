@@ -10,12 +10,29 @@ describe("memory provider", () => {
     vi.stubGlobal("fetch", fetcher); const usage = vi.fn();
     expect(await generateMemory(input, usage)).toEqual({ trends: [], rejected: 0 });
     expect(usage).toHaveBeenCalledWith({ inputTokens: 40, outputTokens: 10, reasoningTokens: 0 });
-    expect(JSON.parse(fetcher.mock.calls[0]![1].body)).toMatchObject({ max_tokens: 4096, thinking: { type: "disabled" }, response_format: { type: "json_object" } });
+    expect(JSON.parse(fetcher.mock.calls[0]![1].body)).toMatchObject({ max_tokens: 8192, thinking: { type: "disabled" }, response_format: { type: "json_object" } });
   });
   it("respuesta truncada se rechaza y se contabiliza, sin reintento", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({ choices: [{ finish_reason: "length" }], usage: { completion_tokens: 1200 } }));
     vi.stubGlobal("fetch", fetcher); const usage = vi.fn();
     await expect(generateMemory(input, usage)).rejects.toThrow("memory_response_incomplete");
+    expect(fetcher).toHaveBeenCalledTimes(1); expect(usage).toHaveBeenCalledOnce();
+  });
+  it("usa la configuración real de memoria con razonamiento y 8192 tokens", async () => {
+    vi.stubEnv("CULINARY_MEMORY_MODEL", ""); vi.stubEnv("AI_GLM_MODEL", "");
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ choices: [{ finish_reason: "stop", message: { content: '{"trends":[]}' } }], usage: { prompt_tokens: 40, completion_tokens: 10 } }));
+    vi.stubGlobal("fetch", fetcher);
+    await generateMemory(input, vi.fn());
+    const body = JSON.parse(fetcher.mock.calls[0]![1].body);
+    expect(body).toMatchObject({ model: "glm-5.3-flash", max_tokens: 8192, reasoning_effort: "low" });
+    expect(body.thinking).toEqual({ type: "enabled", clear_thinking: true });
+  });
+  it("respuesta truncada con la configuración real se rechaza como salida inválida", async () => {
+    vi.stubEnv("CULINARY_MEMORY_MODEL", ""); vi.stubEnv("AI_GLM_MODEL", "");
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ choices: [{ finish_reason: "length" }], usage: { completion_tokens: 1200 } }));
+    vi.stubGlobal("fetch", fetcher); const usage = vi.fn();
+    await expect(generateMemory(input, usage)).rejects.toThrow("memory_response_incomplete");
+    expect(JSON.parse(fetcher.mock.calls[0]![1].body).model).toBe("glm-5.3-flash");
     expect(fetcher).toHaveBeenCalledTimes(1); expect(usage).toHaveBeenCalledOnce();
   });
   it("pide al menos dos recetas distintas por tendencia en el prompt y en el esquema", async () => {
