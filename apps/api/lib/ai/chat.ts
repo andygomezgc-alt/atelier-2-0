@@ -10,10 +10,10 @@ export type ChatEvent = { type: "delta"; text: string } | { type: "usage"; usage
 type ChatInput = { model?: ChatModelSelection; system: ReturnType<typeof buildSystemBlocks>; messages: Msg[]; signal: AbortSignal; userId?: string };
 
 /** Bound history by size as well as count, retaining whole recent exchanges. */
-export function boundedChatHistory(messages: Msg[], maxChars = 40_000): Msg[] {
+export function boundedChatHistory(messages: Msg[], maxChars = 40_000, maxMessages = 20): Msg[] {
   const selected: Msg[] = [];
   let chars = 0;
-  for (const message of messages.slice(-20).reverse()) {
+  for (const message of messages.slice(-maxMessages).reverse()) {
     if (chars + message.content.length > maxChars) break;
     selected.unshift(message);
     chars += message.content.length;
@@ -21,6 +21,40 @@ export function boundedChatHistory(messages: Msg[], maxChars = 40_000): Msg[] {
   while (selected[0]?.role === "assistant") selected.shift();
   if (!selected.length) throw new Error("chat_context_too_long");
   return selected;
+}
+
+/**
+ * Ventana del historial recortada por bloques para que la caché del prompt
+ * siga acertando. Con una ventana deslizante el mensaje más viejo cambia en
+ * cada turno y el prefijo cacheado nunca coincide; aquí el primer mensaje solo
+ * se mueve en saltos de `step` (su índice absoluto es múltiplo de `step`) y se
+ * mantiene igual varios turnos seguidos.
+ *
+ * `messages` son los últimos mensajes en orden cronológico y `total` cuántos
+ * tiene la conversación entera, de modo que `messages[i]` es el mensaje
+ * absoluto `total - messages.length + i`. Toma el bloque más largo que cumpla
+ * `maxMessages` y `maxChars`; si ni el último bloque cabe, se queda con los
+ * mensajes más recientes que quepan.
+ */
+export function stableHistoryWindow(
+  messages: Msg[],
+  total: number,
+  { maxMessages = 20, maxChars = 40_000, step = 10 } = {},
+): Msg[] {
+  const all = Math.max(total, messages.length);
+  const offset = all - messages.length;
+  let window = messages;
+  for (let start = Math.ceil(Math.max(0, all - maxMessages) / step) * step; start < all; start += step) {
+    const block = messages.slice(Math.max(0, start - offset));
+    if (block.reduce((chars, message) => chars + message.content.length, 0) <= maxChars) {
+      window = block;
+      break;
+    }
+  }
+  // Red de seguridad y alternativa: recorta por tamaño, descarta los mensajes
+  // iniciales del asistente y falla si no queda nada. Con un bloque que ya
+  // cabe solo quita el asistente inicial.
+  return boundedChatHistory(window, maxChars, maxMessages);
 }
 
 /** SSE records can span UTF-8 chunks, multiple lines, and CRLF boundaries. */

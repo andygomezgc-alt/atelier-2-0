@@ -5,7 +5,7 @@ import { NextRequest } from "next/server";
 const { db, guard, quota, anthro, streamMock, memoryChat, buildSystem, PrismaClientKnownRequestError } = vi.hoisted(() => {
   const db = {
     conversation: { findUnique: vi.fn(), updateMany: vi.fn() },
-    message: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
+    message: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
     $transaction: vi.fn(),
     restaurant: { findUnique: vi.fn() },
     recipe: { findMany: vi.fn() },
@@ -76,7 +76,12 @@ vi.mock("@/lib/anthropic", async () => {
     MODEL_IDS: { haiku: "h", sonnet: "s", opus: "o" },
   };
 });
-vi.mock("@/lib/ai/chat", () => ({ streamChat: streamMock }));
+vi.mock("@/lib/ai/chat", async () => ({
+  streamChat: streamMock,
+  // La ventana del historial es lógica pura: corre de verdad para que el test
+  // compruebe lo que llega al modelo, no solo que la ruta la invoca.
+  stableHistoryWindow: (await vi.importActual<typeof import("@/lib/ai/chat")>("@/lib/ai/chat")).stableHistoryWindow,
+}));
 afterEach(() => vi.unstubAllEnvs());
 
 
@@ -119,7 +124,8 @@ beforeEach(() => {
     return stored.find(row => row.conversationId === where.conversationId_clientMessageId.conversationId && row.clientMessageId === where.conversationId_clientMessageId.clientMessageId) ?? null;
   });
   db.message.findFirst.mockReset().mockImplementation(async () => stored.at(-1) ?? null);
-  db.message.findMany.mockReset().mockResolvedValue([]);
+  db.message.findMany.mockReset().mockResolvedValue([{ role: "user", content: "buenas" }]);
+  db.message.count.mockReset().mockResolvedValue(1);
   db.restaurant.findUnique.mockReset().mockResolvedValue({ name: "Kokoo", identityLine: null });
   db.recipe.findMany.mockReset().mockResolvedValue([]);
   memoryChat.mockReset().mockResolvedValue(null);
@@ -319,6 +325,32 @@ describe("POST chat — persistencia", () => {
     expect(wire).toContain('"type":"error","message":"El Creativo no puede responder a esta consulta. Reformúlala o pruébala en el Diario."');
     expect(wire).not.toContain('"type":"done"');
     expect(assistantCreate()).toBeUndefined();
+  });
+});
+
+describe("POST chat — historial por bloques", () => {
+  // Mensaje `i` de la conversación: pares del chef, impares del asistente.
+  const stored = (i: number) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `m${i}` });
+
+  it("con 25 mensajes manda desde el índice 10 aunque haya traído 20 (5–24)", async () => {
+    // La consulta devuelve los 20 últimos, del más nuevo al más viejo.
+    db.message.findMany.mockResolvedValue(Array.from({ length: 20 }, (_, k) => stored(24 - k)));
+    db.message.count.mockResolvedValue(25);
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    await (await post({ content: "receta" })).text();
+    expect(db.message.count).toHaveBeenCalledWith({ where: { conversationId: "conv-1" } });
+    const sent = streamMock.mock.calls[0]![0].messages as { role: string; content: string }[];
+    expect(sent.map((m) => m.content)).toEqual(Array.from({ length: 15 }, (_, k) => `m${k + 10}`));
+    expect(sent[0]!.role).toBe("user");
+  });
+
+  it("con 20 mensajes o menos manda el historial completo", async () => {
+    db.message.findMany.mockResolvedValue(Array.from({ length: 7 }, (_, k) => stored(6 - k)));
+    db.message.count.mockResolvedValue(7);
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    await (await post({ content: "receta" })).text();
+    const sent = streamMock.mock.calls[0]![0].messages as { content: string }[];
+    expect(sent.map((m) => m.content)).toEqual(Array.from({ length: 7 }, (_, k) => `m${k}`));
   });
 });
 
