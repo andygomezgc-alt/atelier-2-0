@@ -276,6 +276,7 @@ export const ApiErrorCodeSchema = z.enum([
   "ai_creative_limit",
   "ai_provider_unconfigured",
   "memory_conflict",
+  "chef_notes_limit",
   "menu_style_invalid",
   "menu_style_not_configured",
   "menu_style_changed",

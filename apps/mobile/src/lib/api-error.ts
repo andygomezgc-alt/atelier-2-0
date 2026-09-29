@@ -30,6 +30,7 @@ const CODE_TO_KEY: Record<KnownApiErrorCode, TranslationKey> = {
   ai_creative_limit: "ai_creative_limit",
   ai_provider_unconfigured: "ai_provider_unconfigured",
   memory_conflict: "memory_conflict",
+  chef_notes_limit: "error_chef_notes_limit",
   menu_style_invalid: "menu_style_invalid",
   menu_style_not_configured: "menu_style_not_configured",
   menu_style_changed: "menu_style_changed",

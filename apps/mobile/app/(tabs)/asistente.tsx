@@ -22,6 +22,7 @@ import { Empty } from "@/src/components/Empty";
 import { NetworkError } from "@/src/components/NetworkError";
 import { PreviousChatsSheet } from "@/src/components/PreviousChatsSheet";
 import { ProfileSheet } from "@/src/components/ProfileSheet";
+import { RememberNoteSheet } from "@/src/components/RememberNoteSheet";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n, dateLocale } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
@@ -47,6 +48,7 @@ import { selection, tapLight } from "@/src/lib/haptics";
 import type { TranslationKey } from "@atelier/i18n";
 import { colors, fonts, fontSizes, radii, spacing, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
+import { canRememberNote } from "@/src/lib/chef-notes";
 
 type ModelKey = ChatMode;
 
@@ -128,48 +130,66 @@ const messageEntering: EntryExitAnimationFunction = () => {
 };
 
 // A-03 — Bubble memoizada (igual que antes). `animate` solo es true para
-// mensajes que llegan en vivo; el historial carga quieto.
+// mensajes que llegan en vivo; el historial carga quieto. `onRemember` llega
+// estable (useCallback) para no romper el memo durante el streaming; sin él
+// (sin permiso o en la vista previa) la burbuja no tiene pulsación larga.
 const Bubble = memo(function Bubble({
   m,
   eyebrowLabel,
   animate,
+  onRemember,
+  rememberLabel,
 }: {
   m: ChatMessage;
   eyebrowLabel: string;
   animate: boolean;
+  onRemember?: (m: ChatMessage) => void;
+  rememberLabel: string;
 }) {
-  if (m.role === "user") {
-    const inner = (
+  const wrapStyle = m.role === "user" ? styles.userWrap : styles.assistantWrap;
+  const inner =
+    m.role === "user" ? (
       <>
         <View style={styles.userBubble}>
           <Text style={styles.userText}>{m.content}</Text>
         </View>
         <Text style={styles.userTime}>{formatTime(m.createdAt)}</Text>
       </>
+    ) : (
+      <>
+        <Text style={styles.assistantEyebrow}>{eyebrowLabel}</Text>
+        <View style={styles.assistantRule} />
+        <View style={styles.assistantBody}>
+          <MarkdownText text={stripRecipePayload(m.content).trim()} />
+        </View>
+      </>
+    );
+  if (onRemember) {
+    // "Recordar esto": pulsación larga (y acción de accesibilidad equivalente).
+    const pressable = (
+      <Pressable
+        style={wrapStyle}
+        onLongPress={() => onRemember(m)}
+        accessibilityActions={[{ name: "longpress", label: rememberLabel }]}
+        onAccessibilityAction={(e) => {
+          if (e.nativeEvent.actionName === "longpress") onRemember(m);
+        }}
+      >
+        {inner}
+      </Pressable>
     );
     return animate ? (
-      <Animated.View entering={messageEntering} style={styles.userWrap}>
-        {inner}
-      </Animated.View>
+      <Animated.View entering={messageEntering}>{pressable}</Animated.View>
     ) : (
-      <View style={styles.userWrap}>{inner}</View>
+      pressable
     );
   }
-  const inner = (
-    <>
-      <Text style={styles.assistantEyebrow}>{eyebrowLabel}</Text>
-      <View style={styles.assistantRule} />
-      <View style={styles.assistantBody}>
-        <MarkdownText text={stripRecipePayload(m.content).trim()} />
-      </View>
-    </>
-  );
   return animate ? (
-    <Animated.View entering={messageEntering} style={styles.assistantWrap}>
+    <Animated.View entering={messageEntering} style={wrapStyle}>
       {inner}
     </Animated.View>
   ) : (
-    <View style={styles.assistantWrap}>{inner}</View>
+    <View style={wrapStyle}>{inner}</View>
   );
 });
 
@@ -233,6 +253,14 @@ export default function AsistenteScreen() {
   const hasRestaurant =
     (authState.status === "signed-in" || authState.status === "needs-restaurant") &&
     Boolean(authState.user.restaurantId);
+  // "Recordar esto" (notas del chef): solo con restaurante real y `approve_recipe`.
+  const canRemember = canRememberNote(
+    chefRole,
+    authState.status === "signed-in" || authState.status === "needs-restaurant"
+      ? authState.user.restaurantId
+      : null,
+  );
+  const [rememberText, setRememberText] = useState<string | null>(null);
 
   const [model, setModel] = useState<ModelKey>(userModel);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -657,15 +685,23 @@ export default function AsistenteScreen() {
   const reversedData = useMemo(() => [...messages].slice().reverse(), [messages]);
 
   const assistantEyebrow = t("assistant_eyebrow");
+  const rememberLabel = t("notes_remember");
+  const openRemember = useCallback((m: ChatMessage) => {
+    Keyboard.dismiss();
+    tapLight();
+    setRememberText(m.role === "assistant" ? stripRecipePayload(m.content) : m.content);
+  }, []);
   const renderItem = useCallback(
     ({ item }: { item: ChatMessage }) => (
       <Bubble
         m={item}
         eyebrowLabel={assistantEyebrow}
         animate={!preloadedIds.current.has(item.id)}
+        onRemember={canRemember ? openRemember : undefined}
+        rememberLabel={rememberLabel}
       />
     ),
-    [assistantEyebrow],
+    [assistantEyebrow, canRemember, openRemember, rememberLabel],
   );
   const keyExtractor = useCallback((m: ChatMessage) => m.id, []);
 
@@ -740,6 +776,9 @@ export default function AsistenteScreen() {
         }}
       />
       <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} />
+      {rememberText !== null && canRemember ? (
+        <RememberNoteSheet text={rememberText} onClose={() => setRememberText(null)} />
+      ) : null}
 
       <View style={{ flex: 1 }}>
         {ideaText ? (

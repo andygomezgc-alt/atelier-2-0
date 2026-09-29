@@ -9,6 +9,7 @@ const { db, guard, quota, anthro, streamMock, memoryChat, buildSystem, PrismaCli
     $transaction: vi.fn(),
     restaurant: { findUnique: vi.fn() },
     recipe: { findMany: vi.fn() },
+    chefNote: { findMany: vi.fn() },
   };
   const guard = {
     requireAuth: vi.fn(),
@@ -128,6 +129,7 @@ beforeEach(() => {
   db.message.count.mockReset().mockResolvedValue(1);
   db.restaurant.findUnique.mockReset().mockResolvedValue({ name: "Kokoo", identityLine: null });
   db.recipe.findMany.mockReset().mockResolvedValue([]);
+  db.chefNote.findMany.mockReset().mockResolvedValue([]);
   memoryChat.mockReset().mockResolvedValue(null);
   buildSystem.mockClear();
   guard.requireAuth.mockReset().mockResolvedValue({
@@ -355,6 +357,32 @@ describe("POST chat — historial por bloques", () => {
 });
 
 describe("POST chat — selección de proveedor", () => {
+  it("loads ordered chef notes and forwards their texts to the system blocks", async () => {
+    db.chefNote.findMany.mockResolvedValue([
+      { text: "No usamos cerdo" },
+      { text: "El caldo no lleva apio" },
+    ]);
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+
+    await (await post({ content: "receta" })).text();
+
+    expect(db.chefNote.findMany).toHaveBeenCalledWith({
+      where: { restaurantId: "r1" },
+      orderBy: { createdAt: "asc" },
+      take: 10,
+      select: { text: true },
+    });
+    expect(buildSystem).toHaveBeenCalledWith(
+      {
+        name: "Kokoo",
+        identityLine: null,
+        chefNotes: ["No usamos cerdo", "El caldo no lleva apio"],
+      },
+      expect.anything(),
+      null,
+      null,
+    );
+  });
   it("loads and forwards recent titles when useful memory is ready", async () => {
     memoryChat.mockResolvedValue("Técnicas de brasa");
     db.recipe.findMany.mockResolvedValue([{ title: "Receta reciente" }]);

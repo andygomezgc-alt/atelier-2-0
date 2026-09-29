@@ -58,6 +58,9 @@ export default function PrivacidadPage() {
         limitada de recetas y guarda tendencias breves, compartidas por el equipo.
         Podés corregirlas, excluirlas o borrarlas y desactivar el aprendizaje.
         Desactivarlo no borra por sí solo las preferencias ya guardadas.
+        Quienes tienen permiso pueden guardar desde el chat &quot;Notas del chef&quot;
+        (hasta 10, de 160 caracteres cada una): se envían al asistente como
+        contexto del restaurante, se borran una a una y se eliminan junto con el restaurante.
         Este contexto orienta respuestas; no entrena un modelo propio de Atelier.
       </p>
       <p style={pStyle}>

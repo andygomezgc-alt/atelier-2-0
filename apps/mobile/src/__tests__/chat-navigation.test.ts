@@ -7,7 +7,7 @@ const h = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
   setParams: vi.fn(), listMessages: vi.fn(), getConversationByIdea: vi.fn(),
   createConversation: vi.fn(), streamMessage: vi.fn(), alert: vi.fn(), toast: vi.fn(),
-  extract: vi.fn(), listening: false, restaurantId: "restaurant-1" as string | null,
+  extract: vi.fn(), listening: false, restaurantId: "restaurant-1" as string | null, role: "chef_executive",
   t: (key: string) => key,
 }));
 vi.mock("react-native", () => ({
@@ -21,7 +21,7 @@ vi.mock("expo-router", () => ({ useLocalSearchParams: () => h.params, useRouter:
 vi.mock("@expo/vector-icons", () => ({ Ionicons: "Ionicons" }));
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: "SafeAreaView", useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock("react-native-reanimated", () => ({ default: { View: "AnimatedView" }, Easing: {}, withSpring: vi.fn(), withTiming: vi.fn() }));
-vi.mock("@/src/hooks/useAuth", () => ({ useAuth: () => ({ state: { status: "signed-in", user: { name: "Chef", restaurantId: h.restaurantId, role: "chef_executive", defaultModel: "creative", languagePref: "es" } } }) }));
+vi.mock("@/src/hooks/useAuth", () => ({ useAuth: () => ({ state: { status: "signed-in", user: { name: "Chef", restaurantId: h.restaurantId, role: h.role, defaultModel: "creative", languagePref: "es" } } }) }));
 vi.mock("@/src/hooks/useI18n", () => ({ useI18n: () => ({ t: h.t }), dateLocale: () => "es-ES" }));
 vi.mock("@/src/hooks/useSpeechInput", () => ({ speechAvailable: true, useSpeechInput: () => ({ listening: h.listening, start: vi.fn(), stop: vi.fn() }) }));
 vi.mock("@/src/api/conversations", () => ({ createConversation: h.createConversation, streamMessage: h.streamMessage, listMessages: h.listMessages, getConversationByIdea: h.getConversationByIdea, bulkAddMessages: vi.fn() }));
@@ -35,6 +35,7 @@ vi.mock("@/src/components/ProfileSheet", () => ({ ProfileSheet: "ProfileSheet" }
 vi.mock("@/src/components/MarkdownText", () => ({ MarkdownText: "MarkdownText" }));
 vi.mock("@/src/components/TypingDots", () => ({ TypingDots: "TypingDots" }));
 vi.mock("@/src/components/SendButton", () => ({ SendButton: "SendButton" }));
+vi.mock("@/src/components/RememberNoteSheet", () => ({ RememberNoteSheet: "RememberNoteSheet" }));
 vi.mock("@/src/lib/keyboard", () => ({ useKeyboardHeight: () => 0 }));
 vi.mock("@/src/lib/haptics", () => ({ selection: vi.fn(), tapLight: vi.fn() }));
 vi.mock("@/src/lib/recipe-draft", () => ({ setRecipeDraft: vi.fn() }));
@@ -66,6 +67,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.params = {};
   h.restaurantId = "restaurant-1";
+  h.role = "chef_executive";
   h.listening = false;
   h.setParams.mockImplementation((params) => { h.params = { ...h.params, ...params }; });
   h.listMessages.mockResolvedValue(saved);
@@ -171,5 +173,54 @@ describe("new conversation from the assistant screen", () => {
     expect(h.alert.mock.calls[0][1]).toBe("chat_leave_pending");
     expect(messages()).toHaveLength(1);
     expect(h.setParams).not.toHaveBeenCalled();
+  });
+});
+
+describe("remember a chat message as a chef note", () => {
+  const bubbleFor = async (id: string) => {
+    const list = screen.root.findAllByType("FlatList" as never)[0]!;
+    const item = list.props.data.find((m: { id: string }) => m.id === id);
+    let bubble!: ReactTestRenderer;
+    await act(async () => { bubble = create(list.props.renderItem({ item })); });
+    return bubble;
+  };
+  const longPressTargets = (bubble: ReactTestRenderer) => bubble.root.findAll((node) => typeof node.type === "string" && typeof node.props.onLongPress === "function");
+  const sheet = () => screen.root.findAllByType("RememberNoteSheet" as never)[0];
+
+  it("long-pressing a message opens the sheet with its text; closing it hides the sheet", async () => {
+    h.params = { conversationId: "saved-chat" };
+    await render();
+    expect(sheet()).toBeUndefined();
+    const bubble = await bubbleFor("m1");
+    await act(async () => { longPressTargets(bubble)[0]!.props.onLongPress(); });
+    expect(sheet()!.props.text).toBe("Un plato de berenjena");
+    await act(async () => { sheet()!.props.onClose(); });
+    expect(sheet()).toBeUndefined();
+  });
+
+  it("offers the same action on assistant replies without the hidden recipe payload", async () => {
+    h.listMessages.mockResolvedValue([saved[0], { ...saved[1], content: "Berenjena asada\n<recipe_payload>{\"a\":1}</recipe_payload>" }]);
+    h.params = { conversationId: "saved-chat" };
+    await render();
+    const bubble = await bubbleFor("m2");
+    expect(longPressTargets(bubble)[0]!.props.accessibilityActions).toEqual([{ name: "longpress", label: "notes_remember" }]);
+    await act(async () => { longPressTargets(bubble)[0]!.props.onLongPress(); });
+    expect(sheet()!.props.text).not.toContain("recipe_payload");
+    expect(sheet()!.props.text).toContain("Berenjena asada");
+  });
+
+  it("is not offered to roles that cannot approve recipes", async () => {
+    h.role = "sous_chef";
+    h.params = { conversationId: "saved-chat" };
+    await render();
+    expect(longPressTargets(await bubbleFor("m1"))).toHaveLength(0);
+  });
+
+  it("is not offered in the preview without a restaurant", async () => {
+    h.restaurantId = null;
+    await render();
+    await send("Prueba sin restaurante");
+    const first = screen.root.findAllByType("FlatList" as never)[0]!.props.data[0].id;
+    expect(longPressTargets(await bubbleFor(first))).toHaveLength(0);
   });
 });

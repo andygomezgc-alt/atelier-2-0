@@ -13,6 +13,7 @@ function loadSystemPrompt(): string {
 type RestaurantContext = {
   name: string;
   identityLine: string | null;
+  chefNotes?: string[];
 };
 
 type RecentRecipe = {
@@ -37,9 +38,14 @@ export function buildSystemBlocks(
   };
 
   // Restaurant identity — also stable per session, cached.
+  const chefNotesText = restaurant.chefNotes?.length
+    ? `Notas del chef (datos fijos del restaurante):\n${restaurant.chefNotes
+        .map((note) => `- ${note}`)
+        .join("\n")}\n`
+    : "";
   const identityText = `# Restaurante: ${restaurant.name}\n${
     restaurant.identityLine ? `Identidad: ${restaurant.identityLine}\n` : ""
-  }`;
+  }${chefNotesText}`;
   const identityBlock = {
     type: "text" as const,
     text: identityText,
