@@ -72,7 +72,7 @@ describe("prepared culinary memory", () => {
       .mockResolvedValueOnce(memory({ dirtyRevision: 8, preparedRevision: 7, preparedVersion: 4 }))
       .mockResolvedValueOnce(memory({ dirtyRevision: 9, preparedRevision: 8, preparedVersion: 4 }));
     db.recipe.findMany
-      .mockResolvedValueOnce(["a", "b"].map(recipe))
+      .mockResolvedValueOnce(["a"].map(recipe))
       .mockResolvedValueOnce(["a", "b", "c"].map(recipe));
     expect(await chatMemory("r1")).toBe("");
     expect(db.culinaryMemory.updateMany.mock.calls[0]![0].data.learned).toEqual(learned);
