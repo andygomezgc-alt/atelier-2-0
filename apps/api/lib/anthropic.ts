@@ -58,10 +58,10 @@ export function buildSystemBlocks(
     blocks.push({ type: "text", text: culinaryMemory, cache_control: { type: "ephemeral" } });
   }
 
-  // Recent titles are a cheap fallback only when no useful memory exists.
+  // Recent titles are always useful live context, including when memory exists.
   // The pinned idea remains after the stable memory and is intentionally live.
   const dynamicLines: string[] = [];
-  if (!culinaryMemory && recentRecipes.length > 0) {
+  if (recentRecipes.length > 0) {
     dynamicLines.push("# Recetas recientes del cuaderno");
     for (const r of recentRecipes.slice(0, 8)) {
       dynamicLines.push(`- ${r.title} (${r.state})`);

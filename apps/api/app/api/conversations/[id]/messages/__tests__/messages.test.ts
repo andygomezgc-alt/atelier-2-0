@@ -323,12 +323,23 @@ describe("POST chat — persistencia", () => {
 });
 
 describe("POST chat — selección de proveedor", () => {
-  it("avoids loading or adding recent titles when useful memory is ready", async () => {
+  it("loads and forwards recent titles when useful memory is ready", async () => {
     memoryChat.mockResolvedValue("Técnicas de brasa");
+    db.recipe.findMany.mockResolvedValue([{ title: "Receta reciente", state: "approved" }]);
     streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
     await (await post({ content: "receta" })).text();
-    expect(db.recipe.findMany).not.toHaveBeenCalled();
-    expect(buildSystem).toHaveBeenCalledWith(expect.anything(), [], null, "Técnicas de brasa");
+    expect(db.recipe.findMany).toHaveBeenCalledWith({
+      where: { restaurantId: "r1", deletedAt: null },
+      orderBy: { updatedAt: "desc" },
+      take: 8,
+      select: { title: true, state: true },
+    });
+    expect(buildSystem).toHaveBeenCalledWith(
+      expect.anything(),
+      [{ title: "Receta reciente", state: "approved" }],
+      null,
+      "Técnicas de brasa",
+    );
   });
 
   it.each([

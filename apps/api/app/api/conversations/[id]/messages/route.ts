@@ -132,7 +132,7 @@ export async function POST(
     turn = started;
 
     // Build context: recent recipes + pinned idea.
-    const [r, history, preparedMemory] = await Promise.all([
+    const [r, history, recent, preparedMemory] = await Promise.all([
       prisma.restaurant.findUnique({
         where: { id: ctx.restaurantId },
         select: { name: true, identityLine: true },
@@ -148,21 +148,20 @@ export async function POST(
         take: 20,
         select: { role: true, content: true },
       }),
+      prisma.recipe.findMany({
+        where: { restaurantId: ctx.restaurantId, deletedAt: null },
+        orderBy: { updatedAt: "desc" },
+        take: 8,
+        select: { title: true, state: true },
+      }),
       chatMemory(ctx.restaurantId).catch(() => null),
     ]);
 
     if (!r) throw new Error("Restaurant not found");
 
     restaurant = r;
+    recentRecipes = recent;
     culinaryMemory = preparedMemory || null;
-    if (!culinaryMemory) {
-      recentRecipes = await prisma.recipe.findMany({
-        where: { restaurantId: ctx.restaurantId, deletedAt: null },
-        orderBy: { updatedAt: "desc" },
-        take: 8,
-        select: { title: true, state: true },
-      });
-    }
     messages = history
       .slice()
       .reverse()
