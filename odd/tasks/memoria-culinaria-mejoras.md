@@ -43,6 +43,8 @@ Olas (archivos disjuntos en paralelo): O1 = M3 ‖ M4 · O2 = M1 ‖ M6 · O3 = 
 - [x] M4 — tendencia mala + mínimo 2 (`f4e1fd2`)
 - [x] M5 — historial por bloques (`a88e5df`)
 - [x] M6 — aprender al encender (`83890d3`)
+- [x] M7 — títulos recientes estables para la caché (aviso R4 de la revisión; Andy lo aceptó para este PR). Ruta: Codex. (`9757c1d`)
+- [x] M8 — tope de 4 tendencias aplicado después de filtrar (aviso R3 de la revisión; Andy lo aceptó para este PR). Ruta: Codex. (`539338a`)
 
 ## Criterios de aceptación
 - M1: con memoria encendida, el sistema incluye la memoria (cacheada) y los títulos recientes (bloque dinámico sin caché).
@@ -51,6 +53,9 @@ Olas (archivos disjuntos en paralelo): O1 = M3 ‖ M4 · O2 = M1 ‖ M6 · O3 = 
 - M4: una tendencia con fuentes inválidas se descarta y las demás se publican; una tendencia necesita 2 recetas distintas y la corrida arranca con 2 recetas elegibles.
 - M5: con más de 20 mensajes, el comienzo del historial enviado es estable durante varios turnos (anclado a múltiplos de 10 del índice absoluto), nunca más de 20 mensajes ni 40.000 caracteres, y siempre empieza por un mensaje del chef.
 - M6: al pasar de apagada a encendida, se lanza una corrida en segundo plano sin bloquear la respuesta; respeta bloqueos y el mínimo de recetas; si falla, queda el cron como hoy.
+
+- M7: la lista de títulos solo cambia al crear, borrar o renombrar una receta: se ordena por `createdAt` y no muestra el estado.
+- M8: las tendencias de categorías excluidas, corregidas o duplicadas no ocupan los 4 huecos; el tope se aplica en el worker después de filtrar.
 
 ## Comprobaciones por tarea
 - `pnpm -C apps/api exec tsc --noEmit` y `pnpm -C apps/api test`
@@ -87,5 +92,9 @@ Olas (archivos disjuntos en paralelo): O1 = M3 ‖ M4 · O2 = M1 ‖ M6 · O3 = 
   - `review-91284509b99b37ed` (`.gitignore` de Andy): APROBADA y con acuse.
   - Siguen abiertas 3 revisiones de estados intermedios del árbol que ya no existen; no bloquean nada.
 
+- **Revisión de la rama completa** (`review-81bb6c6ecf8fd508`, riesgo alto, 4 lentes): APROBADA y con acuse. Dejó dos avisos que Andy pidió meter en este PR: M7 y M8.
+- **M7** (`9757c1d`, Codex autor + Sonnet operador). RED 2; GREEN 45/45; api 758/758, tsc OK.
+- **M8** (Codex autor + Sonnet operador). RED 2; GREEN 61/61; api 760/760, tsc OK. Revisión `review-d4c9f3b03ee22601` APROBADA y con acuse, con una sugerencia sobre el test del worker.
+
 ## Siguiente paso
-Andy decide PR, merge y deploy. La entrega 2 ("Notas del chef") queda pendiente.
+Andy decide la fusión del PR #7 (despliega a producción). Después, binario móvil para M3. Entrega 2 ("Notas del chef") pendiente.
