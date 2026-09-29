@@ -42,9 +42,9 @@ N1–N3. Fuera de alcance: añadir notas desde la hoja de memoria, sugerencias a
 
 Orden: N1 → (N2 ‖ N3).
 
-- [ ] N1 — tabla + API + error + privacidad
-- [ ] N2 — notas en el prompt
-- [ ] N3 — app móvil
+- [x] N1 — tabla + API + error + privacidad (`b0f9866`)
+- [x] N2 — notas en el prompt (`6e2ac91`)
+- [x] N3 — app móvil (`d96e362`)
 
 ## Criterios de aceptación
 - N1: CRUD con permisos y anti-IDOR; texto recortado de 1 a 160 caracteres; el 11.º POST da 409 `chef_notes_limit`; DELETE de una nota ajena da 404; la migración solo crea la tabla.
@@ -62,7 +62,11 @@ Orden: N1 → (N2 ‖ N3).
 - Después del merge: binario móvil con M3 (entrega 1) y N3 juntos.
 
 ## Progreso y evidencia
-_(por tarea)_
+- **N1** (`b0f9866`, Sonnet). Revisión del padre: permisos, origen, anti-IDOR (deleteMany por id+restaurantId), tope de 10 en transacción Serializable con reintento en P2034; migración solo aditiva. RED: suites sin cargar y el test de conteo de códigos; GREEN: 31 tests de rutas y shared 261/261. Comprobaciones: api 791/791; tsc OK en api, shared, i18n y mobile; mobile 156/156.
+
+- **N2** (`6e2ac91`, Codex autor + Sonnet operador). RED 2; GREEN 48/48; api 794/794.
+- **N3** (`d96e362`, Opus). Pulsación larga en las burbujas, solo con `canRememberNote` (restaurante real y approve_recipe); acción de accesibilidad equivalente; callback estable, así que el memo se mantiene; `RememberNoteSheet` sobre `BottomSheet`, con el teclado resuelto mediante `useKeyboardHeight`; sección de notas en la hoja de memoria con borrado confirmado. RED: módulos sin cargar y 10 tests de componente; GREEN: móvil 186/186; tsc OK; expo export android OK.
+- **Cierre (padre):** api 794/794 y tsc OK; móvil 186/186 y tsc OK; shared 261/261 y tsc OK; i18n tsc OK. Rama: 31 archivos, +1053/−28 (más de la mitad son tests).
 
 ## Siguiente paso
-N1 (Sonnet).
+Revisión RDD de la rama, PR, fusión y verificación del deploy (la migración ChefNote se aplica en el build de Vercel). Después, binario móvil con M3 y N3.
