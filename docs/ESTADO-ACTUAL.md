@@ -1,12 +1,20 @@
-# Estado actual de Atelier — 23 de septiembre de 2026
+# Estado actual de Atelier — 30 de septiembre de 2026
 
-Punto de entrada al retomar el proyecto. **El 22 y 23 de septiembre el chat Creativo pasó de Opus 5 a Opus 5.5**, con esfuerzo medio y aviso legible si el proveedor rechaza una consulta. Solo cambió el servidor; los motivos, la comparación real y cómo volver atrás están en [Creativo con Opus 5.5](OPUS-5-5-2026-09-22.md). Entre el 15 y el 17 de septiembre: pruebas de integración de memoria en CI, escáner con excepciones caducables, Vercel revisado y vistas previas apagadas, **arreglado el cierre al abrir la app en iPhone**, restaurado el **arranque obligatorio** de crear o unirse a un restaurante y **revisada la matriz de permisos por rol** con el usuario. Detalle, identificadores y receta de entrega en [Ronda móvil y permisos](RONDA-MOVIL-Y-PERMISOS-2026-09-17.md); memoria culinaria en [sus correcciones](CORRECCIONES-MEMORIA-2026-09-13.md). No activar cobros. La ronda de arreglos móviles sigue abierta: el usuario pidió no hornear más binarios hasta avisar.
+Punto de entrada al retomar el proyecto. **El 29 y 30 de septiembre se auditó y mejoró la memoria culinaria** (PR #7 y #8, en producción):
+- el historial del chat se recorta por bloques para que la caché acierte;
+- el asistente ve siempre las recetas recientes;
+- una tendencia mal formada ya no tira la semana y bastan 2 recetas;
+- la memoria aprende al encenderse;
+- botón «Volver a aprender»;
+- **Notas del chef**: el chef mantiene pulsado un mensaje del chat, elige «Recordar esto» y la nota (160 caracteres como máximo, 10 por restaurante) le llega al asistente en todas las conversaciones.
+
+Detalle en `odd/tasks/memoria-culinaria-mejoras.md` y `odd/tasks/notas-del-chef.md`. Binarios nuevos (Android versionCode 7, iPhone build 13) horneados el 30-09. **El 22 y 23 de septiembre el chat Creativo pasó de Opus 5 a Opus 5.5**, con esfuerzo medio y aviso legible si el proveedor rechaza una consulta. Solo cambió el servidor; los motivos, la comparación real y cómo volver atrás están en [Creativo con Opus 5.5](OPUS-5-5-2026-09-22.md). Entre el 15 y el 17 de septiembre: pruebas de integración de memoria en CI, escáner con excepciones caducables, Vercel revisado y vistas previas apagadas, **arreglado el cierre al abrir la app en iPhone**, restaurado el **arranque obligatorio** de crear o unirse a un restaurante y **revisada la matriz de permisos por rol** con el usuario. Detalle, identificadores y receta de entrega en [Ronda móvil y permisos](RONDA-MOVIL-Y-PERMISOS-2026-09-17.md); memoria culinaria en [sus correcciones](CORRECCIONES-MEMORIA-2026-09-13.md). No activar cobros. La ronda de arreglos móviles sigue abierta: el usuario pidió no hornear más binarios hasta avisar.
 
 ## Código y trabajo guardado
 
 - Carpeta original: `C:/Users/Utente/Desktop/atelier-2-0`.
 - Repositorio: `https://github.com/andygomezgc-alt/atelier-2-0`, rama de trabajo `main`.
-- Código publicado: `d8baa60` (`merge: chat Creativo con Opus 5.5 en esfuerzo medio (PR #6)`), desplegado el 23-09 como `dpl_DZsjN6qqrivmHUJhenUwbzsAAAYB`, con la salud en 200. Sobre `e305004` (memoria culinaria, parches de dependencias y autenticación, arreglo del cierre en iPhone, arranque obligatorio y matriz de permisos nueva) añade el Creativo con Opus 5.5. CI en verde.
+- Código publicado: `7412a4f` (`merge: notas del chef (PR #8)`), sobre `aeee756` (PR #7, mejoras de memoria). Migración `20260929230000_chef_notes` aplicada en producción el 29-09. CI en verde.
 - Pruebas de integración de memoria sobre PostgreSQL real en `apps/api/lib/culinary-memory/memory.integration.test.ts` (15 casos: reserva concurrente, triggers, reintento, recuperación, retención, borrado, papelera y huellas antiguas). CI las ejecuta contra su Postgres; `pnpm test` no las incluye. Solo aceptan bases en localhost o un host de pruebas escrito expresamente; nunca producción.
 - Escáner de dependencias: siete avisos aceptados con motivo y caducidad **15-12-2026** en `osv-scanner.toml` (herramientas de build/pruebas, sin arreglo compatible). Cualquier aviso nuevo pone CI en rojo.
 - Se consolidan mejoras del piloto acumuladas: guardado e historial del chat, memoria culinaria, costes y productos, menú y PDF multirrestaurante, permisos, modelos de IA, cuotas y presupuesto, copias cifradas, privacidad y distribución móvil.
