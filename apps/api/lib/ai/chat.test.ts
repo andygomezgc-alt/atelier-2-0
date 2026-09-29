@@ -5,7 +5,8 @@ vi.mock("@anthropic-ai/sdk", () => ({ default: class {
   messages = { stream: opusStream };
   constructor(options: unknown) { constructor(options); }
 } }));
-import { boundedChatHistory, sseData, streamChat, type ChatEvent } from "./chat";
+import { boundedChatHistory, sseData, stableHistoryWindow, streamChat, type ChatEvent } from "./chat";
+import type { Msg } from "../anthropic";
 import type { ChatModelSelection } from "@atelier/shared";
 import { reserveGeneration, settleGeneration } from "./budget";
 
@@ -112,6 +113,63 @@ describe("Opus chat adapter", () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('"category":"bio"'));
     expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 10, outputTokens: 3 }));
     warn.mockRestore();
+  });
+});
+
+// Mensaje `i` de una conversación: los pares son del chef, los impares del asistente.
+const turn = (i: number, size = 10): Msg => ({ role: i % 2 === 0 ? "user" : "assistant", content: `m${String(i).padStart(3, "0")}`.padEnd(size, ".") });
+const absolute = (m: Msg) => Number(m.content.slice(1, 4));
+// Lo que trae la ruta: los últimos `fetched` mensajes de una conversación de `total`.
+const fetchedOf = (total: number, size = 10, fetched = 20) =>
+  Array.from({ length: Math.min(total, fetched) }, (_, k) => turn(total - Math.min(total, fetched) + k, size));
+
+describe("stableHistoryWindow", () => {
+  it("sends everything while the conversation fits in 20 messages", () => {
+    for (const total of [1, 2, 11, 20]) {
+      const window = stableHistoryWindow(fetchedOf(total), total);
+      expect(window.map(absolute)).toEqual(Array.from({ length: total }, (_, i) => i));
+    }
+  });
+  it.each([21, 23, 25, 27, 29])("keeps the same first message at total %i so the cached prefix survives", total => {
+    const window = stableHistoryWindow(fetchedOf(total), total);
+    expect(absolute(window[0]!)).toBe(10);
+    expect(absolute(window.at(-1)!)).toBe(total - 1);
+    expect(window).toHaveLength(total - 10);
+  });
+  it("moves the anchor in one jump of 10: total 31 starts at absolute index 20", () => {
+    const window = stableHistoryWindow(fetchedOf(31), 31);
+    expect(absolute(window[0]!)).toBe(20);
+    expect(window).toHaveLength(11);
+  });
+  it("never sends more than 20 messages", () => {
+    for (let total = 1; total <= 101; total += 2) {
+      expect(stableHistoryWindow(fetchedOf(total), total).length).toBeLessThanOrEqual(20);
+    }
+  });
+  it("treats a total smaller than what was fetched as the fetched count", () => {
+    expect(stableHistoryWindow(fetchedOf(5), 0).map(absolute)).toEqual([0, 1, 2, 3, 4]);
+  });
+  it("jumps to the next multiple of 10 when the block from the anchor exceeds the character budget", () => {
+    // Desde el índice 10 hay 19 mensajes (190 caracteres); desde el 20, 9 (90).
+    const window = stableHistoryWindow(fetchedOf(29), 29, { maxChars: 100 });
+    expect(absolute(window[0]!)).toBe(20);
+    expect(window.reduce((sum, m) => sum + m.content.length, 0)).toBeLessThanOrEqual(100);
+  });
+  it("falls back to the newest messages that fit when even the last block is too big", () => {
+    // El último bloque (índices 20–28) suma 90 caracteres y no cabe en 45.
+    const window = stableHistoryWindow(fetchedOf(29), 29, { maxChars: 45 });
+    // Caben 25–28 (40 caracteres); el 25 es del asistente y se descarta.
+    expect(window.map(absolute)).toEqual([26, 27, 28]);
+  });
+  it("drops a leading assistant message so the window starts with the chef", () => {
+    const flipped = fetchedOf(21).map((m): Msg => ({ ...m, role: m.role === "user" ? "assistant" : "user" }));
+    const window = stableHistoryWindow(flipped, 21);
+    expect(window[0]).toMatchObject({ role: "user" });
+    expect(window.map(absolute)).toEqual(Array.from({ length: 10 }, (_, i) => i + 11));
+  });
+  it("fails with chat_context_too_long when the newest message alone exceeds the budget", () => {
+    expect(() => stableHistoryWindow([{ role: "user", content: "x".repeat(100) }], 1, { maxChars: 10 })).toThrow("chat_context_too_long");
+    expect(() => stableHistoryWindow([], 0)).toThrow("chat_context_too_long");
   });
 });
 

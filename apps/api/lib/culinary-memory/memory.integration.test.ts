@@ -24,9 +24,9 @@ const DAY = 24 * 60 * 60 * 1000;
 const config = { provider: "fixture", model: "fixture" };
 const run = `it-${randomUUID().slice(0, 8)}`;
 
-const roasted: MemoryGenerator = async (_input, onUsage) => {
+const roasted: MemoryGenerator = async (input, onUsage) => {
   await onUsage({ inputTokens: 30, outputTokens: 10, reasoningTokens: 0 });
-  return { trends: [{ key: "techniques", text: "Predominan las verduras asadas", sources: [1, 2, 3] }] };
+  return { trends: [{ key: "techniques", text: "Predominan las verduras asadas", sources: input.evidence.map((_, index) => index + 1) }] };
 };
 const memoryOf = (restaurantId: string) => prisma.culinaryMemory.findUniqueOrThrow({ where: { restaurantId } });
 const contextOf = async (restaurantId: string) => (await chatMemory(restaurantId)) ?? "";
@@ -41,11 +41,14 @@ async function restaurant(name: string) {
   return { id, userId };
 }
 
-/** Restaurante con aprendizaje activado y tres elaboraciones asadas en prueba. */
-async function seed(name: string) {
+/**
+ * Restaurante con aprendizaje activado y elaboraciones asadas en prueba (tres por defecto).
+ * Con dos, cada una es imprescindible: perder cualquiera deja la tendencia bajo el mínimo.
+ */
+async function seed(name: string, recipes = 3) {
   const { id, userId } = await restaurant(name);
   await patchCulinaryMemory(id, { expectedVersion: 0, enabled: true });
-  for (const [index, ingredient] of ["tomate", "berenjena", "calabaza"].entries()) {
+  for (const [index, ingredient] of ["tomate", "berenjena", "calabaza"].slice(0, recipes).entries()) {
     await prisma.recipe.create({ data: { id: `${id}-${index}`, restaurantId: id, authorId: userId, title: ingredient,
       state: "in_test", contentJson: { ingredients: [`200 g ${ingredient}`], method: [`Asar ${ingredient}`] } } });
   }
@@ -104,7 +107,7 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
   });
 
   it("mover una receta a otro restaurante invalida a los dos y devolverla recupera la tendencia", async () => {
-    const a = await seed("move-from");
+    const a = await seed("move-from", 2);
     const b = await seed("move-to");
     expect(await processMemory(a, roasted, config, new Date())).toBe("completed");
     const [a0, b0] = await Promise.all([memoryOf(a), memoryOf(b)]);
@@ -208,7 +211,7 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
   });
 
   it("mandar una fuente a la papelera oculta la tendencia y restaurarla la recupera sin IA", async () => {
-    const id = await seed("trash");
+    const id = await seed("trash", 2);
     expect(await processMemory(id, roasted, config, new Date())).toBe("completed");
     expect(await contextOf(id)).toMatch(/verduras asadas/);
     await prisma.recipe.update({ where: { id: `${id}-0` }, data: { deletedAt: new Date() } });
@@ -225,7 +228,7 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
   ])("memoria guardada con el formato anterior: una fuente %s", async (_label, kind, survives) => {
     const { id, userId } = await restaurant(`legacy-${kind}`);
     const sources: { id: string; hash: string }[] = [];
-    for (const [index, ingredient] of ["tomate", "berenjena", "calabaza"].entries()) {
+    for (const [index, ingredient] of ["tomate", "berenjena"].entries()) {
       const title = `Asado de ${ingredient}`;
       const state = kind === "approved" ? "in_test" : "approved";
       const method = `Asar ${ingredient}`;

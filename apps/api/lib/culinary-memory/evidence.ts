@@ -3,8 +3,10 @@ import { parseIngredient, type MemoryPreference } from "@atelier/shared";
 import { z } from "zod";
 import { MemoryPreferenceSchema } from "@atelier/shared";
 
+/** Recetas distintas que debe citar una tendencia; también arranca la corrida y la muestra el chat. */
+export const MIN_TREND_SOURCES = 2;
 export const StoredFactsSchema = z.array(MemoryPreferenceSchema.extend({
-  sources: z.array(z.object({ id: z.string(), hash: z.string(), version: z.literal(2).optional() })).min(3).max(20),
+  sources: z.array(z.object({ id: z.string(), hash: z.string(), version: z.literal(2).optional() })).min(MIN_TREND_SOURCES).max(20),
 })).max(8);
 export type StoredFact = z.infer<typeof StoredFactsSchema>[number];
 export type EvidenceRecipe = {
@@ -85,7 +87,7 @@ export function assessFacts(facts: StoredFact[], evidence: Evidence[]): { valid:
         ? [{ source, duplicateKey: current.duplicateKey }]
         : [];
     });
-    if (new Set(matched.map(item => item.duplicateKey)).size >= 3) {
+    if (new Set(matched.map(item => item.duplicateKey)).size >= MIN_TREND_SOURCES) {
       valid.push({ ...fact, sources: matched.map(item => item.source) });
     }
   }

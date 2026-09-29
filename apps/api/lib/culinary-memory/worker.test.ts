@@ -40,7 +40,7 @@ describe("weekly memory worker", () => {
   it("does not reserve or call without provider, sources or changes", async () => {
     const generate = vi.fn();
     expect(await processMemory("r1", generate, null, now)).toBe("unconfigured");
-    loadEvidence.mockResolvedValueOnce(evidence.slice(0, 2));
+    loadEvidence.mockResolvedValueOnce(evidence.slice(0, 1));
     expect(await processMemory("r1", generate, config, now)).toBe("unchanged");
     db.culinaryMemory.findUnique.mockResolvedValueOnce(memory({ checkedRevision: 2 }));
     expect(await processMemory("r1", generate, config, now)).toBe("unchanged");
@@ -56,6 +56,20 @@ describe("weekly memory worker", () => {
     expect(await processMemory("r1", generate, config, now)).toBe("skipped");
     expect(generate).not.toHaveBeenCalled();
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { nextCheckAt: new Date(+now + 1) } }));
+  });
+
+  it("does not call the provider again when memory is re-enabled within a week of the last attempt", async () => {
+    // Encender la memoria borra retryAt y cambia la revisión; el intento semanal sigue mandando.
+    const generate = vi.fn();
+    const lastAttemptAt = new Date(+now - DAY);
+    db.culinaryMemory.findUnique.mockResolvedValue(memory({ lastAttemptAt, cycleStartedAt: lastAttemptAt, dirtyRevision: 5, version: 3 }));
+    expect(await processMemory("r1", generate, config, now)).toBe("skipped");
+    expect(generate).not.toHaveBeenCalled();
+    expect(db.culinaryMemoryRun.create).not.toHaveBeenCalled();
+    expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith({
+      where: { restaurantId: "r1", version: 3, dirtyRevision: 5 },
+      data: { nextCheckAt: new Date(+lastAttemptAt + WEEK) },
+    });
   });
 
   it("allows exactly one transient retry after 24h and records the real attempt time", async () => {
@@ -124,11 +138,93 @@ describe("weekly memory worker", () => {
     expect(db.culinaryMemory.updateMany.mock.calls.some(([arg]) => arg.data.retryAt instanceof Date)).toBe(false);
   });
 
-  it("does not retry invalid sources and never replaces prior content", async () => {
-    const generate = vi.fn().mockResolvedValue({ trends: [{ key: "cuisine", text: "Tendencia", sources: [1, 2, 99] }] });
+  it("starts with the minimum of two eligible recipes", async () => {
+    loadEvidence.mockResolvedValue(evidence.slice(0, 2));
+    const generate = vi.fn().mockResolvedValue({ trends: [{ key: "techniques", text: "Tendencia", sources: [1, 2] }] });
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    expect(generate).toHaveBeenCalledOnce();
+    const update = db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0];
+    expect(update.data.learned[0].sources).toHaveLength(2);
+  });
+
+  it("does not retry invalid sources and never replaces prior content when every trend is invalid", async () => {
+    const generate = vi.fn().mockResolvedValue({ trends: [{ key: "cuisine", text: "Tendencia", sources: [1, 99] }] });
     expect(await processMemory("r1", generate, config, now)).toBe("failed");
     expect(db.culinaryMemoryRun.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ errorCode: "memory_output_invalid" }) }));
     expect(db.culinaryMemory.updateMany.mock.calls.some(([arg]) => "learned" in arg.data)).toBe(false);
+  });
+
+  it("drops only the invalid trend and publishes the valid ones", async () => {
+    const generate = vi.fn().mockResolvedValue({ trends: [
+      { key: "cuisine", text: "Mal citada", sources: [1, 99] },
+      { key: "flavours", text: "Repetida", sources: [2, 2] },
+      { key: "techniques", text: "Buena", sources: [1, 2, 3] },
+    ] });
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    const update = db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0];
+    expect(update.data.learned).toEqual([{ key: "techniques", text: "Buena", sources: evidence.map(e => ({ id: e.id, hash: e.hash, version: 2 })) }]);
+    expect(db.culinaryMemoryRun.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      status: "completed", publishedTrends: [{ key: "techniques", text: "Buena" }],
+    }) }));
+  });
+
+  it("counts trends rejected by the provider schema, so a fully malformed response keeps the old memory", async () => {
+    const generate = vi.fn().mockResolvedValue({ trends: [], rejected: 2 });
+    expect(await processMemory("r1", generate, config, now)).toBe("failed");
+    expect(db.culinaryMemoryRun.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ errorCode: "memory_output_invalid" }) }));
+    expect(db.culinaryMemory.updateMany.mock.calls.some(([arg]) => "learned" in arg.data)).toBe(false);
+  });
+
+  it("publishes the valid trends even when the provider rejected others", async () => {
+    const generate = vi.fn().mockResolvedValue({ trends: [{ key: "techniques", text: "Buena", sources: [1, 2] }], rejected: 1 });
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    const update = db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0];
+    expect(update.data.learned).toHaveLength(1);
+  });
+
+  it("keeps a trend whose extra references point outside the evidence when two valid ones remain", async () => {
+    const generate = vi.fn().mockResolvedValue({ trends: [{ key: "techniques", text: "Tendencia", sources: [1, 2, 99] }] });
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    const update = db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0];
+    expect(update.data.learned[0].sources.map((s: { id: string }) => s.id)).toEqual(["1", "2"]);
+  });
+
+  it("publishes an empty list for an empty response and ignores invalid trends of excluded categories", async () => {
+    expect(await processMemory("r1", vi.fn().mockResolvedValue({ trends: [] }), config, now)).toBe("completed");
+    expect(db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0].data.learned).toEqual([]);
+
+    db.culinaryMemory.updateMany.mockClear();
+    db.culinaryMemory.findUnique.mockResolvedValue(memory({ excludedKeys: ["cuisine"] }));
+    const generate = vi.fn().mockResolvedValue({ trends: [{ key: "cuisine", text: "Excluida", sources: [1] }] });
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    expect(db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0].data.learned).toEqual([]);
+  });
+
+  it("filters excluded, corrected and duplicate categories before filling the trend cap", async () => {
+    db.culinaryMemory.findUnique.mockResolvedValue(memory({
+      corrections: [{ key: "ingredients", text: "Corrección" }],
+      excludedKeys: ["cuisine"],
+    }));
+    const generate = vi.fn().mockResolvedValue({ trends: [
+      { key: "cuisine", text: "Excluida", sources: [1, 2] },
+      { key: "ingredients", text: "Corregida", sources: [1, 2] },
+      { key: "flavours", text: "Primera válida", sources: [1, 2] },
+      { key: "flavours", text: "Duplicada", sources: [1, 2] },
+      { key: "techniques", text: "Válida posterior", sources: [1, 2] },
+    ] });
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    const update = db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0];
+    expect(update.data.learned.map(({ key }: { key: string }) => key)).toEqual(["flavours", "techniques"]);
+  });
+
+  it("publishes at most four valid trends after filtering", async () => {
+    const keys = ["cuisine", "ingredients", "techniques", "flavours", "textures", "presentation"];
+    const generate = vi.fn().mockResolvedValue({ trends: keys.map(key => ({
+      key, text: "Tendencia", sources: [1, 2, 3],
+    })) });
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    const update = db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0];
+    expect(update.data.learned.map(({ key }: { key: string }) => key)).toEqual(keys.slice(0, 4));
   });
 
   it("publishes prepared context and minimal history with verified v2 sources", async () => {

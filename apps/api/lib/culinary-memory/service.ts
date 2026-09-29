@@ -43,9 +43,10 @@ export async function getCulinaryMemory(restaurantId: string, canEdit: boolean):
     excludedKeys: exclusionsOf(memory?.excludedKeys ?? []), updatedAt: memory?.updatedAt?.toISOString() ?? null, canEdit, learningAvailable: !!memoryProviderConfig() };
 }
 
+/** `turnedOn`: este cambio pasó la memoria de apagada a encendida. */
 export async function patchCulinaryMemory(restaurantId: string, patch: PatchCulinaryMemory, erase = false) {
-  await prisma.$transaction(async tx => {
-    await tx.culinaryMemory.upsert({ where: { restaurantId }, create: { restaurantId }, update: {} });
+  const turnedOn = await prisma.$transaction(async tx => {
+    const before = await tx.culinaryMemory.upsert({ where: { restaurantId }, create: { restaurantId }, update: {} });
     const changed = await tx.culinaryMemory.updateMany({ where: { restaurantId, version: patch.expectedVersion }, data: {
       version: { increment: 1 }, dirtyRevision: { increment: 1 }, lockToken: null, lockExpiresAt: null, nextCheckAt: new Date(),
       preparedContext: null, preparedRevision: -1, preparedVersion: -1, retryAt: null,
@@ -57,8 +58,11 @@ export async function patchCulinaryMemory(restaurantId: string, patch: PatchCuli
     if (!changed.count) throw new MemoryConflict();
     if (erase) await tx.culinaryMemoryRun.updateMany({ where: { restaurantId }, data: { publishedTrends: Prisma.DbNull } });
     if (patch.identityLine !== undefined) await tx.restaurant.update({ where: { id: restaurantId }, data: { identityLine: patch.identityLine || null } });
+    // `enabled` solo cambia aquí y siempre sube la versión: si la lectura tenía la
+    // versión esperada, `before` es justo el estado que este cambio sustituye.
+    return !erase && patch.enabled === true && !before.enabled && before.version === patch.expectedVersion;
   });
-  return getCulinaryMemory(restaurantId, true);
+  return { memory: await getCulinaryMemory(restaurantId, true), turnedOn };
 }
 
 const chatMemorySelect = {

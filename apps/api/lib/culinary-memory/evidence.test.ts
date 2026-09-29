@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { assessFacts, selectEvidence, recipeEvidence, validFacts, evidenceHash, memoryContext, type EvidenceRecipe } from "./evidence";
+import { assessFacts, selectEvidence, recipeEvidence, validFacts, evidenceHash, memoryContext, MIN_TREND_SOURCES, StoredFactsSchema, type EvidenceRecipe } from "./evidence";
 import { memoryPayload } from "./provider";
 const recipe = (id: string, state = "in_test", extra = {}): EvidenceRecipe => ({ id, state, title: id, updatedAt: new Date(),
   contentJson: { ingredients: [`200 g ${id}`], method: [`Asar ${id} durante 20 minutos`] }, recipeIngredients: [], ...extra });
@@ -23,12 +23,27 @@ describe("culinary evidence", () => {
     expect(recipeEvidence(a).hash).toBe(recipeEvidence(b).hash);
     expect(memoryPayload({ evidence: [recipeEvidence(b)], identity: null, corrections: [], excluded: [], language: "es" })).not.toContain("secreto");
   });
-  it("retira tendencias que pierden tres fuentes válidas o cambian de contenido", () => {
+  it("el mínimo de recetas por tendencia es dos", () => {
+    expect(MIN_TREND_SOURCES).toBe(2);
+    const source = (id: string) => ({ id, hash: `h${id}`, version: 2 as const });
+    const fact = (sources: ReturnType<typeof source>[]) => [{ key: "techniques" as const, text: "Predominan asados", sources }];
+    expect(StoredFactsSchema.safeParse(fact([source("a"), source("b")])).success).toBe(true);
+    expect(StoredFactsSchema.safeParse(fact([source("a"), source("b"), source("c")])).success).toBe(true);
+    expect(StoredFactsSchema.safeParse(fact([source("a")])).success).toBe(false);
+  });
+  it("muestra una tendencia respaldada por dos fuentes válidas", () => {
+    const evidence = [recipe("a"), recipe("b")].map(recipeEvidence);
+    const fact = { key: "techniques" as const, text: "Predominan asados", sources: evidence.map(e => ({ id: e.id, hash: e.hash, version: 2 as const })) };
+    expect(validFacts([fact], evidence)).toEqual([fact]);
+    expect(validFacts([fact], evidence.slice(1))).toHaveLength(0);
+  });
+  it("retira tendencias que pierden fuentes válidas hasta quedar por debajo del mínimo o cambian de contenido", () => {
     const evidence = [recipe("a"), recipe("b"), recipe("c")].map(recipeEvidence);
     const fact = { key: "techniques" as const, text: "Predominan asados", sources: evidence.map(e => ({ id: e.id, hash: e.hash, version: 2 as const })) };
     expect(validFacts([fact], evidence)).toHaveLength(1);
-    expect(validFacts([fact], evidence.slice(1))).toHaveLength(0);
-    expect(validFacts([fact], [...evidence.slice(0, 2), { ...evidence[2]!, hash: "changed" }])).toHaveLength(0);
+    expect(validFacts([fact], evidence.slice(1))).toHaveLength(1);
+    expect(validFacts([fact], evidence.slice(2))).toHaveLength(0);
+    expect(validFacts([fact], [evidence[0]!, { ...evidence[1]!, hash: "changed" }, { ...evidence[2]!, hash: "changed" }])).toHaveLength(0);
   });
   it("mantiene fuentes v2 al renombrar o aprobar sin cambiar la elaboración", () => {
     const originals = ["a", "b", "c"].map(id => recipeEvidence(recipe(id)));
@@ -38,20 +53,20 @@ describe("culinary evidence", () => {
     expect(validFacts([fact], current)).toEqual([fact]);
   });
   it("migra hashes legacy sólo si todavía se pueden verificar", () => {
-    const before = ["a", "b", "c"].map(id => recipeEvidence(recipe(id, "in_test")));
+    const before = ["a", "b"].map(id => recipeEvidence(recipe(id, "in_test")));
     const legacy = { key: "techniques" as const, text: "Predominan asados", sources: before.map(e => ({ id: e.id, hash: e.legacyHashes.in_test })) };
-    const approved = ["a", "b", "c"].map(id => recipeEvidence(recipe(id, "approved")));
+    const approved = ["a", "b"].map(id => recipeEvidence(recipe(id, "approved")));
     expect(validFacts([legacy], approved)[0]?.sources).toEqual(approved.map(e => ({ id: e.id, hash: e.hash, version: 2 })));
 
-    const renamed = approved.map(e => e.id === "c" ? recipeEvidence(recipe("c", "approved", { title: "Título irreconocible" })) : e);
+    const renamed = approved.map(e => e.id === "b" ? recipeEvidence(recipe("b", "approved", { title: "Título irreconocible" })) : e);
     expect(validFacts([legacy], renamed)).toHaveLength(0);
-    const changed = approved.map(e => e.id === "c" ? recipeEvidence(recipe("c", "approved", { contentJson: { ingredients: ["200 g c"], method: ["Hervir c"] } })) : e);
+    const changed = approved.map(e => e.id === "b" ? recipeEvidence(recipe("b", "approved", { contentJson: { ingredients: ["200 g b"], method: ["Hervir b"] } })) : e);
     expect(validFacts([legacy], changed)).toHaveLength(0);
   });
   it("oculta una tendencia sin borrar sus fuentes cuando una receta va a papelera", () => {
     const current = ["a", "b", "c"].map(id => recipeEvidence(recipe(id, "approved")));
     const fact = { key: "techniques" as const, text: "Predominan asados", sources: current.map(e => ({ id: e.id, hash: e.hash, version: 2 as const })) };
-    const assessed = assessFacts([fact], current.slice(0, 2));
+    const assessed = assessFacts([fact], current.slice(0, 1));
     expect(assessed.valid).toEqual([]);
     expect(assessed.migrated).toEqual([fact]);
     expect(assessFacts(assessed.migrated, current).valid).toEqual([fact]);

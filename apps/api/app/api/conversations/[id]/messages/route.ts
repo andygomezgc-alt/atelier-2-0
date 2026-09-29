@@ -6,7 +6,7 @@ import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { buildSystemBlocks, type Msg } from "@/lib/anthropic";
 import { recordAiTokens } from "@/lib/ai-quota";
 
-import { streamChat } from "@/lib/ai/chat";
+import { stableHistoryWindow, streamChat } from "@/lib/ai/chat";
 import { chatConfig, providerConfigured } from "@/lib/ai/config";
 
 import { beginChatTurn, finishChatTurn, releaseChatTurn, type ChatTurn } from "@/lib/chat-turn";
@@ -84,7 +84,7 @@ export async function POST(
   }, { status: 503 });
 
   let restaurant: { name: string; identityLine: string | null } | null = null;
-  let recentRecipes: { title: string; state: string }[] = [];
+  let recentRecipes: { title: string }[] = [];
   let culinaryMemory: string | null = null;
   let messages: Msg[] = [];
   let pinnedIdeaText: string | null = null;
@@ -132,21 +132,32 @@ export async function POST(
     turn = started;
 
     // Build context: recent recipes + pinned idea.
-    const [r, history, preparedMemory] = await Promise.all([
+    const [r, history, total, recent, preparedMemory] = await Promise.all([
       prisma.restaurant.findUnique({
         where: { id: ctx.restaurantId },
         select: { name: true, identityLine: true },
       }),
-      // Sliding window: solo re-enviamos los últimos 20 mensajes al modelo. Más
-      // allá de ese tope la conversación crece linealmente en costo/latencia sin
-      // agregar señal útil (el modelo ya tiene los principios estables y la idea
-      // anclada en el system prompt). Fetched desc para que `take` aplique al
-      // final cronológico; revertimos abajo antes de armar el array de messages.
+      // Ventana por bloques: solo re-enviamos los últimos 20 mensajes al modelo.
+      // Más allá de ese tope la conversación crece linealmente en costo/latencia
+      // sin agregar señal útil (el modelo ya tiene los principios estables y la
+      // idea anclada en el system prompt). Pero una ventana que se desliza un
+      // mensaje por turno cambia el comienzo del hilo cada vez y la caché del
+      // prompt nunca acierta: `stableHistoryWindow` corta en múltiplos de 10 del
+      // índice absoluto (por eso el conteo total), así el primer mensaje se
+      // mantiene varios turnos y el prefijo cacheado sigue coincidiendo. Fetched
+      // desc para que `take` aplique al final cronológico; revertimos abajo.
       prisma.message.findMany({
         where: { conversationId },
         orderBy: { createdAt: "desc" },
         take: 20,
         select: { role: true, content: true },
+      }),
+      prisma.message.count({ where: { conversationId } }),
+      prisma.recipe.findMany({
+        where: { restaurantId: ctx.restaurantId, deletedAt: null },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+        select: { title: true },
       }),
       chatMemory(ctx.restaurantId).catch(() => null),
     ]);
@@ -154,20 +165,16 @@ export async function POST(
     if (!r) throw new Error("Restaurant not found");
 
     restaurant = r;
+    recentRecipes = recent;
     culinaryMemory = preparedMemory || null;
-    if (!culinaryMemory) {
-      recentRecipes = await prisma.recipe.findMany({
-        where: { restaurantId: ctx.restaurantId, deletedAt: null },
-        orderBy: { updatedAt: "desc" },
-        take: 8,
-        select: { title: true, state: true },
-      });
-    }
-    messages = history
-      .slice()
-      .reverse()
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+    messages = stableHistoryWindow(
+      history
+        .slice()
+        .reverse()
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      total,
+    );
   }
 
   } catch (error) {

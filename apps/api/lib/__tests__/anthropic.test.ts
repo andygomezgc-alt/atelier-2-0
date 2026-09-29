@@ -1,26 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { buildMessageBlocks, buildSystemBlocks, type Msg } from "../anthropic";
 
-it("la memoria sustituye las recetas recientes y mantiene la idea actual", () => {
+it("la memoria convive con las recetas recientes y mantiene la idea actual", () => {
   const restaurant = { name: "Casa", identityLine: "Cocina vegetal" };
-  const recent = [{ title: "Receta anterior", state: "approved" }];
+  const recent = [{ title: "Receta anterior" }];
   const text = JSON.stringify(buildSystemBlocks(restaurant, recent, "Idea actual", "Preferimos asar"));
   expect(text).toContain("Preferimos asar"); expect(text).toContain("Idea actual"); expect(text).toContain("Cocina vegetal");
-  expect(text).not.toContain("Receta anterior");
+  expect(text).toContain("- Receta anterior");
+  expect(text).not.toContain("- Receta anterior (");
   expect(JSON.stringify(buildSystemBlocks(restaurant, recent, null))).toContain("Receta anterior");
 });
 
 it("usa recetas recientes si la memoria está vacía o no se pudo preparar", () => {
   const restaurant = { name: "Casa", identityLine: null };
-  const recent = [{ title: "Receta reciente", state: "approved" }];
+  const recent = [{ title: "Receta reciente" }];
   expect(JSON.stringify(buildSystemBlocks(restaurant, recent, null, ""))).toContain("Receta reciente");
   expect(JSON.stringify(buildSystemBlocks(restaurant, recent, null, null))).toContain("Receta reciente");
 });
 
-it("cachea la memoria estable entre identidad e idea sin superar cuatro breakpoints", () => {
+it("cachea la memoria y deja recetas e idea en el bloque dinámico sin superar cuatro breakpoints", () => {
   const blocks = buildSystemBlocks(
     { name: "Casa", identityLine: "Vegetal" },
-    [{ title: "No sumar", state: "approved" }],
+    [{ title: "Receta reciente" }],
     "Idea actual",
     "Técnicas de brasa",
   );
@@ -28,11 +29,15 @@ it("cachea la memoria estable entre identidad e idea sin superar cuatro breakpoi
     expect.stringContaining("Restaurante: Casa"), "Técnicas de brasa", expect.stringContaining("Idea actual"),
   ]));
   expect(blocks[2]).toEqual({ type: "text", text: "Técnicas de brasa", cache_control: { type: "ephemeral" } });
+  expect(blocks[3]!.text).toContain("# Recetas recientes del cuaderno");
+  expect(blocks[3]!.text).toContain("Receta reciente");
   expect(blocks[3]!.text).toContain("Idea actual");
   expect("cache_control" in blocks[3]!).toBe(false);
   const systemBreakpoints = blocks.filter(block => "cache_control" in block);
-  expect(systemBreakpoints).toHaveLength(3); // + último mensaje = límite Anthropic de cuatro.
-  expect(JSON.stringify(blocks)).not.toContain("No sumar");
+  expect(systemBreakpoints).toHaveLength(3);
+  const thread = buildMessageBlocks([{ role: "user", content: "Otra idea" }]);
+  const totalBreakpoints = JSON.stringify({ blocks, thread }).match(/"cache_control"/g) ?? [];
+  expect(totalBreakpoints).toHaveLength(4);
 });
 
 // El breakpoint de caché va SOLO en el último mensaje: así el turno siguiente

@@ -4,8 +4,8 @@ import { MemoryKeySchema } from "@atelier/shared";
 import { ZodError } from "zod";
 import { AiBudgetError } from "../ai/budget-policy";
 import { loadEvidence, correctionsOf } from "./service";
-import { evidenceHash, memoryContext, type StoredFact } from "./evidence";
-import { generateMemory, memoryProviderConfig, type MemoryGenerator } from "./provider";
+import { evidenceHash, memoryContext, MIN_TREND_SOURCES, type StoredFact } from "./evidence";
+import { generateMemory, MAX_TRENDS, memoryProviderConfig, type MemoryGenerator } from "./provider";
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
@@ -98,7 +98,7 @@ export async function processMemory(
   const excluded = new Set([...excludedKeys, ...corrections.map(c => c.key)]);
   const hash = evidenceHash(evidence, memory.restaurant.identityLine, corrections, excludedKeys);
   const snapshot = { restaurantId, enabled: true, version: memory.version, dirtyRevision: memory.dirtyRevision };
-  if (evidence.length < 3 || hash === memory.inputHash || MemoryKeySchema.options.every(key => excluded.has(key))) {
+  if (evidence.length < MIN_TREND_SOURCES || hash === memory.inputHash || MemoryKeySchema.options.every(key => excluded.has(key))) {
     await prisma.culinaryMemory.updateMany({
       where: snapshot,
       data: { checkedRevision: memory.dirtyRevision, retryAt: null, nextCheckAt: new Date(+now + DAY) },
@@ -165,17 +165,24 @@ export async function processMemory(
 
     const keys = new Set<string>();
     const learned: StoredFact[] = [];
+    let proposed = result.rejected ?? 0;
     for (const trend of result.trends) {
       if (excluded.has(trend.key) || keys.has(trend.key)) continue;
-      const refs = [...new Set(trend.sources)];
-      if (refs.length < 3 || refs.some(ref => !evidence[ref - 1])) throw new Error("memory_sources_invalid");
+      proposed++;
+      // Una tendencia mal citada se descarta sola: las demás siguen valiendo.
+      const refs = [...new Set(trend.sources)].filter(ref => evidence[ref - 1]);
+      if (refs.length < MIN_TREND_SOURCES) continue;
       keys.add(trend.key);
       learned.push({
         key: trend.key,
         text: trend.text,
         sources: refs.map(ref => ({ id: evidence[ref - 1]!.id, hash: evidence[ref - 1]!.hash, version: 2 })),
       });
+      if (learned.length >= MAX_TRENDS) break;
     }
+    // Si todo lo propuesto era inservible, es una respuesta mal formada: se conserva
+    // la memoria anterior en vez de sustituirla por una lista vacía.
+    if (proposed && !learned.length) throw new Error("memory_sources_invalid");
 
     // A trigger changes dirtyRevision immediately after culinary source edits.
     // Re-reading also protects deployments where an older trigger is still live.

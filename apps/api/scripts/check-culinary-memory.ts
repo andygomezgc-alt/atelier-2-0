@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { recipeEvidence } from "../lib/culinary-memory/evidence";
+import { MIN_TREND_SOURCES, recipeEvidence } from "../lib/culinary-memory/evidence";
 import { generateMemory, memoryPayload, memoryProviderConfig, type MemoryInput } from "../lib/culinary-memory/provider";
 
 const recipes = (rows: [string, string[], string[]][]) => rows.map(([title, ingredients, method], i) => recipeEvidence({
@@ -42,9 +42,10 @@ async function main() {
     const result = await generateMemory(item.input, async value => { usage = value; });
     const excluded = new Set([...item.input.excluded, ...item.input.corrections.map(c => c.key)]);
     const checks = {
+      wellFormed: !result.rejected,
       uniqueCategories: new Set(result.trends.map(t => t.key)).size === result.trends.length,
       respectedChef: result.trends.every(t => !excluded.has(t.key)),
-      validReferences: result.trends.every(t => new Set(t.sources).size >= 3 && t.sources.every(ref => ref <= item.input.evidence.length)),
+      validReferences: result.trends.every(t => new Set(t.sources).size >= MIN_TREND_SOURCES && t.sources.every(ref => ref <= item.input.evidence.length)),
       noUnsupportedProfile: result.trends.every(t => !/presupuesto|illimitat|ilimitad|horno especial|alerg/i.test(t.text)),
       ...(item.name === "vegetal_mediterranea" ? {
         noInventedPlating: result.trends.every(t => t.key !== "presentation"),
