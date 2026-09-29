@@ -76,3 +76,5 @@ coverage/
 
 # codex CLI — config/artefactos locales del agente, no van al repo
 .codex/
+# Local Pi runtime state
+.atl/
