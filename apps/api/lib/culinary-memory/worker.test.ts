@@ -200,6 +200,33 @@ describe("weekly memory worker", () => {
     expect(db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0].data.learned).toEqual([]);
   });
 
+  it("filters excluded, corrected and duplicate categories before filling the trend cap", async () => {
+    db.culinaryMemory.findUnique.mockResolvedValue(memory({
+      corrections: [{ key: "ingredients", text: "Corrección" }],
+      excludedKeys: ["cuisine"],
+    }));
+    const generate = vi.fn().mockResolvedValue({ trends: [
+      { key: "cuisine", text: "Excluida", sources: [1, 2] },
+      { key: "ingredients", text: "Corregida", sources: [1, 2] },
+      { key: "flavours", text: "Primera válida", sources: [1, 2] },
+      { key: "flavours", text: "Duplicada", sources: [1, 2] },
+      { key: "techniques", text: "Válida posterior", sources: [1, 2] },
+    ] });
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    const update = db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0];
+    expect(update.data.learned.map(({ key }: { key: string }) => key)).toEqual(["flavours", "techniques"]);
+  });
+
+  it("publishes at most four valid trends after filtering", async () => {
+    const keys = ["cuisine", "ingredients", "techniques", "flavours", "textures", "presentation"];
+    const generate = vi.fn().mockResolvedValue({ trends: keys.map(key => ({
+      key, text: "Tendencia", sources: [1, 2, 3],
+    })) });
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    const update = db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0];
+    expect(update.data.learned.map(({ key }: { key: string }) => key)).toEqual(keys.slice(0, 4));
+  });
+
   it("publishes prepared context and minimal history with verified v2 sources", async () => {
     db.culinaryMemory.findUnique.mockResolvedValue(memory({ corrections: [{ key: "cuisine", text: "Vegetal" }], excludedKeys: ["ingredients"] }));
     const generate = vi.fn().mockResolvedValue({ trends: ["cuisine", "ingredients", "techniques"].map(key => ({ key, text: "Tendencia", sources: [1, 2, 3] })) });

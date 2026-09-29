@@ -5,7 +5,7 @@ import { ZodError } from "zod";
 import { AiBudgetError } from "../ai/budget-policy";
 import { loadEvidence, correctionsOf } from "./service";
 import { evidenceHash, memoryContext, MIN_TREND_SOURCES, type StoredFact } from "./evidence";
-import { generateMemory, memoryProviderConfig, type MemoryGenerator } from "./provider";
+import { generateMemory, MAX_TRENDS, memoryProviderConfig, type MemoryGenerator } from "./provider";
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
@@ -178,6 +178,7 @@ export async function processMemory(
         text: trend.text,
         sources: refs.map(ref => ({ id: evidence[ref - 1]!.id, hash: evidence[ref - 1]!.hash, version: 2 })),
       });
+      if (learned.length >= MAX_TRENDS) break;
     }
     // Si todo lo propuesto era inservible, es una respuesta mal formada: se conserva
     // la memoria anterior en vez de sustituirla por una lista vacía.

@@ -15,7 +15,7 @@ export type GeneratedTrend = z.infer<typeof GeneratedTrendSchema>;
 export const GeneratedMemorySchema = z.object({ trends: z.array(z.unknown()) });
 /** `rejected` cuenta las tendencias descartadas por forma: el worker las suma a las propuestas. */
 export type GeneratedMemory = { trends: GeneratedTrend[]; rejected?: number };
-const MAX_TRENDS = 4;
+export const MAX_TRENDS = 4;
 function parseGeneratedMemory(raw: unknown): GeneratedMemory {
   const { trends } = GeneratedMemorySchema.parse(raw);
   const valid: GeneratedTrend[] = [];
@@ -23,7 +23,7 @@ function parseGeneratedMemory(raw: unknown): GeneratedMemory {
     const parsed = GeneratedTrendSchema.safeParse(trend);
     if (parsed.success) valid.push(parsed.data);
   }
-  return { trends: valid.slice(0, MAX_TRENDS), rejected: trends.length - valid.length };
+  return { trends: valid, rejected: trends.length - valid.length };
 }
 export type MemoryInput = {
   evidence: Evidence[];

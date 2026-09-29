@@ -60,11 +60,11 @@ describe("memory provider", () => {
     ] }));
     expect(await generateMemory(input, vi.fn())).toEqual({ trends: [good], rejected: 4 });
   });
-  it("deja pasar referencias fuera de rango al worker y conserva solo las cuatro primeras tendencias válidas", async () => {
+  it("deja pasar referencias fuera de rango al worker y conserva todas las tendencias válidas", async () => {
     const keys = ["cuisine", "ingredients", "techniques", "flavours", "textures"];
     vi.stubGlobal("fetch", respond({ trends: keys.map(key => ({ key, text: "Tendencia", sources: [1, 2, 99] })) }));
     const result = await generateMemory(input, vi.fn());
-    expect(result.trends.map(t => t.key)).toEqual(keys.slice(0, 4));
+    expect(result.trends.map(t => t.key)).toEqual(keys);
     expect(result.trends[0]!.sources).toEqual([1, 2, 99]);
     expect(result.rejected).toBe(0);
   });
