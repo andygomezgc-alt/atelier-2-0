@@ -37,12 +37,12 @@ Solo las tareas M1–M6. Fuera de alcance: "Notas del chef" (entrega 2), encende
 
 Olas (archivos disjuntos en paralelo): O1 = M3 ‖ M4 · O2 = M1 ‖ M6 · O3 = M2 ‖ M5.
 
-- [ ] M1 — recetas recientes siempre
-- [ ] M2 — tope 8192 + test config real
-- [ ] M3 — "Volver a aprender"
-- [ ] M4 — tendencia mala + mínimo 2
-- [ ] M5 — historial por bloques
-- [ ] M6 — aprender al encender
+- [x] M1 — recetas recientes siempre (`1db58e0`)
+- [x] M2 — tope 8192 + test config real (`de09ef9`)
+- [x] M3 — "Volver a aprender" (`c2b8791`)
+- [x] M4 — tendencia mala + mínimo 2 (`f4e1fd2`)
+- [x] M5 — historial por bloques (`a88e5df`)
+- [x] M6 — aprender al encender (`83890d3`)
 
 ## Criterios de aceptación
 - M1: con memoria encendida, el sistema incluye la memoria (cacheada) y los títulos recientes (bloque dinámico sin caché).
@@ -59,11 +59,23 @@ Olas (archivos disjuntos en paralelo): O1 = M3 ‖ M4 · O2 = M1 ‖ M6 · O3 = 
 - Al cierre: `npx expo export --platform android` en apps/mobile (borrar `dist`).
 
 ## Entrega
-- Previsión: ~500 líneas (con tests). Estrategia: `exception-ok`, un PR cohesionado; Andy delegó la decisión.
+- Previsión: ~500 líneas (con tests). Real: 755 líneas (663+ / 92−, 26 archivos, más de la mitad tests). Estrategia: `exception-ok`, un PR cohesionado; Andy delegó la decisión.
 - Límite revisado (RDD): arranca en el punto de rama 2146e54.
 
 ## Progreso y evidencia
-_(se completa por tarea: commit, comprobaciones, evaluación RDD)_
+- **Codex en esta máquina:** con `--write` no puede lanzar procesos (`CreateProcessAsUserW failed: 5`). Se usa como autor: recibe el código en el prompt, devuelve ediciones exactas y un Sonnet operador las aplica y corre RED/GREEN. La config de Codex apunta a `gpt-6-astra`, que el CLI 0.144.4 no soporta; se pasa `--model gpt-5.6-sol --effort xhigh` por tarea sin tocar la config.
+- **M4** (`f4e1fd2`, Sonnet). RED: 8 tests fallando; luego 5 más en la validación por tendencia. GREEN: api 725/725, tsc OK; spot check del padre: 101/101 en memoria/cron/restaurant. Añadido tras la revisión del padre: el proveedor valida cada tendencia por separado. `memory.integration.test.ts` no se corrió (requiere Postgres, `CULINARY_MEMORY_IT=1`).
+- **M3** (`c2b8791`, Codex autor + Sonnet operador). RED: falta el módulo; GREEN: 2/2; móvil 156/156, tsc móvil e i18n OK. El padre cambió además `memory_empty` de 3 a 2 elaboraciones (es/en/it).
+- **RDD M4:** evaluación `high` (process_boundary en memory.integration.test.ts); Andy dio consentimiento; revisión `review-2c728801199705bd` iniciada. Los 4 revisores fallaron con `401 OAuth access token is invalid` porque el CLI `claude` de la máquina no tiene sesión. Pendiente: reintentar tras el login, o revisar el tramo completo al final.
+
+- **M1** (`1db58e0`, Codex autor + Sonnet operador). RED 2+1; GREEN 43/43; api 741/741, tsc OK. Spot check del padre: 43/43.
+- **M6** (`83890d3`, Opus). `patchCulinaryMemory` devuelve `turnedOn` (transición dentro de la transacción); `after()` + `processMemory` con señal de 60 s; `maxDuration = 90` (otras rutas en producción usan 300). Lo que evita la doble corrida es la reserva condicional del worker (el lock se limpia en cada edición). RED 11; GREEN 117; api 741/741, tsc OK. Spot check del padre: 117/117.
+- **RDD por el hook de parada:** revisiones `review-3266283ab3b12801` y `review-f99a63614c250d51` (cambios sin commitear, riesgo medio), las dos con consentimiento de Andy, las dos bloqueadas por el mismo 401 del CLI `claude`.
+
+- **M5** (`a88e5df`, Sonnet). `stableHistoryWindow` corta en múltiplos de 10 del índice absoluto (con `message.count`); si ningún bloque cabe en 40.000 caracteres, vuelve al recorte de antes. RED 14; GREEN 120; api 756/756. Spot check del padre: 64/64.
+- **M2** (`de09ef9`, Codex autor + Sonnet operador). RED 1 (8192 frente a 4096); GREEN 12/12. Test con glm-5.3-flash, razonamiento y `finish_reason: length`.
+- **Cierre (padre):** api tsc OK y 758/758; móvil tsc OK y 156/156; shared tsc OK y 257/257; i18n tsc OK; `expo export --platform android` OK (bundle generado, `dist` borrado).
+- **Pendiente:** 4 revisiones RDD abiertas, bloqueadas por el 401 del CLI `claude`; `memory.integration.test.ts` sin correr (requiere Postgres).
 
 ## Siguiente paso
-Ola O1: M3 (Codex) ‖ M4 (Sonnet).
+Andy: iniciar sesión en el CLI `claude` para correr las revisiones pendientes; decidir PR, merge y deploy de la rama. Entrega 2 ("Notas del chef") pendiente.
