@@ -6,6 +6,7 @@ import { getCulinaryMemory, patchCulinaryMemory, clearCulinaryMemory } from "@/s
 import { ApiError } from "@/src/api/client";
 import { useI18n } from "@/src/hooks/useI18n";
 import { apiErrorMessage } from "@/src/lib/api-error";
+import { hasUnsavedRelearn, relearnCategory } from "@/src/lib/culinary-memory-draft";
 import { BottomSheet } from "./BottomSheet";
 import { ConfirmSheet } from "./ConfirmSheet";
 import { Button } from "./Button";
@@ -33,6 +34,7 @@ export function CulinaryMemorySheet({ restaurantId, onClose }: Props) {
     } catch (e) { if (alive.current) setError(apiErrorMessage(e, t)); }
   }
   const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(data);
+  const relearnPending = hasUnsavedRelearn(data, draft);
   function close() { if (!busy) dirty ? setConfirm("close") : onClose(); }
   async function save(erase = false) {
     if (!draft || !data || busy) return;
@@ -76,6 +78,10 @@ export function CulinaryMemorySheet({ restaurantId, onClose }: Props) {
               <Pressable accessibilityRole="button" accessibilityLabel={t("memory_edit")} disabled={busy} style={styles.action} onPress={() => setEditing(item.key)}>
                 <Ionicons name="pencil-outline" size={18} color={colors.inkSoft} /><Text style={styles.actionText}>{t("memory_edit")}</Text>
               </Pressable>
+              {draft.corrections.some(c => c.key === item.key) && <Pressable accessibilityRole="button" accessibilityLabel={t("memory_relearn")} disabled={busy} style={styles.action}
+                onPress={() => { setDraft(relearnCategory(draft, item.key)); setEditing(null); }}>
+                <Ionicons name="refresh-outline" size={18} color={colors.inkSoft} /><Text style={styles.actionText}>{t("memory_relearn")}</Text>
+              </Pressable>}
               <Pressable accessibilityRole="button" accessibilityLabel={t("memory_hide")} disabled={busy} style={styles.action}
                 onPress={() => setDraft({ ...draft, corrections: draft.corrections.filter(c => c.key !== item.key), excludedKeys: [...new Set([...draft.excludedKeys, item.key])] })}>
                 <Ionicons name="close-outline" size={22} color={colors.inkSoft} />
@@ -88,6 +94,7 @@ export function CulinaryMemorySheet({ restaurantId, onClose }: Props) {
           </>}
           {conflict && <><Text style={styles.note}>{t("memory_conflict")}</Text><Button label={t("memory_retry")} onPress={reload} disabled={busy} /></>}
           {draft.canEdit && <>
+            {relearnPending && <Text style={styles.note}>{t("memory_relearn_hint")}</Text>}
             <Button label={t("memory_save")} disabled={busy || !dirty || conflict || draft.corrections.some(c => !c.text.trim())} onPress={() => save()} />
             <Button label={t("memory_delete")} variant="secondary" disabled={busy || conflict} onPress={() => setConfirm("delete")} />
           </>}
