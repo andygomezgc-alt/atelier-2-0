@@ -58,6 +58,20 @@ describe("weekly memory worker", () => {
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { nextCheckAt: new Date(+now + 1) } }));
   });
 
+  it("does not call the provider again when memory is re-enabled within a week of the last attempt", async () => {
+    // Encender la memoria borra retryAt y cambia la revisión; el intento semanal sigue mandando.
+    const generate = vi.fn();
+    const lastAttemptAt = new Date(+now - DAY);
+    db.culinaryMemory.findUnique.mockResolvedValue(memory({ lastAttemptAt, cycleStartedAt: lastAttemptAt, dirtyRevision: 5, version: 3 }));
+    expect(await processMemory("r1", generate, config, now)).toBe("skipped");
+    expect(generate).not.toHaveBeenCalled();
+    expect(db.culinaryMemoryRun.create).not.toHaveBeenCalled();
+    expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith({
+      where: { restaurantId: "r1", version: 3, dirtyRevision: 5 },
+      data: { nextCheckAt: new Date(+lastAttemptAt + WEEK) },
+    });
+  });
+
   it("allows exactly one transient retry after 24h and records the real attempt time", async () => {
     const retryAt = new Date(+now - 1);
     const cycleStartedAt = new Date(+now - DAY);

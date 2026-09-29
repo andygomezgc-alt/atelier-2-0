@@ -25,6 +25,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   db.$transaction.mockImplementation((fn: (tx: typeof db) => unknown) => fn(db));
   db.culinaryMemory.findUnique.mockResolvedValue(memory());
+  db.culinaryMemory.upsert.mockResolvedValue(memory());
   db.culinaryMemory.updateMany.mockResolvedValue({ count: 1 });
   db.recipe.findMany.mockResolvedValue(["a", "b", "c"].map(recipe));
   db.restaurant.findUniqueOrThrow.mockResolvedValue({ identityLine: null });
@@ -78,6 +79,32 @@ describe("prepared culinary memory", () => {
     expect(db.culinaryMemory.updateMany.mock.calls[0]![0].data.learned).toEqual(learned);
     expect(await chatMemory("r1")).toContain("Predominan asados");
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("turning memory on", () => {
+  it("reports the change from disabled to enabled made by this patch", async () => {
+    db.culinaryMemory.upsert.mockResolvedValue(memory({ enabled: false }));
+    const result = await patchCulinaryMemory("r1", { expectedVersion: 4, enabled: true });
+    expect(result.turnedOn).toBe(true);
+    expect(result.memory).toMatchObject({ restaurantId: "r1", version: 4 });
+  });
+
+  it.each([
+    ["already enabled", { enabled: true }, { enabled: true }],
+    ["identity only", { enabled: false }, { identityLine: "Cocina de mercado" }],
+    ["corrections only", { enabled: false }, { corrections: [{ key: "techniques" as const, text: "Al vapor" }] }],
+    ["disabling", { enabled: true }, { enabled: false }],
+    // Otra edición entró entre la lectura y el cambio: esa es la que la encendió.
+    ["stale read", { enabled: false, version: 3 }, { enabled: true }],
+  ])("does not report it when %s", async (_label, stored, patch) => {
+    db.culinaryMemory.upsert.mockResolvedValue(memory(stored));
+    expect((await patchCulinaryMemory("r1", { expectedVersion: 4, ...patch })).turnedOn).toBe(false);
+  });
+
+  it("does not report it when the memory is erased", async () => {
+    db.culinaryMemory.upsert.mockResolvedValue(memory({ enabled: false }));
+    expect((await patchCulinaryMemory("r1", { expectedVersion: 4 }, true)).turnedOn).toBe(false);
   });
 });
 
