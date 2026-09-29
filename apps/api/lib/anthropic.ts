@@ -17,7 +17,6 @@ type RestaurantContext = {
 
 type RecentRecipe = {
   title: string;
-  state: string;
 };
 
 export type Msg = { role: "user" | "assistant"; content: string };
@@ -58,13 +57,15 @@ export function buildSystemBlocks(
     blocks.push({ type: "text", text: culinaryMemory, cache_control: { type: "ephemeral" } });
   }
 
-  // Recent titles are always useful live context, including when memory exists.
+  // Keep the recent-recipe list stable: it should change only when a recipe is
+  // created, deleted, or renamed, so the cached prefix survives edits and state
+  // changes. The titles remain useful live context even when memory exists.
   // The pinned idea remains after the stable memory and is intentionally live.
   const dynamicLines: string[] = [];
   if (recentRecipes.length > 0) {
     dynamicLines.push("# Recetas recientes del cuaderno");
     for (const r of recentRecipes.slice(0, 8)) {
-      dynamicLines.push(`- ${r.title} (${r.state})`);
+      dynamicLines.push(`- ${r.title}`);
     }
   }
   if (pinnedIdea) {

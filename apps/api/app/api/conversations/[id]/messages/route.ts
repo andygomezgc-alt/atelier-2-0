@@ -84,7 +84,7 @@ export async function POST(
   }, { status: 503 });
 
   let restaurant: { name: string; identityLine: string | null } | null = null;
-  let recentRecipes: { title: string; state: string }[] = [];
+  let recentRecipes: { title: string }[] = [];
   let culinaryMemory: string | null = null;
   let messages: Msg[] = [];
   let pinnedIdeaText: string | null = null;
@@ -155,9 +155,9 @@ export async function POST(
       prisma.message.count({ where: { conversationId } }),
       prisma.recipe.findMany({
         where: { restaurantId: ctx.restaurantId, deletedAt: null },
-        orderBy: { updatedAt: "desc" },
+        orderBy: { createdAt: "desc" },
         take: 8,
-        select: { title: true, state: true },
+        select: { title: true },
       }),
       chatMemory(ctx.restaurantId).catch(() => null),
     ]);

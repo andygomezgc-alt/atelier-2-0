@@ -3,16 +3,17 @@ import { buildMessageBlocks, buildSystemBlocks, type Msg } from "../anthropic";
 
 it("la memoria convive con las recetas recientes y mantiene la idea actual", () => {
   const restaurant = { name: "Casa", identityLine: "Cocina vegetal" };
-  const recent = [{ title: "Receta anterior", state: "approved" }];
+  const recent = [{ title: "Receta anterior" }];
   const text = JSON.stringify(buildSystemBlocks(restaurant, recent, "Idea actual", "Preferimos asar"));
   expect(text).toContain("Preferimos asar"); expect(text).toContain("Idea actual"); expect(text).toContain("Cocina vegetal");
-  expect(text).toContain("Receta anterior");
+  expect(text).toContain("- Receta anterior");
+  expect(text).not.toContain("- Receta anterior (");
   expect(JSON.stringify(buildSystemBlocks(restaurant, recent, null))).toContain("Receta anterior");
 });
 
 it("usa recetas recientes si la memoria está vacía o no se pudo preparar", () => {
   const restaurant = { name: "Casa", identityLine: null };
-  const recent = [{ title: "Receta reciente", state: "approved" }];
+  const recent = [{ title: "Receta reciente" }];
   expect(JSON.stringify(buildSystemBlocks(restaurant, recent, null, ""))).toContain("Receta reciente");
   expect(JSON.stringify(buildSystemBlocks(restaurant, recent, null, null))).toContain("Receta reciente");
 });
@@ -20,7 +21,7 @@ it("usa recetas recientes si la memoria está vacía o no se pudo preparar", () 
 it("cachea la memoria y deja recetas e idea en el bloque dinámico sin superar cuatro breakpoints", () => {
   const blocks = buildSystemBlocks(
     { name: "Casa", identityLine: "Vegetal" },
-    [{ title: "Receta reciente", state: "approved" }],
+    [{ title: "Receta reciente" }],
     "Idea actual",
     "Técnicas de brasa",
   );

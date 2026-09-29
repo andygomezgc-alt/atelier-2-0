@@ -357,18 +357,18 @@ describe("POST chat — historial por bloques", () => {
 describe("POST chat — selección de proveedor", () => {
   it("loads and forwards recent titles when useful memory is ready", async () => {
     memoryChat.mockResolvedValue("Técnicas de brasa");
-    db.recipe.findMany.mockResolvedValue([{ title: "Receta reciente", state: "approved" }]);
+    db.recipe.findMany.mockResolvedValue([{ title: "Receta reciente" }]);
     streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
     await (await post({ content: "receta" })).text();
     expect(db.recipe.findMany).toHaveBeenCalledWith({
       where: { restaurantId: "r1", deletedAt: null },
-      orderBy: { updatedAt: "desc" },
+      orderBy: { createdAt: "desc" },
       take: 8,
-      select: { title: true, state: true },
+      select: { title: true },
     });
     expect(buildSystem).toHaveBeenCalledWith(
       expect.anything(),
-      [{ title: "Receta reciente", state: "approved" }],
+      [{ title: "Receta reciente" }],
       null,
       "Técnicas de brasa",
     );
@@ -378,13 +378,13 @@ describe("POST chat — selección de proveedor", () => {
     ["empty", "resolve"],
     ["failure", "reject"],
   ])("falls back to recent titles when memory is %s", async (_label, outcome) => {
-    db.recipe.findMany.mockResolvedValue([{ title: "Receta reciente", state: "approved" }]);
+    db.recipe.findMany.mockResolvedValue([{ title: "Receta reciente" }]);
     if (outcome === "reject") memoryChat.mockRejectedValue(new Error("database unavailable"));
     else memoryChat.mockResolvedValue("");
     streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
     await (await post({ content: "receta" })).text();
     expect(db.recipe.findMany).toHaveBeenCalledTimes(1);
-    expect(buildSystem).toHaveBeenCalledWith(expect.anything(), [{ title: "Receta reciente", state: "approved" }], null, null);
+    expect(buildSystem).toHaveBeenCalledWith(expect.anything(), [{ title: "Receta reciente" }], null, null);
   });
 
   it.each([["daily", "gemini-3.8-flash"], ["sonnet", "gemini-3.8-flash"], ["haiku", "gemini-3.8-flash"], ["creative", "claude-opus-5-5"], ["opus", "claude-opus-5-5"]])("%s conserva el modelo real en la conversación", async (model, expected) => {
