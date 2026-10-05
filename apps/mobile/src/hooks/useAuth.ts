@@ -19,6 +19,7 @@ import {
 } from "@/src/api/auth";
 import { clearAll as clearApiCache } from "@/src/api/cache";
 import { setLang } from "@/src/hooks/useI18n";
+import { getDeviceLanguage } from "@/src/lib/device-language";
 
 export type AuthState =
   | { status: "loading" }
@@ -39,11 +40,12 @@ let _state: AuthState = { status: "loading" };
 const _listeners = new Set<() => void>();
 
 function setState(next: AuthState) {
-  // Apenas hay usuario, la app arranca en SU idioma (languagePref). Sin esto un
-  // chef italiano veía la app en español (default del módulo i18n) aunque su
-  // perfil dijera "it". Centralizado acá cubre todos los caminos de login.
+  // A saved account preference wins after login; signed-out screens return to
+  // the device language so the next account does not inherit the previous one.
   if (next.status === "signed-in" || next.status === "needs-restaurant") {
     setLang(next.user.languagePref);
+  } else if (next.status === "signed-out") {
+    setLang(getDeviceLanguage());
   }
   _state = next;
   _listeners.forEach((l) => l());
