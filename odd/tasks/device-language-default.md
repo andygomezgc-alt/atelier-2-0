@@ -12,7 +12,7 @@ Do not overwrite existing account language, migrate existing users, change unrel
 - Strict TDD: enabled by workspace AGENTS.md; observed RED -> GREEN -> REFACTOR required for each behavior.
 - Runner: pnpm 9.15.0 / Vitest; existing mobile and API test scripts.
 - Branch: codex/device-language-default; branch point `c646c86917401c0685a45d2f9a1ea3c28abd6a26`.
-- Delivery: ask-on-risk; forecast 180-350 authored added/deleted lines excluding generated lock/graph files. Current T1 working diff: approximately 158 authored lines before this evidence update; no work-unit commit yet.
+- Delivery: ask-on-risk; forecast 180-350 authored added/deleted lines excluding generated lock/graph files. T1 work-unit authored count: 190 lines (212 total minus 22 generated lock lines); tracking updates counted at final closure.
 - RDD: on (global); parent assesses each work-unit commit against last reviewed boundary. Consent belongs to user.
 - New native app binaries are required for expo-localization; cloud builds and release remain pending separate authorization.
 
@@ -24,7 +24,7 @@ Do not overwrite existing account language, migrate existing users, change unrel
   - Verification: initial focused RED observed before production edits (missing locale module and sign-out locale assertion); after fixing native-test mocks, a baseline replay of the original auth transport produced three missing-hint assertion failures. Focused GREEN: 17/17. Full mobile suite: 194/194; mobile typecheck and `git diff --check`: pass. Static Expo config exposes one `expo-localization` plugin with `it`, `es`, `en` supported locales.
   - Runtime harness: mocked Expo `getLocales` verifies ordered preferences, regional tags, null/empty/unsupported/error fallback; mocked API transport verifies magic-link, Google and Apple request bodies; mocked auth bootstrap verifies saved-profile override and sign-out reset. Actual Android/iOS behavior remains unverified until a native rebuild.
   - Rollback: remove the localization module/dependency/plugin and revert mobile hook/auth transport and their tests; no backend or database changes in T1.
-  - Commit/evidence: parent spot-check passed 17/17 focused tests and git diff --check; work-unit commit follows this checked snapshot.
+  - Commit/evidence: 580e31799ff57fb367a0e2cf899d9cf44acc8d67 — feat(mobile): select device language with Italian fallback. Parent spot-check: 17/17 and working-tree diff check passed. Staging exposed a trailing blank line in this new task document; removed in the tracking commit before review.
 - [ ] T2 — Apply validated hints only when Google, Apple or mobile magic-link sign-in creates an account. Preserve current behavior for existing users and clients without the hint unless Italian fallback is explicitly needed for a new mobile account.
   - Route: delegated (three auth entry points, shared resolver and tests).
   - Acceptance: Italian/Spanish/English new accounts match requested locale; existing accounts cannot be overwritten; malformed inputs handled through existing validation; legacy clients remain compatible.
@@ -37,5 +37,4 @@ Do not overwrite existing account language, migrate existing users, change unrel
 - Normalize before verification/review freeze; do not mutate reviewed source bytes.
 - Rollback: revert these work-unit commits and dependency/config changes; existing users and database schema are untouched.
 - Final source/types/tests, line count, commit identities and RDD outcomes must be recorded before closing.
-- T1 source and checks complete; parent commit and native RDD assessment pending. T2 is authorized by the user and unstarted, awaiting parent dispatch.
-
+- T1 committed; native RDD assessment pending. T2 is authorized by the user and unstarted, awaiting parent dispatch.
