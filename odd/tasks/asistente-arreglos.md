@@ -55,7 +55,7 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
 - [x] A2 — contrato de errores
 - [x] A3 — errores honestos en el móvil
 - [x] A4 — reservas de presupuesto
-- [ ] A5 — servicio de turno
+- [x] A5 — servicio de turno
 - [ ] A6 — respuesta que sobrevive y Detener (servidor)
 - [ ] A7 — observabilidad
 - [ ] A8 — datos del restaurante en el prompt
@@ -125,3 +125,6 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
   - Avisos no bloqueantes → seguimiento **A4b**: un 401 del stream sin token deja el banner «sesión expirada» sin salida (el transporte solo cierra sesión con token); el script de reconciliación no tiene test de su cableado con Prisma (dry-run/apply, `_max` nulo, contadores y código de salida).
 - Codex vuelve a tener cuota (22:50); según lo decidido por Andy, las tareas siguientes vuelven a Codex gpt-6.1-sol.
 - **A4b** (Codex gpt-6.1-sol high, dos pasos). El stream cierra la sesión ante cualquier 401 (con o sin token), una sola vez; `apiFetch` sin cambios. El script de reconciliación pasa a `reconcile-ai-holds-runner.ts` con dependencias inyectadas y 7 tests de cableado (dry-run, apply, `_max` nulo, omitidas vs fallidas, código de salida). RED observado por el padre: móvil 3 / 47, api 7 (stub). GREEN: api 896/896 y tsc OK; móvil 245/245, tsc OK y `expo export` OK; `git diff --check` OK.
+- **A5** (Codex gpt-6.1-sol xhigh, dos pasos). Servicio `lib/chat-turn-service.ts` (prepare/run); la ruta queda en ~100 líneas. Orden: bloqueo → repetición → contexto y prompt → reserva con el techo del payload real → guardar el mensaje → stream. Cuota o presupuesto agotado devuelve 429/503 con `Retry-After` antes del stream y sin guardar el mensaje; un fallo de contexto solo suelta el bloqueo; uno posterior a la reserva la libera. `streamChat` consume la reserva preparada. Preview: ventana alineada por bloques y Creativo prohibido (403) sin restaurante.
+  - Revisión del padre: la primera versión reservaba antes de cargar el contexto con un techo fijo de 600 000 tokens (~€4 por reserva del Creativo); se corrigió con tests nuevos al techo del payload real.
+  - RED observado por el padre: 42 / 124 y luego 12 fallos del reordenamiento; GREEN api 937/937 y tsc OK; móvil 245/245; `git diff --check` OK. Nota: la sesión anterior se cortó con Codex a mitad de A5; un trabajo zombi del companion se marcó cancelado a mano.

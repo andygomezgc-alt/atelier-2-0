@@ -13,10 +13,15 @@ import { inspect } from "node:util";
 import { boundedChatHistory, sseData, stableHistoryWindow, streamChat, type ChatEvent } from "./chat";
 import type { Msg } from "../anthropic";
 import type { ChatModelSelection } from "@atelier/shared";
-import { releaseGeneration, reserveGeneration, settleGeneration, settleInterruptedGeneration } from "./budget";
+import { releaseGeneration, reserveGeneration, settleGeneration, settleInterruptedGeneration, type Reservation } from "./budget";
 import { logger } from "../logger";
 
-const input = (model: ChatModelSelection = "daily", signal = new AbortController().signal) => ({ model, signal,
+const reservation: Reservation = {
+  id: "reservation", budgetId: "pilot", micros: 100_000,
+  rate: { input: .75, output: 3.75, cached: .075, cacheWrite: .75 },
+};
+// Structurally compatible with the old ChatInput, so Step 1 needs no production stub.
+const input = (model: ChatModelSelection = "daily", signal = new AbortController().signal) => ({ model, signal, reservation,
   system: [{ type: "text" as const, text: "Principios del chef" }, { type: "text" as const, text: "Memoria breve" }],
   messages: [{ role: "user" as const, content: "Berenjena" }, { role: "assistant" as const, content: "Asada" }, { role: "user" as const, content: "Sin lácteos" }],
 });
@@ -41,16 +46,16 @@ const expectKeptHold = () => {
   expect(settleGeneration).not.toHaveBeenCalled(); expect(releaseGeneration).not.toHaveBeenCalled(); expect(settleInterruptedGeneration).not.toHaveBeenCalled();
 };
 const expectReleased = () => {
-  expect(releaseGeneration).toHaveBeenCalledTimes(1); expect(releaseGeneration).toHaveBeenCalledWith({ id: "reservation" });
+  expect(releaseGeneration).toHaveBeenCalledTimes(1); expect(releaseGeneration).toHaveBeenCalledWith(reservation);
   expect(settleGeneration).not.toHaveBeenCalled(); expect(settleInterruptedGeneration).not.toHaveBeenCalled();
 };
 const expectInterrupted = (known: Record<string, number>) => {
   expect(settleInterruptedGeneration).toHaveBeenCalledTimes(1);
-  expect(settleInterruptedGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining(known));
+  expect(settleInterruptedGeneration).toHaveBeenCalledWith(reservation, expect.objectContaining(known));
   expect(settleGeneration).not.toHaveBeenCalled(); expect(releaseGeneration).not.toHaveBeenCalled();
 };
 beforeEach(() => {
-  vi.mocked(reserveGeneration).mockReset().mockResolvedValue({ id: "reservation" } as never);
+  vi.mocked(reserveGeneration).mockReset().mockResolvedValue(reservation);
   clearClosings();
   vi.stubEnv("GEMINI_API_KEY", "gemini-test"); vi.stubEnv("ANTHROPIC_API_KEY", "anthropic-test");
   opusStream.mockReset(); constructor.mockReset();
@@ -133,7 +138,7 @@ describe("Opus chat adapter", () => {
     });
     await expect(collect(streamChat(input("creative")))).rejects.toThrow("chat_refused");
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('"category":"bio"'));
-    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 10, outputTokens: 3 }));
+    expect(settleGeneration).toHaveBeenCalledWith(reservation, expect.objectContaining({ inputTokens: 10, outputTokens: 3 }));
     warn.mockRestore();
   });
 });
@@ -190,7 +195,7 @@ describe("A2 provider error normalization", () => {
     });
     const code = stopReason === "refusal" ? "chat_refused" : "chat_response_incomplete";
     await expect(collect(streamChat(input("creative")))).rejects.toMatchObject({ code });
-    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 12, outputTokens: 8 }));
+    expect(settleGeneration).toHaveBeenCalledWith(reservation, expect.objectContaining({ inputTokens: 12, outputTokens: 8 }));
   });
 
   it.each([
@@ -285,7 +290,7 @@ describe("A2 provider error normalization", () => {
       usageMetadata: { promptTokenCount: 23, candidatesTokenCount: 4 },
     })))));
     await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "ai_response_blocked" });
-    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 23, outputTokens: 4 }));
+    expect(settleGeneration).toHaveBeenCalledWith(reservation, expect.objectContaining({ inputTokens: 23, outputTokens: 4 }));
   });
 
   it("maps Gemini promptFeedback blocking independently of chunk.error", async () => {
@@ -339,11 +344,23 @@ describe("A2 provider error normalization", () => {
       usageMetadata: { promptTokenCount: 11, candidatesTokenCount: 7 },
     })))));
     await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "chat_response_incomplete" });
-    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 11, outputTokens: 7 }));
+    expect(settleGeneration).toHaveBeenCalledWith(reservation, expect.objectContaining({ inputTokens: 11, outputTokens: 7 }));
   });
 });
 
 describe("A4 closing the reservation", () => {
+  it.each(["history", "provider key"])("releases a prepared hold if %s validation fails before contacting the provider", async stage => {
+    const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+    const request = input();
+    if (stage === "history") request.messages = [{ role: "user", content: "x".repeat(40_001) }];
+    else vi.stubEnv("GEMINI_API_KEY", "");
+    await expect(collect(streamChat(request))).rejects.toThrow(stage === "history" ? "chat_context_too_long" : "ai_provider_unconfigured");
+    expectReleased();
+    expect(reserveGeneration).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(opusStream).not.toHaveBeenCalled();
+  });
+
   it("charges the exact message_start input, cache included, when the chef aborts midway", async () => {
     const controller = new AbortController();
     opusStream.mockReturnValue({
@@ -371,9 +388,10 @@ describe("A4 closing the reservation", () => {
   it("releases the hold when the chef aborts before the provider is called", async () => {
     const controller = new AbortController();
     const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
-    vi.mocked(reserveGeneration).mockImplementationOnce(async () => { controller.abort(); return { id: "reservation" } as never; });
+    controller.abort(); // prepare already reserved; cancellation happens before run starts.
     await expect(collect(streamChat(input("daily", controller.signal)))).rejects.toMatchObject({ name: "AbortError" });
     expect(fetcher).not.toHaveBeenCalled();
+    expect(reserveGeneration).not.toHaveBeenCalled();
     expectReleased();
   });
 
@@ -394,7 +412,7 @@ describe("A4 closing the reservation", () => {
     });
     await collect(streamChat(input("creative")));
     expect(settleGeneration).toHaveBeenCalledTimes(1);
-    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 30, outputTokens: 400 }));
+    expect(settleGeneration).toHaveBeenCalledWith(reservation, expect.objectContaining({ inputTokens: 30, outputTokens: 400 }));
     expect(releaseGeneration).not.toHaveBeenCalled(); expect(settleInterruptedGeneration).not.toHaveBeenCalled();
   });
 });
@@ -457,12 +475,27 @@ describe("stableHistoryWindow", () => {
 });
 
 describe("bounded transport", () => {
-  it("passes the authenticated owner to the budget guard and never starts a denied generation", async () => {
-    const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
-    vi.mocked(reserveGeneration).mockRejectedValueOnce(new Error("ai_budget_exhausted"));
-    await expect(collect(streamChat({ ...input(), userId: "authenticated-user" }))).rejects.toThrow("ai_budget_exhausted");
-    expect(reserveGeneration).toHaveBeenCalledWith(expect.objectContaining({ task: "daily" }), expect.any(Number), "authenticated-user");
-    expect(fetcher).not.toHaveBeenCalled(); expect(opusStream).not.toHaveBeenCalled();
+  it.each(["daily", "creative"] as const)("%s consumes the prepared reservation without reserving again", async model => {
+    const prepared = { ...reservation, id: "external-reservation" };
+    vi.mocked(reserveGeneration).mockRejectedValue(new Error("a second reservation must not happen"));
+    const fetcher = vi.fn().mockResolvedValue(new Response(body(event({
+      candidates: [{ finishReason: "STOP", content: { parts: [{ text: "Recipe" }] } }],
+      usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 5 },
+    }))));
+    vi.stubGlobal("fetch", fetcher);
+    opusStream.mockReturnValue({
+      async *[Symbol.asyncIterator]() { yield { type: "content_block_delta", delta: { type: "text_delta", text: "Recipe" } }; },
+      finalMessage: async () => ({ stop_reason: "end_turn", usage: { input_tokens: 20, output_tokens: 5 } }),
+    });
+    const request = { ...input(model), reservation: prepared, userId: "authenticated-user" };
+    const events = await collect(streamChat(request));
+    expect(events).toContainEqual({ type: "delta", text: "Recipe" });
+    expect(reserveGeneration).not.toHaveBeenCalled();
+    expect(settleGeneration).toHaveBeenCalledTimes(1);
+    expect(settleGeneration).toHaveBeenCalledWith(prepared, expect.objectContaining({ inputTokens: 20, outputTokens: 5 }));
+    expect(releaseGeneration).not.toHaveBeenCalled();
+    expect(settleInterruptedGeneration).not.toHaveBeenCalled();
+    expect(model === "daily" ? fetcher : opusStream).toHaveBeenCalledTimes(1);
   });
   it("charges known input plus the output ceiling when the connection fails midway", async () => {
     opusStream.mockReturnValue({
@@ -480,7 +513,7 @@ describe("bounded transport", () => {
       finalMessage: async () => ({ stop_reason: "max_tokens", usage: { input_tokens: 100, output_tokens: 16384, cache_creation_input_tokens: 50, cache_read_input_tokens: 20 } }),
     });
     await expect(collect(streamChat(input("creative")))).rejects.toThrow("chat_response_incomplete");
-    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 170, outputTokens: 16384, cachedTokens: 20, cacheWriteTokens: 50 }));
+    expect(settleGeneration).toHaveBeenCalledWith(reservation, expect.objectContaining({ inputTokens: 170, outputTokens: 16384, cachedTokens: 20, cacheWriteTokens: 50 }));
   });
   it("keeps complete recent messages and removes an orphan assistant", () => {
     const history = [...input().messages, { role: "assistant" as const, content: "x".repeat(20) }, { role: "user" as const, content: "Última" }];

@@ -6,12 +6,11 @@ import { buildMessageBlocks, type Msg, type buildSystemBlocks } from "../anthrop
 import { chatConfig, providerKey } from "./config";
 import { emptyUsage, tokenCount, type AiUsage } from "./types";
 import type { ApiErrorCode, ChatModelSelection } from "@atelier/shared";
-import { releaseGeneration, reserveGeneration, settleGeneration, settleInterruptedGeneration, type Reservation } from "./budget";
-import { textInputCeiling } from "./budget-policy";
+import { releaseGeneration, settleGeneration, settleInterruptedGeneration, type Reservation } from "./budget";
 import { logger } from "../logger";
 
 export type ChatEvent = { type: "delta"; text: string } | { type: "usage"; usage: AiUsage };
-type ChatInput = { model?: ChatModelSelection; system: ReturnType<typeof buildSystemBlocks>; messages: Msg[]; signal: AbortSignal; userId?: string };
+type ChatInput = { model?: ChatModelSelection; system: ReturnType<typeof buildSystemBlocks>; messages: Msg[]; signal: AbortSignal; reservation: Reservation; userId?: string };
 
 export type ChatErrorCode = Extract<ApiErrorCode,
   "ai_provider_failed" | "ai_rate_limited" | "ai_timeout" | "ai_response_blocked" | "chat_refused" | "chat_response_incomplete" | "chat_context_too_long">;
@@ -161,17 +160,15 @@ function anthropicGeneratedNothing(err: unknown): boolean {
 }
 
 export async function* streamChat(input: ChatInput): AsyncGenerator<ChatEvent> {
-  const config = chatConfig(input.model);
-  providerKey(config.provider);
-  input.signal.throwIfAborted();
-  const messages = boundedChatHistory(input.messages);
-  const reservation = await reserveGeneration(config, textInputCeiling({ system: input.system, messages }), input.userId);
-  const billing: Billing = {};
+  // prepare owns the hold until run; all pre-provider checks must also refund it.
+  const billing: Billing = { nothingBilled: true };
   try {
-    if (input.signal.aborted) billing.nothingBilled = true; // Provider was not started.
+    const config = chatConfig(input.model);
+    providerKey(config.provider);
     input.signal.throwIfAborted();
+    const messages = boundedChatHistory(input.messages);
     yield* streamChatProvider({ ...input, messages }, billing);
-  } finally { await closeReservation(reservation, billing); }
+  } finally { await closeReservation(input.reservation, billing); }
 }
 
 async function* streamChatProvider(input: ChatInput, billing: Billing): AsyncGenerator<ChatEvent> {
@@ -197,9 +194,12 @@ async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, billin
   let text = "";
   if (config.provider === "anthropic") {
     const client = new Anthropic({ apiKey: key, maxRetries: 0, timeout: config.timeoutMs });
+    const messageBlocks = buildMessageBlocks(messages);
+    signal.throwIfAborted();
+    billing.nothingBilled = false; // From dispatch onward, preserve A4's uncertainty rules.
     const upstream = client.messages.stream({
       model: config.model, max_tokens: config.maxTokens,
-      system: input.system, messages: buildMessageBlocks(messages),
+      system: input.system, messages: messageBlocks,
       thinking: { type: "adaptive", display: "omitted" },
       // Opus 5.5 razona más que Opus 5 en el mismo nivel: en medio iguala a
       // Opus 5 en alto con menos tokens, así que responde antes y cuesta menos.
@@ -244,15 +244,18 @@ async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, billin
     return;
   }
 
+  const body = JSON.stringify({
+    systemInstruction: { parts: input.system.map(block => ({ text: block.text })) },
+    contents: messages.map(message => ({ role: message.role === "assistant" ? "model" : "user", parts: [{ text: message.content }] })),
+    generationConfig: { maxOutputTokens: config.maxTokens, thinkingConfig: { thinkingLevel: "low", includeThoughts: false } },
+  });
   // A fetch that throws (no response, or an abort) is uncertain: the hold stays.
+  signal.throwIfAborted();
+  billing.nothingBilled = false;
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:streamGenerateContent?alt=sse`, {
     method: "POST", signal,
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({
-      systemInstruction: { parts: input.system.map(block => ({ text: block.text })) },
-      contents: messages.map(message => ({ role: message.role === "assistant" ? "model" : "user", parts: [{ text: message.content }] })),
-      generationConfig: { maxOutputTokens: config.maxTokens, thinkingConfig: { thinkingLevel: "low", includeThoughts: false } },
-    }),
+    body,
   });
   if (!response.ok) {
     billing.nothingBilled = true; // An HTTP error status before any stream event.

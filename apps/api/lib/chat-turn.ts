@@ -2,13 +2,15 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@atelier/db";
 
 export type ChatTurn = { conversationId: string; generationId: string; userMessageId: string };
+export type ClaimedChatTurn = Pick<ChatTurn, "conversationId" | "generationId"> & { userMessageId?: string };
 const headers = { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform" };
 
 export async function releaseChatTurn(turn: Pick<ChatTurn, "conversationId" | "generationId">) {
   await prisma.conversation.updateMany({ where: { id: turn.conversationId, generationId: turn.generationId }, data: { generationId: null, generationStartedAt: null } });
 }
 
-export async function beginChatTurn(conversationId: string, restaurantId: string, content: string, clientMessageId?: string): Promise<ChatTurn | Response> {
+/** Claim and check idempotency without persisting a new user message. */
+export async function claimChatTurn(conversationId: string, restaurantId: string, content: string, clientMessageId?: string): Promise<ClaimedChatTurn | Response> {
   const generationId = randomUUID();
   const claim = await prisma.conversation.updateMany({ where: {
     id: conversationId, restaurantId,
@@ -30,14 +32,19 @@ export async function beginChatTurn(conversationId: string, restaurantId: string
       const latest = await prisma.message.findFirst({ where: { conversationId }, orderBy: { createdAt: "desc" }, select: { id: true } });
       if (latest?.id !== prior.id) return Response.json({ error: "chat_request_conflict", code: "chat_request_conflict" }, { status: 409 });
     }
-    // streamChat reserves the user's weekly allowance and shared budget before
-    // contacting the provider. Replays above never reserve another generation.
-    const message = prior ?? await prisma.message.create({ data: { conversationId, role: "user", content, ...(clientMessageId ? { clientMessageId } : {}) } });
     keepLease = true;
-    return { ...turn, userMessageId: message.id };
+    return { ...turn, userMessageId: prior?.id };
   } finally {
     if (!keepLease) await releaseChatTurn(turn);
   }
+}
+
+/** Called only after prepare has reserved the allowance and budget. */
+export async function saveChatTurn(turn: ClaimedChatTurn, content: string, clientMessageId?: string): Promise<ChatTurn> {
+  const userMessageId = turn.userMessageId ?? (await prisma.message.create({ data: {
+    conversationId: turn.conversationId, role: "user", content, ...(clientMessageId ? { clientMessageId } : {}),
+  } })).id;
+  return { ...turn, userMessageId };
 }
 
 export async function finishChatTurn(turn: ChatTurn, content: string, modelId: string, usage: { inputTokens?: number; outputTokens?: number; cachedTokens?: number; latencyMs: number }) {

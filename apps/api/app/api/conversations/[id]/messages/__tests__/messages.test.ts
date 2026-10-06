@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { can, type Permission } from "@atelier/shared";
-import { t } from "@atelier/i18n";
 import { ApiErrorCodeSchema } from "@atelier/shared";
-import { AiBudgetError } from "@/lib/ai/budget-policy";
+import { AiBudgetError, textInputCeiling } from "@/lib/ai/budget-policy";
+import type { Reservation } from "@/lib/ai/budget";
+import type { Msg } from "@/lib/anthropic";
 import { logger } from "@/lib/logger";
 import { inspect } from "node:util";
 
 // Mocks elevados (el factory de vi.mock se iza sobre los consts).
-const { db, guard, authContext, quota, anthro, streamMock, memoryChat, buildSystem, PrismaClientKnownRequestError } = vi.hoisted(() => {
+const { db, guard, authContext, quota, budget, anthro, streamMock, memoryChat, buildSystem, PrismaClientKnownRequestError } = vi.hoisted(() => {
   const db = {
     conversation: { findUnique: vi.fn(), updateMany: vi.fn() },
     message: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
@@ -56,6 +57,10 @@ const { db, guard, authContext, quota, anthro, streamMock, memoryChat, buildSyst
     guard,
     authContext,
     quota,
+    budget: {
+      reserveGeneration: vi.fn(), releaseGeneration: vi.fn(),
+      settleGeneration: vi.fn(), settleInterruptedGeneration: vi.fn(),
+    },
     anthro: { Anthropic, APIUserAbortError },
     streamMock,
     memoryChat: vi.fn(),
@@ -77,6 +82,7 @@ vi.mock("@/lib/ai-quota", () => ({
   recordAiTokens: quota.recordAiTokens,
   aiQuotaExceededResponse: quota.aiQuotaExceededResponse,
 }));
+vi.mock("@/lib/ai/budget", () => budget);
 vi.mock("@/lib/culinary-memory/service", () => ({ chatMemory: memoryChat }));
 // buildSystemBlocks queda stubbeado (lee el .md del disco), pero
 // buildMessageBlocks corre de verdad: así el test comprueba que el breakpoint
@@ -90,15 +96,19 @@ vi.mock("@/lib/anthropic", async () => {
   };
 });
 vi.mock("@/lib/ai/chat", async () => ({
+  // Keep history validation and typed errors real; only the provider is stubbed.
+  ...(await vi.importActual<typeof import("@/lib/ai/chat")>("@/lib/ai/chat")),
   streamChat: streamMock,
-  // La ventana del historial es lógica pura: corre de verdad para que el test
-  // compruebe lo que llega al modelo, no solo que la ruta la invoca.
-  stableHistoryWindow: (await vi.importActual<typeof import("@/lib/ai/chat")>("@/lib/ai/chat")).stableHistoryWindow,
 }));
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 
 import * as route from "../route";
+
+const reservation: Reservation = {
+  id: "prepared-reservation", budgetId: "pilot", micros: 100_000,
+  rate: { input: .75, output: 3.75, cached: .075, cacheWrite: .75 },
+};
 
 async function* providerStream(deltas: string[], usage: { in: number; out: number }, incomplete = false) {
   for (const text of deltas) yield { type: "delta", text };
@@ -119,6 +129,15 @@ const assistantCreate = () =>
   db.message.create.mock.calls.find(
     (c) => (c[0] as { data: { role: string } }).data.role === "assistant",
   );
+
+function expectReleasedLease() {
+  const claim = db.conversation.updateMany.mock.calls.filter(([args]) => typeof args.data.generationId === "string").at(-1);
+  expect(claim).toBeDefined();
+  expect(db.conversation.updateMany).toHaveBeenLastCalledWith({
+    where: { id: "conv-1", generationId: claim![0].data.generationId },
+    data: { generationId: null, generationStartedAt: null },
+  });
+}
 
 beforeEach(() => {
   vi.stubEnv("GEMINI_API_KEY", "test-gemini");
@@ -144,7 +163,7 @@ beforeEach(() => {
   db.chefNote.findMany.mockReset().mockResolvedValue([]);
   db.user.findUnique.mockReset().mockResolvedValue({ languagePref: "es" });
   memoryChat.mockReset().mockResolvedValue(null);
-  buildSystem.mockClear();
+  buildSystem.mockReset().mockReturnValue([{ type: "text", text: "sys" }]);
   authContext.restaurantId = "r1";
   authContext.role = "chef_executive";
   guard.requireAuth.mockReset().mockImplementation(async (_req: NextRequest, permission?: Permission) => {
@@ -156,6 +175,10 @@ beforeEach(() => {
   });
   quota.reserveAiCall.mockReset().mockResolvedValue({ ok: true, used: 1, limit: 120 });
   quota.recordAiTokens.mockClear();
+  budget.reserveGeneration.mockReset().mockResolvedValue(reservation);
+  budget.releaseGeneration.mockReset().mockResolvedValue(undefined);
+  budget.settleGeneration.mockReset().mockResolvedValue(undefined);
+  budget.settleInterruptedGeneration.mockReset().mockResolvedValue(undefined);
   streamMock.mockReset();
   db.conversation.findUnique.mockResolvedValue({
     id: "conv-1",
@@ -204,6 +227,7 @@ describe("POST chat — persistencia", () => {
     expect((await post({ content: "old", clientMessageId: "old-request" })).status).toBe(409);
     expect(streamMock).not.toHaveBeenCalled();
     expect(quota.reserveAiCall).not.toHaveBeenCalled();
+    expect(budget.reserveGeneration).not.toHaveBeenCalled();
   });
   it.each(["sous_chef", "viewer"] as const)("el Creativo está cerrado para %s", async (role) => {
     authContext.role = role;
@@ -211,6 +235,8 @@ describe("POST chat — persistencia", () => {
     expect(res.status).toBe(403);
     expect(JSON.parse(await res.text()).code).toBe("forbidden");
     expect(streamMock).not.toHaveBeenCalled();
+    expect(budget.reserveGeneration).not.toHaveBeenCalled();
+    expect(db.message.create).not.toHaveBeenCalled();
   });
 
   it("el Diario sigue abierto al sous-chef", async () => {
@@ -244,6 +270,7 @@ describe("POST chat — persistencia", () => {
     authContext.role = "viewer";
     expect((await post({ content: "recipe" }, "preview")).status).toBe(403);
     expect(quota.reserveAiCall).not.toHaveBeenCalled();
+    expect(budget.reserveGeneration).not.toHaveBeenCalled();
   });
   it("no anuncia done si falla la persistencia de la respuesta", async () => {
     db.message.create.mockImplementation(async ({ data }) => {
@@ -292,11 +319,21 @@ describe("POST chat — persistencia", () => {
     streamMock.mockImplementation(() => providerStream(["Listo"], { in: 20, out: 5 }));
     const body = { content: "buenas", model: "sonnet", clientMessageId: "retry-id" };
     await (await post(body)).text();
+    budget.reserveGeneration.mockClear().mockRejectedValue(new AiBudgetError("ai_budget_exhausted"));
+    db.restaurant.findUnique.mockClear();
     const retry = await post(body);
-    expect(await retry.text()).toContain('"replayed":true');
+    const wire = await retry.text();
+    expect(retry.status).toBe(200);
+    expect(wire).toContain('"type":"delta","text":"Listo"');
+    expect(wire).toContain('"replayed":true');
     expect(streamMock).toHaveBeenCalledTimes(1);
     expect(quota.reserveAiCall).not.toHaveBeenCalled();
+    expect(budget.reserveGeneration).not.toHaveBeenCalled();
+    expect(budget.releaseGeneration).not.toHaveBeenCalled();
+    expect(db.restaurant.findUnique).not.toHaveBeenCalled();
+    expect(db.message.create.mock.calls.filter(([arg]) => arg.data.role === "user")).toHaveLength(1);
     expect(db.message.create.mock.calls.filter(([arg]) => arg.data.role === "assistant")).toHaveLength(1);
+    expectReleasedLease();
   });
 
   it("rejects simultaneous turns before calling the model or reserving quota", async () => {
@@ -304,13 +341,17 @@ describe("POST chat — persistencia", () => {
     expect((await post({ content: "hello", clientMessageId: "busy-turn-id" })).status).toBe(409);
     expect(streamMock).not.toHaveBeenCalled();
     expect(quota.reserveAiCall).not.toHaveBeenCalled();
+    expect(budget.reserveGeneration).not.toHaveBeenCalled();
+    expect(db.message.create).not.toHaveBeenCalled();
   });
 
   it("rejects reuse of a request identifier with different content", async () => {
     streamMock.mockImplementation(() => providerStream(["Listo"], { in: 20, out: 5 }));
     await (await post({ content: "one", clientMessageId: "same-turn-id" })).text();
+    budget.reserveGeneration.mockClear();
     expect((await post({ content: "two", clientMessageId: "same-turn-id" })).status).toBe(409);
     expect(streamMock).toHaveBeenCalledTimes(1);
+    expect(budget.reserveGeneration).not.toHaveBeenCalled();
   });
 
   it("an expired worker cannot commit over a newer generation", async () => {
@@ -366,15 +407,23 @@ describe("POST chat — persistencia", () => {
     expect(streamMock).toHaveBeenCalledWith(expect.objectContaining({ model: "daily", userId: "u1" }));
   });
 
-  it.each(["conv-1", "preview"])("%s forwards the weekly denial and keeps the chat retryable", async id => {
-    streamMock.mockImplementation(async function* () { throw new Error("ai_daily_weekly_limit"); });
-    const res = await post({ content: "receta", model: "daily" }, id);
+  it.each(["conv-1", "preview"])("%s returns a weekly denial as HTTP and lets the same request retry later", async id => {
+    budget.reserveGeneration.mockRejectedValueOnce(new AiBudgetError("ai_daily_weekly_limit", 3600));
+    streamMock.mockImplementation(() => providerStream(["Lista"], { in: 10, out: 20 }));
+    const request = { content: "receta", model: "daily", clientMessageId: "weekly-retry-id" };
+    const res = await post(request, id);
     const wire = await res.text();
-    expect(wire).toContain('"code":"ai_daily_weekly_limit"');
-    expect(wire).toContain(t("ai_daily_weekly_limit", "es"));
-    expect(wire).not.toContain('"type":"done"');
-    expect(assistantCreate()).toBeUndefined();
-    if (id !== "preview") expect(db.conversation.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: { generationId: null, generationStartedAt: null } }));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("3600");
+    expect(JSON.parse(wire)).toEqual({ error: "ai_daily_weekly_limit", code: "ai_daily_weekly_limit" });
+    expect(streamMock).not.toHaveBeenCalled();
+    expect(db.message.create).not.toHaveBeenCalled();
+    if (id !== "preview") expectReleasedLease();
+    const retry = await post(request, id);
+    expect(retry.status).toBe(200);
+    expect(await retry.text()).toContain('"type":"done"');
+    expect(budget.reserveGeneration).toHaveBeenCalledTimes(2);
+    expect(db.message.create.mock.calls.filter(([args]) => args.data.role === "user")).toHaveLength(id === "preview" ? 0 : 1);
   });
 
   it("turns a provider refusal into readable text for installed apps", async () => {
@@ -387,27 +436,395 @@ describe("POST chat — persistencia", () => {
   });
 });
 
+describe("A5 pre-stream preparation", () => {
+  const refusals = [
+    { code: "ai_budget_exhausted", status: 429, model: "daily" },
+    { code: "ai_budget_expired", status: 429, model: "daily" },
+    { code: "ai_budget_unavailable", status: 503, model: "daily" },
+    { code: "ai_daily_weekly_limit", status: 429, model: "daily" },
+    { code: "ai_creative_limit", status: 429, model: "creative" },
+  ] as const;
+
+  it.each(refusals.flatMap(refusal => ["conv-1", "preview"].map(id => ({ ...refusal, id }))))(
+    "$id returns $code as HTTP $status before saving or streaming",
+    async ({ code, status, model, id }) => {
+      const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+      budget.reserveGeneration.mockRejectedValueOnce(new AiBudgetError(code, 123));
+      streamMock.mockReturnValue(providerStream(["Must not start"], { in: 10, out: 20 }));
+      const res = await post({ content: "secret chef prompt", model, clientMessageId: "denied-turn-id" }, id);
+      const wire = await res.text(); // Drain a mistaken 200 too, so RED cannot leak a heartbeat.
+
+      expect(res.status).toBe(status);
+      expect(res.headers.get("Content-Type")).toContain("application/json");
+      expect(res.headers.get("Retry-After")).toBe("123");
+      expect(JSON.parse(wire)).toEqual({ error: code, code });
+      expect(wire).not.toContain("secret chef prompt");
+      expect(budget.reserveGeneration).toHaveBeenCalledTimes(1);
+      const messages: Msg[] = [
+        ...(id === "conv-1" ? [{ role: "user" as const, content: "buenas" }] : []),
+        { role: "user", content: "secret chef prompt" },
+      ];
+      expect(budget.reserveGeneration).toHaveBeenCalledWith(expect.objectContaining({ task: model }),
+        textInputCeiling({ system: [{ type: "text", text: "sys" }], messages }), "u1");
+      expect(db.message.create).not.toHaveBeenCalled();
+      expect(streamMock).not.toHaveBeenCalled();
+      expect(buildSystem).toHaveBeenCalledTimes(1);
+      expect(buildSystem.mock.invocationCallOrder[0]).toBeLessThan(budget.reserveGeneration.mock.invocationCallOrder[0]!);
+      expect(budget.releaseGeneration).not.toHaveBeenCalled(); // No successful reservation to refund.
+      expect(budget.settleGeneration).not.toHaveBeenCalled();
+      expect(budget.settleInterruptedGeneration).not.toHaveBeenCalled();
+      expect(quota.recordAiTokens).not.toHaveBeenCalled();
+      expect(errorLog).not.toHaveBeenCalled();
+      if (id === "conv-1") {
+        expect(db.restaurant.findUnique).toHaveBeenCalledTimes(1);
+        expect(db.message.findMany).toHaveBeenCalledTimes(1);
+        expect(db.message.count).toHaveBeenCalledTimes(1);
+        expect(db.recipe.findMany).toHaveBeenCalledTimes(1);
+        expect(db.chefNote.findMany).toHaveBeenCalledTimes(1);
+        expect(memoryChat).toHaveBeenCalledTimes(1);
+        expect(db.conversation.updateMany.mock.invocationCallOrder[0]).toBeLessThan(budget.reserveGeneration.mock.invocationCallOrder[0]!);
+        expectReleasedLease();
+      } else {
+        expect(db.restaurant.findUnique).not.toHaveBeenCalled();
+        expect(db.message.findMany).not.toHaveBeenCalled();
+        expect(db.message.count).not.toHaveBeenCalled();
+        expect(db.recipe.findMany).not.toHaveBeenCalled();
+        expect(db.chefNote.findMany).not.toHaveBeenCalled();
+        expect(memoryChat).not.toHaveBeenCalled();
+        expect(db.conversation.findUnique).not.toHaveBeenCalled();
+        expect(db.conversation.updateMany).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it("locks, checks for replay, prepares context, reserves its payload, saves, then streams and links the answer", async () => {
+    const existing: Msg[] = [{ role: "user", content: "previous question" }, { role: "assistant", content: "previous answer" }];
+    db.message.findMany.mockResolvedValue([...existing].reverse());
+    db.message.count.mockResolvedValue(existing.length);
+    streamMock.mockReturnValue(providerStream(["Hola ", "chef"], { in: 100, out: 20 }));
+    const res = await post({ content: "buenas", model: "daily", clientMessageId: "prepared-turn-id", userId: "untrusted-user" });
+    const wire = await res.text();
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("text/event-stream");
+    expect(wire).toContain('"type":"delta","text":"Hola "');
+    expect(wire).toContain('"type":"done"');
+    expect(wire).not.toContain('"type":"error"');
+    expect(budget.reserveGeneration).toHaveBeenCalledTimes(1);
+    const messages: Msg[] = [...existing, { role: "user", content: "buenas" }];
+    expect(budget.reserveGeneration).toHaveBeenCalledWith(expect.objectContaining({ task: "daily", model: "gemini-3.8-flash", maxTokens: 8192 }),
+      textInputCeiling({ system: [{ type: "text", text: "sys" }], messages }), "u1");
+    const order = [
+      db.conversation.updateMany.mock.invocationCallOrder[0],
+      db.message.findUnique.mock.invocationCallOrder[0],
+      db.restaurant.findUnique.mock.invocationCallOrder[0],
+      buildSystem.mock.invocationCallOrder[0],
+      budget.reserveGeneration.mock.invocationCallOrder[0],
+      db.message.create.mock.invocationCallOrder[0],
+      streamMock.mock.invocationCallOrder[0],
+    ];
+    expect(order.every(value => typeof value === "number")).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a! - b!));
+    for (const query of [db.restaurant.findUnique, db.message.findMany, db.message.count, db.recipe.findMany, db.chefNote.findMany, memoryChat]) {
+      expect(query.mock.invocationCallOrder[0]).toBeGreaterThan(db.message.findUnique.mock.invocationCallOrder[0]!);
+      expect(query.mock.invocationCallOrder[0]).toBeLessThan(buildSystem.mock.invocationCallOrder[0]!);
+    }
+    expect(streamMock.mock.calls[0]![0].messages).toEqual(messages);
+    expect(db.message.create).toHaveBeenCalledTimes(2);
+    expect(db.message.create).toHaveBeenNthCalledWith(1, { data: {
+      conversationId: "conv-1", role: "user", content: "buenas", clientMessageId: "prepared-turn-id",
+    } });
+    expect(assistantCreate()?.[0].data).toMatchObject({
+      role: "assistant", content: "Hola chef", responseToId: "message-0", modelId: "gemini-3.8-flash",
+      inputTokens: 100, outputTokens: 20, cachedTokens: 0,
+    });
+    expect(streamMock.mock.calls[0]![0].reservation).toBe(reservation);
+    expect(budget.releaseGeneration).not.toHaveBeenCalled(); // The adapter owns A4 billing once it starts.
+    expect(quota.recordAiTokens).toHaveBeenCalledWith("u1", 100, 20);
+    expectReleasedLease();
+  });
+
+  it.each(["conv-1", "preview"].flatMap(id => ["daily", "creative"].map(model => ({ id, model }))))(
+    "$id reserves $model using exactly the system and messages sent to the provider",
+    async ({ id, model }) => {
+      const existing: Msg[] = [{ role: "user", content: "Crème de limón 🍋" }, { role: "assistant", content: "Sin lácteos\nCon aceite" }];
+      const content = "Asar berenjena 🥬\nSin gluten";
+      const system = [{ type: "text", text: `Cuisine ${model}: brasa 🥬\nChef notes and memory` }];
+      db.message.findMany.mockResolvedValue([...existing].reverse());
+      db.message.count.mockResolvedValue(existing.length);
+      buildSystem.mockReturnValue(system);
+      streamMock.mockReturnValue(providerStream(["Recipe"], { in: 10, out: 20 }));
+      const res = await post({ content, model, history: existing, clientMessageId: "payload-ceiling-id" }, id);
+      const wire = await res.text();
+      expect(res.status).toBe(200);
+      expect(wire).toContain('"type":"done"');
+      expect(streamMock).toHaveBeenCalledTimes(1);
+      const sent = streamMock.mock.calls[0]![0];
+      expect(sent.system).toEqual(system);
+      expect(sent.messages).toEqual([...existing, { role: "user", content }]);
+      expect(sent.reservation).toBe(reservation);
+      expect(budget.reserveGeneration).toHaveBeenCalledTimes(1);
+      expect(budget.reserveGeneration).toHaveBeenCalledWith(expect.objectContaining({ task: model }),
+        textInputCeiling({ system: sent.system, messages: sent.messages }), "u1");
+      expect(buildSystem.mock.invocationCallOrder[0]).toBeLessThan(budget.reserveGeneration.mock.invocationCallOrder[0]!);
+      if (id === "conv-1") {
+        expect(budget.reserveGeneration.mock.invocationCallOrder[0]).toBeLessThan(db.message.create.mock.invocationCallOrder[0]!);
+      } else expect(db.message.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reserves for an unanswered retry without creating another user message", async () => {
+    db.message.findUnique.mockResolvedValueOnce({ id: "prior-user", role: "user", content: "buenas" }).mockResolvedValueOnce(null);
+    db.message.findFirst.mockResolvedValueOnce({ id: "prior-user" });
+    streamMock.mockReturnValue(providerStream(["Recipe"], { in: 10, out: 20 }));
+    const res = await post({ content: "buenas", clientMessageId: "unanswered-id" });
+    expect(await res.text()).toContain('"type":"done"');
+    expect(res.status).toBe(200);
+    expect(budget.reserveGeneration).toHaveBeenCalledTimes(1);
+    expect(db.message.findUnique.mock.invocationCallOrder[1]).toBeLessThan(budget.reserveGeneration.mock.invocationCallOrder[0]!);
+    expect(db.message.findFirst.mock.invocationCallOrder[0]).toBeLessThan(budget.reserveGeneration.mock.invocationCallOrder[0]!);
+    expect(db.message.create).toHaveBeenCalledTimes(1);
+    expect(assistantCreate()?.[0].data).toMatchObject({ content: "Recipe", responseToId: "prior-user" });
+    expect(streamMock.mock.calls[0]![0].reservation).toBe(reservation);
+    expect(streamMock.mock.calls[0]![0].messages).toEqual([{ role: "user", content: "buenas" }]);
+    expect(budget.reserveGeneration).toHaveBeenCalledWith(expect.objectContaining({ task: "daily" }),
+      textInputCeiling({ system: [{ type: "text", text: "sys" }], messages: [{ role: "user", content: "buenas" }] }), "u1");
+    expectReleasedLease();
+  });
+
+  it("appends a new turn in memory even when its content matches the previous user message", async () => {
+    streamMock.mockReturnValue(providerStream(["Recipe"], { in: 10, out: 20 }));
+    const res = await post({ content: "buenas", clientMessageId: "new-repeated-question" });
+    expect(await res.text()).toContain('"type":"done"');
+    const messages: Msg[] = [{ role: "user", content: "buenas" }, { role: "user", content: "buenas" }];
+    expect(streamMock.mock.calls[0]![0].messages).toEqual(messages);
+    expect(budget.reserveGeneration).toHaveBeenCalledWith(expect.objectContaining({ task: "daily" }),
+      textInputCeiling({ system: [{ type: "text", text: "sys" }], messages }), "u1");
+    expect(db.message.create.mock.calls.filter(([args]) => args.data.role === "user")).toHaveLength(1);
+  });
+
+  it("denies an unanswered retry without inserting another message or calling the provider", async () => {
+    db.message.findUnique.mockResolvedValueOnce({ id: "prior-user", role: "user", content: "buenas" }).mockResolvedValueOnce(null);
+    db.message.findFirst.mockResolvedValueOnce({ id: "prior-user" });
+    budget.reserveGeneration.mockRejectedValueOnce(new AiBudgetError("ai_budget_exhausted", 60));
+    streamMock.mockReturnValue(providerStream(["Must not start"], { in: 10, out: 20 }));
+    const res = await post({ content: "buenas", clientMessageId: "unanswered-id" });
+    const wire = await res.text();
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("60");
+    expect(JSON.parse(wire)).toEqual({ error: "ai_budget_exhausted", code: "ai_budget_exhausted" });
+    expect(db.message.create).not.toHaveBeenCalled();
+    expect(streamMock).not.toHaveBeenCalled();
+    expectReleasedLease();
+  });
+
+  it.each(["restaurant", "history", "history count", "recipes", "chef notes", "system blocks"])(
+    "releases only the lease without reserving or saving after failed %s preparation",
+    async stage => {
+      const error = new Error(`failed ${stage}`);
+      if (stage === "restaurant") db.restaurant.findUnique.mockRejectedValueOnce(error);
+      if (stage === "history") db.message.findMany.mockRejectedValueOnce(error);
+      if (stage === "history count") db.message.count.mockRejectedValueOnce(error);
+      if (stage === "recipes") db.recipe.findMany.mockRejectedValueOnce(error);
+      if (stage === "chef notes") db.chefNote.findMany.mockRejectedValueOnce(error);
+      if (stage === "system blocks") buildSystem.mockImplementationOnce(() => { throw error; });
+      const outcome = await post({ content: "buenas", clientMessageId: "failed-prepare-id" }).catch(cause => cause);
+      if (outcome instanceof Response) {
+        await outcome.text();
+        expect(outcome.status).toBeGreaterThanOrEqual(500);
+        expect(outcome.headers.get("Content-Type")).not.toContain("text/event-stream");
+      } else expect(outcome).toBe(error);
+      expect(budget.reserveGeneration).not.toHaveBeenCalled();
+      expect(budget.releaseGeneration).not.toHaveBeenCalled();
+      expect(db.message.create).not.toHaveBeenCalled();
+      expectReleasedLease();
+      expect(streamMock).not.toHaveBeenCalled();
+      expect(assistantCreate()).toBeUndefined();
+      expect(budget.settleGeneration).not.toHaveBeenCalled();
+      expect(budget.settleInterruptedGeneration).not.toHaveBeenCalled();
+    },
+  );
+
+  it("refunds the payload-based reservation and releases the lease when saving the user message fails", async () => {
+    const error = new Error("user message unavailable");
+    db.message.create.mockRejectedValueOnce(error);
+    const outcome = await post({ content: "new question", clientMessageId: "failed-user-write-id" }).catch(cause => cause);
+    if (outcome instanceof Response) {
+      await outcome.text();
+      expect(outcome.status).toBeGreaterThanOrEqual(500);
+      expect(outcome.headers.get("Content-Type")).not.toContain("text/event-stream");
+    } else expect(outcome).toBe(error);
+    expect(buildSystem).toHaveBeenCalledTimes(1);
+    expect(budget.reserveGeneration).toHaveBeenCalledTimes(1);
+    expect(budget.reserveGeneration).toHaveBeenCalledWith(expect.objectContaining({ task: "daily" }), textInputCeiling({
+      system: [{ type: "text", text: "sys" }],
+      messages: [{ role: "user", content: "buenas" }, { role: "user", content: "new question" }],
+    }), "u1");
+    expect(buildSystem.mock.invocationCallOrder[0]).toBeLessThan(budget.reserveGeneration.mock.invocationCallOrder[0]!);
+    expect(budget.reserveGeneration.mock.invocationCallOrder[0]).toBeLessThan(db.message.create.mock.invocationCallOrder[0]!);
+    expect(budget.releaseGeneration).toHaveBeenCalledTimes(1);
+    expect(budget.releaseGeneration).toHaveBeenCalledWith(reservation);
+    expectReleasedLease();
+    expect(streamMock).not.toHaveBeenCalled();
+    expect(assistantCreate()).toBeUndefined();
+    expect(budget.settleGeneration).not.toHaveBeenCalled();
+    expect(budget.settleInterruptedGeneration).not.toHaveBeenCalled();
+  });
+
+  it("still releases the lease when refunding a failed preparation also fails", async () => {
+    const error = new Error("user message unavailable");
+    db.message.create.mockRejectedValueOnce(error);
+    budget.releaseGeneration.mockRejectedValueOnce(new Error("refund unavailable"));
+    const outcome = await post({ content: "buenas" }).catch(cause => cause);
+    if (outcome instanceof Response) {
+      await outcome.text();
+      expect(outcome.status).toBeGreaterThanOrEqual(500);
+    } else expect(outcome).toBe(error);
+    expect(budget.reserveGeneration).toHaveBeenCalledTimes(1);
+    expect(budget.releaseGeneration).toHaveBeenCalledTimes(1);
+    expect(budget.releaseGeneration).toHaveBeenCalledWith(reservation);
+    expectReleasedLease();
+    expect(streamMock).not.toHaveBeenCalled();
+  });
+
+  it("does not reserve or refund preview preparation when building the prompt fails", async () => {
+    const error = new Error("prompt unavailable");
+    buildSystem.mockImplementationOnce(() => { throw error; });
+    const outcome = await post({ content: "buenas" }, "preview").catch(cause => cause);
+    if (outcome instanceof Response) {
+      await outcome.text();
+      expect(outcome.status).toBeGreaterThanOrEqual(500);
+    } else expect(outcome).toBe(error);
+    expect(budget.reserveGeneration).not.toHaveBeenCalled();
+    expect(budget.releaseGeneration).not.toHaveBeenCalled();
+    expect(streamMock).not.toHaveBeenCalled();
+    expect(db.message.create).not.toHaveBeenCalled();
+    expect(db.conversation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it.each([null, { id: "conv-1", restaurantId: "other-restaurant", idea: null }])(
+    "returns 404 for a missing or foreign conversation before reserving or taking a lease",
+    async conversation => {
+      db.conversation.findUnique.mockResolvedValueOnce(conversation);
+      expect((await post({ content: "recipe" })).status).toBe(404);
+      expect(budget.reserveGeneration).not.toHaveBeenCalled();
+      expect(db.conversation.updateMany).not.toHaveBeenCalled();
+      expect(db.message.create).not.toHaveBeenCalled();
+      expect(streamMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { role: "admin", model: "creative" },
+    { role: "admin", model: "opus" },
+    { role: "chef_executive", model: "creative" },
+    { role: "chef_executive", model: "opus" },
+  ] as const)("denies $model to $role without a restaurant", async ({ role, model }) => {
+    authContext.restaurantId = null;
+    authContext.role = role;
+    streamMock.mockReturnValue(providerStream(["Must not start"], { in: 10, out: 20 }));
+    const res = await post({ content: "recipe", model }, "preview");
+    const wire = await res.text();
+    expect(res.status).toBe(403);
+    expect(JSON.parse(wire)).toMatchObject({ code: "forbidden" });
+    expect(budget.reserveGeneration).not.toHaveBeenCalled();
+    expect(streamMock).not.toHaveBeenCalled();
+    expect(db.message.create).not.toHaveBeenCalled();
+    expect(db.conversation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it.each(["conv-1", "preview"])("%s rejects invalid content before reserving or taking a lease", async id => {
+    expect((await post({ content: "" }, id)).status).toBe(400);
+    expect(budget.reserveGeneration).not.toHaveBeenCalled();
+    expect(db.conversation.updateMany).not.toHaveBeenCalled();
+    expect(db.message.create).not.toHaveBeenCalled();
+    expect(streamMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("POST chat — historial por bloques", () => {
   // Mensaje `i` de la conversación: pares del chef, impares del asistente.
   const stored = (i: number) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `m${i}` });
 
-  it("con 25 mensajes manda desde el índice 10 aunque haya traído 20 (5–24)", async () => {
-    // La consulta devuelve los 20 últimos, del más nuevo al más viejo.
-    db.message.findMany.mockResolvedValue(Array.from({ length: 20 }, (_, k) => stored(24 - k)));
-    db.message.count.mockResolvedValue(25);
-    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
-    await (await post({ content: "receta" })).text();
-    expect(db.message.count).toHaveBeenCalledWith({ where: { conversationId: "conv-1" } });
+  it.each([
+    { historyLength: 25, current: 24, first: 10 },
+    { historyLength: 27, current: 26, first: 10 },
+    { historyLength: 29, current: 28, first: 10 },
+    { historyLength: 31, current: 30, first: 20 },
+    { historyLength: 24, current: 24, first: 10 },
+    { historyLength: 30, current: 30, first: 20 },
+  ])("preview aligns $historyLength client messages at $first, including the current message exactly once", async ({ historyLength, current, first }) => {
+    authContext.restaurantId = null;
+    streamMock.mockReturnValue(providerStream(["Recipe"], { in: 10, out: 20 }));
+    const res = await post({ content: `m${current}`, history: Array.from({ length: historyLength }, (_, i) => stored(i)) }, "preview");
+    expect(await res.text()).toContain('"type":"done"');
+    expect(res.status).toBe(200);
     const sent = streamMock.mock.calls[0]![0].messages as { role: string; content: string }[];
-    expect(sent.map((m) => m.content)).toEqual(Array.from({ length: 15 }, (_, k) => `m${k + 10}`));
+    expect(sent.map(message => message.content)).toEqual(Array.from({ length: current - first + 1 }, (_, i) => `m${first + i}`));
     expect(sent[0]!.role).toBe("user");
+    expect(sent.filter(message => message.content === `m${current}`)).toHaveLength(1);
+    expect(db.message.create).not.toHaveBeenCalled();
+    expect(db.conversation.findUnique).not.toHaveBeenCalled();
   });
 
-  it("con 20 mensajes o menos manda el historial completo", async () => {
-    db.message.findMany.mockResolvedValue(Array.from({ length: 7 }, (_, k) => stored(6 - k)));
-    db.message.count.mockResolvedValue(7);
+  it("preview advances to the next aligned block when the character budget is exceeded", async () => {
+    const history = Array.from({ length: 25 }, (_, i) => ({ ...stored(i), content: `m${i}`.padEnd(5000, ".") }));
+    authContext.restaurantId = null;
+    streamMock.mockReturnValue(providerStream(["Recipe"], { in: 10, out: 20 }));
+    const res = await post({ content: history.at(-1)!.content, history }, "preview");
+    expect(await res.text()).toContain('"type":"done"');
+    expect(streamMock.mock.calls[0]![0].messages).toEqual(history.slice(20));
+    expect(db.message.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { restaurantId: null, model: "daily" },
+    { restaurantId: "r1", model: "creative" },
+  ] as const)("preview reserves $model once and streams without persistence", async ({ restaurantId, model }) => {
+    authContext.restaurantId = restaurantId;
+    streamMock.mockReturnValue(providerStream(["Recipe"], { in: 10, out: 20 }));
+    const res = await post({ content: "recipe", model, history: [] }, "preview");
+    const wire = await res.text();
+    expect(res.status).toBe(200);
+    expect(wire).toContain('"type":"delta","text":"Recipe"');
+    expect(wire).toContain('"type":"done"');
+    expect(budget.reserveGeneration).toHaveBeenCalledTimes(1);
+    expect(budget.reserveGeneration).toHaveBeenCalledWith(expect.objectContaining({ task: model }), expect.any(Number), "u1");
+    expect(streamMock.mock.calls[0]![0].reservation).toBe(reservation);
+    expect(budget.reserveGeneration.mock.invocationCallOrder[0]).toBeLessThan(streamMock.mock.invocationCallOrder[0]!);
+    expect(budget.releaseGeneration).not.toHaveBeenCalled();
+    expect(db.message.create).not.toHaveBeenCalled();
+    expect(db.message.findMany).not.toHaveBeenCalled();
+    expect(db.message.count).not.toHaveBeenCalled();
+    expect(db.conversation.findUnique).not.toHaveBeenCalled();
+    expect(db.conversation.updateMany).not.toHaveBeenCalled();
+    expect(quota.recordAiTokens).toHaveBeenCalledWith("u1", 10, 20);
+  });
+
+  it.each([
+    { total: 25, first: 10 },
+    { total: 27, first: 10 },
+    { total: 29, first: 10 },
+    { total: 31, first: 20 },
+  ])("saved chat aligns $total messages at $first after appending the unsaved current turn", async ({ total, first }) => {
+    // The database history excludes the new message, which has not been saved yet.
+    db.message.findMany.mockResolvedValue(Array.from({ length: 20 }, (_, k) => stored(total - 2 - k)));
+    db.message.count.mockResolvedValue(total - 1);
     streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
-    await (await post({ content: "receta" })).text();
+    expect(await (await post({ content: `m${total - 1}` })).text()).toContain('"type":"done"');
+    expect(db.message.count).toHaveBeenCalledWith({ where: { conversationId: "conv-1" } });
+    const sent = streamMock.mock.calls[0]![0].messages as { role: string; content: string }[];
+    expect(sent.map((m) => m.content)).toEqual(Array.from({ length: total - first }, (_, k) => `m${k + first}`));
+    expect(sent[0]!.role).toBe("user");
+    expect(sent.filter(message => message.content === `m${total - 1}`)).toHaveLength(1);
+    expect(budget.reserveGeneration).toHaveBeenCalledWith(expect.objectContaining({ task: "daily" }),
+      textInputCeiling({ system: streamMock.mock.calls[0]![0].system, messages: sent }), "u1");
+  });
+
+  it("sends the complete short history including the new unsaved user message", async () => {
+    db.message.findMany.mockResolvedValue(Array.from({ length: 6 }, (_, k) => stored(5 - k)));
+    db.message.count.mockResolvedValue(6);
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    expect(await (await post({ content: "m6" })).text()).toContain('"type":"done"');
     const sent = streamMock.mock.calls[0]![0].messages as { content: string }[];
     expect(sent.map((m) => m.content)).toEqual(Array.from({ length: 7 }, (_, k) => `m${k}`));
   });
@@ -490,6 +907,7 @@ describe("POST chat — selección de proveedor", () => {
     const res = await post({ content: "receta", model: "daily" });
     expect(res.status).toBe(503);
     expect(quota.reserveAiCall).not.toHaveBeenCalled();
+    expect(budget.reserveGeneration).not.toHaveBeenCalled();
     expect(db.message.create).not.toHaveBeenCalled();
     expect(streamMock).not.toHaveBeenCalled();
     expect(errorLog).toHaveBeenCalled();
@@ -507,6 +925,8 @@ describe("POST chat — selección de proveedor", () => {
     expect(errorLog).toHaveBeenCalled();
     expect(inspect(errorLog.mock.calls, { depth: 8 })).not.toContain("secret chef prompt");
     expect(streamMock).not.toHaveBeenCalled();
+    expect(budget.reserveGeneration).not.toHaveBeenCalled();
+    expect(db.message.create).not.toHaveBeenCalled();
   });
 });
 
@@ -544,14 +964,6 @@ describe("A2 closed SSE error contract", () => {
     expect(event).toMatchObject({ code: "chat_response_incomplete", message: "La respuesta quedó incompleta. Inténtalo de nuevo." });
   });
 
-  it.each(["ai_budget_exhausted", "ai_budget_expired", "ai_budget_unavailable", "ai_daily_weekly_limit", "ai_creative_limit"] as const)("preserves %s and Retry-After in-stream", async code => {
-    const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
-    const { event } = await errorEvent(new AiBudgetError(code, 123));
-    expect(event).toMatchObject({ code, retryAfter: 123 });
-    expect(event.message).toBe(t(code, "es"));
-    expect(errorLog).not.toHaveBeenCalled();
-  });
-
   it.each(["conv-1", "preview"])("emits each of the seven closed A2 codes for %s", async id => {
     for (const code of ["ai_provider_failed", "ai_rate_limited", "ai_timeout", "ai_response_blocked", "chat_refused", "chat_response_incomplete", "chat_context_too_long"]) {
       const { event, wire } = await errorEvent(Object.assign(new Error("private upstream body"), { code }), id);
@@ -566,11 +978,11 @@ describe("A2 closed SSE error contract", () => {
     expect(event).toMatchObject({ code: "ai_rate_limited", retryAfter: 37 });
   });
 
-  it.each(["ai_budget_exhausted", "ai_budget_expired", "ai_daily_weekly_limit", "ai_creative_limit", "chat_refused"])("logs expected %s at warn/info, not error", async code => {
+  it("logs an expected provider refusal at warn/info, not error", async () => {
     const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
     const warnLog = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
     const infoLog = vi.spyOn(logger, "info").mockImplementation(() => undefined);
-    await errorEvent(code === "chat_refused" ? new Error(code) : new AiBudgetError(code as ConstructorParameters<typeof AiBudgetError>[0], 60));
+    await errorEvent(new Error("chat_refused"));
     expect(errorLog).not.toHaveBeenCalled();
     expect(warnLog.mock.calls.length + infoLog.mock.calls.length).toBeGreaterThan(0);
   });
