@@ -53,7 +53,7 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
 
 - [x] A1 — Lector sin acceso a los chats
 - [x] A2 — contrato de errores
-- [ ] A3 — errores honestos en el móvil
+- [x] A3 — errores honestos en el móvil
 - [ ] A4 — reservas de presupuesto
 - [ ] A5 — servicio de turno
 - [ ] A6 — respuesta que sobrevive y Detener (servidor)
@@ -107,3 +107,9 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
   - Paso 2 (Opus 5.5, ruta delegada: escritor en 2+ archivos). `ChatError` con código cerrado en el adaptador (clases tipadas del SDK de Anthropic, estados HTTP y `finishReason` de Gemini, plazo propio separado del corte del cliente); evento SSE `{type:"error", code, message, retryAfter?}` con `message` traducido al idioma del usuario; `isRetryableChatError` en shared; claves `error_<code>` en es/en/it (las sueltas `ai_provider_failed` y `chat_response_incomplete` pasan a `error_*`); el móvil lee `code` y `retryAfter`. Se quitó `extractFriendlyError`. Un test viejo esperaba el error crudo `connection_lost` y ahora espera `ai_provider_failed` (lo exige la especificación).
   - Aceptado: los fallos de configuración del proveedor dejan dos registros de error (el adaptador con el detalle y la ruta con el código); son raros y los tests piden ambos.
   - GREEN verificado por el padre: api 864/864 y tsc OK; móvil 201/201, tsc OK y `expo export` Android OK; shared 263/263 y tsc OK; i18n 6/6 y tsc OK; `git diff --check` OK.
+  - Commit `3c4fbc4`. RDD sobre c646c86..3c4fbc4 (A1+A2, 23 archivos, 1111 líneas): `slice_budget_reached`, riesgo medio; Andy concedió la revisión (`granted`). Lente de fiabilidad: **aprobada**, acuse hecho (`review-b45885fd242eee2d`, autoridad quemada). Frontera revisada: `3c4fbc4`.
+  - Sugerencia no bloqueante de la revisión: el test de configuración de modelo inválida (`messages.test.ts` ~500) no comprueba el 503 `ai_provider_unconfigured`. Se refuerza en A3.
+- **A3** (Opus 5.5 por falta de cuota de Codex; ruta delegada: escritor en 2+ archivos).
+  - Cambios: `classifyChatError` (texto traducido, nunca `err.message`; reintento según `isRetryableChatError`; acciones `use_daily` para límite o rechazo del Creativo, `new_chat` para contexto largo y `sign_in` para 401). El banner del chat muestra ese motivo, ofrece Reintentar solo si sirve y se adapta al texto (sin los 200 px fijos); sin toast duplicado. Chat abierto con la pregunta sin respuesta: «La última pregunta quedó sin respuesta.» El 401 del stream cierra sesión como `apiFetch` (`notifyUnauthorized`). Ids con `encodeURIComponent`. Los toasts de error restantes usan el nivel error. El fallo al cargar el historial ya no dice «guardado localmente». Test de configuración de modelo inválida reforzado (503 `ai_provider_unconfigured`).
+  - RED (del escritor): 11 fallos / 34 y el clasificador sin cargar (módulo inexistente); i18n 1 / 6. Todos por la razón correcta.
+  - GREEN verificado por el padre: móvil 240/240, tsc OK y `expo export` Android OK; api 864/864 y tsc OK; i18n 7/7 y tsc OK; shared tsc OK; `git diff --check` OK.

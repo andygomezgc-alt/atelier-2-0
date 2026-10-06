@@ -497,12 +497,13 @@ describe("POST chat — selección de proveedor", () => {
   it("logs invalid model configuration without exposing chef or config content", async () => {
     const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
     vi.stubEnv("AI_CHAT_DAILY_MODEL", "bad/model");
-    const res = await post({ content: "secret chef prompt", model: "daily" }).catch(() => null);
-    if (res) {
-      const body = await res.text();
-      expect(body).not.toContain("secret chef prompt");
-      expect(body).not.toContain("bad/model");
-    }
+    const res = await post({ content: "secret chef prompt", model: "daily" });
+    expect(res).not.toBeNull();
+    expect(res.status).toBe(503);
+    const body = await res.text();
+    expect(JSON.parse(body)).toMatchObject({ code: "ai_provider_unconfigured" });
+    expect(body).not.toContain("secret chef prompt");
+    expect(body).not.toContain("bad/model");
     expect(errorLog).toHaveBeenCalled();
     expect(inspect(errorLog.mock.calls, { depth: 8 })).not.toContain("secret chef prompt");
     expect(streamMock).not.toHaveBeenCalled();

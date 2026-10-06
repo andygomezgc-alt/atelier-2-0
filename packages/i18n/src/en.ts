@@ -216,6 +216,10 @@ export const en: EsDict = {
   chat_leave_unsaved: "This conversation hasn't been saved yet and will be lost if you switch. You can cancel and save it as a recipe first.",
   chat_leave_pending: "The last message wasn't completed. You can cancel and retry before switching conversations.",
   chat_leave_confirm: "Continue",
+  // A3 · chat error banner.
+  chat_unanswered: "Your last question has no answer yet.",
+  chat_use_daily: "Continue with Everyday",
+  chat_sign_in: "Sign in",
   chat_untitled: "New conversation",
   assistant_eyebrow: "ATELIER · SUGGESTS",
   model_daily: "Everyday",
@@ -356,6 +360,7 @@ export const en: EsDict = {
   onboard_verifying: "Verifying link…",
   error_invalid_link: "Invalid link. Please request a new one.",
   error_network: "Network error. Please try again.",
+  error_session_expired: "Your session has expired. Please sign in again.",
   toast_stale_data: "Offline — showing the last loaded data",
   btn_back: "Back",
   add_to_menu_season_placeholder: "Autumn 2026",

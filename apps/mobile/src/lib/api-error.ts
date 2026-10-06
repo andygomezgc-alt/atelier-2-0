@@ -77,6 +77,11 @@ const CODE_TO_KEY: Record<KnownApiErrorCode, TranslationKey> = {
   chat_context_too_long: "error_chat_context_too_long",
 };
 
+// A3 — the chat error classifier reuses this table for closed codes.
+export function apiErrorKey(code: string): TranslationKey | undefined {
+  return Object.prototype.hasOwnProperty.call(CODE_TO_KEY, code) ? CODE_TO_KEY[code as KnownApiErrorCode] : undefined;
+}
+
 type T = (key: TranslationKey, vars?: Record<string, string | number>) => string;
 
 export function apiErrorMessage(err: unknown, t: T): string {

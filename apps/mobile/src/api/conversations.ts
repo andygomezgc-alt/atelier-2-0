@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, notifyUnauthorized } from "./client";
 import * as SecureStore from "@/src/lib/secure-storage";
 import { TOKEN_KEY } from "./client";
 import EventSource from "react-native-sse";
@@ -14,6 +14,8 @@ export class StreamInterruptedError extends Error {
     readonly partialText: string,
     readonly code?: ApiErrorCode,
     readonly retryAfter?: number,
+    // A3 — HTTP status of a failed stream request (0/undefined = no response).
+    readonly status?: number,
   ) {
     super(message);
     this.name = "StreamInterruptedError";
@@ -53,7 +55,7 @@ export const listConversations = () =>
   apiFetch<ConversationSummary[]>("/api/conversations");
 
 export const listMessages = (conversationId: string) =>
-  apiFetch<ChatMessage[]>(`/api/conversations/${conversationId}/messages`);
+  apiFetch<ChatMessage[]>(`/api/conversations/${encodeURIComponent(conversationId)}/messages`);
 
 // A-12 — hidrata mensajes locales (modo preview) en una Conversation real
 // recién creada. Lo usa `saveAsRecipe` en Asistente cuando el chef pasa de
@@ -63,7 +65,7 @@ export const bulkAddMessages = (
   messages: Array<{ role: "user" | "assistant"; content: string }>,
 ) =>
   apiFetch<{ inserted: number }>(
-    `/api/conversations/${conversationId}/messages/bulk`,
+    `/api/conversations/${encodeURIComponent(conversationId)}/messages/bulk`,
     {
       method: "POST",
       body: JSON.stringify({ messages }),
@@ -83,7 +85,7 @@ export type IdeaConversation = {
  * times always returns the same conversation with its full history.
  */
 export const getConversationByIdea = (ideaId: string) =>
-  apiFetch<IdeaConversation>(`/api/ideas/${ideaId}/conversation`);
+  apiFetch<IdeaConversation>(`/api/ideas/${encodeURIComponent(ideaId)}/conversation`);
 
 /**
  * Parses a single SSE `data:` payload string. Returns a typed event or `null`
@@ -164,7 +166,7 @@ export async function streamMessage(
     };
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const pathSegment = conversationId ?? "preview";
+    const pathSegment = conversationId ? encodeURIComponent(conversationId) : "preview";
     const body: Record<string, unknown> = { content, model };
     if (!conversationId && history) body.history = history;
     if (clientMessageId) body.clientMessageId = clientMessageId;
@@ -236,12 +238,18 @@ export async function streamMessage(
     es.addEventListener("error", (event) => {
       if (timedOut || aborted) return; // already settled
       const ev = event as { type: string; message?: string; xhrStatus?: number };
-      let msg = ev.message || `stream_error${ev.xhrStatus ? `_${ev.xhrStatus}` : ""}`;
+      const fallback = `stream_error${ev.xhrStatus ? `_${ev.xhrStatus}` : ""}`;
+      let msg = ev.message || fallback;
+      let code: ApiErrorCode | undefined;
       try {
-        const body = JSON.parse(msg);
-        if (typeof body?.code === "string") msg = body.code;
+        // HTTP error bodies are JSON; keep only a closed code, never the raw body.
+        const parsed = ApiErrorCodeSchema.safeParse(JSON.parse(msg)?.code);
+        if (parsed.success) code = parsed.data;
+        msg = code ?? fallback;
       } catch { /* Non-JSON transport error. */ }
-      settle(() => reject(new StreamInterruptedError(msg, full)));
+      // A3 — same session handling as apiFetch: a rejected token signs out.
+      if (ev.xhrStatus === 401 && token) notifyUnauthorized();
+      settle(() => reject(new StreamInterruptedError(msg, full, code, undefined, ev.xhrStatus)));
     });
   });
 }

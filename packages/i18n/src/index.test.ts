@@ -53,3 +53,24 @@ describe("A2 chat error translations", () => {
     }
   });
 });
+
+describe("A3 honest chat error copy", () => {
+  const spanish: Record<string, string> = {
+    chat_unanswered: "La última pregunta quedó sin respuesta.",
+    chat_use_daily: "Continuar con Diario",
+    chat_sign_in: "Iniciar sesión",
+    error_session_expired: "Tu sesión caducó. Vuelve a iniciar sesión.",
+  };
+
+  test("has the Spanish copy and a translation in each language", () => {
+    for (const [key, expected] of Object.entries(spanish)) {
+      expect((es as Record<string, string>)[key], key).toBe(expected);
+      for (const dict of [en, itDict]) {
+        const value = (dict as Record<string, string>)[key];
+        expect(value?.trim(), key).toBeTruthy();
+        expect(value).not.toBe(expected);
+        expect(value).not.toContain("_");
+      }
+    }
+  });
+});

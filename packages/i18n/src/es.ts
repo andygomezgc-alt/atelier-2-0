@@ -239,6 +239,10 @@ export const es = {
   chat_leave_unsaved: "Esta conversación todavía no está guardada y se perderá al cambiar. Puedes cancelar y guardarla como receta antes.",
   chat_leave_pending: "El último envío no se completó. Puedes cancelar y reintentarlo antes de cambiar de conversación.",
   chat_leave_confirm: "Continuar",
+  // A3 · banner de error del chat.
+  chat_unanswered: "La última pregunta quedó sin respuesta.",
+  chat_use_daily: "Continuar con Diario",
+  chat_sign_in: "Iniciar sesión",
   chat_untitled: "Conversación nueva",
   assistant_eyebrow: "ATELIER · SUGIERE",
   // Renombre editorial de modelos. IDs internos (haiku/sonnet/opus) intactos.
@@ -385,6 +389,7 @@ export const es = {
   onboard_verifying: "Verificando enlace…",
   error_invalid_link: "Enlace no válido. Pide un nuevo enlace.",
   error_network: "Error de red. Inténtalo de nuevo.",
+  error_session_expired: "Tu sesión caducó. Vuelve a iniciar sesión.",
   toast_stale_data: "Sin conexión — mostrando lo último cargado",
   btn_back: "Volver",
   add_to_menu_season_placeholder: "Otoño 2026",

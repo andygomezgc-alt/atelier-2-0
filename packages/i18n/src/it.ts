@@ -217,6 +217,10 @@ export const it: EsDict = {
   chat_leave_unsaved: "Questa conversazione non è ancora salvata e andrà persa cambiando chat. Puoi annullare e salvarla prima come ricetta.",
   chat_leave_pending: "L'ultimo invio non è stato completato. Puoi annullare e riprovare prima di cambiare conversazione.",
   chat_leave_confirm: "Continua",
+  // A3 · banner di errore della chat.
+  chat_unanswered: "L'ultima domanda è rimasta senza risposta.",
+  chat_use_daily: "Continua con Quotidiano",
+  chat_sign_in: "Accedi",
   chat_untitled: "Nuova conversazione",
   assistant_eyebrow: "ATELIER · SUGGERISCE",
   model_daily: "Quotidiano",
@@ -357,6 +361,7 @@ export const it: EsDict = {
   onboard_verifying: "Verifica del link…",
   error_invalid_link: "Link non valido. Richiedi un nuovo link.",
   error_network: "Errore di rete. Riprova.",
+  error_session_expired: "La sessione è scaduta. Accedi di nuovo.",
   toast_stale_data: "Nessuna connessione — mostro l'ultimo caricato",
   btn_back: "Indietro",
   add_to_menu_season_placeholder: "Autunno 2026",
