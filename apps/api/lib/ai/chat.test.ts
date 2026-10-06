@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-vi.mock("./budget", () => ({ reserveGeneration: vi.fn().mockResolvedValue({ id: "reservation" }), settleGeneration: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("./budget", () => ({
+  reserveGeneration: vi.fn().mockResolvedValue({ id: "reservation" }), settleGeneration: vi.fn().mockResolvedValue(undefined),
+  releaseGeneration: vi.fn().mockResolvedValue(undefined), settleInterruptedGeneration: vi.fn().mockResolvedValue(undefined),
+}));
 const { opusStream, constructor } = vi.hoisted(() => ({ opusStream: vi.fn(), constructor: vi.fn() }));
 vi.mock("@anthropic-ai/sdk", async importOriginal => ({ ...(await importOriginal<typeof import("@anthropic-ai/sdk")>()), default: class {
   messages = { stream: opusStream };
@@ -10,7 +13,7 @@ import { inspect } from "node:util";
 import { boundedChatHistory, sseData, stableHistoryWindow, streamChat, type ChatEvent } from "./chat";
 import type { Msg } from "../anthropic";
 import type { ChatModelSelection } from "@atelier/shared";
-import { reserveGeneration, settleGeneration } from "./budget";
+import { releaseGeneration, reserveGeneration, settleGeneration, settleInterruptedGeneration } from "./budget";
 import { logger } from "../logger";
 
 const input = (model: ChatModelSelection = "daily", signal = new AbortController().signal) => ({ model, signal,
@@ -30,9 +33,25 @@ const collect = async (iterator: AsyncIterable<ChatEvent>) => {
   for await (const value of iterator) events.push(value);
   return events;
 };
+// A4 — how streamChat closed its reservation; only one of these may happen.
+function clearClosings() {
+  for (const close of [settleGeneration, releaseGeneration, settleInterruptedGeneration]) vi.mocked(close).mockClear();
+}
+const expectKeptHold = () => {
+  expect(settleGeneration).not.toHaveBeenCalled(); expect(releaseGeneration).not.toHaveBeenCalled(); expect(settleInterruptedGeneration).not.toHaveBeenCalled();
+};
+const expectReleased = () => {
+  expect(releaseGeneration).toHaveBeenCalledTimes(1); expect(releaseGeneration).toHaveBeenCalledWith({ id: "reservation" });
+  expect(settleGeneration).not.toHaveBeenCalled(); expect(settleInterruptedGeneration).not.toHaveBeenCalled();
+};
+const expectInterrupted = (known: Record<string, number>) => {
+  expect(settleInterruptedGeneration).toHaveBeenCalledTimes(1);
+  expect(settleInterruptedGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining(known));
+  expect(settleGeneration).not.toHaveBeenCalled(); expect(releaseGeneration).not.toHaveBeenCalled();
+};
 beforeEach(() => {
   vi.mocked(reserveGeneration).mockReset().mockResolvedValue({ id: "reservation" } as never);
-  vi.mocked(settleGeneration).mockClear();
+  clearClosings();
   vi.stubEnv("GEMINI_API_KEY", "gemini-test"); vi.stubEnv("ANTHROPIC_API_KEY", "anthropic-test");
   opusStream.mockReset(); constructor.mockReset();
 });
@@ -120,7 +139,8 @@ describe("Opus chat adapter", () => {
 });
 
 describe("A2 provider error normalization", () => {
-  const anthropicFailure = async (error: Error, expectedCode: string, retryAfter?: number) => {
+  // A4 — only an HTTP error status before message_start proves nothing was generated.
+  const anthropicFailure = async (error: Error, expectedCode: string, retryAfter?: number, closing: "released" | "kept" = "released") => {
     opusStream.mockReturnValue({
       async *[Symbol.asyncIterator]() { throw error; },
       finalMessage: vi.fn(),
@@ -129,7 +149,7 @@ describe("A2 provider error normalization", () => {
       code: expectedCode,
       ...(retryAfter === undefined ? {} : { retryAfter }),
     });
-    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, undefined);
+    if (closing === "released") expectReleased(); else expectKeptHold();
   };
 
   it("maps an Anthropic 429 to rate-limited with Retry-After seconds", async () => {
@@ -156,9 +176,11 @@ describe("A2 provider error normalization", () => {
   });
 
   it("distinguishes Anthropic connection failure from SDK timeout", async () => {
-    await anthropicFailure(new APIConnectionError({ message: "private network details" }), "ai_provider_failed");
-    vi.mocked(settleGeneration).mockClear();
-    await anthropicFailure(new APIConnectionTimeoutError({ message: "private timeout details" }), "ai_timeout");
+    // No HTTP response: the request may have reached the provider, so the hold stays for reconciliation.
+    await anthropicFailure(new APIConnectionError({ message: "private network details" }), "ai_provider_failed", undefined, "kept");
+    clearClosings();
+    // The provider may have accepted the request before the timeout: unknown, reconciled later.
+    await anthropicFailure(new APIConnectionTimeoutError({ message: "private timeout details" }), "ai_timeout", undefined, "kept");
   });
 
   it.each(["refusal", "max_tokens", "end_turn"])("keeps final Anthropic usage before rejecting %s", async stopReason => {
@@ -195,7 +217,7 @@ describe("A2 provider error normalization", () => {
     await expect((async () => { for await (const item of streamChat(input("creative"))) received.push(item); })()).rejects.toMatchObject({ code });
     expect(received).toContainEqual({ type: "delta", text: "Partial" });
     expect(received).toContainEqual({ type: "usage", usage: expect.objectContaining({ inputTokens: 19, outputTokens: 2 }) });
-    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, undefined);
+    expectInterrupted({ inputTokens: 19 });
   });
 
   it("maps a local deadline to timeout without changing client-abort semantics", async () => {
@@ -208,6 +230,7 @@ describe("A2 provider error normalization", () => {
       });
     }));
     await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "ai_timeout" });
+    expectKeptHold();
   });
 
   it("maps the Anthropic local deadline to timeout without waiting for a real clock", async () => {
@@ -223,6 +246,7 @@ describe("A2 provider error normalization", () => {
       finalMessage: vi.fn(),
     }));
     await expect(collect(streamChat(input("creative")))).rejects.toMatchObject({ code: "ai_timeout" });
+    expectKeptHold();
   });
 
   it("preserves an Anthropic client abort instead of converting it to a provider error", async () => {
@@ -235,12 +259,13 @@ describe("A2 provider error normalization", () => {
       finalMessage: vi.fn(),
     });
     await expect(collect(streamChat(input("creative", controller.signal)))).rejects.toBeInstanceOf(APIUserAbortError);
+    expectKeptHold(); // Aborted before message_start: the request may have reached the provider.
   });
 
   it.each([[429, "ai_rate_limited"], [408, "ai_timeout"], [504, "ai_timeout"], [500, "ai_provider_failed"], [400, "ai_provider_failed"]])("maps Gemini HTTP %i", async (status, code) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("private provider body", { status, headers: { "retry-after": "23" } })));
     await expect(collect(streamChat(input()))).rejects.toMatchObject({ code });
-    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, undefined);
+    expectReleased();
   });
 
   it("logs Gemini HTTP status with bounded provider body, never the chef prompt", async () => {
@@ -276,7 +301,7 @@ describe("A2 provider error normalization", () => {
   it.each([
     ["chunk error", { error: { code: 500, message: "private" } }, "ai_provider_failed"],
     ["prompt block", { promptFeedback: { blockReason: "SAFETY" } }, "ai_response_blocked"],
-  ])("keeps partial Gemini usage visible before a %s without settling an incomplete record", async (_label, failingChunk, code) => {
+  ])("keeps partial Gemini usage visible before a %s and charges known input plus the output ceiling", async (_label, failingChunk, code) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body(
       event({ usageMetadata: { promptTokenCount: 13, candidatesTokenCount: 2 }, candidates: [{ content: { parts: [{ text: "Partial" }] } }] }) + event(failingChunk),
     ))));
@@ -284,7 +309,7 @@ describe("A2 provider error normalization", () => {
     await expect((async () => { for await (const item of streamChat(input())) received.push(item); })()).rejects.toMatchObject({ code });
     expect(received).toContainEqual({ type: "usage", usage: expect.objectContaining({ inputTokens: 13, outputTokens: 2 }) });
     expect(received).toContainEqual({ type: "delta", text: "Partial" });
-    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, undefined);
+    expectInterrupted({ inputTokens: 13 });
   });
 
   it("keeps an empty Gemini HTTP body as an incomplete answer", async () => {
@@ -295,9 +320,11 @@ describe("A2 provider error normalization", () => {
   it.each([
     ["malformed JSON", () => new Response(body("data: {not-json}\n\n"))],
     ["network exception", () => Promise.reject(new TypeError("private network details"))],
-  ])("normalizes Gemini %s to a closed provider failure", async (_label, result) => {
+  ])("normalizes Gemini %s to a closed provider failure and keeps the hold", async (_label, result) => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(result));
     await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "ai_provider_failed" });
+    // Neither proves the provider generated nothing: the hold stays for reconciliation.
+    expectKeptHold();
   });
 
   it.each(["stream construction", "finalMessage"])("normalizes Anthropic %s failure", async stage => {
@@ -313,6 +340,62 @@ describe("A2 provider error normalization", () => {
     })))));
     await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "chat_response_incomplete" });
     expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 11, outputTokens: 7 }));
+  });
+});
+
+describe("A4 closing the reservation", () => {
+  it("charges the exact message_start input, cache included, when the chef aborts midway", async () => {
+    const controller = new AbortController();
+    opusStream.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "message_start", message: { usage: { input_tokens: 40, output_tokens: 1, cache_creation_input_tokens: 300, cache_read_input_tokens: 2000 } } };
+        yield { type: "content_block_delta", delta: { type: "text_delta", text: "Medio" } };
+        controller.abort();
+        throw new APIUserAbortError();
+      },
+      finalMessage: vi.fn(),
+    });
+    await expect(collect(streamChat(input("creative", controller.signal)))).rejects.toBeInstanceOf(APIUserAbortError);
+    expectInterrupted({ inputTokens: 2340, cachedTokens: 2000, cacheWriteTokens: 300 });
+  });
+
+  it("charges known Gemini input when the consumer stops reading midway", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body(
+      event({ usageMetadata: { promptTokenCount: 500, candidatesTokenCount: 3, cachedContentTokenCount: 100 }, candidates: [{ content: { parts: [{ text: "Uno" }] } }] }) +
+      event({ candidates: [{ content: { parts: [{ text: " dos" }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 500, candidatesTokenCount: 9 } }),
+    ))));
+    for await (const item of streamChat(input())) if (item.type === "delta") break;
+    expectInterrupted({ inputTokens: 500, cachedTokens: 100 });
+  });
+
+  it("releases the hold when the chef aborts before the provider is called", async () => {
+    const controller = new AbortController();
+    const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+    vi.mocked(reserveGeneration).mockImplementationOnce(async () => { controller.abort(); return { id: "reservation" } as never; });
+    await expect(collect(streamChat(input("daily", controller.signal)))).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetcher).not.toHaveBeenCalled();
+    expectReleased();
+  });
+
+  it("keeps the hold when the chef aborts Gemini before any response", async () => {
+    const controller = new AbortController();
+    vi.stubGlobal("fetch", vi.fn(async () => { controller.abort(); throw new DOMException("Aborted", "AbortError"); }));
+    await expect(collect(streamChat(input("daily", controller.signal)))).rejects.toMatchObject({ name: "AbortError" });
+    expectKeptHold();
+  });
+
+  it("settles only the exact final usage after a clean answer", async () => {
+    opusStream.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "message_start", message: { usage: { input_tokens: 30, output_tokens: 1 } } };
+        yield { type: "content_block_delta", delta: { type: "text_delta", text: "Receta" } };
+      },
+      finalMessage: async () => ({ stop_reason: "end_turn", usage: { input_tokens: 30, output_tokens: 400 } }),
+    });
+    await collect(streamChat(input("creative")));
+    expect(settleGeneration).toHaveBeenCalledTimes(1);
+    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 30, outputTokens: 400 }));
+    expect(releaseGeneration).not.toHaveBeenCalled(); expect(settleInterruptedGeneration).not.toHaveBeenCalled();
   });
 });
 
@@ -381,7 +464,7 @@ describe("bounded transport", () => {
     expect(reserveGeneration).toHaveBeenCalledWith(expect.objectContaining({ task: "daily" }), expect.any(Number), "authenticated-user");
     expect(fetcher).not.toHaveBeenCalled(); expect(opusStream).not.toHaveBeenCalled();
   });
-  it("keeps the reservation after a connection fails, despite partial usage", async () => {
+  it("charges known input plus the output ceiling when the connection fails midway", async () => {
     opusStream.mockReturnValue({
       async *[Symbol.asyncIterator]() {
         yield { type: "message_start", message: { usage: { input_tokens: 100, output_tokens: 1 } } };
@@ -389,7 +472,7 @@ describe("bounded transport", () => {
       },
     });
     await expect(collect(streamChat(input("creative")))).rejects.toMatchObject({ code: "ai_provider_failed", cause: expect.objectContaining({ message: "connection_lost" }) });
-    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, undefined);
+    expectInterrupted({ inputTokens: 100 });
   });
   it("settles known final Opus usage even when the visible recipe is incomplete", async () => {
     opusStream.mockReturnValue({

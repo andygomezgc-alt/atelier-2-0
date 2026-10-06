@@ -54,7 +54,7 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
 - [x] A1 — Lector sin acceso a los chats
 - [x] A2 — contrato de errores
 - [x] A3 — errores honestos en el móvil
-- [ ] A4 — reservas de presupuesto
+- [x] A4 — reservas de presupuesto
 - [ ] A5 — servicio de turno
 - [ ] A6 — respuesta que sobrevive y Detener (servidor)
 - [ ] A7 — observabilidad
@@ -113,3 +113,11 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
   - Cambios: `classifyChatError` (texto traducido, nunca `err.message`; reintento según `isRetryableChatError`; acciones `use_daily` para límite o rechazo del Creativo, `new_chat` para contexto largo y `sign_in` para 401). El banner del chat muestra ese motivo, ofrece Reintentar solo si sirve y se adapta al texto (sin los 200 px fijos); sin toast duplicado. Chat abierto con la pregunta sin respuesta: «La última pregunta quedó sin respuesta.» El 401 del stream cierra sesión como `apiFetch` (`notifyUnauthorized`). Ids con `encodeURIComponent`. Los toasts de error restantes usan el nivel error. El fallo al cargar el historial ya no dice «guardado localmente». Test de configuración de modelo inválida reforzado (503 `ai_provider_unconfigured`).
   - RED (del escritor): 11 fallos / 34 y el clasificador sin cargar (módulo inexistente); i18n 1 / 6. Todos por la razón correcta.
   - GREEN verificado por el padre: móvil 240/240, tsc OK y `expo export` Android OK; api 864/864 y tsc OK; i18n 7/7 y tsc OK; shared tsc OK; `git diff --check` OK.
+  - Commit `c700242`. RDD sobre 3c4fbc4..c700242 (14 archivos, 521 líneas, riesgo medio): Andy concedió; lente de fiabilidad **aprobada**, acuse hecho (`review-561771fd82658802`). Frontera revisada: `c700242`.
+  - Avisos no bloqueantes → tarea de seguimiento **A3b**: un 401 del stream cierra la sesión dos veces (el transporte y la acción «Volver a entrar» del banner llaman a `notifyUnauthorized`) y falta el test del 401 sin token.
+- **A3b** (Opus). El transporte es el único que cierra la sesión; el 401 queda sin acción; se quita `chat_sign_in`. RED móvil 2 / 69 e i18n 1 / 7; GREEN móvil 241/241 e i18n 8/8 (verificado por el padre, con tsc y `expo export`). Commit `2e07a4b`; RDD `under_budget` (54 líneas), pendiente en el corte.
+- **A4** (Opus, ruta delegada).
+  - Cierre de reservas según lo que el proveedor factura: uso final exacto → `settled`; error HTTP antes de cualquier evento (o corte antes de llamar al proveedor) → `released` sin cargo; stream empezado y cortado → `interrupted` con la entrada exacta y la salida al techo; sin información (corte de red sin respuesta, timeout o abort antes de responder) → se mantiene la reserva. Contabilidad única `closeGeneration`, idempotente y bajo el bloqueo de fila.
+  - Script `apps/api/scripts/reconcile-ai-holds.ts` (prueba por defecto, `--apply`): reservas de más de 30 min pasan a `expired` con el máximo coste `settled` del modelo en 30 días (tope: la reserva). Lógica pura en `budget-reconcile.ts`. No se corrió contra ninguna base.
+  - Revisión del padre: al principio una caída de red sin respuesta liberaba la reserva; se corrigió para mantenerla (la petición pudo llegar al proveedor; nunca subcontar).
+  - Tests de A2 cambiados a la nueva regla (bloqueo/error de Gemini con uso parcial → `interrupted`; errores HTTP → `released`). RED 48 / 46 y luego 2 / 72; GREEN api 889/889 y tsc OK (verificado por el padre); `git diff --check` OK.

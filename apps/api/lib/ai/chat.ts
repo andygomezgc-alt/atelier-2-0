@@ -6,7 +6,7 @@ import { buildMessageBlocks, type Msg, type buildSystemBlocks } from "../anthrop
 import { chatConfig, providerKey } from "./config";
 import { emptyUsage, tokenCount, type AiUsage } from "./types";
 import type { ApiErrorCode, ChatModelSelection } from "@atelier/shared";
-import { reserveGeneration, settleGeneration } from "./budget";
+import { releaseGeneration, reserveGeneration, settleGeneration, settleInterruptedGeneration, type Reservation } from "./budget";
 import { textInputCeiling } from "./budget-policy";
 import { logger } from "../logger";
 
@@ -137,27 +137,50 @@ export async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator
   }
 }
 
+/**
+ * A4 — what the provider is known to bill, to close the reservation honestly:
+ * `final` exact usage; `input` exact input/cache of a started stream (output
+ * unknown); `nothingBilled` when the provider definitively generated nothing.
+ */
+type Billing = { final?: AiUsage; input?: AiUsage; nothingBilled?: boolean };
+
+async function closeReservation(reservation: Reservation, billing: Billing): Promise<void> {
+  if (billing.final) await settleGeneration(reservation, billing.final);
+  else if (billing.nothingBilled) await releaseGeneration(reservation);
+  else if (billing.input) await settleInterruptedGeneration(reservation, billing.input);
+  // Nothing known (e.g. aborted before any response): keep the hold for reconcile-ai-holds.
+}
+
+/**
+ * Only an HTTP error status before the stream began proves nothing was generated.
+ * A connection failure without a response is uncertain (the request may have
+ * reached the provider), so it keeps the hold: never under-count.
+ */
+function anthropicGeneratedNothing(err: unknown): boolean {
+  return err instanceof APIError && err.status !== undefined;
+}
+
 export async function* streamChat(input: ChatInput): AsyncGenerator<ChatEvent> {
   const config = chatConfig(input.model);
   providerKey(config.provider);
   input.signal.throwIfAborted();
   const messages = boundedChatHistory(input.messages);
   const reservation = await reserveGeneration(config, textInputCeiling({ system: input.system, messages }), input.userId);
-  let confirmedUsage: AiUsage | undefined;
+  const billing: Billing = {};
   try {
-    if (input.signal.aborted) confirmedUsage = emptyUsage(); // Provider was not started.
+    if (input.signal.aborted) billing.nothingBilled = true; // Provider was not started.
     input.signal.throwIfAborted();
-    yield* streamChatProvider({ ...input, messages }, usage => { confirmedUsage = usage; });
-  } finally { await settleGeneration(reservation, confirmedUsage); }
+    yield* streamChatProvider({ ...input, messages }, billing);
+  } finally { await closeReservation(reservation, billing); }
 }
 
-async function* streamChatProvider(input: ChatInput, onFinalUsage: (usage: AiUsage) => void): AsyncGenerator<ChatEvent> {
+async function* streamChatProvider(input: ChatInput, billing: Billing): AsyncGenerator<ChatEvent> {
   const config = chatConfig(input.model);
   // Our own deadline, kept apart from the client's signal: a client abort keeps
   // its raw AbortError so the route treats it as a disconnect, not a failure.
   const deadline = AbortSignal.timeout(config.timeoutMs);
   try {
-    yield* streamChatUpstream(input, AbortSignal.any([input.signal, deadline]), onFinalUsage);
+    yield* streamChatUpstream(input, AbortSignal.any([input.signal, deadline]), billing);
   } catch (err) {
     if (input.signal.aborted) throw err;
     if (deadline.aborted) throw new ChatError("ai_timeout", { cause: err });
@@ -167,7 +190,7 @@ async function* streamChatProvider(input: ChatInput, onFinalUsage: (usage: AiUsa
   }
 }
 
-async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, onFinalUsage: (usage: AiUsage) => void): AsyncGenerator<ChatEvent> {
+async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, billing: Billing): AsyncGenerator<ChatEvent> {
   const config = chatConfig(input.model);
   const key = providerKey(config.provider);
   const messages = boundedChatHistory(input.messages);
@@ -183,19 +206,25 @@ async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, onFina
       output_config: { effort: "medium" },
     }, { signal });
     let usage = emptyUsage();
-    for await (const event of upstream) {
-      if (event.type === "message_start") {
-        const u = event.message.usage;
-        usage = { ...usage, inputTokens: tokenCount(u.input_tokens) + tokenCount(u.cache_creation_input_tokens) + tokenCount(u.cache_read_input_tokens),
-          outputTokens: tokenCount(u.output_tokens), cachedTokens: tokenCount(u.cache_read_input_tokens), cacheWriteTokens: tokenCount(u.cache_creation_input_tokens) };
-        yield { type: "usage", usage };
-      } else if (event.type === "message_delta") {
-        usage = { ...usage, outputTokens: tokenCount(event.usage.output_tokens) };
-        yield { type: "usage", usage };
-      } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-        text += event.delta.text;
-        yield { type: "delta", text: event.delta.text };
+    try {
+      for await (const event of upstream) {
+        if (event.type === "message_start") {
+          const u = event.message.usage;
+          usage = { ...usage, inputTokens: tokenCount(u.input_tokens) + tokenCount(u.cache_creation_input_tokens) + tokenCount(u.cache_read_input_tokens),
+            outputTokens: tokenCount(u.output_tokens), cachedTokens: tokenCount(u.cache_read_input_tokens), cacheWriteTokens: tokenCount(u.cache_creation_input_tokens) };
+          billing.input = usage; // Input is billed exactly from here on.
+          yield { type: "usage", usage };
+        } else if (event.type === "message_delta") {
+          usage = { ...usage, outputTokens: tokenCount(event.usage.output_tokens) };
+          yield { type: "usage", usage };
+        } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          text += event.delta.text;
+          yield { type: "delta", text: event.delta.text };
+        }
       }
+    } catch (err) {
+      if (!billing.input && !signal.aborted && anthropicGeneratedNothing(err)) billing.nothingBilled = true;
+      throw err;
     }
     const final = await upstream.finalMessage();
     const u = final.usage;
@@ -203,7 +232,7 @@ async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, onFina
       inputTokens: tokenCount(u.input_tokens) + tokenCount(u.cache_creation_input_tokens) + tokenCount(u.cache_read_input_tokens),
       outputTokens: tokenCount(u.output_tokens), cachedTokens: tokenCount(u.cache_read_input_tokens), cacheWriteTokens: tokenCount(u.cache_creation_input_tokens),
     };
-    if (Number.isSafeInteger(u.input_tokens) && Number.isSafeInteger(u.output_tokens) && finalUsage.inputTokens > 0) onFinalUsage(finalUsage);
+    if (Number.isSafeInteger(u.input_tokens) && Number.isSafeInteger(u.output_tokens) && finalUsage.inputTokens > 0) billing.final = finalUsage;
     yield { type: "usage", usage: finalUsage };
     // Los filtros de seguridad del proveedor pueden negarse (en Opus 5.5 hay
     // uno de biología): se registra la categoría y el chef recibe un aviso.
@@ -215,6 +244,7 @@ async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, onFina
     return;
   }
 
+  // A fetch that throws (no response, or an abort) is uncertain: the hold stays.
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:streamGenerateContent?alt=sse`, {
     method: "POST", signal,
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
@@ -225,6 +255,7 @@ async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, onFina
     }),
   });
   if (!response.ok) {
+    billing.nothingBilled = true; // An HTTP error status before any stream event.
     if (response.status === 429) throw new ChatError("ai_rate_limited", { retryAfter: retryAfterSeconds(response.headers) });
     if (response.status === 408 || response.status === 504) throw new ChatError("ai_timeout");
     const detail = (await response.text().catch(() => "")).slice(0, 500);
@@ -244,6 +275,7 @@ async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, onFina
       usage = { inputTokens: tokenCount(u.promptTokenCount),
         outputTokens: tokenCount(u.candidatesTokenCount) + tokenCount(u.thoughtsTokenCount),
         reasoningTokens: tokenCount(u.thoughtsTokenCount), cachedTokens: tokenCount(u.cachedContentTokenCount) };
+      if (Number.isSafeInteger(u.promptTokenCount) && u.promptTokenCount > 0) billing.input = usage;
       yield { type: "usage", usage };
     }
     if (chunk.error) throw new ChatError("ai_provider_failed", { cause: new Error(JSON.stringify(chunk.error).slice(0, 500)) });
@@ -257,7 +289,7 @@ async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, onFina
       }
     }
   }
-  if (finishReason && completeUsage) onFinalUsage(usage);
+  if (finishReason && completeUsage) billing.final = usage;
   if (finishReason && GEMINI_BLOCKED.has(finishReason)) throw new ChatError("ai_response_blocked");
   if (finishReason !== "STOP" || !text.trim()) throw new ChatError("chat_response_incomplete");
 }
