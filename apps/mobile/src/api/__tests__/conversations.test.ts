@@ -77,6 +77,14 @@ describe("parseSseEvent", () => {
   it("returns error event with message", () => {
     expect(parseSseEvent('{"type":"error","message":"boom"}')).toEqual({ type: "error", message: "boom" });
   });
+  it("preserves a closed code and retryAfter while retaining message fallback", () => {
+    expect(parseSseEvent('{"type":"error","code":"ai_rate_limited","message":"fallback","retryAfter":35}')).toEqual({
+      type: "error", code: "ai_rate_limited", message: "fallback", retryAfter: 35,
+    });
+    expect(parseSseEvent('{"type":"error","code":"made_up","message":"legacy","retryAfter":-5}')).toEqual({
+      type: "error", message: "legacy",
+    });
+  });
   it("returns null for non-JSON", () => {
     expect(parseSseEvent("ping")).toBeNull();
   });
@@ -210,5 +218,28 @@ describe("streamMessage", () => {
     await new Promise((r) => setImmediate(r));
     M.lastInstance.emit("message", { type: "message", data: '{"type":"error","message":"upstream_failed"}' });
     await expect(promise).rejects.toThrow("upstream_failed");
+  });
+
+  it("prefers a typed SSE code over legacy message and keeps retry metadata and partial text", async () => {
+    const M = await getMock();
+    const promise = streamMessage("conv-1", "recipe", "daily", vi.fn());
+    const assertion = expect(promise).rejects.toMatchObject({
+      name: "StreamInterruptedError", code: "ai_rate_limited", retryAfter: 35,
+      partialText: "Partial", message: "ai_rate_limited",
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    M.lastInstance.emit("message", { data: '{"type":"delta","text":"Partial"}' });
+    M.lastInstance.emit("message", { data: '{"type":"error","code":"ai_rate_limited","message":"private provider text","retryAfter":35}' });
+    await assertion;
+    expect(M.lastInstance.closed).toBe(true);
+  });
+
+  it("still uses a message from an older server that sends no code", async () => {
+    const M = await getMock();
+    const promise = streamMessage("conv-1", "recipe", "daily", vi.fn());
+    const assertion = expect(promise).rejects.toMatchObject({ message: "legacy message", partialText: "" });
+    await new Promise(resolve => setImmediate(resolve));
+    M.lastInstance.emit("message", { data: '{"type":"error","message":"legacy message"}' });
+    await assertion;
   });
 });

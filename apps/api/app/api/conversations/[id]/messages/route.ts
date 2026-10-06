@@ -1,13 +1,15 @@
 import { NextRequest } from "next/server";
 import { chatMemory } from "@/lib/culinary-memory/service";
 import { prisma } from "@atelier/db";
-import { PostMessageRequestSchema, can } from "@atelier/shared";
+import { PostMessageRequestSchema, can, type ApiErrorCode } from "@atelier/shared";
+import { t, type Language, type TranslationKey } from "@atelier/i18n";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { buildSystemBlocks, type Msg } from "@/lib/anthropic";
 import { recordAiTokens } from "@/lib/ai-quota";
 
-import { stableHistoryWindow, streamChat } from "@/lib/ai/chat";
+import { ChatError, stableHistoryWindow, streamChat } from "@/lib/ai/chat";
 import { chatConfig, providerConfigured } from "@/lib/ai/config";
+import { logger } from "@/lib/logger";
 
 import { beginChatTurn, finishChatTurn, releaseChatTurn, type ChatTurn } from "@/lib/chat-turn";
 
@@ -73,15 +75,22 @@ export async function POST(
     return new Response(JSON.stringify({ error: parse.error.flatten() }), { status: 400 });
 
   const model = parse.data.model ?? "daily";
-  const config = chatConfig(model);
+  let config: ReturnType<typeof chatConfig>;
+  try {
+    config = chatConfig(model);
+  } catch (error) {
+    logger.error("ai_model_configuration_invalid", { model, error });
+    return unconfiguredResponse();
+  }
   // El Creativo (modelo caro) es del admin y del chef ejecutivo; el sous-chef
   // usa el Diario. Se decide en el servidor: el cliente no manda el rol.
   if (config.task === "creative" && !can(ctx.role, "use_creative_chat")) {
     return Response.json({ error: "El chat Creativo está reservado al administrador y al chef ejecutivo.", code: "forbidden" }, { status: 403 });
   }
-  if (!providerConfigured(config.provider)) return Response.json({
-    error: "El asistente todavía no está configurado. Inténtalo más tarde.", code: "ai_provider_unconfigured",
-  }, { status: 503 });
+  if (!providerConfigured(config.provider)) {
+    logger.error("ai_provider_unconfigured", { provider: config.provider, model });
+    return unconfiguredResponse();
+  }
 
   let restaurant: { name: string; identityLine: string | null; chefNotes?: string[] } | null = null;
   let recentRecipes: { title: string }[] = [];
@@ -239,7 +248,7 @@ export async function POST(
           }
         }
 
-        if (!assistantText.trim()) throw new Error("chat_response_incomplete");
+        if (!assistantText.trim()) throw new ChatError("chat_response_incomplete");
         if (turn) await finishChatTurn(turn, assistantText, config.model, { inputTokens, outputTokens, cachedTokens, latencyMs: Date.now() - start });
 
         controller.enqueue(
@@ -257,27 +266,21 @@ export async function POST(
           aborted = true;
         } else {
           errored = true;
-          const rawMessage = err instanceof Error ? err.message : "stream error";
-          // Provider errors arrive as deeply-nested JSON strings. Try to peel
-          // one or two layers so the toast on mobile shows something readable
-          // instead of "{\"error\":{\"message\":\"{\\n  \\\"error\\\":...".
-          // Las apps instaladas no conocen `chat_refused` y muestran el texto tal cual.
-          const message = rawMessage === "chat_refused"
-            ? "El Creativo no puede responder a esta consulta. Reformúlala o pruébala en el Diario."
-            : extractFriendlyError(rawMessage);
-          console.error(
-            JSON.stringify({
-              evt: "ai_stream_error",
-              provider: config.provider,
-              model,
-              message,
-              raw: rawMessage,
-            }),
-          );
+          const { code, retryAfter } = streamErrorCode(err);
+          // Provider/config failures reach Sentry; refusals and limits are expected.
+          const cause = err instanceof Error && err.cause !== undefined ? err.cause : err;
+          (code === "ai_provider_failed" || code === "ai_timeout" ? logger.error : logger.warn)("ai_stream_error", {
+            provider: config.provider, modelId: config.model, model, code, retryAfter,
+            detail: cause instanceof Error ? `${cause.name}: ${cause.message}`.slice(0, 500) : undefined,
+            ...(code === "ai_provider_failed" || code === "ai_timeout" ? { error: err } : {}),
+          });
+          // `message` is the fallback for installed apps that only read text:
+          // localized from the closed code, never the provider's own text.
+          const message = t(STREAM_ERROR_KEYS[code], await userLanguage(ctx.userId));
           // Best-effort: client may already be gone if this was an abort path.
           try {
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: "error", message })}\n\n`),
+              encoder.encode(`data: ${JSON.stringify({ type: "error", code, message, retryAfter })}\n\n`),
             );
           } catch {}
         }
@@ -321,26 +324,49 @@ export async function POST(
   });
 }
 
-// Walk through nested error envelopes (provider SDKs often serialise an HTTP
-// error body as a JSON string inside `error.message` of another JSON body) to
-// surface a single human-readable line for the client toast.
-function extractFriendlyError(raw: string): string {
-  let current: unknown = raw;
-  for (let i = 0; i < 4; i++) {
-    if (typeof current !== "string") break;
-    const trimmed = current.trim();
-    if (!trimmed.startsWith("{")) break;
-    try {
-      current = JSON.parse(trimmed);
-    } catch {
-      break;
-    }
-    if (typeof current === "object" && current !== null) {
-      const c = current as Record<string, unknown>;
-      const inner = (c.error as Record<string, unknown> | undefined)?.message ?? c.message;
-      if (typeof inner === "string") current = inner;
-    }
-  }
-  if (typeof current === "string") return current.trim().split("\n")[0] || "stream error";
-  return "stream error";
+function unconfiguredResponse() {
+  return Response.json({
+    error: "El asistente todavía no está configurado. Inténtalo más tarde.", code: "ai_provider_unconfigured",
+  }, { status: 503 });
+}
+
+// A2 — closed set of codes the chat stream can emit, with the i18n key of
+// their fallback text.
+const STREAM_ERROR_KEYS = {
+  ai_provider_failed: "error_ai_provider_failed",
+  ai_rate_limited: "error_ai_rate_limited",
+  ai_timeout: "error_ai_timeout",
+  ai_response_blocked: "error_ai_response_blocked",
+  chat_refused: "error_chat_refused",
+  chat_response_incomplete: "error_chat_response_incomplete",
+  chat_context_too_long: "error_chat_context_too_long",
+  ai_budget_exhausted: "ai_budget_exhausted",
+  ai_budget_expired: "ai_budget_expired",
+  ai_budget_unavailable: "ai_budget_unavailable",
+  ai_daily_weekly_limit: "ai_daily_weekly_limit",
+  ai_creative_limit: "ai_creative_limit",
+} as const satisfies Partial<Record<ApiErrorCode, TranslationKey>>;
+type StreamErrorCode = keyof typeof STREAM_ERROR_KEYS;
+
+const isStreamErrorCode = (value: unknown): value is StreamErrorCode =>
+  typeof value === "string" && Object.hasOwn(STREAM_ERROR_KEYS, value);
+
+// ChatError and AiBudgetError carry `code`/`retryAfter`; older throw sites
+// still use the code as the message. A newer generation took over the turn
+// (`chat_generation_expired`): the answer was not saved, so it is incomplete.
+// Anything else is a provider failure.
+function streamErrorCode(err: unknown): { code: StreamErrorCode; retryAfter?: number } {
+  const { code, retryAfter, message } = (err ?? {}) as { code?: unknown; retryAfter?: unknown; message?: unknown };
+  const closed = isStreamErrorCode(code) ? code
+    : isStreamErrorCode(message) ? message
+    : message === "chat_generation_expired" ? "chat_response_incomplete"
+    : "ai_provider_failed";
+  const seconds = typeof retryAfter === "number" && Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter) : undefined;
+  return { code: closed, retryAfter: seconds };
+}
+
+async function userLanguage(userId: string): Promise<Language> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { languagePref: true } }).catch(() => null);
+  const language = user?.languagePref;
+  return language === "en" || language === "it" ? language : "es";
 }

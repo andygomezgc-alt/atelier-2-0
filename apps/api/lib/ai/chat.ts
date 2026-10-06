@@ -1,13 +1,56 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, {
+  APIConnectionError, APIConnectionTimeoutError, APIError, AuthenticationError, BadRequestError,
+  NotFoundError, PermissionDeniedError, RateLimitError,
+} from "@anthropic-ai/sdk";
 import { buildMessageBlocks, type Msg, type buildSystemBlocks } from "../anthropic";
 import { chatConfig, providerKey } from "./config";
 import { emptyUsage, tokenCount, type AiUsage } from "./types";
-import type { ChatModelSelection } from "@atelier/shared";
+import type { ApiErrorCode, ChatModelSelection } from "@atelier/shared";
 import { reserveGeneration, settleGeneration } from "./budget";
 import { textInputCeiling } from "./budget-policy";
+import { logger } from "../logger";
 
 export type ChatEvent = { type: "delta"; text: string } | { type: "usage"; usage: AiUsage };
 type ChatInput = { model?: ChatModelSelection; system: ReturnType<typeof buildSystemBlocks>; messages: Msg[]; signal: AbortSignal; userId?: string };
+
+export type ChatErrorCode = Extract<ApiErrorCode,
+  "ai_provider_failed" | "ai_rate_limited" | "ai_timeout" | "ai_response_blocked" | "chat_refused" | "chat_response_incomplete" | "chat_context_too_long">;
+
+/** Closed chat failure. The message is the code; provider detail travels only in `cause`, for server logs. */
+export class ChatError extends Error {
+  readonly retryAfter?: number;
+  constructor(readonly code: ChatErrorCode, options: { retryAfter?: number; cause?: unknown } = {}) {
+    super(code, { cause: options.cause });
+    this.name = "ChatError";
+    if (options.retryAfter !== undefined) this.retryAfter = options.retryAfter;
+  }
+}
+
+const GEMINI_BLOCKED = new Set(["SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "RECITATION"]);
+const ANTHROPIC_MISCONFIGURED = new Set(["invalid_request_error", "authentication_error", "permission_error", "not_found_error"]);
+
+/** Retry-After as whole seconds (delta-seconds or HTTP date), when present and positive. */
+function retryAfterSeconds(headers: Headers | null | undefined): number | undefined {
+  const value = headers?.get("retry-after")?.trim();
+  if (!value) return undefined;
+  const seconds = /^\d+(\.\d+)?$/.test(value) ? Number(value) : (Date.parse(value) - Date.now()) / 1000;
+  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : undefined;
+}
+
+function anthropicChatError(err: APIError, modelId: string): ChatError {
+  if (err instanceof APIConnectionTimeoutError) return new ChatError("ai_timeout", { cause: err });
+  if (err instanceof APIConnectionError) return new ChatError("ai_provider_failed", { cause: err });
+  if (err instanceof RateLimitError || err.type === "rate_limit_error") {
+    return new ChatError("ai_rate_limited", { retryAfter: retryAfterSeconds(err.headers), cause: err });
+  }
+  if (err instanceof BadRequestError || err instanceof AuthenticationError || err instanceof PermissionDeniedError
+    || err instanceof NotFoundError || (err.type !== null && ANTHROPIC_MISCONFIGURED.has(err.type))) {
+    // Our request or credentials are wrong: it needs a fix, not a retry.
+    logger.error("ai_provider_misconfigured", { provider: "anthropic", modelId, status: err.status ?? null, type: err.type, requestId: err.requestID ?? null, error: err });
+  }
+  // Overloaded (529), InternalServerError and mid-stream API errors.
+  return new ChatError("ai_provider_failed", { cause: err });
+}
 
 /** Bound history by size as well as count, retaining whole recent exchanges. */
 export function boundedChatHistory(messages: Msg[], maxChars = 40_000, maxMessages = 20): Msg[] {
@@ -19,7 +62,7 @@ export function boundedChatHistory(messages: Msg[], maxChars = 40_000, maxMessag
     chars += message.content.length;
   }
   while (selected[0]?.role === "assistant") selected.shift();
-  if (!selected.length) throw new Error("chat_context_too_long");
+  if (!selected.length) throw new ChatError("chat_context_too_long");
   return selected;
 }
 
@@ -110,8 +153,23 @@ export async function* streamChat(input: ChatInput): AsyncGenerator<ChatEvent> {
 
 async function* streamChatProvider(input: ChatInput, onFinalUsage: (usage: AiUsage) => void): AsyncGenerator<ChatEvent> {
   const config = chatConfig(input.model);
+  // Our own deadline, kept apart from the client's signal: a client abort keeps
+  // its raw AbortError so the route treats it as a disconnect, not a failure.
+  const deadline = AbortSignal.timeout(config.timeoutMs);
+  try {
+    yield* streamChatUpstream(input, AbortSignal.any([input.signal, deadline]), onFinalUsage);
+  } catch (err) {
+    if (input.signal.aborted) throw err;
+    if (deadline.aborted) throw new ChatError("ai_timeout", { cause: err });
+    if (err instanceof ChatError) throw err;
+    if (err instanceof APIError) throw anthropicChatError(err, config.model);
+    throw new ChatError("ai_provider_failed", { cause: err });
+  }
+}
+
+async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, onFinalUsage: (usage: AiUsage) => void): AsyncGenerator<ChatEvent> {
+  const config = chatConfig(input.model);
   const key = providerKey(config.provider);
-  const signal = AbortSignal.any([input.signal, AbortSignal.timeout(config.timeoutMs)]);
   const messages = boundedChatHistory(input.messages);
   let text = "";
   if (config.provider === "anthropic") {
@@ -151,9 +209,9 @@ async function* streamChatProvider(input: ChatInput, onFinalUsage: (usage: AiUsa
     // uno de biología): se registra la categoría y el chef recibe un aviso.
     if (final.stop_reason === "refusal") {
       console.warn(JSON.stringify({ evt: "ai_refusal", provider: config.provider, modelId: config.model, category: final.stop_details?.category ?? null }));
-      throw new Error("chat_refused");
+      throw new ChatError("chat_refused");
     }
-    if (final.stop_reason !== "end_turn" || !text.trim()) throw new Error("chat_response_incomplete");
+    if (final.stop_reason !== "end_turn" || !text.trim()) throw new ChatError("chat_response_incomplete");
     return;
   }
 
@@ -166,8 +224,14 @@ async function* streamChatProvider(input: ChatInput, onFinalUsage: (usage: AiUsa
       generationConfig: { maxOutputTokens: config.maxTokens, thinkingConfig: { thinkingLevel: "low", includeThoughts: false } },
     }),
   });
-  if (!response.ok) throw new Error(`ai_provider_http_${response.status}`);
-  if (!response.body) throw new Error("chat_response_incomplete");
+  if (!response.ok) {
+    if (response.status === 429) throw new ChatError("ai_rate_limited", { retryAfter: retryAfterSeconds(response.headers) });
+    if (response.status === 408 || response.status === 504) throw new ChatError("ai_timeout");
+    const detail = (await response.text().catch(() => "")).slice(0, 500);
+    logger.error("ai_provider_http_error", { provider: config.provider, modelId: config.model, status: response.status, body: detail });
+    throw new ChatError("ai_provider_failed");
+  }
+  if (!response.body) throw new ChatError("chat_response_incomplete");
   let finishReason: string | undefined;
   let usage = emptyUsage();
   let completeUsage = false;
@@ -182,7 +246,8 @@ async function* streamChatProvider(input: ChatInput, onFinalUsage: (usage: AiUsa
         reasoningTokens: tokenCount(u.thoughtsTokenCount), cachedTokens: tokenCount(u.cachedContentTokenCount) };
       yield { type: "usage", usage };
     }
-    if (chunk.error || chunk.promptFeedback?.blockReason) throw new Error("ai_response_blocked");
+    if (chunk.error) throw new ChatError("ai_provider_failed", { cause: new Error(JSON.stringify(chunk.error).slice(0, 500)) });
+    if (chunk.promptFeedback?.blockReason) throw new ChatError("ai_response_blocked");
     const candidate = chunk.candidates?.[0];
     if (candidate?.finishReason) finishReason = candidate.finishReason;
     for (const part of candidate?.content?.parts ?? []) {
@@ -193,5 +258,6 @@ async function* streamChatProvider(input: ChatInput, onFinalUsage: (usage: AiUsa
     }
   }
   if (finishReason && completeUsage) onFinalUsage(usage);
-  if (finishReason !== "STOP" || !text.trim()) throw new Error("chat_response_incomplete");
+  if (finishReason && GEMINI_BLOCKED.has(finishReason)) throw new ChatError("ai_response_blocked");
+  if (finishReason !== "STOP" || !text.trim()) throw new ChatError("chat_response_incomplete");
 }

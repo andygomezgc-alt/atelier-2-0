@@ -52,7 +52,7 @@ A1–A13. Commits por tarea en esta rama; push al cerrar (regla permanente de An
 Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del chat y la pantalla).
 
 - [x] A1 — Lector sin acceso a los chats
-- [ ] A2 — contrato de errores
+- [x] A2 — contrato de errores
 - [ ] A3 — errores honestos en el móvil
 - [ ] A4 — reservas de presupuesto
 - [ ] A5 — servicio de turno
@@ -100,3 +100,10 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
   - Cambios: `capture_idea` en `GET /api/conversations` y `GET /api/conversations/[id]/messages`; la auditoría encontró la conversación por idea y el bulk ya protegidos. Regla `canShowAssistantTab` (oculta el chat solo a quien tiene restaurante y no tiene `capture_idea`) aplicada a la pestaña y a las tarjetas de idea de Inicio, que llevaban al chat oculto. Los mocks de `requireAuth` ahora respetan el permiso igual que el guard real.
   - RED (observado por el padre): api 2 fallos por la razón correcta (200 en vez de 403 para el Lector); móvil 2 fallos de visibilidad y 2 de Inicio (etiqueta visible y navegación). Dos tests fallaban por mocks rotos (`Tabs` como string, serialización circular) y se corrigieron antes de implementar.
   - GREEN: api 801/801 y tsc OK; móvil 195/195, tsc OK y `expo export --platform android` OK; `git diff --check` OK.
+  - Commit `1b8e759`. RDD: riesgo medio, `review_due: false` (`under_budget`, 375 líneas); queda pendiente dentro del corte desde c646c86.
+- **A2** (Codex gpt-6.1-sol xhigh). Paso 1 (tests) hecho: ~440 líneas en chat.test.ts, messages.test.ts, conversations/api-error del móvil, shared e i18n; compilan (los cuatro tsc OK).
+  - RED observado por el padre: api 65 fallos / 63 pasan; móvil 5 / 24; shared 2 / 6; i18n 1 / 5. Todos por la razón correcta (faltan `code`, la tabla de reintento y las claves `error_<code>`).
+  - Codex se quedó sin cuota de ChatGPT al cerrar el paso 1 («try again at 9:20 PM»). Andy decidió (06-10): seguir con un agente Opus 5.5 mientras Codex no tenga cuota y volver a Codex a partir de las 21:20. El paso 2 (producción) lo hace Opus sobre los tests de Codex.
+  - Paso 2 (Opus 5.5, ruta delegada: escritor en 2+ archivos). `ChatError` con código cerrado en el adaptador (clases tipadas del SDK de Anthropic, estados HTTP y `finishReason` de Gemini, plazo propio separado del corte del cliente); evento SSE `{type:"error", code, message, retryAfter?}` con `message` traducido al idioma del usuario; `isRetryableChatError` en shared; claves `error_<code>` en es/en/it (las sueltas `ai_provider_failed` y `chat_response_incomplete` pasan a `error_*`); el móvil lee `code` y `retryAfter`. Se quitó `extractFriendlyError`. Un test viejo esperaba el error crudo `connection_lost` y ahora espera `ai_provider_failed` (lo exige la especificación).
+  - Aceptado: los fallos de configuración del proveedor dejan dos registros de error (el adaptador con el detalle y la ruta con el código); son raros y los tests piden ambos.
+  - GREEN verificado por el padre: api 864/864 y tsc OK; móvil 201/201, tsc OK y `expo export` Android OK; shared 263/263 y tsc OK; i18n 6/6 y tsc OK; `git diff --check` OK.

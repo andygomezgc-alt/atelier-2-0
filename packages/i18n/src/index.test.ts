@@ -27,3 +27,29 @@ describe("dictionary parity", () => {
     expect(Object.keys(en).sort()).toEqual(Object.keys(es).sort());
   });
 });
+
+describe("A2 chat error translations", () => {
+  const spanish: Record<string, string> = {
+    error_ai_provider_failed: "El asistente no respondió. Inténtalo de nuevo.",
+    error_ai_rate_limited: "El asistente está saturado. Prueba en un minuto.",
+    error_ai_timeout: "El asistente tardó demasiado. Inténtalo de nuevo.",
+    error_ai_response_blocked: "El asistente no puede responder a esto. Reformúlalo.",
+    error_chat_refused: "El Creativo no puede responder a esta consulta. Reformúlala o pruébala en el Diario.",
+    error_chat_response_incomplete: "La respuesta quedó incompleta. Inténtalo de nuevo.",
+    error_chat_context_too_long: "Esta conversación es demasiado larga. Empieza un chat nuevo.",
+  };
+
+  test("has the exact short Spanish copy and one key in each language", () => {
+    for (const [key, expected] of Object.entries(spanish)) {
+      expect(Object.prototype.hasOwnProperty.call(es, key), key).toBe(true);
+      expect((es as Record<string, string>)[key]).toBe(expected);
+      for (const dict of [en, itDict]) {
+        expect(Object.prototype.hasOwnProperty.call(dict, key), key).toBe(true);
+        const value = (dict as Record<string, string>)[key];
+        expect(value?.trim()).toBeTruthy();
+        expect(value).not.toBe(expected);
+        expect(value).not.toContain("_");
+      }
+    }
+  });
+});

@@ -2,6 +2,7 @@ import { apiFetch } from "./client";
 import * as SecureStore from "@/src/lib/secure-storage";
 import { TOKEN_KEY } from "./client";
 import EventSource from "react-native-sse";
+import { ApiErrorCodeSchema, type ApiErrorCode } from "@atelier/shared";
 
 const BASE = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 
@@ -11,6 +12,8 @@ export class StreamInterruptedError extends Error {
   constructor(
     message: string,
     readonly partialText: string,
+    readonly code?: ApiErrorCode,
+    readonly retryAfter?: number,
   ) {
     super(message);
     this.name = "StreamInterruptedError";
@@ -92,7 +95,7 @@ export type SseEvent =
   | { type: "delta"; text: string }
   | { type: "heartbeat"; ts: number }
   | { type: "done" }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; code?: ApiErrorCode; retryAfter?: number };
 
 export function parseSseEvent(data: string): SseEvent | null {
   try {
@@ -109,7 +112,15 @@ export function parseSseEvent(data: string): SseEvent | null {
       }
       if (json.type === "done") return { type: "done" };
       if (json.type === "error") {
-        return { type: "error", message: typeof json.message === "string" ? json.message : "stream_error" };
+        // A2 — newer servers send a closed `code` (+ `retryAfter` seconds);
+        // `message` stays as the fallback for servers that only send text.
+        const event: SseEvent = { type: "error", message: typeof json.message === "string" ? json.message : "stream_error" };
+        const code = ApiErrorCodeSchema.safeParse(json.code);
+        if (code.success) event.code = code.data;
+        if (typeof json.retryAfter === "number" && Number.isFinite(json.retryAfter) && json.retryAfter > 0) {
+          event.retryAfter = json.retryAfter;
+        }
+        return event;
       }
     }
     return null;
@@ -218,7 +229,7 @@ export async function streamMessage(
       } else if (ev.type === "done") {
         settle(() => resolve(full));
       } else if (ev.type === "error") {
-        settle(() => reject(new StreamInterruptedError(ev.message, full)));
+        settle(() => reject(new StreamInterruptedError(ev.code ?? ev.message, full, ev.code, ev.retryAfter)));
       }
     });
 

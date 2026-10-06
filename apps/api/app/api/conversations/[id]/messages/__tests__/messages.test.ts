@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { can, type Permission } from "@atelier/shared";
+import { t } from "@atelier/i18n";
+import { ApiErrorCodeSchema } from "@atelier/shared";
+import { AiBudgetError } from "@/lib/ai/budget-policy";
+import { logger } from "@/lib/logger";
+import { inspect } from "node:util";
 
 // Mocks elevados (el factory de vi.mock se iza sobre los consts).
 const { db, guard, authContext, quota, anthro, streamMock, memoryChat, buildSystem, PrismaClientKnownRequestError } = vi.hoisted(() => {
@@ -11,6 +16,7 @@ const { db, guard, authContext, quota, anthro, streamMock, memoryChat, buildSyst
     restaurant: { findUnique: vi.fn() },
     recipe: { findMany: vi.fn() },
     chefNote: { findMany: vi.fn() },
+    user: { findUnique: vi.fn() },
   };
   const authContext = {
     userId: "u1", restaurantId: "r1" as string | null,
@@ -89,7 +95,7 @@ vi.mock("@/lib/ai/chat", async () => ({
   // compruebe lo que llega al modelo, no solo que la ruta la invoca.
   stableHistoryWindow: (await vi.importActual<typeof import("@/lib/ai/chat")>("@/lib/ai/chat")).stableHistoryWindow,
 }));
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 
 import * as route from "../route";
@@ -136,6 +142,7 @@ beforeEach(() => {
   db.restaurant.findUnique.mockReset().mockResolvedValue({ name: "Kokoo", identityLine: null });
   db.recipe.findMany.mockReset().mockResolvedValue([]);
   db.chefNote.findMany.mockReset().mockResolvedValue([]);
+  db.user.findUnique.mockReset().mockResolvedValue({ languagePref: "es" });
   memoryChat.mockReset().mockResolvedValue(null);
   buildSystem.mockClear();
   authContext.restaurantId = "r1";
@@ -363,7 +370,8 @@ describe("POST chat — persistencia", () => {
     streamMock.mockImplementation(async function* () { throw new Error("ai_daily_weekly_limit"); });
     const res = await post({ content: "receta", model: "daily" }, id);
     const wire = await res.text();
-    expect(wire).toContain('"type":"error","message":"ai_daily_weekly_limit"');
+    expect(wire).toContain('"code":"ai_daily_weekly_limit"');
+    expect(wire).toContain(t("ai_daily_weekly_limit", "es"));
     expect(wire).not.toContain('"type":"done"');
     expect(assistantCreate()).toBeUndefined();
     if (id !== "preview") expect(db.conversation.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: { generationId: null, generationStartedAt: null } }));
@@ -372,7 +380,8 @@ describe("POST chat — persistencia", () => {
   it("turns a provider refusal into readable text for installed apps", async () => {
     streamMock.mockImplementation(async function* () { throw new Error("chat_refused"); });
     const wire = await (await post({ content: "receta", model: "creative" })).text();
-    expect(wire).toContain('"type":"error","message":"El Creativo no puede responder a esta consulta. Reformúlala o pruébala en el Diario."');
+    expect(wire).toContain('"code":"chat_refused"');
+    expect(wire).toContain("El Creativo no puede responder a esta consulta. Reformúlala o pruébala en el Diario.");
     expect(wire).not.toContain('"type":"done"');
     expect(assistantCreate()).toBeUndefined();
   });
@@ -476,11 +485,121 @@ describe("POST chat — selección de proveedor", () => {
     expect(quota.reserveAiCall).not.toHaveBeenCalled();
   });
   it("falta de clave no consume cuota ni persiste un turno", async () => {
+    const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
     vi.stubEnv("GEMINI_API_KEY", "");
     const res = await post({ content: "receta", model: "daily" });
     expect(res.status).toBe(503);
     expect(quota.reserveAiCall).not.toHaveBeenCalled();
     expect(db.message.create).not.toHaveBeenCalled();
     expect(streamMock).not.toHaveBeenCalled();
+    expect(errorLog).toHaveBeenCalled();
+  });
+  it("logs invalid model configuration without exposing chef or config content", async () => {
+    const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    vi.stubEnv("AI_CHAT_DAILY_MODEL", "bad/model");
+    const res = await post({ content: "secret chef prompt", model: "daily" }).catch(() => null);
+    if (res) {
+      const body = await res.text();
+      expect(body).not.toContain("secret chef prompt");
+      expect(body).not.toContain("bad/model");
+    }
+    expect(errorLog).toHaveBeenCalled();
+    expect(inspect(errorLog.mock.calls, { depth: 8 })).not.toContain("secret chef prompt");
+    expect(streamMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("A2 closed SSE error contract", () => {
+  async function errorEvent(error: unknown, id = "conv-1") {
+    streamMock.mockImplementation(async function* () { throw error; });
+    const wire = await (await post({ content: "secret chef prompt", model: "daily" }, id)).text();
+    const records = wire.split("\n\n").filter(Boolean).map(line => JSON.parse(line.replace(/^data: /, "")) as Record<string, unknown>);
+    expect(records.some(record => record.type === "done")).toBe(false);
+    const errors = records.filter(record => record.type === "error");
+    expect(errors).toHaveLength(1);
+    expect(ApiErrorCodeSchema.safeParse(errors[0]?.code).success).toBe(true);
+    return { event: errors[0]!, wire };
+  }
+
+  it.each([
+    ["es", "El asistente no respondió. Inténtalo de nuevo."],
+    ["en", "The assistant did not respond. Please try again."],
+    ["it", "L'assistente non ha risposto. Riprova."],
+  ])("localizes provider failure in %s without leaking provider text", async (language, expected) => {
+    db.user.findUnique.mockResolvedValue({ languagePref: language });
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const { event, wire } = await errorEvent(Object.assign(new Error("provider secret body"), { code: "ai_provider_failed" }));
+    expect(event).toMatchObject({ code: "ai_provider_failed", message: expected });
+    expect(wire).not.toContain("provider secret body");
+    expect(wire).not.toContain("secret chef prompt");
+    expect(errorLog).toHaveBeenCalled();
+    expect(inspect([log.mock.calls, errorLog.mock.calls], { depth: 8 })).not.toContain("secret chef prompt");
+  });
+
+  it("defaults to Spanish when languagePref is missing", async () => {
+    db.user.findUnique.mockResolvedValue(null);
+    const { event } = await errorEvent(new Error("chat_response_incomplete"));
+    expect(event).toMatchObject({ code: "chat_response_incomplete", message: "La respuesta quedó incompleta. Inténtalo de nuevo." });
+  });
+
+  it.each(["ai_budget_exhausted", "ai_budget_expired", "ai_budget_unavailable", "ai_daily_weekly_limit", "ai_creative_limit"] as const)("preserves %s and Retry-After in-stream", async code => {
+    const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const { event } = await errorEvent(new AiBudgetError(code, 123));
+    expect(event).toMatchObject({ code, retryAfter: 123 });
+    expect(event.message).toBe(t(code, "es"));
+    expect(errorLog).not.toHaveBeenCalled();
+  });
+
+  it.each(["conv-1", "preview"])("emits each of the seven closed A2 codes for %s", async id => {
+    for (const code of ["ai_provider_failed", "ai_rate_limited", "ai_timeout", "ai_response_blocked", "chat_refused", "chat_response_incomplete", "chat_context_too_long"]) {
+      const { event, wire } = await errorEvent(Object.assign(new Error("private upstream body"), { code }), id);
+      expect(event.code, code).toBe(code);
+      expect(typeof event.message, code).toBe("string");
+      expect(wire, code).not.toContain("private upstream body");
+    }
+  });
+
+  it("preserves provider retryAfter seconds in an SSE rate limit", async () => {
+    const { event } = await errorEvent(Object.assign(new Error("private quota detail"), { code: "ai_rate_limited", retryAfter: 37 }));
+    expect(event).toMatchObject({ code: "ai_rate_limited", retryAfter: 37 });
+  });
+
+  it.each(["ai_budget_exhausted", "ai_budget_expired", "ai_daily_weekly_limit", "ai_creative_limit", "chat_refused"])("logs expected %s at warn/info, not error", async code => {
+    const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const warnLog = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const infoLog = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+    await errorEvent(code === "chat_refused" ? new Error(code) : new AiBudgetError(code as ConstructorParameters<typeof AiBudgetError>[0], 60));
+    expect(errorLog).not.toHaveBeenCalled();
+    expect(warnLog.mock.calls.length + infoLog.mock.calls.length).toBeGreaterThan(0);
+  });
+
+  it("uses the closed provider-failed fallback for unknown errors", async () => {
+    const { event, wire } = await errorEvent(new Error("database connection string secret"));
+    expect(event).toMatchObject({ code: "ai_provider_failed", message: "El asistente no respondió. Inténtalo de nuevo." });
+    expect(wire).not.toContain("database connection string secret");
+  });
+
+  it("queries language only for an error, not a successful stream", async () => {
+    streamMock.mockReturnValue(providerStream(["Listo"], { in: 5, out: 3 }));
+    expect(await (await post({ content: "receta" })).text()).toContain('"type":"done"');
+    expect(db.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it.each(["preview", "conv-1"])("does not emit an error after the client's AbortSignal aborts in %s", async id => {
+    const controller = new AbortController();
+    const infoLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    streamMock.mockImplementation(async function* () {
+      controller.abort();
+      throw new DOMException("client disconnected", "AbortError");
+    });
+    const request = new NextRequest(`https://t.local/api/conversations/${id}/messages`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content: "receta" }), signal: controller.signal,
+    });
+    const wire = await (await route.POST(request, { params: Promise.resolve({ id }) })).text();
+    expect(wire).not.toContain('"type":"error"');
+    expect(db.user.findUnique).not.toHaveBeenCalled();
+    expect(infoLog.mock.calls.flat().some(line => typeof line === "string" && line.includes('"aborted":true'))).toBe(true);
   });
 });

@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("./budget", () => ({ reserveGeneration: vi.fn().mockResolvedValue({ id: "reservation" }), settleGeneration: vi.fn().mockResolvedValue(undefined) }));
 const { opusStream, constructor } = vi.hoisted(() => ({ opusStream: vi.fn(), constructor: vi.fn() }));
-vi.mock("@anthropic-ai/sdk", () => ({ default: class {
+vi.mock("@anthropic-ai/sdk", async importOriginal => ({ ...(await importOriginal<typeof import("@anthropic-ai/sdk")>()), default: class {
   messages = { stream: opusStream };
   constructor(options: unknown) { constructor(options); }
 } }));
+import { APIConnectionError, APIConnectionTimeoutError, APIError, APIUserAbortError, AuthenticationError, BadRequestError, InternalServerError, NotFoundError, PermissionDeniedError, RateLimitError } from "@anthropic-ai/sdk";
+import { inspect } from "node:util";
 import { boundedChatHistory, sseData, stableHistoryWindow, streamChat, type ChatEvent } from "./chat";
 import type { Msg } from "../anthropic";
 import type { ChatModelSelection } from "@atelier/shared";
 import { reserveGeneration, settleGeneration } from "./budget";
+import { logger } from "../logger";
 
 const input = (model: ChatModelSelection = "daily", signal = new AbortController().signal) => ({ model, signal,
   system: [{ type: "text" as const, text: "Principios del chef" }, { type: "text" as const, text: "Memoria breve" }],
@@ -33,7 +36,7 @@ beforeEach(() => {
   vi.stubEnv("GEMINI_API_KEY", "gemini-test"); vi.stubEnv("ANTHROPIC_API_KEY", "anthropic-test");
   opusStream.mockReset(); constructor.mockReset();
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("Gemini chat adapter", () => {
   it("preserves context, streams UTF-8, hides thought parts and bills reasoning once", async () => {
@@ -54,7 +57,7 @@ describe("Gemini chat adapter", () => {
     expect(request.generationConfig).toMatchObject({ maxOutputTokens: 8192, thinkingConfig: { thinkingLevel: "low", includeThoughts: false } });
     expect(opusStream).not.toHaveBeenCalled();
   });
-  it.each(["MAX_TOKENS", "SAFETY", undefined])("rejects a partial response finishing with %s", async finishReason => {
+  it.each(["MAX_TOKENS", undefined])("rejects a partial response finishing with %s", async finishReason => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body(event({ candidates: [{ content: { parts: [{ text: "Media receta" }] }, finishReason }] })))));
     await expect(collect(streamChat(input()))).rejects.toThrow("chat_response_incomplete");
   });
@@ -65,7 +68,7 @@ describe("Gemini chat adapter", () => {
   it("HTTP failure is not retried or routed to Opus", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response("private provider details", { status: 429 }));
     vi.stubGlobal("fetch", fetcher);
-    await expect(collect(streamChat(input()))).rejects.toThrow("ai_provider_http_429");
+    await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "ai_rate_limited" });
     expect(fetcher).toHaveBeenCalledTimes(1); expect(opusStream).not.toHaveBeenCalled();
   });
   it("propagates cancellation upstream", async () => {
@@ -113,6 +116,203 @@ describe("Opus chat adapter", () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('"category":"bio"'));
     expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 10, outputTokens: 3 }));
     warn.mockRestore();
+  });
+});
+
+describe("A2 provider error normalization", () => {
+  const anthropicFailure = async (error: Error, expectedCode: string, retryAfter?: number) => {
+    opusStream.mockReturnValue({
+      async *[Symbol.asyncIterator]() { throw error; },
+      finalMessage: vi.fn(),
+    });
+    await expect(collect(streamChat(input("creative")))).rejects.toMatchObject({
+      code: expectedCode,
+      ...(retryAfter === undefined ? {} : { retryAfter }),
+    });
+    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, undefined);
+  };
+
+  it("maps an Anthropic 429 to rate-limited with Retry-After seconds", async () => {
+    const headers = new Headers({ "retry-after": "42" });
+    const error = APIError.generate(429, { error: { type: "rate_limit_error", message: "private quota detail" } }, undefined, headers);
+    expect(error).toBeInstanceOf(RateLimitError);
+    await anthropicFailure(error, "ai_rate_limited", 42);
+  });
+
+  it.each([500, 529])("maps Anthropic HTTP %i to provider failure", async status => {
+    const error = APIError.generate(status, { error: { type: status === 529 ? "overloaded_error" : "api_error", message: "private" } }, undefined, new Headers());
+    expect(error).toBeInstanceOf(InternalServerError);
+    await anthropicFailure(error, "ai_provider_failed");
+  });
+
+  it.each([400, 401, 403, 404])("maps Anthropic HTTP %i to provider failure", async status => {
+    const logged = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const error = APIError.generate(status, { error: { type: "invalid_request_error", message: "private" } }, undefined, new Headers());
+    const klass = { 400: BadRequestError, 401: AuthenticationError, 403: PermissionDeniedError, 404: NotFoundError }[status as 400 | 401 | 403 | 404];
+    expect(error).toBeInstanceOf(klass);
+    await anthropicFailure(error, "ai_provider_failed");
+    expect(logged).toHaveBeenCalled();
+    expect(inspect(logged.mock.calls, { depth: 8 })).not.toContain("Berenjena");
+  });
+
+  it("distinguishes Anthropic connection failure from SDK timeout", async () => {
+    await anthropicFailure(new APIConnectionError({ message: "private network details" }), "ai_provider_failed");
+    vi.mocked(settleGeneration).mockClear();
+    await anthropicFailure(new APIConnectionTimeoutError({ message: "private timeout details" }), "ai_timeout");
+  });
+
+  it.each(["refusal", "max_tokens", "end_turn"])("keeps final Anthropic usage before rejecting %s", async stopReason => {
+    opusStream.mockReturnValue({
+      async *[Symbol.asyncIterator]() {},
+      finalMessage: async () => ({ stop_reason: stopReason, usage: { input_tokens: 12, output_tokens: 8 } }),
+    });
+    const code = stopReason === "refusal" ? "chat_refused" : "chat_response_incomplete";
+    await expect(collect(streamChat(input("creative")))).rejects.toMatchObject({ code });
+    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 12, outputTokens: 8 }));
+  });
+
+  it.each([
+    ["rate_limit_error", "ai_rate_limited"],
+    ["overloaded_error", "ai_provider_failed"],
+    ["api_error", "ai_provider_failed"],
+    ["invalid_request_error", "ai_provider_failed"],
+    ["authentication_error", "ai_provider_failed"],
+    ["permission_error", "ai_provider_failed"],
+    ["not_found_error", "ai_provider_failed"],
+  ])("maps a midstream SDK APIError of type %s", async (type, code) => {
+    // SDK core/streaming turns a wire SSE error into APIError(undefined,...)
+    // and MessageStream rejects iteration; it is not a RawMessageStreamEvent.
+    const error = new APIError(undefined, { error: { type, message: "secret upstream body" } }, undefined, new Headers({ "retry-after": "17" }), type as ConstructorParameters<typeof APIError>[4]);
+    opusStream.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "message_start", message: { usage: { input_tokens: 19, output_tokens: 2 } } };
+        yield { type: "content_block_delta", delta: { type: "text_delta", text: "Partial" } };
+        throw error;
+      },
+      finalMessage: vi.fn(),
+    });
+    const received: ChatEvent[] = [];
+    await expect((async () => { for await (const item of streamChat(input("creative"))) received.push(item); })()).rejects.toMatchObject({ code });
+    expect(received).toContainEqual({ type: "delta", text: "Partial" });
+    expect(received).toContainEqual({ type: "usage", usage: expect.objectContaining({ inputTokens: 19, outputTokens: 2 }) });
+    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, undefined);
+  });
+
+  it("maps a local deadline to timeout without changing client-abort semantics", async () => {
+    const deadline = new AbortController();
+    const spy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    vi.stubGlobal("fetch", vi.fn((_url, options: RequestInit) => {
+      return new Promise((_resolve, reject) => {
+        options.signal?.addEventListener("abort", () => reject(new DOMException("deadline", "AbortError")), { once: true });
+        deadline.abort();
+      });
+    }));
+    await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "ai_timeout" });
+  });
+
+  it("maps the Anthropic local deadline to timeout without waiting for a real clock", async () => {
+    const deadline = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    opusStream.mockImplementation((_request, options: { signal: AbortSignal }) => ({
+      async *[Symbol.asyncIterator]() {
+        await new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () => reject(new APIUserAbortError()), { once: true });
+          deadline.abort();
+        });
+      },
+      finalMessage: vi.fn(),
+    }));
+    await expect(collect(streamChat(input("creative")))).rejects.toMatchObject({ code: "ai_timeout" });
+  });
+
+  it("preserves an Anthropic client abort instead of converting it to a provider error", async () => {
+    const controller = new AbortController();
+    opusStream.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        controller.abort();
+        throw new APIUserAbortError();
+      },
+      finalMessage: vi.fn(),
+    });
+    await expect(collect(streamChat(input("creative", controller.signal)))).rejects.toBeInstanceOf(APIUserAbortError);
+  });
+
+  it.each([[429, "ai_rate_limited"], [408, "ai_timeout"], [504, "ai_timeout"], [500, "ai_provider_failed"], [400, "ai_provider_failed"]])("maps Gemini HTTP %i", async (status, code) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("private provider body", { status, headers: { "retry-after": "23" } })));
+    await expect(collect(streamChat(input()))).rejects.toMatchObject({ code });
+    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, undefined);
+  });
+
+  it("logs Gemini HTTP status with bounded provider body, never the chef prompt", async () => {
+    const logged = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("x".repeat(900), { status: 502 })));
+    await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "ai_provider_failed" });
+    const record = inspect(logged.mock.calls, { depth: 8, maxStringLength: 2_000 });
+    expect(record).toContain("502");
+    expect(record).toContain("x".repeat(100));
+    expect(record).not.toContain("x".repeat(501));
+    expect(record).not.toContain("Berenjena");
+  });
+
+  it.each(["SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "RECITATION"])("maps Gemini finishReason %s to blocked", async finishReason => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body(event({
+      candidates: [{ finishReason, content: { parts: [{ text: "Partial" }] } }],
+      usageMetadata: { promptTokenCount: 23, candidatesTokenCount: 4 },
+    })))));
+    await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "ai_response_blocked" });
+    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 23, outputTokens: 4 }));
+  });
+
+  it("maps Gemini promptFeedback blocking independently of chunk.error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body(event({ promptFeedback: { blockReason: "SAFETY" } })))));
+    await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "ai_response_blocked" });
+  });
+
+  it("distinguishes Gemini chunk error from prompt blocking", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body(event({ error: { code: 500, message: "private" } })))));
+    await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "ai_provider_failed" });
+  });
+
+  it.each([
+    ["chunk error", { error: { code: 500, message: "private" } }, "ai_provider_failed"],
+    ["prompt block", { promptFeedback: { blockReason: "SAFETY" } }, "ai_response_blocked"],
+  ])("keeps partial Gemini usage visible before a %s without settling an incomplete record", async (_label, failingChunk, code) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body(
+      event({ usageMetadata: { promptTokenCount: 13, candidatesTokenCount: 2 }, candidates: [{ content: { parts: [{ text: "Partial" }] } }] }) + event(failingChunk),
+    ))));
+    const received: ChatEvent[] = [];
+    await expect((async () => { for await (const item of streamChat(input())) received.push(item); })()).rejects.toMatchObject({ code });
+    expect(received).toContainEqual({ type: "usage", usage: expect.objectContaining({ inputTokens: 13, outputTokens: 2 }) });
+    expect(received).toContainEqual({ type: "delta", text: "Partial" });
+    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, undefined);
+  });
+
+  it("keeps an empty Gemini HTTP body as an incomplete answer", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 200 })));
+    await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "chat_response_incomplete" });
+  });
+
+  it.each([
+    ["malformed JSON", () => new Response(body("data: {not-json}\n\n"))],
+    ["network exception", () => Promise.reject(new TypeError("private network details"))],
+  ])("normalizes Gemini %s to a closed provider failure", async (_label, result) => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(result));
+    await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "ai_provider_failed" });
+  });
+
+  it.each(["stream construction", "finalMessage"])("normalizes Anthropic %s failure", async stage => {
+    if (stage === "stream construction") opusStream.mockImplementation(() => { throw new Error("private construction detail"); });
+    else opusStream.mockReturnValue({ async *[Symbol.asyncIterator]() {}, finalMessage: async () => { throw new Error("private final detail"); } });
+    await expect(collect(streamChat(input("creative")))).rejects.toMatchObject({ code: "ai_provider_failed" });
+  });
+
+  it("preserves complete Gemini usage even when MAX_TOKENS makes the answer incomplete", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body(event({
+      candidates: [{ finishReason: "MAX_TOKENS", content: { parts: [{ text: "Partial" }] } }],
+      usageMetadata: { promptTokenCount: 11, candidatesTokenCount: 7 },
+    })))));
+    await expect(collect(streamChat(input()))).rejects.toMatchObject({ code: "chat_response_incomplete" });
+    expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, expect.objectContaining({ inputTokens: 11, outputTokens: 7 }));
   });
 });
 
@@ -188,7 +388,7 @@ describe("bounded transport", () => {
         throw new Error("connection_lost");
       },
     });
-    await expect(collect(streamChat(input("creative")))).rejects.toThrow("connection_lost");
+    await expect(collect(streamChat(input("creative")))).rejects.toMatchObject({ code: "ai_provider_failed", cause: expect.objectContaining({ message: "connection_lost" }) });
     expect(settleGeneration).toHaveBeenCalledWith({ id: "reservation" }, undefined);
   });
   it("settles known final Opus usage even when the visible recipe is incomplete", async () => {
