@@ -242,7 +242,6 @@ export const es = {
   // A3 · banner de error del chat.
   chat_unanswered: "La última pregunta quedó sin respuesta.",
   chat_use_daily: "Continuar con Diario",
-  chat_sign_in: "Iniciar sesión",
   chat_untitled: "Conversación nueva",
   assistant_eyebrow: "ATELIER · SUGIERE",
   // Renombre editorial de modelos. IDs internos (haiku/sonnet/opus) intactos.

@@ -263,6 +263,21 @@ describe("A3 stream transport errors and encoded ids", () => {
     expect(unauthorized).toHaveBeenCalledTimes(1);
   });
 
+  it("does not sign out on a 401 when no token was sent (nothing to revoke)", async () => {
+    const M = await getMock();
+    const SecureStore = await import("expo-secure-store");
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValueOnce(null);
+    const unauthorized = vi.fn();
+    setUnauthorizedHandler(unauthorized);
+    const promise = streamMessage("conv-1", "hi", "daily", vi.fn());
+    const assertion = expect(promise).rejects.toMatchObject({ name: "StreamInterruptedError", status: 401 });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(M.lastInstance.options.headers.Authorization).toBeUndefined();
+    M.lastInstance.emit("error", { type: "error", xhrStatus: 401, message: '{"error":"Unauthorized"}' });
+    await assertion;
+    expect(unauthorized).not.toHaveBeenCalled();
+  });
+
   it("does not sign out for other HTTP failures and keeps a closed code from the JSON body", async () => {
     const M = await getMock();
     const unauthorized = vi.fn();

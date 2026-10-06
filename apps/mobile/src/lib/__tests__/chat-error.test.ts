@@ -61,8 +61,9 @@ describe("classifyChatError (A3)", () => {
     });
   });
 
-  it("asks to sign in again on a 401 from the stream or from apiFetch", () => {
-    const expected = { message: "[error_session_expired]", retryable: false, action: "sign_in" };
+  // A3b — the transport already signs out on a 401; the banner only explains it.
+  it("explains an expired session on a 401 from the stream or from apiFetch, without retry or action", () => {
+    const expected = { message: "[error_session_expired]", retryable: false };
     expect(classifyChatError(stream(undefined, 401, '{"error":"Unauthorized"}'), tStub, "daily")).toEqual(expected);
     expect(classifyChatError(new ApiError(401, "Unauthorized"), tStub, "daily")).toEqual(expected);
   });

@@ -49,7 +49,6 @@ import type { TranslationKey } from "@atelier/i18n";
 import { colors, fonts, fontSizes, radii, spacing, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
 import { classifyChatError, type ChatErrorAction } from "@/src/lib/chat-error";
-import { notifyUnauthorized } from "@/src/api/client";
 import { canRememberNote } from "@/src/lib/chef-notes";
 
 type ModelKey = ChatMode;
@@ -66,7 +65,6 @@ const MODEL_LABEL_KEYS: Record<ModelKey, TranslationKey> = {
 const ERROR_ACTION_KEYS: Record<ChatErrorAction, TranslationKey> = {
   use_daily: "chat_use_daily",
   new_chat: "chat_new",
-  sign_in: "chat_sign_in",
 };
 
 function initials(name: string): string {
@@ -584,8 +582,7 @@ export default function AsistenteScreen() {
 
   function handleErrorAction(action: ChatErrorAction) {
     if (action === "use_daily") void continueWithDaily();
-    else if (action === "new_chat") startNewChat();
-    else notifyUnauthorized();
+    else startNewChat();
   }
 
   function changeConversation(action: () => void) {

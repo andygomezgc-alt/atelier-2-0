@@ -58,7 +58,6 @@ describe("A3 honest chat error copy", () => {
   const spanish: Record<string, string> = {
     chat_unanswered: "La última pregunta quedó sin respuesta.",
     chat_use_daily: "Continuar con Diario",
-    chat_sign_in: "Iniciar sesión",
     error_session_expired: "Tu sesión caducó. Vuelve a iniciar sesión.",
   };
 
@@ -72,5 +71,12 @@ describe("A3 honest chat error copy", () => {
         expect(value).not.toContain("_");
       }
     }
+  });
+});
+
+// A3b — the stream transport signs out by itself; the banner has no sign-in button.
+describe("A3b no sign-in button in the chat banner", () => {
+  test("drops the unused sign-in button copy", () => {
+    for (const dict of [es, en, itDict]) expect(Object.keys(dict)).not.toContain("chat_sign_in");
   });
 });

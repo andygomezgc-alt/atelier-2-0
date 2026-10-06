@@ -278,13 +278,20 @@ describe("honest chat errors (A3)", () => {
     expect(actions("chat_new")).toHaveLength(2);
   });
 
-  it("asks to sign in again after a 401 instead of offering Retry", async () => {
-    h.streamMessage.mockRejectedValueOnce(streamFailure(undefined, 401));
+  it("signs out exactly once after a stream 401: the transport does it, the banner only explains", async () => {
+    // The real transport signs out before rejecting; the screen must not do it again.
+    h.streamMessage.mockImplementationOnce(async () => {
+      h.notifyUnauthorized();
+      throw streamFailure(undefined, 401);
+    });
     await render();
     await send("Un plato");
     expect(texts()).toContain("error_session_expired");
     expect(actions("error_retry")).toHaveLength(0);
-    await act(async () => { actions("chat_sign_in")[0]!.props.onPress(); });
+    // The banner offers nothing to press: no dead "sign in" button after the redirect.
+    const reason = screen.root.find((node) => (node.type as unknown) === "Text" && node.props.children === "error_session_expired");
+    const banner = reason.parent!.parent!;
+    expect(banner.findAll((node) => (node.type as unknown) === "Pressable")).toHaveLength(0);
     expect(h.notifyUnauthorized).toHaveBeenCalledTimes(1);
   });
 

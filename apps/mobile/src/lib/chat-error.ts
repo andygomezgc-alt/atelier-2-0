@@ -8,7 +8,7 @@ import { apiErrorKey } from "./api-error";
 
 type T = (key: TranslationKey, vars?: Record<string, string | number>) => string;
 
-export type ChatErrorAction = "use_daily" | "new_chat" | "sign_in";
+export type ChatErrorAction = "use_daily" | "new_chat";
 
 export type ChatFailure = {
   message: string;
@@ -29,7 +29,8 @@ function readError(err: unknown): { code?: ApiErrorCode; status?: number; name?:
 
 export function classifyChatError(err: unknown, t: T, model: ChatMode): ChatFailure {
   const { code, status, name } = readError(err);
-  if (status === 401) return { message: t("error_session_expired"), retryable: false, action: "sign_in" };
+  // The transport (apiFetch / streamMessage) already signed out; only explain why.
+  if (status === 401) return { message: t("error_session_expired"), retryable: false };
   if (code) {
     const message = t(apiErrorKey(code) ?? "error_ai_provider_failed");
     if (code === "ai_creative_limit" || (code === "chat_refused" && model === "creative")) {

@@ -220,7 +220,6 @@ export const it: EsDict = {
   // A3 · banner di errore della chat.
   chat_unanswered: "L'ultima domanda è rimasta senza risposta.",
   chat_use_daily: "Continua con Quotidiano",
-  chat_sign_in: "Accedi",
   chat_untitled: "Nuova conversazione",
   assistant_eyebrow: "ATELIER · SUGGERISCE",
   model_daily: "Quotidiano",

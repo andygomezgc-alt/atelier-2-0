@@ -219,7 +219,6 @@ export const en: EsDict = {
   // A3 · chat error banner.
   chat_unanswered: "Your last question has no answer yet.",
   chat_use_daily: "Continue with Everyday",
-  chat_sign_in: "Sign in",
   chat_untitled: "New conversation",
   assistant_eyebrow: "ATELIER · SUGGESTS",
   model_daily: "Everyday",
