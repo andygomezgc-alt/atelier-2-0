@@ -247,9 +247,12 @@ export async function streamMessage(
         if (parsed.success) code = parsed.data;
         msg = code ?? fallback;
       } catch { /* Non-JSON transport error. */ }
-      // A3 — same session handling as apiFetch: a rejected token signs out.
-      if (ev.xhrStatus === 401 && token) notifyUnauthorized();
-      settle(() => reject(new StreamInterruptedError(msg, full, code, undefined, ev.xhrStatus)));
+      settle(() => {
+        // Chat always requires authentication, even if local token storage is empty.
+        // Keep sign-out inside settlement so repeated transport errors cannot repeat it.
+        if (ev.xhrStatus === 401) notifyUnauthorized();
+        reject(new StreamInterruptedError(msg, full, code, undefined, ev.xhrStatus));
+      });
     });
   });
 }

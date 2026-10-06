@@ -9,6 +9,9 @@ const h = vi.hoisted(() => ({
   createConversation: vi.fn(), streamMessage: vi.fn(), alert: vi.fn(), toast: vi.fn(),
   extract: vi.fn(), notifyUnauthorized: vi.fn(), listening: false, restaurantId: "restaurant-1" as string | null, role: "chef_executive",
   t: (key: string) => key,
+  getToken: vi.fn(),
+  streamHeaders: {} as Record<string, string>,
+  emitStreamError: null as null | (() => void),
 }));
 vi.mock("react-native", () => ({
   ActivityIndicator: "ActivityIndicator", FlatList: "FlatList", Image: "Image",
@@ -40,7 +43,21 @@ vi.mock("@/src/lib/keyboard", () => ({ useKeyboardHeight: () => 0 }));
 vi.mock("@/src/lib/haptics", () => ({ selection: vi.fn(), tapLight: vi.fn() }));
 vi.mock("@/src/lib/recipe-draft", () => ({ setRecipeDraft: vi.fn() }));
 // The real code→key table backs the chat error classifier; only the generic helper is stubbed.
-vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(async () => null) }));
+vi.mock("expo-secure-store", () => ({ getItemAsync: h.getToken }));
+vi.mock("react-native-sse", () => ({
+  default: class {
+    private errorListener: ((event: { type: string; xhrStatus: number; message: string }) => void) | null = null;
+    constructor(_url: string, options: { headers: Record<string, string> }) {
+      h.streamHeaders = options.headers;
+      h.emitStreamError = () => this.errorListener?.({ type: "error", xhrStatus: 401, message: '{"error":"Unauthorized"}' });
+    }
+    addEventListener(type: string, listener: NonNullable<typeof this.errorListener>) {
+      if (type === "error") this.errorListener = listener;
+    }
+    removeAllEventListeners() { this.errorListener = null; }
+    close() {}
+  },
+}));
 vi.mock("@/src/api/client", async (importOriginal) => ({ ...(await importOriginal<object>()), notifyUnauthorized: h.notifyUnauthorized }));
 vi.mock("@/src/lib/api-error", async (importOriginal) => ({ ...(await importOriginal<object>()), apiErrorMessage: () => "error" }));
 
@@ -72,6 +89,9 @@ beforeEach(() => {
   h.restaurantId = "restaurant-1";
   h.role = "chef_executive";
   h.listening = false;
+  h.getToken.mockResolvedValue(null);
+  h.streamHeaders = {};
+  h.emitStreamError = null;
   h.setParams.mockImplementation((params) => { h.params = { ...h.params, ...params }; });
   h.listMessages.mockResolvedValue(saved);
   h.getConversationByIdea.mockResolvedValue({ id: "saved-chat", messages: saved });
@@ -292,6 +312,30 @@ describe("honest chat errors (A3)", () => {
     const reason = screen.root.find((node) => (node.type as unknown) === "Text" && node.props.children === "error_session_expired");
     const banner = reason.parent!.parent!;
     expect(banner.findAll((node) => (node.type as unknown) === "Pressable")).toHaveLength(0);
+    expect(h.notifyUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { token: "test-token", restaurantId: "restaurant-1" },
+    { token: null, restaurantId: "restaurant-1" },
+    { token: "test-token", restaurantId: null },
+    { token: null, restaurantId: null },
+  ])("signs out exactly once through the real stream after 401 (token=$token, restaurant=$restaurantId)", async ({ token, restaurantId }) => {
+    const transport = await vi.importActual<typeof import("@/src/api/conversations")>("@/src/api/conversations");
+    h.getToken.mockResolvedValue(token);
+    h.restaurantId = restaurantId;
+    h.streamMessage.mockImplementationOnce(transport.streamMessage);
+    await render();
+    await send("Un plato");
+    expect(h.streamMessage).toHaveBeenCalledTimes(1);
+    expect(h.streamHeaders.Authorization).toBe(token ? `Bearer ${token}` : undefined);
+    expect(h.emitStreamError).not.toBeNull();
+    await act(async () => { h.emitStreamError!(); });
+    expect(texts()).toContain("error_session_expired");
+    expect(actions("error_retry")).toHaveLength(0);
+    const reason = screen.root.find((node) => (node.type as unknown) === "Text" && node.props.children === "error_session_expired");
+    expect(reason.parent!.parent!.findAll((node) => (node.type as unknown) === "Pressable")).toHaveLength(0);
+    await update();
     expect(h.notifyUnauthorized).toHaveBeenCalledTimes(1);
   });
 
