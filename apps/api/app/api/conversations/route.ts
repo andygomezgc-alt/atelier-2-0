@@ -7,7 +7,7 @@ import { logger } from "@/lib/logger";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const ctx = await requireAuth(req);
+  const ctx = await requireAuth(req, "capture_idea");
   if (isNextResponse(ctx)) return ctx;
   if (!ctx.restaurantId)
     return NextResponse.json({ error: "Not in a restaurant" }, { status: 403 });

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { can, type Permission } from "@atelier/shared";
 
 // Mocks elevados (el factory de vi.mock se iza sobre los consts).
-const { db, guard, quota, anthro, streamMock, memoryChat, buildSystem, PrismaClientKnownRequestError } = vi.hoisted(() => {
+const { db, guard, authContext, quota, anthro, streamMock, memoryChat, buildSystem, PrismaClientKnownRequestError } = vi.hoisted(() => {
   const db = {
     conversation: { findUnique: vi.fn(), updateMany: vi.fn() },
     message: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
@@ -10,6 +11,10 @@ const { db, guard, quota, anthro, streamMock, memoryChat, buildSystem, PrismaCli
     restaurant: { findUnique: vi.fn() },
     recipe: { findMany: vi.fn() },
     chefNote: { findMany: vi.fn() },
+  };
+  const authContext = {
+    userId: "u1", restaurantId: "r1" as string | null,
+    role: "chef_executive" as Parameters<typeof can>[0],
   };
   const guard = {
     requireAuth: vi.fn(),
@@ -43,6 +48,7 @@ const { db, guard, quota, anthro, streamMock, memoryChat, buildSystem, PrismaCli
   return {
     db,
     guard,
+    authContext,
     quota,
     anthro: { Anthropic, APIUserAbortError },
     streamMock,
@@ -132,10 +138,14 @@ beforeEach(() => {
   db.chefNote.findMany.mockReset().mockResolvedValue([]);
   memoryChat.mockReset().mockResolvedValue(null);
   buildSystem.mockClear();
-  guard.requireAuth.mockReset().mockResolvedValue({
-    userId: "u1",
-    restaurantId: "r1",
-    role: "chef_executive",
+  authContext.restaurantId = "r1";
+  authContext.role = "chef_executive";
+  guard.requireAuth.mockReset().mockImplementation(async (_req: NextRequest, permission?: Permission) => {
+    if (permission && !authContext.restaurantId)
+      return NextResponse.json({ error: "Not in a restaurant" }, { status: 403 });
+    if (permission && !can(authContext.role, permission))
+      return NextResponse.json({ error: "Forbidden", code: "forbidden" }, { status: 403 });
+    return { ...authContext };
   });
   quota.reserveAiCall.mockReset().mockResolvedValue({ ok: true, used: 1, limit: 120 });
   quota.recordAiTokens.mockClear();
@@ -144,6 +154,26 @@ beforeEach(() => {
     id: "conv-1",
     restaurantId: "r1",
     idea: { text: null },
+  });
+});
+
+describe("GET chat permissions", () => {
+  it("rejects a viewer reading restaurant transcripts before querying chat", async () => {
+    authContext.role = "viewer";
+    db.message.findMany.mockResolvedValue([]);
+    const res = await route.GET(new NextRequest("https://t.local/api/conversations/conv-1/messages"), { params: Promise.resolve({ id: "conv-1" }) });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Forbidden", code: "forbidden" });
+    expect(db.conversation.findUnique).not.toHaveBeenCalled();
+    expect(db.message.findMany).not.toHaveBeenCalled();
+  });
+
+  it("lets a sous-chef read restaurant transcripts", async () => {
+    authContext.role = "sous_chef";
+    db.message.findMany.mockResolvedValue([{ id: "m1", role: "user", content: "recipe", clientMessageId: null, createdAt: new Date("2026-10-06T10:00:00Z") }]);
+    const res = await route.GET(new NextRequest("https://t.local/api/conversations/conv-1/messages"), { params: Promise.resolve({ id: "conv-1" }) });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([{ id: "m1", role: "user", content: "recipe", clientMessageId: null, createdAt: "2026-10-06T10:00:00.000Z" }]);
   });
 });
 
@@ -169,7 +199,7 @@ describe("POST chat — persistencia", () => {
     expect(quota.reserveAiCall).not.toHaveBeenCalled();
   });
   it.each(["sous_chef", "viewer"] as const)("el Creativo está cerrado para %s", async (role) => {
-    guard.requireAuth.mockResolvedValue({ userId: "u1", restaurantId: "r1", role });
+    authContext.role = role;
     const res = await post({ content: "idea", model: "creative" });
     expect(res.status).toBe(403);
     expect(JSON.parse(await res.text()).code).toBe("forbidden");
@@ -177,7 +207,7 @@ describe("POST chat — persistencia", () => {
   });
 
   it("el Diario sigue abierto al sous-chef", async () => {
-    guard.requireAuth.mockResolvedValue({ userId: "u1", restaurantId: "r1", role: "sous_chef" });
+    authContext.role = "sous_chef";
     streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
     const res = await post({ content: "idea", model: "daily" });
     expect(res.status).toBe(200);
@@ -185,8 +215,26 @@ describe("POST chat — persistencia", () => {
     expect(streamMock).toHaveBeenCalled();
   });
 
+  it("a restaurant viewer cannot send normal chat messages", async () => {
+    authContext.role = "viewer";
+    const res = await post({ content: "recipe" });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Forbidden", code: "forbidden" });
+    expect(streamMock).not.toHaveBeenCalled();
+  });
+
+  it("a viewer without a restaurant can still use preview chat", async () => {
+    authContext.role = "viewer";
+    authContext.restaurantId = null;
+    streamMock.mockReturnValue(providerStream(["Recipe"], { in: 10, out: 20 }));
+    const res = await post({ content: "recipe", history: [] }, "preview");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('"type":"done"');
+    expect(db.conversation.findUnique).not.toHaveBeenCalled();
+  });
+
   it("a restaurant viewer cannot bypass chat permission through preview", async () => {
-    guard.requireAuth.mockResolvedValue({ userId: "u1", restaurantId: "r1", role: "viewer" });
+    authContext.role = "viewer";
     expect((await post({ content: "recipe" }, "preview")).status).toBe(403);
     expect(quota.reserveAiCall).not.toHaveBeenCalled();
   });
