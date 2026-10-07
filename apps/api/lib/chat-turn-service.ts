@@ -23,6 +23,8 @@ interface PrepareChatTurnInput {
 }
 
 export interface PreparedChatTurn {
+  conversationId: string;
+  restaurantId: string | null;
   model: ChatModelSelection;
   config: ReturnType<typeof chatConfig>;
   system: ReturnType<typeof buildSystemBlocks>;
@@ -152,7 +154,8 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
     // The claimed lease remains available to catch even if persistence fails.
     const turn = lease ? await saveChatTurn(lease, message.content, message.clientMessageId) : undefined;
     checkDeadline();
-    return { model, config, system, messages, reservation, turn, userId: user.userId, startedAt, deadlineAt: input.deadlineAt };
+    return { conversationId, restaurantId: user.restaurantId || null,
+      model, config, system, messages, reservation, turn, userId: user.userId, startedAt, deadlineAt: input.deadlineAt };
   } catch (error) {
     // Independent cleanup: a failed refund must not strand the conversation lease.
     if (reservation) await releaseGeneration(reservation).catch(() => undefined);
@@ -173,13 +176,15 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
 
 /** The adapter owns A4 billing from dispatch; this service owns persistence and the lease. */
 export async function* runChatTurn(prepared: PreparedChatTurn, signal: AbortSignal): AsyncGenerator<ChatTurnEvent> {
-  const { model, config, system, messages, reservation, turn, userId, startedAt, deadlineAt } = prepared;
+  const { conversationId, restaurantId, model, config, system, messages, reservation, turn, userId, startedAt, deadlineAt } = prepared;
   let assistantText = "";
   let inputTokens: number | undefined;
   let outputTokens: number | undefined;
   let cachedTokens: number | undefined;
-  let aborted = false;
-  let errored = false;
+  let cacheWriteTokens: number | undefined;
+  let timeToFirstTokenMs: number | null = null;
+  // An iterator closed before a terminal event is an aborted turn, not success.
+  let outcome: TurnOutcome = TURN_OUTCOME.aborted;
   let stopped = false;
   let adapterStarted = false;
   let ownershipCheck: Promise<void> | undefined;
@@ -206,7 +211,7 @@ export async function* runChatTurn(prepared: PreparedChatTurn, signal: AbortSign
   const heartbeat = turn ? setInterval(() => { void checkOwnership(); }, CHAT_HEARTBEAT_MS) : undefined;
   try {
     await checkOwnership();
-    if (stopped) { yield { type: "stopped" }; return; }
+    if (stopped) { outcome = TURN_OUTCOME.stopped; yield { type: "stopped" }; return; }
     providerSignal.throwIfAborted();
     if (deadlineAt !== undefined && Date.now() >= deadlineAt) throw new ChatError("ai_timeout");
     adapterStarted = true;
@@ -218,7 +223,9 @@ export async function* runChatTurn(prepared: PreparedChatTurn, signal: AbortSign
         inputTokens = event.usage.inputTokens;
         outputTokens = event.usage.outputTokens;
         cachedTokens = event.usage.cachedTokens;
+        cacheWriteTokens = event.usage.cacheWriteTokens;
       } else {
+        if (timeToFirstTokenMs === null && event.text.length > 0) timeToFirstTokenMs = Date.now() - startedAt;
         assistantText += event.text;
         yield event;
       }
@@ -226,20 +233,21 @@ export async function* runChatTurn(prepared: PreparedChatTurn, signal: AbortSign
     // No heartbeat may mistake finish's successful lease release for Stop.
     clearInterval(heartbeat);
     await checkOwnership();
-    if (stopped) { yield { type: "stopped" }; return; }
+    if (stopped) { outcome = TURN_OUTCOME.stopped; yield { type: "stopped" }; return; }
     if (!assistantText.trim()) throw new ChatError("chat_response_incomplete");
     if (turn) await finishChatTurn(turn, assistantText, config.model, {
-      inputTokens, outputTokens, cachedTokens, latencyMs: Date.now() - startedAt,
+      generationId: reservation.id, inputTokens, outputTokens, cachedTokens, cacheWriteTokens, latencyMs: Date.now() - startedAt,
     });
+    outcome = TURN_OUTCOME.done;
     yield { type: "done", inputTokens, outputTokens, cachedTokens };
   } catch (err) {
     if (stopped || (err instanceof Error && err.message === "chat_generation_expired")) {
-      aborted = true;
+      outcome = TURN_OUTCOME.stopped;
       yield { type: "stopped" };
     } else {
-      errored = true;
       const failure = signal.aborted ? signal.reason : err;
       const { code, retryAfter } = streamErrorCode(failure);
+      outcome = failure instanceof Error && failure.name === "AbortError" ? TURN_OUTCOME.aborted : code;
       const cause = failure instanceof Error && failure.cause !== undefined ? failure.cause : failure;
       (code === "ai_provider_failed" || code === "ai_timeout" ? logger.error : logger.warn)("ai_stream_error", {
         provider: config.provider, modelId: config.model, model, code, retryAfter,
@@ -253,21 +261,25 @@ export async function* runChatTurn(prepared: PreparedChatTurn, signal: AbortSign
   } finally {
     clearInterval(heartbeat);
     await ownershipCheck;
-    aborted ||= providerSignal.aborted;
     // Before adapter dispatch the service still owns the prepared hold.
     if (!adapterStarted) await releaseGeneration(reservation).catch(() => undefined);
     if (turn) await releaseChatTurn(turn).catch(() => undefined);
-    console.log(JSON.stringify({
-      evt: "ai_message", provider: config.provider, modelId: config.model, model,
-      input_tokens: inputTokens, output_tokens: outputTokens, cached_tokens: cachedTokens,
-      latency_ms: Date.now() - startedAt, aborted,
-      partial_chars: aborted || errored ? assistantText.length : undefined,
-    }));
+    // A2's ai_stream_error retains error detail/Sentry; this summary is metadata only.
+    (outcome === TURN_OUTCOME.done ? logger.info : logger.warn)("ai_turn", {
+      conversationId, restaurantId, userId, provider: config.provider, modelId: config.model, model,
+      outcome, generationId: reservation.id,
+      inputTokens: inputTokens ?? null, outputTokens: outputTokens ?? null, cachedTokens: cachedTokens ?? null,
+      cacheWriteTokens: cacheWriteTokens ?? null, timeToFirstTokenMs, latencyMs: Date.now() - startedAt,
+      partial_chars: outcome === TURN_OUTCOME.done ? 0 : assistantText.length,
+    });
     if (inputTokens || outputTokens) {
       await recordAiTokens(userId, inputTokens ?? 0, outputTokens ?? 0).catch(() => undefined);
     }
   }
 }
+
+const TURN_OUTCOME = { done: "done", stopped: "stopped", aborted: "aborted" } as const;
+type TurnOutcome = (typeof TURN_OUTCOME)[keyof typeof TURN_OUTCOME] | StreamErrorCode;
 
 function unconfiguredResponse() {
   return Response.json({

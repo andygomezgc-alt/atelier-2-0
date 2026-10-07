@@ -57,13 +57,17 @@ export async function saveChatTurn(turn: ClaimedChatTurn, content: string, clien
   return { ...turn, userMessageId };
 }
 
-export async function finishChatTurn(turn: ChatTurn, content: string, modelId: string, usage: { inputTokens?: number; outputTokens?: number; cachedTokens?: number; latencyMs: number }) {
+export async function finishChatTurn(turn: ChatTurn, content: string, modelId: string, usage: { generationId?: string; inputTokens?: number; outputTokens?: number; cachedTokens?: number; cacheWriteTokens?: number; latencyMs: number }) {
   return prisma.$transaction(async tx => {
     // Fencing: an expired worker cannot save over a newer generation.
     const owner = await tx.conversation.updateMany({ where: { id: turn.conversationId, generationId: turn.generationId }, data: { generationId: null, generationStartedAt: null } });
     if (!owner.count) throw new Error("chat_generation_expired");
+    // generationId links the budget reservation, not the conversation's lease.
+    // Input totals include cache reads/writes; output includes billed reasoning.
+    // cachedTokens counts cache reads; cacheWriteTokens counts five-minute writes.
     return tx.message.create({ data: { conversationId: turn.conversationId, role: "assistant", content,
-      responseToId: turn.userMessageId, modelId, inputTokens: usage.inputTokens ?? null, outputTokens: usage.outputTokens ?? null,
-      cachedTokens: usage.cachedTokens ?? null, latencyMs: usage.latencyMs } });
+      responseToId: turn.userMessageId, modelId, generationId: usage.generationId ?? null,
+      inputTokens: usage.inputTokens ?? null, outputTokens: usage.outputTokens ?? null,
+      cachedTokens: usage.cachedTokens ?? null, cacheWriteTokens: usage.cacheWriteTokens ?? null, latencyMs: usage.latencyMs } });
   });
 }

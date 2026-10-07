@@ -131,15 +131,38 @@ describe("Opus chat adapter", () => {
     expect(events.at(-1)).toMatchObject({ type: "usage", usage: { outputTokens: 16384 } });
   });
   it("tells a provider refusal apart from a truncated reply and still settles its usage", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     opusStream.mockReturnValue({
       async *[Symbol.asyncIterator]() {},
       finalMessage: async () => ({ stop_reason: "refusal", stop_details: { type: "refusal", category: "bio", explanation: null }, usage: { input_tokens: 10, output_tokens: 3 } }),
     });
     await expect(collect(streamChat(input("creative")))).rejects.toThrow("chat_refused");
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"category":"bio"'));
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith("ai_refusal", {
+      provider: "anthropic", modelId: "claude-opus-5-5", category: "bio",
+    });
+    expect(consoleWarn).not.toHaveBeenCalled();
+    expect(inspect(warn.mock.calls, { depth: 8 })).not.toContain("Berenjena");
     expect(settleGeneration).toHaveBeenCalledWith(reservation, expect.objectContaining({ inputTokens: 10, outputTokens: 3 }));
     warn.mockRestore();
+  });
+  it("logs a refusal without a category as null and never includes provider explanation", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    opusStream.mockReturnValue({
+      async *[Symbol.asyncIterator]() {},
+      finalMessage: async () => ({ stop_reason: "refusal",
+        stop_details: { explanation: "private provider explanation" },
+        usage: { input_tokens: 10, output_tokens: 3 } }),
+    });
+    await expect(collect(streamChat(input("creative")))).rejects.toMatchObject({ code: "chat_refused" });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith("ai_refusal", {
+      provider: "anthropic", modelId: "claude-opus-5-5", category: null,
+    });
+    expect(consoleWarn).not.toHaveBeenCalled();
+    expect(inspect(warn.mock.calls, { depth: 8 })).not.toContain("private provider explanation");
   });
 });
 

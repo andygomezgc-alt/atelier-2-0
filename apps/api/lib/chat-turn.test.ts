@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { claimChatTurn, finishChatTurn } from "./chat-turn";
 import { maxDuration } from "@/app/api/conversations/[id]/messages/route";
+import type { Prisma } from "@atelier/db";
 
 const { db } = vi.hoisted(() => ({ db: {
   conversation: { updateMany: vi.fn() }, message: { findUnique: vi.fn(), create: vi.fn() }, $transaction: vi.fn(),
@@ -16,6 +17,40 @@ beforeEach(() => {
   db.conversation.updateMany.mockReset().mockResolvedValue({ count: 1 });
   db.message.findUnique.mockReset().mockResolvedValue(null); db.message.create.mockReset();
   db.$transaction.mockReset().mockImplementation(async callback => callback(db));
+});
+
+describe("A7 assistant message accounting", () => {
+  it("links the budget reservation, not the conversation lease, and preserves cache writes", async () => {
+    const turn = { conversationId: "conv-1", generationId: "lease-id", userMessageId: "user-message" };
+    // A named object is compatible with the pre-A7 signature without a production stub.
+    const usage = { generationId: "budget-reservation-id", inputTokens: 60, outputTokens: 90,
+      cachedTokens: 30, cacheWriteTokens: 20, latencyMs: 250 };
+    await finishChatTurn(turn, "Finished recipe", "claude-opus-5-5", usage);
+
+    const expected = { generationId: usage.generationId, cacheWriteTokens: 20 } satisfies
+      Pick<Prisma.MessageCreateManyInput, "generationId" | "cacheWriteTokens">;
+    expect(db.message.create).toHaveBeenCalledTimes(1);
+    expect(db.message.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      ...expected, conversationId: "conv-1", role: "assistant", responseToId: "user-message",
+      content: "Finished recipe", modelId: "claude-opus-5-5",
+      // Total input includes reads and writes; 60 - 30 - 20 = 10 uncached tokens.
+      inputTokens: 60, outputTokens: 90, cachedTokens: 30, latencyMs: 250,
+    }) });
+    expect(db.conversation.updateMany).toHaveBeenCalledWith({
+      where: { id: "conv-1", generationId: "lease-id" },
+      data: { generationId: null, generationStartedAt: null },
+    });
+  });
+
+  it.each([undefined, 0])("stores unknown cache writes as null but preserves %s", async cacheWriteTokens => {
+    const usage = { generationId: "budget-reservation-id", cacheWriteTokens, latencyMs: 250 };
+    await finishChatTurn({ conversationId: "conv-1", generationId: "lease-id", userMessageId: "user-message" },
+      "Finished recipe", "gemini-3.8-flash", usage);
+    expect(db.message.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      generationId: "budget-reservation-id", inputTokens: null, outputTokens: null,
+      cachedTokens: null, cacheWriteTokens: cacheWriteTokens ?? null, latencyMs: 250,
+    }) });
+  });
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 

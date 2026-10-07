@@ -1044,7 +1044,7 @@ describe("A2 closed SSE error contract", () => {
 
   it.each(["conv-1"])("continues generation without an SSE error after the client's AbortSignal aborts in %s", async id => {
     const controller = new AbortController();
-    const infoLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const infoLog = vi.spyOn(logger, "info").mockImplementation(() => undefined);
     streamMock.mockImplementation(async function* () {
       yield { type: "delta", text: "Recipe" };
       controller.abort();
@@ -1060,7 +1060,153 @@ describe("A2 closed SSE error contract", () => {
     expect(db.user.findUnique).not.toHaveBeenCalled();
     expect(assistantCreate()?.[0].data.content).toBe(id === "preview" ? undefined : "Recipe finished");
     expect(quota.recordAiTokens).toHaveBeenCalledWith("u1", 20, 5);
-    expect(infoLog.mock.calls.flat().some(line => typeof line === "string" && line.includes('"aborted":false'))).toBe(true);
+    expect(infoLog).toHaveBeenCalledWith("ai_turn", expect.objectContaining({ outcome: "done" }));
     expect(afterMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("A7 structured ai_turn events", () => {
+  const prompt = "private chef prompt A7";
+  const system = "private system instructions A7";
+  const answer = "private assistant answer A7";
+  const usage = { inputTokens: 60, outputTokens: 90, cachedTokens: 30, cacheWriteTokens: 20, reasoningTokens: 0 };
+  let now: number;
+
+  beforeEach(() => {
+    now = 1_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    buildSystem.mockReturnValue([{ type: "text", text: system }]);
+  });
+
+  function captureLogs() {
+    return {
+      info: vi.spyOn(logger, "info").mockImplementation(() => undefined),
+      warn: vi.spyOn(logger, "warn").mockImplementation(() => undefined),
+      error: vi.spyOn(logger, "error").mockImplementation(() => undefined),
+      console: vi.spyOn(console, "log").mockImplementation(() => undefined),
+    };
+  }
+
+  function expectTurn(logs: ReturnType<typeof captureLogs>, fields: Record<string, unknown>) {
+    const calls = [...logs.info.mock.calls, ...logs.warn.mock.calls, ...logs.error.mock.calls]
+      .filter(([event]) => event === "ai_turn");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual(["ai_turn", expect.objectContaining({
+      conversationId: "conv-1", restaurantId: "r1", userId: "u1",
+      provider: "anthropic", modelId: "claude-opus-5-5", model: "creative",
+      generationId: reservation.id, ...usageFields(), ...fields,
+    })]);
+    const context = calls[0]![1];
+    const serialized = JSON.stringify(context);
+    for (const secret of [prompt, system, answer]) expect(serialized).not.toContain(secret);
+    for (const key of ["prompt", "messages", "content", "system", "text", "error", "detail"])
+      expect(context).not.toHaveProperty(key);
+    expect(logs.console).not.toHaveBeenCalled();
+  }
+
+  function usageFields() {
+    return { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+      cachedTokens: usage.cachedTokens, cacheWriteTokens: usage.cacheWriteTokens };
+  }
+
+  async function* timedStream() {
+    // Usage arrives first; TTFT must measure the first text delta, not usage.
+    now = 1_020;
+    yield { type: "usage", usage };
+    now = 1_040;
+    yield { type: "delta", text: answer };
+    now = 1_100;
+    yield { type: "delta", text: "!" };
+    now = 1_250;
+  }
+
+  it("logs done once at info with first-token timing and persists the real reservation and cache writes", async () => {
+    const logs = captureLogs();
+    streamMock.mockImplementation(timedStream);
+    expect(await (await post({ content: prompt, model: "creative" })).text()).toContain('"type":"done"');
+    expectTurn(logs, { outcome: "done", timeToFirstTokenMs: 40, latencyMs: 250, partial_chars: 0 });
+    expect(logs.info).toHaveBeenCalledWith("ai_turn", expect.any(Object));
+    expect(logs.warn).not.toHaveBeenCalled();
+    expect(logs.error).not.toHaveBeenCalled();
+    const lease = db.conversation.updateMany.mock.calls.find(([args]) => typeof args.data.generationId === "string")![0].data.generationId;
+    expect(lease).not.toBe(reservation.id);
+    expect(assistantCreate()?.[0].data).toMatchObject({ generationId: reservation.id,
+      ...usageFields(), latencyMs: 250 });
+  });
+
+  it("uses preview and the authenticated restaurant id without persisting a message", async () => {
+    const logs = captureLogs();
+    streamMock.mockImplementation(timedStream);
+    expect(await (await post({ content: prompt, model: "creative" }, "preview")).text()).toContain('"type":"done"');
+    expectTurn(logs, { conversationId: "preview", outcome: "done", timeToFirstTokenMs: 40, latencyMs: 250, partial_chars: 0 });
+    expect(logs.info).toHaveBeenCalledWith("ai_turn", expect.any(Object));
+    expect(db.message.create).not.toHaveBeenCalled();
+  });
+
+  it.each(["ai_provider_failed", "ai_timeout", "ai_rate_limited", "chat_refused", "ai_response_blocked",
+    "chat_response_incomplete", "chat_context_too_long"])("logs the closed %s outcome without losing partial usage", async code => {
+    const logs = captureLogs();
+    streamMock.mockImplementation(async function* () {
+      yield* timedStream();
+      throw Object.assign(new Error(code), { code });
+    });
+    expect(await (await post({ content: prompt, model: "creative" })).text()).toContain(`"code":"${code}"`);
+    expectTurn(logs, { outcome: code, timeToFirstTokenMs: 40, latencyMs: 250, partial_chars: answer.length + 1 });
+    if (code === "ai_provider_failed" || code === "ai_timeout") {
+      // A2's logger.error remains the Sentry path; the summary does not replace it.
+      expect(logs.error).toHaveBeenCalledWith("ai_stream_error", expect.objectContaining({ code, error: expect.any(Error) }));
+    } else {
+      expect(logs.warn).toHaveBeenCalledWith("ai_turn", expect.any(Object));
+      expect(logs.error).not.toHaveBeenCalled();
+    }
+    expect(assistantCreate()).toBeUndefined();
+  });
+
+  it("logs a pre-token failure with no invented usage or first-token time", async () => {
+    const logs = captureLogs();
+    streamMock.mockImplementation(async function* () {
+      now = 1_250;
+      throw Object.assign(new Error("ai_provider_failed"), { code: "ai_provider_failed" });
+    });
+    expect(await (await post({ content: prompt, model: "creative" })).text()).toContain('"type":"error"');
+    expectTurn(logs, { outcome: "ai_provider_failed", inputTokens: null, outputTokens: null,
+      cachedTokens: null, cacheWriteTokens: null, timeToFirstTokenMs: null, latencyMs: 250, partial_chars: 0 });
+    expect(logs.error).toHaveBeenCalledWith("ai_stream_error", expect.objectContaining({ code: "ai_provider_failed" }));
+  });
+
+  it.each(["ownership", "save_fence"])("logs stopped at warn after losing the %s, not done or an error", async stopAt => {
+    const logs = captureLogs();
+    streamMock.mockImplementation(async function* () {
+      yield* timedStream();
+      if (stopAt === "ownership") db.conversation.findUnique.mockResolvedValue({ generationId: null });
+      else db.conversation.updateMany.mockResolvedValueOnce({ count: 0 });
+    });
+    const wire = await (await post({ content: prompt, model: "creative" })).text();
+    expect(wire).toContain('"type":"stopped"');
+    expect(wire).not.toContain('"type":"done"');
+    expectTurn(logs, { outcome: "stopped", timeToFirstTokenMs: 40, latencyMs: 250, partial_chars: answer.length + 1 });
+    expect(logs.warn).toHaveBeenCalledWith("ai_turn", expect.any(Object));
+    expect(logs.error).not.toHaveBeenCalled();
+    expect(assistantCreate()).toBeUndefined();
+  });
+
+  it("logs an aborted preview once at warn with partial text count but no content", async () => {
+    const logs = captureLogs();
+    const controller = new AbortController();
+    streamMock.mockImplementation(async function* ({ signal }: { signal: AbortSignal }) {
+      yield* timedStream();
+      controller.abort();
+      signal.throwIfAborted();
+    });
+    const request = new NextRequest("https://t.local/api/conversations/preview/messages", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content: prompt, model: "creative" }), signal: controller.signal,
+    });
+    await (await route.POST(request, { params: Promise.resolve({ id: "preview" }) })).text();
+    await afterMock.mock.calls[0]![0];
+    expectTurn(logs, { conversationId: "preview", outcome: "aborted", timeToFirstTokenMs: 40,
+      latencyMs: 250, partial_chars: answer.length + 1 });
+    expect(logs.warn).toHaveBeenCalledWith("ai_turn", expect.any(Object));
+    expect(db.message.create).not.toHaveBeenCalled();
   });
 });

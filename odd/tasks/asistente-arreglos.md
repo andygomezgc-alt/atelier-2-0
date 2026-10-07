@@ -57,7 +57,7 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
 - [x] A4 — reservas de presupuesto
 - [x] A5 — servicio de turno
 - [x] A6 — respuesta que sobrevive y Detener (servidor)
-- [ ] A7 — observabilidad
+- [x] A7 — observabilidad
 - [ ] A8 — datos del restaurante en el prompt
 - [ ] A9 — worker de memoria
 - [ ] A10 — chat sin restaurante
@@ -135,3 +135,4 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
   - Commit `2f689e8`. RDD sobre 205db46..2f689e8 (9 archivos, 890 líneas, riesgo medio): Andy concedió; lente de fiabilidad **aprobada**, acuse hecho (`review-0fcc99985d502834`). Frontera revisada: `2f689e8`.
   - Avisos → seguimiento **A6b**: el preview (sin persistencia ni Stop) ya no se corta al desconectarse y paga una respuesta que nadie recupera; una sola lectura fallida de la propiedad del turno aborta una generación pagada; falta probar que el cierre sin uso conocido cobra el techo de salida; la preparación convierte fallos reales en 499 sin registrarlos.
 - **A6b** (Codex gpt-6.1-sol high, dos pasos). El preview vuelve a cortarse al desconectarse (no se puede recuperar ni detener) y cierra la facturación como en A4; el chat guardado sigue sobreviviendo. Una lectura fallida de la propiedad del turno solo deja un aviso y se reintenta en el siguiente latido (el plazo y el cercado atómico al guardar acotan el riesgo). Fallos reales de preparación con el cliente ya ido se registran y devuelven 503; el 499 queda solo para cortes puros. Test con el `settleInterruptedGeneration` real: el cierre sin uso cobra el techo de salida. RED observado por el padre 9 / 141; GREEN api 984/984 y tsc OK; `git diff --check` OK.
+- **A7** (Codex gpt-6.1-sol high, dos pasos). Migración aditiva `20261007155532_message_generation_link` (`Message.generationId` con índice y `Message.cacheWriteTokens`, ambos nulos), generada con `prisma migrate diff` contra HEAD sin tocar ninguna base; producción la aplica el build de Vercel al fusionar. `finishChatTurn` guarda el id de la reserva y las escrituras de caché, así el coste por mensaje sale de `AiGeneration.chargedMicros`. Un único evento `ai_turn` por `logger` (conversación, restaurante, usuario, proveedor, modelo, resultado, generación, tokens, caché, tiempo al primer token, latencia; sin contenido); el rechazo del proveedor también va por `logger`. RED 19 / 984; GREEN api 1003/1003 y tsc OK; `git diff --check` OK.

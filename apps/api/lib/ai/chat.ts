@@ -249,7 +249,7 @@ async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, billin
     // Los filtros de seguridad del proveedor pueden negarse (en Opus 5.5 hay
     // uno de biología): se registra la categoría y el chef recibe un aviso.
     if (final.stop_reason === "refusal") {
-      console.warn(JSON.stringify({ evt: "ai_refusal", provider: config.provider, modelId: config.model, category: final.stop_details?.category ?? null }));
+      logger.warn("ai_refusal", { provider: config.provider, modelId: config.model, category: final.stop_details?.category ?? null });
       throw new ChatError("chat_refused");
     }
     if (final.stop_reason !== "end_turn" || !text.trim()) throw new ChatError("chat_response_incomplete");
