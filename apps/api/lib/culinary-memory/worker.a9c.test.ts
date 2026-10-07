@@ -4,7 +4,7 @@ import type { Evidence } from "./evidence";
 import { evidenceHash } from "./evidence";
 import { generateMemory, type MemoryGenerator } from "./provider";
 import { MEMORY_DISCARD_RETRY_LIMIT, MEMORY_FAILURE_SUSPENSION_THRESHOLD, MEMORY_PROMPT_VERSION } from "./limits";
-import { memoryFailureFingerprint, processMemory } from "./worker";
+import { maintainMemoryRuns, memoryFailureFingerprint, processMemory } from "./worker";
 
 const { db, loadEvidence, reserveGeneration, logger } = vi.hoisted(() => ({
   db: {
@@ -22,7 +22,6 @@ vi.mock("../ai/budget", () => ({ reserveGeneration, settleGeneration: vi.fn() })
 vi.mock("../logger", () => ({ logger }));
 
 const DAY = 86_400_000;
-const HOUR = 3_600_000;
 const WEEK = 7 * DAY;
 const now = new Date("2026-09-08T05:30:00Z");
 const config = { provider: "zai", model: "glm-4.7-flash" };
@@ -152,20 +151,29 @@ describe("A9c unpaid discards keep the previous cadence", () => {
 
 describe("A9c streak counts consecutive paid discards", () => {
   it("resets the streak after a non-discard failure so the next paid discard retries promptly", async () => {
-    const second = new Date(+now + HOUR);
-    const third = new Date(+now + WEEK);
-    changeSourcesDuringNextProviderCall();
-    expect(await processMemory("r1", generateMemory, config, now)).toBe("failed");
-    expect(state.discardStreak).toBe(1);
-
+    const next = new Date(+now + WEEK);
+    // One paid discard short of the weekly fallback: only the reset keeps the next discard on the prompt retry.
+    state.discardStreak = MEMORY_DISCARD_RETRY_LIMIT - 1;
     provider.mockImplementationOnce(async () => truncatedReply());
-    expect(await processMemory("r1", generateMemory, config, second)).toBe("failed");
+    expect(await processMemory("r1", generateMemory, config, now)).toBe("failed");
     expect(state.discardStreak).toBe(0);
 
     changeSourcesDuringNextProviderCall();
-    expect(await processMemory("r1", generateMemory, config, third)).toBe("failed");
+    expect(await processMemory("r1", generateMemory, config, next)).toBe("failed");
     expect(state.discardStreak).toBe(1);
-    expect(+state.nextCheckAt).toBeLessThanOrEqual(+third);
+    expect(+state.nextCheckAt).toBeLessThanOrEqual(+next);
+  });
+
+  it("resets the streak when an abandoned run is recovered", async () => {
+    const createdAt = new Date(+now - 10 * 60_000);
+    state.lockToken = "abandoned";
+    state.discardStreak = MEMORY_DISCARD_RETRY_LIMIT;
+    db.culinaryMemoryRun.findMany.mockResolvedValue([{
+      id: "abandoned", restaurantId: "r1", createdAt, cycleStartedAt: createdAt, isRetry: false,
+      inputTokens: 30, outputTokens: 0, reasoningTokens: 0,
+    }]);
+    await maintainMemoryRuns(now);
+    expect(state).toMatchObject({ lockToken: null, discardStreak: 0 });
   });
 });
 
