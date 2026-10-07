@@ -9,6 +9,9 @@ import { generateMemory, MAX_TRENDS, memoryProviderConfig, type MemoryGenerator 
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
+const CRON_SLACK = 2 * 60 * 60 * 1000;
+const WEEKLY_INTERVAL = WEEK - CRON_SLACK;
+const DAILY_INTERVAL = DAY - CRON_SLACK;
 const STALE_RUN = 5 * 60 * 1000;
 const HISTORY_RETENTION = 30 * DAY;
 
@@ -18,9 +21,9 @@ class MemoryRunSuperseded extends Error {}
 function classifyFailure(error: unknown, providerResponded: boolean, usagePersisted: boolean): Failure {
   if (providerResponded && !usagePersisted) return { errorCode: "memory_telemetry_failed", retryable: false };
   const message = error instanceof Error ? error.message : "";
+  if (message === "memory_input_limit" || message === "memory_sources_changed") return { errorCode: message, retryable: false };
   if (providerResponded) {
-    if (message === "memory_sources_changed") return { errorCode: message, retryable: false };
-    if (/^(?:memory_sources_invalid|memory_input_limit|memory_response_incomplete|ai_response_incomplete|ai_response_invalid)$/.test(message) || error instanceof ZodError) {
+    if (/^(?:memory_sources_invalid|memory_response_incomplete|ai_response_incomplete|ai_response_invalid)$/.test(message) || error instanceof ZodError) {
       return { errorCode: "memory_output_invalid", retryable: false };
     }
     return { errorCode: "memory_post_response_failed", retryable: false };
@@ -33,8 +36,7 @@ function classifyFailure(error: unknown, providerResponded: boolean, usagePersis
   if (/^(?:ai_provider_unconfigured|ai_model_configuration_invalid|memory_provider_unconfigured)$/.test(message)) {
     return { errorCode: "memory_configuration", retryable: false };
   }
-  if (message === "memory_sources_changed") return { errorCode: message, retryable: false };
-  if (/^(?:memory_sources_invalid|memory_input_limit|memory_response_incomplete|ai_response_incomplete|ai_response_invalid)$/.test(message)) {
+  if (/^(?:memory_sources_invalid|memory_response_incomplete|ai_response_incomplete|ai_response_invalid)$/.test(message)) {
     return { errorCode: "memory_output_invalid", retryable: false };
   }
   const httpStatus = /^ai_provider_http_(\d{3})$/.exec(message)?.[1];
@@ -76,17 +78,17 @@ export async function processMemory(
     return "skipped";
   }
   const regularAnchor = later(memory.cycleStartedAt, memory.lastAttemptAt);
-  if (!retryDue && regularAnchor && +now - +regularAnchor < WEEK) {
+  if (!retryDue && regularAnchor && +now - +regularAnchor < WEEKLY_INTERVAL) {
     await prisma.culinaryMemory.updateMany({
       where: { restaurantId, version: memory.version, dirtyRevision: memory.dirtyRevision },
-      data: { nextCheckAt: new Date(+regularAnchor + WEEK) },
+      data: { nextCheckAt: new Date(+regularAnchor + WEEKLY_INTERVAL) },
     });
     return "skipped";
   }
   if (memory.checkedRevision === memory.dirtyRevision) {
     await prisma.culinaryMemory.updateMany({
       where: { restaurantId, version: memory.version, dirtyRevision: memory.dirtyRevision },
-      data: { retryAt: null, nextCheckAt: new Date(+now + DAY) },
+      data: { retryAt: null, nextCheckAt: new Date(+now + DAILY_INTERVAL) },
     });
     return "unchanged";
   }
@@ -98,20 +100,22 @@ export async function processMemory(
   const excluded = new Set([...excludedKeys, ...corrections.map(c => c.key)]);
   const hash = evidenceHash(evidence, memory.restaurant.identityLine, corrections, excludedKeys);
   const snapshot = { restaurantId, enabled: true, version: memory.version, dirtyRevision: memory.dirtyRevision };
-  if (evidence.length < MIN_TREND_SOURCES || hash === memory.inputHash || MemoryKeySchema.options.every(key => excluded.has(key))) {
+  const resetFailures = memory.lastFailedInputHash && memory.lastFailedInputHash !== hash
+    ? { lastFailedInputHash: null, failureCount: null } : {};
+  const repeatedFailure = memory.lastFailedInputHash === hash && (memory.failureCount ?? 0) >= 2;
+  if (evidence.length < MIN_TREND_SOURCES || hash === memory.inputHash || repeatedFailure || MemoryKeySchema.options.every(key => excluded.has(key))) {
     await prisma.culinaryMemory.updateMany({
       where: snapshot,
-      data: { checkedRevision: memory.dirtyRevision, retryAt: null, nextCheckAt: new Date(+now + DAY) },
+      data: { ...resetFailures, checkedRevision: memory.dirtyRevision, retryAt: null, nextCheckAt: new Date(+now + DAILY_INTERVAL) },
     });
     return "unchanged";
   }
 
   const token = randomUUID();
   const cycleStartedAt = retryDue ? memory.cycleStartedAt ?? memory.lastAttemptAt ?? now : now;
-  // A retry is additional to the cycle; the following regular attempt remains
-  // seven days after the latest real attempt rather than waking a day early.
-  const regularNextAt = new Date(+now + WEEK);
-  const oldestRegularAttempt = new Date(+now - WEEK);
+  // Keep a weekly cadence while tolerating the daily cron's variable start time.
+  const regularNextAt = new Date(+now + WEEKLY_INTERVAL);
+  const oldestRegularAttempt = new Date(+now - WEEKLY_INTERVAL);
   const claimed = await prisma.$transaction(async tx => {
     const attemptGate = retryDue
       ? { retryAt: { lte: now } }
@@ -128,6 +132,7 @@ export async function processMemory(
         AND: [attemptGate, { OR: [{ lockExpiresAt: null }, { lockExpiresAt: { lte: now } }] }],
       },
       data: {
+        ...resetFailures,
         lockToken: token,
         lockExpiresAt: new Date(+now + 120_000),
         lastAttemptAt: now,
@@ -144,6 +149,39 @@ export async function processMemory(
   });
   if (!claimed) return "busy";
 
+  const discardedSchedule = {
+    lockToken: null, lockExpiresAt: null, lastAttemptAt: memory.lastAttemptAt,
+    cycleStartedAt: memory.cycleStartedAt, retryAt: memory.retryAt, nextCheckAt: now,
+  };
+  async function rescheduleDiscarded(tx: Prisma.TransactionClient) {
+    // Restore this claim's previous cadence, including an already-due retry.
+    // Scheduling is the only state we may change after a settings/version edit.
+    const released = await tx.culinaryMemory.updateMany({
+      where: { restaurantId, enabled: true, lockToken: token }, data: discardedSchedule,
+    });
+    if (released.count) return;
+    // A privacy edit clears the lease. Do not overwrite a new lease or attempt,
+    // or schedule disabled memory; fence the unlocked fallback by its version.
+    const current = await tx.culinaryMemory.findUnique({
+      where: { restaurantId }, select: { enabled: true, version: true, lockToken: true },
+    });
+    if (!current?.enabled || current.lockToken !== null) return;
+    await tx.culinaryMemory.updateMany({
+      where: { restaurantId, enabled: true, version: current.version, lockToken: null,
+        lastAttemptAt: now, cycleStartedAt }, data: discardedSchedule,
+    });
+  }
+
+  async function supersede(tx: Prisma.TransactionClient, errorCode?: string) {
+    await rescheduleDiscarded(tx);
+    await tx.culinaryMemoryRun.updateMany({
+      where: { id: token, status: "running" },
+      data: { status: "superseded", finishedAt: new Date(), publishedTrends: Prisma.DbNull,
+        ...(errorCode ? { errorCode } : {}) },
+    });
+    return "superseded";
+  }
+
   let providerResponded = false;
   let usagePersisted = false;
   try {
@@ -158,7 +196,7 @@ export async function processMemory(
     }, async usage => {
       providerResponded = true;
       const updated = await prisma.culinaryMemoryRun.updateMany({ where: { id: token, status: "running" }, data: usage });
-      if (!updated.count) throw new Error("memory_run_superseded");
+      if (!updated.count) throw new MemoryRunSuperseded();
       usagePersisted = true;
     });
     signal?.throwIfAborted();
@@ -192,14 +230,16 @@ export async function processMemory(
 
     const preparedContext = memoryContext(corrections, learned, excludedKeys);
     const status = await prisma.$transaction(async tx => {
-      const saved = await tx.culinaryMemory.updateMany({
-        where: { ...snapshot, lockToken: token },
+      const publish = (revision: number) => tx.culinaryMemory.updateMany({
+        where: { ...snapshot, dirtyRevision: revision, lockToken: token },
         data: {
           learned,
           inputHash: hash,
-          checkedRevision: memory.dirtyRevision,
+          lastFailedInputHash: null,
+          failureCount: null,
+          checkedRevision: revision,
           preparedContext,
-          preparedRevision: memory.dirtyRevision,
+          preparedRevision: revision,
           preparedVersion: memory.version + 1,
           updatedAt: now,
           version: { increment: 1 },
@@ -207,13 +247,24 @@ export async function processMemory(
           lockExpiresAt: null,
         },
       });
+      let saved = await publish(memory.dirtyRevision);
       if (!saved.count) {
-        await tx.culinaryMemoryRun.updateMany({
-          where: { id: token, status: "running" },
-          data: { status: "superseded", finishedAt: new Date(), publishedTrends: Prisma.DbNull },
+        const current = await tx.culinaryMemory.findUnique({
+          where: { restaurantId }, select: { enabled: true, version: true, dirtyRevision: true, lockToken: true },
         });
-        return "superseded";
+        if (current?.enabled && current.version === memory.version && current.lockToken === token &&
+          current.dirtyRevision !== memory.dirtyRevision) {
+          // Ingredient recreation can move the revision without changing evidence.
+          // Re-hash through this transaction, then fence one bounded salvage write.
+          const latest = await loadEvidence(restaurantId, tx);
+          if (evidenceHash(latest, memory.restaurant.identityLine, corrections, excludedKeys) !== hash) {
+            throw new Error("memory_sources_changed");
+          }
+          signal?.throwIfAborted();
+          saved = await publish(current.dirtyRevision);
+        }
       }
+      if (!saved.count) return supersede(tx);
       const active = await tx.culinaryMemoryRun.updateMany({
         where: { id: token, status: "running" },
         data: {
@@ -227,34 +278,37 @@ export async function processMemory(
     });
     return status;
   } catch (error) {
-    if (error instanceof MemoryRunSuperseded) return "superseded";
+    if (error instanceof MemoryRunSuperseded) return await prisma.$transaction(tx => supersede(tx));
     const failure = classifyFailure(error, providerResponded, usagePersisted);
-    const status = await prisma.$transaction(async tx => {
-      const retryAt = !retryDue && failure.retryable ? new Date(+now + DAY) : null;
-      const owned = await tx.culinaryMemory.updateMany({
-        where: { restaurantId, lockToken: token },
-        data: {
-          lockToken: null,
-          lockExpiresAt: null,
-          retryAt,
-          nextCheckAt: retryAt ?? regularNextAt,
-        },
-      });
-      if (!owned.count) {
-        await tx.culinaryMemoryRun.updateMany({
-          where: { id: token, status: "running" },
-          data: { status: "superseded", finishedAt: new Date(), errorCode: failure.errorCode },
+    const discarded = failure.errorCode === "memory_sources_changed";
+    const deterministic = failure.errorCode === "memory_output_invalid" || failure.errorCode === "memory_input_limit";
+    try {
+      return await prisma.$transaction(async tx => {
+        const retryAt = !retryDue && failure.retryable ? new Date(+now + DAILY_INTERVAL) : null;
+        const owned = await tx.culinaryMemory.updateMany({
+          where: { restaurantId, enabled: true, lockToken: token },
+          data: {
+            lockToken: null,
+            lockExpiresAt: null,
+            retryAt,
+            nextCheckAt: retryAt ?? regularNextAt,
+            ...(discarded ? discardedSchedule : {}),
+            ...(deterministic ? { lastFailedInputHash: hash,
+              failureCount: memory.lastFailedInputHash === hash ? (memory.failureCount ?? 0) + 1 : 1 } : {}),
+          },
         });
-        return "superseded";
-      }
-      const failed = await tx.culinaryMemoryRun.updateMany({
-        where: { id: token, status: "running" },
-        data: { status: "failed", finishedAt: new Date(), errorCode: failure.errorCode },
+        if (!owned.count) return supersede(tx, failure.errorCode);
+        const failed = await tx.culinaryMemoryRun.updateMany({
+          where: { id: token, status: "running" },
+          data: { status: "failed", finishedAt: new Date(), errorCode: failure.errorCode },
+        });
+        if (!failed.count) throw new MemoryRunSuperseded();
+        return "failed";
       });
-      if (!failed.count) throw new MemoryRunSuperseded();
-      return "failed";
-    });
-    return status;
+    } catch (closingError) {
+      if (!(closingError instanceof MemoryRunSuperseded)) throw closingError;
+      return await prisma.$transaction(tx => supersede(tx));
+    }
   } finally {
     await prisma.culinaryMemory.updateMany({
       where: { restaurantId, lockToken: token },
@@ -282,14 +336,14 @@ export async function maintainMemoryRuns(now = new Date(), deadline = Number.POS
     if (Date.now() >= deadline) break;
     await prisma.$transaction(async tx => {
       const paidResponse = run.inputTokens > 0 || run.outputTokens > 0 || run.reasoningTokens > 0;
-      const retryAt = !run.isRetry && !paidResponse ? new Date(+run.createdAt + DAY) : null;
+      const retryAt = !run.isRetry && !paidResponse ? new Date(+run.createdAt + DAILY_INTERVAL) : null;
       const recovered = await tx.culinaryMemory.updateMany({
         where: { restaurantId: run.restaurantId, lockToken: run.id },
         data: {
           lockToken: null,
           lockExpiresAt: null,
           retryAt,
-          nextCheckAt: retryAt ?? new Date(+run.createdAt + WEEK),
+          nextCheckAt: retryAt ?? new Date(+run.createdAt + WEEKLY_INTERVAL),
         },
       });
       const failed = await tx.culinaryMemoryRun.updateMany({

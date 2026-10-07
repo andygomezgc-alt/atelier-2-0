@@ -144,9 +144,8 @@ export async function PATCH(
     // así que intentar removerlos también es no-op (correcto).
   }
 
-  // Si vienen ingredientes estructurados, validamos productIds + reemplazamos
-  // las filas existentes (delete + insert) dentro de la misma transacción
-  // que el update del Recipe — atómico.
+  // Resolve and compare structured ingredients under the save lock. Replace
+  // rows only when persisted values differ; no-op saves must not dirty memory.
   if (parse.data.recipeIngredients !== undefined) {
     let updated;
     try {
@@ -168,8 +167,22 @@ export async function PATCH(
         if (result.count === 0) return null;
 
         const rows = await resolveIngredientDrafts(tx, ctx.restaurantId, parse.data.recipeIngredients!);
-        await tx.recipeIngredient.deleteMany({ where: { recipeId: id } });
-        if (rows.length) await tx.recipeIngredient.createMany({ data: rows.map(row => ({ ...row, recipeId: id })) });
+        const currentRows = await tx.recipeIngredient.findMany({
+          where: { recipeId: id }, orderBy: { position: "asc" },
+          select: { productId: true, position: true, rawText: true, qty: true, unit: true,
+            pezzatura: true, mermaOverridePct: true, pesoCalculoG: true },
+        });
+        const textFields = ["productId", "position", "rawText", "unit", "pezzatura"] as const;
+        const numericFields = ["qty", "mermaOverridePct", "pesoCalculoG"] as const;
+        const unchanged = rows.length === currentRows.length && rows.every((row, index) => {
+          const current = currentRows[index]!;
+          return textFields.every(field => row[field] === current[field]) &&
+            numericFields.every(field => row[field] === (current[field] === null ? null : Number(current[field])));
+        });
+        if (!unchanged) {
+          await tx.recipeIngredient.deleteMany({ where: { recipeId: id } });
+          if (rows.length) await tx.recipeIngredient.createMany({ data: rows.map(row => ({ ...row, recipeId: id })) });
+        }
         return tx.recipe.findUnique({
           where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
           include: recipeDetailInclude,

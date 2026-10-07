@@ -20,6 +20,7 @@ export type Evidence = {
   legacyHashes: { approved: string; in_test: string };
   duplicateKey: string;
   title: string;
+  updatedAt?: Date;
   ingredients: string[];
   method: string[];
 };
@@ -38,7 +39,7 @@ export function recipeEvidence(recipe: EvidenceRecipe): Evidence {
   // no invalida una fuente que sigue describiendo la misma elaboración.
   const hash = digest({ ingredients, method });
   return {
-    id: recipe.id, state: recipe.state, title: recipe.title, ingredients, method, duplicateKey, hash,
+    id: recipe.id, state: recipe.state, title: recipe.title, updatedAt: recipe.updatedAt, ingredients, method, duplicateKey, hash,
     // Los hashes anteriores no tenían versión y mezclaban título/estado. Se
     // aceptan sólo cuando uno puede recalcularse exactamente con datos actuales.
     legacyHashes: {

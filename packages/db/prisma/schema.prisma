@@ -506,6 +506,8 @@ model CulinaryMemory {
   corrections Json @default("[]")
   excludedKeys String[] @default([])
   inputHash String?
+  lastFailedInputHash String?
+  failureCount Int?
   preparedContext String? @db.Text
   preparedRevision Int @default(-1)
   preparedVersion Int @default(-1)

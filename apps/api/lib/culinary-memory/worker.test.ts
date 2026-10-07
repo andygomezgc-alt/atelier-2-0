@@ -16,6 +16,7 @@ import { maintainMemoryRuns, processMemory } from "./worker";
 
 const DAY = 86_400_000;
 const WEEK = 7 * DAY;
+const SLACK = 2 * 60 * 60 * 1000;
 const now = new Date("2026-09-08T12:00:00Z");
 const config = { model: "test", provider: "fixture", key: "test" };
 const evidence = [1, 2, 3].map(n => ({ id: String(n), hash: `h${n}`, legacyHashes: { approved: `a${n}`, in_test: `t${n}` },
@@ -68,7 +69,7 @@ describe("weekly memory worker", () => {
     expect(db.culinaryMemoryRun.create).not.toHaveBeenCalled();
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith({
       where: { restaurantId: "r1", version: 3, dirtyRevision: 5 },
-      data: { nextCheckAt: new Date(+lastAttemptAt + WEEK) },
+      data: { nextCheckAt: new Date(+lastAttemptAt + WEEK - SLACK) },
     });
   });
 
@@ -80,7 +81,7 @@ describe("weekly memory worker", () => {
     expect(db.culinaryMemoryRun.create).toHaveBeenCalledWith({ data: expect.objectContaining({ isRetry: true, cycleStartedAt }) });
     const claim = db.culinaryMemory.updateMany.mock.calls.find(([arg]) => arg.data.lockToken)?.[0];
     expect(claim.data).toMatchObject({ lastAttemptAt: now, retryAt: null });
-    expect(claim.data.nextCheckAt).toEqual(new Date(+now + WEEK));
+    expect(claim.data.nextCheckAt).toEqual(new Date(+now + WEEK - SLACK));
   });
 
   it("schedules one 24h retry only for an eligible transient failure", async () => {
@@ -91,7 +92,7 @@ describe("weekly memory worker", () => {
     }));
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ lockToken: expect.any(String) }),
-      data: expect.objectContaining({ retryAt: new Date(+now + DAY), nextCheckAt: new Date(+now + DAY) }),
+      data: expect.objectContaining({ retryAt: new Date(+now + DAY - SLACK), nextCheckAt: new Date(+now + DAY - SLACK) }),
     }));
   });
 
@@ -283,15 +284,15 @@ describe("memory run maintenance", () => {
     }));
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { restaurantId: "r1", lockToken: "regular" },
-      data: expect.objectContaining({ lockToken: null, retryAt: new Date(+regularAt + DAY), nextCheckAt: new Date(+regularAt + DAY) }),
+      data: expect.objectContaining({ lockToken: null, retryAt: new Date(+regularAt + DAY - SLACK), nextCheckAt: new Date(+regularAt + DAY - SLACK) }),
     }));
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { restaurantId: "r2", lockToken: "retry" },
-      data: expect.objectContaining({ lockToken: null, retryAt: null, nextCheckAt: new Date(+regularAt + WEEK) }),
+      data: expect.objectContaining({ lockToken: null, retryAt: null, nextCheckAt: new Date(+regularAt + WEEK - SLACK) }),
     }));
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { restaurantId: "r3", lockToken: "paid" },
-      data: expect.objectContaining({ lockToken: null, retryAt: null, nextCheckAt: new Date(+regularAt + WEEK) }),
+      data: expect.objectContaining({ lockToken: null, retryAt: null, nextCheckAt: new Date(+regularAt + WEEK - SLACK) }),
     }));
     expect(db.culinaryMemoryRun.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "paid", status: "running" }, data: expect.objectContaining({ errorCode: "memory_worker_interrupted_after_response" }),
