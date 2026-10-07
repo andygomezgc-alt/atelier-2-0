@@ -153,7 +153,8 @@ async function closeReservation(reservation: Reservation, billing: Billing): Pro
   else if (billing.input) await settleInterruptedGeneration(reservation, billing.input);
   else if (billing.inputCeiling !== undefined) {
     // A managed HTTP turn must close even when dispatch produced no usage.
-    // Never refund uncertain paid work: use its reserved input/output ceilings.
+    // Pass the prepared input ceiling; settleInterruptedGeneration replaces
+    // outputTokens with the locked generation row's full output ceiling.
     await settleInterruptedGeneration(reservation, { ...emptyUsage(), inputTokens: billing.inputCeiling });
   }
   // Unmanaged diagnostic callers retain A4's hold-for-reconciliation behavior.

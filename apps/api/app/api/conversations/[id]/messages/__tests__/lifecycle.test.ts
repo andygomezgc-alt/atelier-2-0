@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { can, type Permission } from "@atelier/shared";
 import type { Reservation } from "@/lib/ai/budget";
+import { logger } from "@/lib/logger";
 import * as route from "../route";
 import * as stopRoute from "../stop/route";
 
@@ -239,7 +240,7 @@ describe("A6 connection-independent generation (real service and billing adapter
     expect(afterMock).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["conv-1", "preview"])("%s body cancellation swallows later enqueue failures without aborting or refunding", async id => {
+  it.each(["conv-1"])("%s body cancellation swallows later enqueue failures without aborting or refunding", async id => {
     const upstream = provider(); const response = await post(request(undefined, id), id);
     const reader = response.body!.getReader(); upstream.partial(); await reader.read();
     await reader.cancel(); await flush();
@@ -275,6 +276,7 @@ describe("A6 connection-independent generation (real service and billing adapter
 
 describe("A6 preparation disconnects", () => {
   it.each(["history", "system"])("a disconnect during %s before reservation returns cleanly and releases only the lease", async stage => {
+    const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
     const client = new AbortController(); const upstream = provider();
     if (stage === "history") db.message.findMany.mockImplementationOnce(async () => { client.abort(); return []; });
     else buildSystem.mockImplementationOnce(() => { client.abort(); return [{ type: "text", text: "sys" }]; });
@@ -282,17 +284,21 @@ describe("A6 preparation disconnects", () => {
     upstream.finish();
     if (outcome instanceof Response) await outcome.text();
     expect(outcome).toBeInstanceOf(Response);
+    expect(outcome).toMatchObject({ status: 499 });
+    expect(errorLog).not.toHaveBeenCalled();
     expect(budget.reserveGeneration).not.toHaveBeenCalled(); expect(budget.releaseGeneration).not.toHaveBeenCalled();
     expect(upstream.fetcher).not.toHaveBeenCalled(); expect(stored).toEqual([]);
     expect(conversation.generationId).toBeNull(); expect(conversation.generationStartedAt).toBeNull();
   });
 
   it("an already disconnected request never leaks AbortError or takes a lease", async () => {
+    const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
     const client = new AbortController(); client.abort(); const upstream = provider();
     const outcome: unknown = await post(request(client.signal)).catch(error => error);
     upstream.finish();
     if (outcome instanceof Response) await outcome.text();
     expect(outcome).toBeInstanceOf(Response); expect(db.conversation.updateMany).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ status: 499 }); expect(errorLog).not.toHaveBeenCalled();
     expect(budget.reserveGeneration).not.toHaveBeenCalled(); expect(stored).toEqual([]);
   });
 
@@ -460,6 +466,113 @@ describe("A6 server-side Stop", () => {
     expect((await stop()).status).toBe(204); expect((await stop()).status).toBe(204);
     expect(conversation.generationId).toBeNull(); expect(conversation.generationStartedAt).toBeNull();
     expect(db.message.create).not.toHaveBeenCalled(); expect(budget.releaseGeneration).not.toHaveBeenCalled();
+  });
+});
+
+describe("A6b preview disconnect billing", () => {
+  it.each([
+    { disconnect: "request abort", hasUsage: false },
+    { disconnect: "request abort", hasUsage: true },
+    { disconnect: "body cancel", hasUsage: false },
+    { disconnect: "body cancel", hasUsage: true },
+  ])("$disconnect aborts an abandoned preview (known usage: $hasUsage)", async ({ disconnect, hasUsage }) => {
+    const client = new AbortController(); const upstream = provider();
+    const response = await post(request(client.signal, "preview"), "preview");
+    const reader = response.body!.getReader();
+    if (hasUsage) { upstream.partial(); await reader.read(); }
+    await flush();
+    expect(upstream.fetcher).toHaveBeenCalledTimes(1);
+    expect(upstream.signal?.aborted).toBe(false);
+
+    if (disconnect === "request abort") client.abort();
+    else await reader.cancel();
+    await flush();
+    const abortedOnDisconnect = upstream.signal?.aborted;
+    const closedOnDisconnect = budget.settleInterruptedGeneration.mock.calls.length;
+    // Unblock the old implementation too: RED must not wait for its deadline.
+    upstream.finish(); await reader.cancel(); await background();
+
+    expect(abortedOnDisconnect).toBe(true);
+    expect(closedOnDisconnect).toBe(1);
+    expectClosedExactlyOnce("settleInterruptedGeneration");
+    expect(budget.settleInterruptedGeneration).toHaveBeenCalledWith(reservation, expect.objectContaining({
+      inputTokens: hasUsage ? 100 : budget.reserveGeneration.mock.calls[0]![1],
+      cachedTokens: hasUsage ? 20 : 0,
+    }));
+    expect(stored).toEqual([]);
+    expect(db.conversation.findUnique).not.toHaveBeenCalled();
+    expect(db.conversation.updateMany).not.toHaveBeenCalled();
+    expect(jobErrors).toEqual([]);
+  });
+});
+
+describe("A6b transient ownership uncertainty", () => {
+  it.each(["daily", "creative"])("%s warns and keeps generating after one failed heartbeat read", async model => {
+    const warning = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const upstream = provider(model);
+    const response = await post(request(undefined, "conv-1", model));
+    const wire = response.text(); upstream.partial(); await flush();
+    const failure = new Error("transient ownership database read failed");
+    db.conversation.findUnique.mockRejectedValueOnce(failure);
+    await vi.advanceTimersByTimeAsync(8_000);
+    const abortedOnReadFailure = upstream.signal?.aborted;
+    const readsAfterFailure = db.conversation.findUnique.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(8_000);
+    const readsAfterRecovery = db.conversation.findUnique.mock.calls.length;
+    upstream.finish(); const events = await wire; await background();
+
+    expect(abortedOnReadFailure).toBe(false);
+    expect(upstream.signal?.aborted).toBe(false);
+    expect(readsAfterRecovery).toBeGreaterThan(readsAfterFailure);
+    expect(warning).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ error: failure }));
+    expect(errorLog).not.toHaveBeenCalled();
+    expect(events).toContain('"type":"done"');
+    expect(events).not.toContain('"type":"error"'); expect(events).not.toContain('"type":"stopped"');
+    expect(assistantMessages()).toHaveLength(1);
+    expect(assistantMessages()[0]?.content).toBe("Recipe finished");
+    expect(conversation.generationId).toBeNull(); expectClosedExactlyOnce("settleGeneration");
+    expect(jobErrors).toEqual([]);
+  });
+
+  it("still stops on confirmed ownership loss after a transient read failure", async () => {
+    vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const upstream = provider(); const response = await post();
+    const wire = response.text(); upstream.partial(); await flush();
+    db.conversation.findUnique.mockRejectedValueOnce(new Error("temporary database failure"));
+    await vi.advanceTimersByTimeAsync(8_000);
+    const abortedOnUncertainty = upstream.signal?.aborted;
+    conversation.generationId = "replacement-generation";
+    await vi.advanceTimersByTimeAsync(8_000);
+    const abortedOnConfirmedLoss = upstream.signal?.aborted;
+    upstream.finish(); const events = await wire; await background();
+
+    expect(abortedOnUncertainty).toBe(false); expect(abortedOnConfirmedLoss).toBe(true);
+    expect(events).toContain('"type":"stopped"'); expect(events).not.toContain('"code":"ai_provider_failed"');
+    expect(assistantMessages()).toHaveLength(0);
+    expect(conversation.generationId).toBe("replacement-generation");
+    expectClosedExactlyOnce("settleInterruptedGeneration"); expect(jobErrors).toEqual([]);
+  });
+});
+
+describe("A6b genuine preparation failures after disconnect", () => {
+  it.each(["history", "system"])("logs the original %s failure instead of hiding it behind a clean 499", async stage => {
+    const errorLog = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const client = new AbortController(); const upstream = provider();
+    const failure = new Error(`${stage} preparation failed`);
+    if (stage === "history") db.message.findMany.mockImplementationOnce(async () => { client.abort(); throw failure; });
+    else buildSystem.mockImplementationOnce(() => { client.abort(); throw failure; });
+    const response = await post(request(client.signal));
+    const body = await response.json(); await background();
+
+    expect(response.status).toBe(503);
+    expect(body).toMatchObject({ code: "ai_provider_failed" });
+    expect(errorLog).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ error: failure }));
+    expect(JSON.stringify(body)).not.toContain(failure.message);
+    expect(budget.reserveGeneration).not.toHaveBeenCalled(); expect(budget.releaseGeneration).not.toHaveBeenCalled();
+    expect(stored).toEqual([]); expect(conversation.generationId).toBeNull();
+    expect(conversation.generationStartedAt).toBeNull();
+    expect(upstream.fetcher).not.toHaveBeenCalled(); expect(afterMock).not.toHaveBeenCalled();
   });
 });
 

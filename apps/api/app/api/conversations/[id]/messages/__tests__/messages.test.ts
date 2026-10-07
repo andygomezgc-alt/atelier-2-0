@@ -1042,7 +1042,7 @@ describe("A2 closed SSE error contract", () => {
     expect(db.user.findUnique).not.toHaveBeenCalled();
   });
 
-  it.each(["preview", "conv-1"])("continues generation without an SSE error after the client's AbortSignal aborts in %s", async id => {
+  it.each(["conv-1"])("continues generation without an SSE error after the client's AbortSignal aborts in %s", async id => {
     const controller = new AbortController();
     const infoLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
     streamMock.mockImplementation(async function* () {

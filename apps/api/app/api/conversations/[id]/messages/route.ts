@@ -79,10 +79,15 @@ export async function POST(
   }
   if (prepared instanceof Response) { clearTimeout(deadline); return prepared; }
 
-  // HTTP mirrors one independently running promise; it never owns cancellation.
+  // Saved answers survive HTTP disconnects; previews have no recovery path.
   let connected = !req.signal.aborted;
-  const disconnect = () => { connected = false; };
+  const disconnect = () => {
+    connected = false;
+    if (isPreview) generation.abort(new DOMException("Preview disconnected", "AbortError"));
+  };
   req.signal.addEventListener("abort", disconnect, { once: true });
+  // The request may have disconnected while its reservation was being prepared.
+  if (!connected) disconnect();
   let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -92,7 +97,7 @@ export async function POST(
   const mirror = (event: unknown) => {
     if (!connected || !controller) return;
     try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)); }
-    catch { disconnect(); } // A closed transport must never stop the generator.
+    catch { disconnect(); } // Only an unrecoverable preview stops with its transport.
   };
   const heartbeat = setInterval(() => mirror({ type: "heartbeat", ts: Date.now() }), CHAT_HEARTBEAT_MS);
   const completion = (async () => {

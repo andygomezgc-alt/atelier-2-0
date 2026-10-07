@@ -162,7 +162,9 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
     if (error instanceof ChatError && error.code === "ai_timeout") {
       return Response.json({ error: error.code, code: error.code }, { status: 503 });
     }
-    if ((error instanceof Error && error.name === "AbortError") || (!reservation && signal.aborted)) {
+    // Only the abort itself is a clean disconnect. A coincident real failure
+    // must reach the route's error logger and HTTP 503, even after the client left.
+    if ((error instanceof Error && error.name === "AbortError") || (signal.aborted && error === signal.reason)) {
       return Response.json({ error: "chat_response_incomplete", code: "chat_response_incomplete" }, { status: 499 });
     }
     throw error;
@@ -180,12 +182,11 @@ export async function* runChatTurn(prepared: PreparedChatTurn, signal: AbortSign
   let errored = false;
   let stopped = false;
   let adapterStarted = false;
-  let ownershipFailure: unknown;
   let ownershipCheck: Promise<void> | undefined;
   const stopController = new AbortController();
   const providerSignal = AbortSignal.any([signal, stopController.signal]);
   const checkOwnership = (): Promise<void> => {
-    if (!turn || stopped || ownershipFailure) return Promise.resolve();
+    if (!turn || stopped) return Promise.resolve();
     if (ownershipCheck) return ownershipCheck;
     ownershipCheck = ownsChatTurn(turn).then(owns => {
       if (!owns) {
@@ -193,9 +194,11 @@ export async function* runChatTurn(prepared: PreparedChatTurn, signal: AbortSign
         stopController.abort(new DOMException("Chat stopped", "AbortError"));
       }
     }).catch(error => {
-      // Ownership uncertainty is a failure, not evidence of a human Stop.
-      ownershipFailure = error;
-      stopController.abort(new ChatError("ai_provider_failed", { cause: error }));
+      // A failed read is not proof of lost ownership. Retry on the next heartbeat;
+      // the request deadline bounds generation and finishChatTurn still fences saves.
+      logger.warn("ai_turn_ownership_check_failed", {
+        conversationId: turn.conversationId, generationId: turn.generationId, error,
+      });
     }).finally(() => { ownershipCheck = undefined; });
     return ownershipCheck;
   };
@@ -224,7 +227,6 @@ export async function* runChatTurn(prepared: PreparedChatTurn, signal: AbortSign
     clearInterval(heartbeat);
     await checkOwnership();
     if (stopped) { yield { type: "stopped" }; return; }
-    if (ownershipFailure) throw ownershipFailure;
     if (!assistantText.trim()) throw new ChatError("chat_response_incomplete");
     if (turn) await finishChatTurn(turn, assistantText, config.model, {
       inputTokens, outputTokens, cachedTokens, latencyMs: Date.now() - startedAt,
@@ -236,7 +238,7 @@ export async function* runChatTurn(prepared: PreparedChatTurn, signal: AbortSign
       yield { type: "stopped" };
     } else {
       errored = true;
-      const failure = ownershipFailure ?? (signal.aborted ? signal.reason : err);
+      const failure = signal.aborted ? signal.reason : err;
       const { code, retryAfter } = streamErrorCode(failure);
       const cause = failure instanceof Error && failure.cause !== undefined ? failure.cause : failure;
       (code === "ai_provider_failed" || code === "ai_timeout" ? logger.error : logger.warn)("ai_stream_error", {
