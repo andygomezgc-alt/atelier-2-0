@@ -241,6 +241,8 @@ export const es = {
   chat_leave_confirm: "Continuar",
   // A3 · banner de error del chat.
   chat_unanswered: "La última pregunta quedó sin respuesta.",
+  chat_history_upload_failed: "No se pudo guardar el historial de este chat. Inténtalo de nuevo.",
+  recipe_save_failed: "No se pudo guardar la receta. Inténtalo de nuevo.",
   chat_use_daily: "Continuar con Diario",
   chat_untitled: "Conversación nueva",
   assistant_eyebrow: "ATELIER · SUGIERE",

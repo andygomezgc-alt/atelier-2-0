@@ -27,7 +27,22 @@ function readError(err: unknown): { code?: ApiErrorCode; status?: number; name?:
   return { code: code.success ? code.data : undefined, status, name: err.name };
 }
 
+// A10 — the local history could not be uploaded before the send. The created
+// conversation is kept, so Retry uploads again instead of creating another one.
+export class ChatHistoryUploadError extends Error {
+  constructor(readonly source: unknown, readonly conversationId: string) {
+    super("chat_history_upload_failed");
+    this.name = "ChatHistoryUploadError";
+  }
+}
+
 export function classifyChatError(err: unknown, t: T, model: ChatMode): ChatFailure {
+  if (err instanceof ChatHistoryUploadError) {
+    const { status } = readError(err.source);
+    // Auth and forbidden keep their own explanation; any other upload failure can be retried.
+    if (status === 401 || status === 403) return classifyChatError(err.source, t, model);
+    return { message: t("chat_history_upload_failed"), retryable: true };
+  }
   const { code, status, name } = readError(err);
   // The transport (apiFetch / streamMessage) already signed out; only explain why.
   if (status === 401) return { message: t("error_session_expired"), retryable: false };

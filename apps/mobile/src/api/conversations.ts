@@ -62,7 +62,7 @@ export const listMessages = (conversationId: string) =>
 // needs-restaurant → signed-in.
 export const bulkAddMessages = (
   conversationId: string,
-  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  messages: Array<{ role: "user" | "assistant"; content: string; clientMessageId?: string }>,
 ) =>
   apiFetch<{ inserted: number }>(
     `/api/conversations/${encodeURIComponent(conversationId)}/messages/bulk`,

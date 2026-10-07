@@ -219,6 +219,8 @@ export const it: EsDict = {
   chat_leave_confirm: "Continua",
   // A3 · banner di errore della chat.
   chat_unanswered: "L'ultima domanda è rimasta senza risposta.",
+  chat_history_upload_failed: "Non è stato possibile salvare la cronologia di questa chat. Riprova.",
+  recipe_save_failed: "Non è stato possibile salvare la ricetta. Riprova.",
   chat_use_daily: "Continua con Quotidiano",
   chat_untitled: "Nuova conversazione",
   assistant_eyebrow: "ATELIER · SUGGERISCE",

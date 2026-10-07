@@ -81,4 +81,19 @@ describe("BulkMessagesRequestSchema (A-12)", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("conserva el clientMessageId opcional de cada mensaje para reintentos idempotentes", () => {
+    const parsed = BulkMessagesRequestSchema.parse({
+      messages: [{ role: "user", content: "p1", clientMessageId: "cm-1" }, { role: "assistant", content: "r1" }],
+    });
+    expect(parsed.messages).toEqual([{ role: "user", content: "p1", clientMessageId: "cm-1" }, { role: "assistant", content: "r1" }]);
+  });
+
+  it("rechaza un clientMessageId vacío", () => {
+    expect(
+      BulkMessagesRequestSchema.safeParse({
+        messages: [{ role: "user", content: "p1", clientMessageId: "" }],
+      }).success,
+    ).toBe(false);
+  });
 });

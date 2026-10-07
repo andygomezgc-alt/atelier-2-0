@@ -47,14 +47,29 @@ import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { selection, tapLight } from "@/src/lib/haptics";
 import type { TranslationKey } from "@atelier/i18n";
 import { colors, fonts, fontSizes, radii, spacing, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
-import { apiErrorMessage } from "@/src/lib/api-error";
-import { classifyChatError, type ChatErrorAction } from "@/src/lib/chat-error";
+import { apiErrorKey, apiErrorMessage } from "@/src/lib/api-error";
+import { ChatHistoryUploadError, classifyChatError, type ChatErrorAction } from "@/src/lib/chat-error";
+import { NetworkError as TransportNetworkError } from "@/src/api/client";
 import { canRememberNote } from "@/src/lib/chef-notes";
 
 type ModelKey = ChatMode;
 
 function createClientMessageId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+// The history a send or a retry works from: answered turns, never the turn being sent.
+function historyBefore(list: ChatMessage[], pendingClientMessageId?: string): ChatMessage[] {
+  return list.filter(
+    (m) => (m.role === "user" || m.role === "assistant") && (!pendingClientMessageId || m.clientMessageId !== pendingClientMessageId),
+  );
+}
+
+// A failed save names its cause with a translated key, never the raw error text.
+function saveFailureKey(err: unknown): TranslationKey {
+  if (err instanceof TransportNetworkError) return "error_network";
+  const code = (err as { code?: unknown } | null)?.code;
+  return (typeof code === "string" && apiErrorKey(code)) || "recipe_save_failed";
 }
 
 const MODEL_LABEL_KEYS: Record<ModelKey, TranslationKey> = {
@@ -274,6 +289,8 @@ export default function AsistenteScreen() {
   const [conversationLoadError, setConversationLoadError] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const switchingRef = useRef(false);
+  // The conversation created for this chat until its history is uploaded.
+  const promotionRef = useRef<{ conversationId: string; uploaded: boolean } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [structuring, setStructuring] = useState(false);
@@ -390,6 +407,7 @@ export default function AsistenteScreen() {
     abortRef.current = null;
     setStreaming(false);
     setConversationId(null);
+    promotionRef.current = null;
     setMessages([]);
     setInput("");
     setConversationLoading(Boolean(conversationIdParam || ideaId));
@@ -452,14 +470,45 @@ export default function AsistenteScreen() {
   // Language/model changes must not reopen or clear the chef's conversation.
   }, [ideaId, conversationIdParam, chatSession, loadAttempt]);
 
-  const ensureConversation = useCallback(async (): Promise<string | null> => {
+  // The first send that needs the server creates the conversation once and uploads the local history,
+  // in order, before anything else. promotionRef keeps the created id, so a failed upload retries only
+  // the upload and never creates a second conversation.
+  async function promoteChat(gen: number, pendingClientMessageId?: string): Promise<string> {
+    let promotion = promotionRef.current;
+    if (!promotion) {
+      const conv = await createConversation({ ideaId: ideaId ?? null, modelUsed: model });
+      promotion = { conversationId: conv.id, uploaded: false };
+      promotionRef.current = promotion;
+    }
+    if (!promotion.uploaded) {
+      const local = historyBefore(messages, pendingClientMessageId);
+      if (local.length > 0) {
+        // Legacy messages without an id get one now and keep it in state, so a retry sends the same ids.
+        const legacy = new Map(local.filter((m) => !m.clientMessageId).map((m): [string, string] => [m.id, createClientMessageId()]));
+        if (legacy.size > 0 && gen === streamGenRef.current) {
+          setMessages((prev) => prev.map((m) => (legacy.has(m.id) && !m.clientMessageId ? { ...m, clientMessageId: legacy.get(m.id) } : m)));
+        }
+        try {
+          await bulkAddMessages(promotion.conversationId, local.map((m) => ({
+            role: m.role,
+            content: m.content,
+            clientMessageId: m.clientMessageId ?? legacy.get(m.id),
+          })));
+        } catch (err) {
+          throw new ChatHistoryUploadError(err, promotion.conversationId);
+        }
+      }
+      promotion.uploaded = true;
+    }
+    if (gen === streamGenRef.current) setConversationId(promotion.conversationId);
+    return promotion.conversationId;
+  }
+
+  async function ensureConversation(gen: number, pendingClientMessageId?: string): Promise<string | null> {
     if (conversationId) return conversationId;
     if (!hasRestaurant) return null;
-    const gen = streamGenRef.current;
-    const conv = await createConversation({ ideaId: ideaId ?? null, modelUsed: model });
-    if (gen === streamGenRef.current) setConversationId(conv.id);
-    return conv.id;
-  }, [conversationId, ideaId, model, hasRestaurant]);
+    return promoteChat(gen, pendingClientMessageId);
+  }
 
   async function runStream(text: string, modelToUse: ModelKey, clientMessageId: string) {
     const gen = streamGenRef.current;
@@ -472,13 +521,11 @@ export default function AsistenteScreen() {
     abortRef.current = ac;
 
     try {
-      const convId = await ensureConversation();
+      const convId = await ensureConversation(gen, clientMessageId);
       if (gen !== streamGenRef.current || ac.signal.aborted) return;
       const previewHistory = convId
         ? undefined
-        : messages
-            .filter((m) => m.role === "user" || m.role === "assistant")
-            .map((m) => ({ role: m.role, content: m.content }));
+        : historyBefore(messages, clientMessageId).map((m) => ({ role: m.role, content: m.content }));
       const full = await streamMessage(
         convId,
         text,
@@ -517,6 +564,8 @@ export default function AsistenteScreen() {
           role: "assistant",
           content: finalText,
           createdAt: new Date().toISOString(),
+          // Stable per turn: a retried upload sends the same id.
+          clientMessageId: `${clientMessageId}:assistant`,
         },
       ]);
     } catch (err) {
@@ -550,6 +599,7 @@ export default function AsistenteScreen() {
 
     const userMsg: ChatMessage = {
       id: `local-${clientMessageId}`,
+      clientMessageId,
       role: "user",
       content: text,
       createdAt: new Date().toISOString(),
@@ -617,8 +667,8 @@ export default function AsistenteScreen() {
     });
   }
 
-  // Sin restaurante, ensureConversationForSave hace lazy-create + crea
-  // Conversation real + sube messages locales con bulk antes de seguir.
+  // Without a restaurant, saving creates the conversation and uploads the history (promoteChat) first.
+  // A failed upload still saves the recipe; the next send retries the upload before streaming.
   async function ensureConversationForSave(): Promise<string | null> {
     if (conversationId) return conversationId;
     try {
@@ -626,24 +676,12 @@ export default function AsistenteScreen() {
     } catch {
       return null;
     }
-    const conv = await createConversation({
-      ideaId: ideaId ?? null,
-      modelUsed: model,
-    });
-    setConversationId(conv.id);
-    const toUpload = messages
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role, content: m.content }));
-    if (toUpload.length > 0) {
-      try {
-        await bulkAddMessages(conv.id, toUpload);
-      } catch {
-        // Si bulk falla, la receta se sigue guardando con sourceConversationId
-        // apuntando a la Conversation creada (sin history); no se pierde la
-        // receta. Aceptable.
-      }
+    try {
+      return await promoteChat(streamGenRef.current);
+    } catch (err) {
+      if (err instanceof ChatHistoryUploadError) return err.conversationId;
+      throw err;
     }
-    return conv.id;
   }
 
   async function saveAsRecipe() {
@@ -653,7 +691,13 @@ export default function AsistenteScreen() {
 
     setStructuring(true);
     try {
-      const convId = await ensureConversationForSave();
+      let convId: string | null;
+      try {
+        convId = await ensureConversationForSave();
+      } catch (err) {
+        showToast(t(saveFailureKey(err)), "error");
+        return;
+      }
       if (!convId) {
         setStructuring(false);
         return;

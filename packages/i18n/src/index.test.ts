@@ -80,3 +80,16 @@ describe("A3b no sign-in button in the chat banner", () => {
     for (const dict of [es, en, itDict]) expect(Object.keys(dict)).not.toContain("chat_sign_in");
   });
 });
+
+// A10 — a failed history upload has its own reason, not the generic "the assistant did not answer".
+describe("A10 chat history upload copy", () => {
+  test("has the Spanish copy and a translation in each language", () => {
+    expect((es as Record<string, string>).chat_history_upload_failed).toBe("No se pudo guardar el historial de este chat. Inténtalo de nuevo.");
+    for (const dict of [en, itDict]) {
+      const value = (dict as Record<string, string>).chat_history_upload_failed;
+      expect(value?.trim(), "chat_history_upload_failed").toBeTruthy();
+      expect(value).not.toBe((es as Record<string, string>).chat_history_upload_failed);
+      expect(value).not.toContain("_");
+    }
+  });
+});

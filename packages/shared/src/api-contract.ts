@@ -350,6 +350,8 @@ export const BulkMessagesRequestSchema = z.object({
       z.object({
         role: z.enum(["user", "assistant"]),
         content: z.string().min(1).max(20_000),
+        // Stable per-message id: a replayed batch skips the messages already stored.
+        clientMessageId: z.string().min(1).max(64).optional(),
       }),
     )
     .min(1)

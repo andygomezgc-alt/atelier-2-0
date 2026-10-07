@@ -218,6 +218,8 @@ export const en: EsDict = {
   chat_leave_confirm: "Continue",
   // A3 · chat error banner.
   chat_unanswered: "Your last question has no answer yet.",
+  chat_history_upload_failed: "This chat's history could not be saved. Please try again.",
+  recipe_save_failed: "The recipe could not be saved. Please try again.",
   chat_use_daily: "Continue with Everyday",
   chat_untitled: "New conversation",
   assistant_eyebrow: "ATELIER · SUGGESTS",
