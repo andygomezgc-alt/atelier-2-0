@@ -204,7 +204,7 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
     expect(first.failureCount).toBe(1);
     expect(await processMemory(id, generate, config, new Date(+now + 7 * DAY))).toBe("failed");
     expect((await memoryOf(id)).failureCount).toBe(2);
-    expect(["unchanged", "skipped"]).toContain(await processMemory(id, generate, config, new Date(+now + 14 * DAY)));
+    expect(await processMemory(id, generate, config, new Date(+now + 14 * DAY))).toBe("suppressed");
     expect(generate).toHaveBeenCalledTimes(2);
     await prisma.recipe.update({ where: { id: `${id}-0` }, data: {
       contentJson: { ingredients: ["200 g tomate"], method: ["Asar lentamente tomate"] },

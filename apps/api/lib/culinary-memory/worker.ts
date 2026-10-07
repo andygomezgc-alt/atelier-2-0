@@ -1,11 +1,15 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Prisma, prisma } from "@atelier/db";
 import { MemoryKeySchema } from "@atelier/shared";
 import { ZodError } from "zod";
 import { AiBudgetError } from "../ai/budget-policy";
+import { logger } from "../logger";
 import { loadEvidence, correctionsOf } from "./service";
 import { evidenceHash, memoryContext, MIN_TREND_SOURCES, type StoredFact } from "./evidence";
 import { generateMemory, MAX_TRENDS, memoryProviderConfig, type MemoryGenerator } from "./provider";
+import {
+  MEMORY_DISCARD_RETRY_LIMIT, MEMORY_FAILURE_SUSPENSION_THRESHOLD, MEMORY_PROMPT_VERSION, MEMORY_SUPPRESSION_EXPIRY_MS,
+} from "./limits";
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
@@ -15,43 +19,54 @@ const DAILY_INTERVAL = DAY - CRON_SLACK;
 const STALE_RUN = 5 * 60 * 1000;
 const HISTORY_RETENTION = 30 * DAY;
 
-type Failure = { errorCode: string; retryable: boolean };
+type Failure = { errorCode: string; retryable: boolean; deterministic: boolean };
 class MemoryRunSuperseded extends Error {}
+// Cut-off or unparseable replies are provider faults: they must never count against the input.
+const TRUNCATED_REPLY = /^(?:memory_response_incomplete|ai_response_incomplete|ai_response_invalid)$/;
+
+export type MemoryRunStatus = "unconfigured" | "skipped" | "unchanged" | "suppressed" | "busy" | "completed" | "superseded" | "failed";
+
+/** Identifies one deterministic input failure: the same input fails again only under the same model and prompt. */
+export function memoryFailureFingerprint(input: { inputHash: string; model: string; promptVersion: string }): string {
+  return createHash("sha256").update(JSON.stringify([input.inputHash, input.model, input.promptVersion])).digest("hex");
+}
 
 function classifyFailure(error: unknown, providerResponded: boolean, usagePersisted: boolean): Failure {
-  if (providerResponded && !usagePersisted) return { errorCode: "memory_telemetry_failed", retryable: false };
+  if (providerResponded && !usagePersisted) return { errorCode: "memory_telemetry_failed", retryable: false, deterministic: false };
   const message = error instanceof Error ? error.message : "";
-  if (message === "memory_input_limit" || message === "memory_sources_changed") return { errorCode: message, retryable: false };
+  if (message === "memory_input_limit") return { errorCode: message, retryable: false, deterministic: true };
+  if (message === "memory_sources_changed") return { errorCode: message, retryable: false, deterministic: false };
   if (providerResponded) {
-    if (/^(?:memory_sources_invalid|memory_response_incomplete|ai_response_incomplete|ai_response_invalid)$/.test(message) || error instanceof ZodError) {
-      return { errorCode: "memory_output_invalid", retryable: false };
+    if (message === "memory_sources_invalid") return { errorCode: "memory_output_invalid", retryable: false, deterministic: true };
+    if (TRUNCATED_REPLY.test(message) || error instanceof ZodError) {
+      return { errorCode: "memory_output_invalid", retryable: false, deterministic: false };
     }
-    return { errorCode: "memory_post_response_failed", retryable: false };
+    return { errorCode: "memory_post_response_failed", retryable: false, deterministic: false };
   }
   if (error instanceof AiBudgetError || (error instanceof Error && /^ai_(?:budget|daily|creative)_/.test(error.message))) {
-    return { errorCode: "memory_budget_blocked", retryable: false };
+    return { errorCode: "memory_budget_blocked", retryable: false, deterministic: false };
   }
-  if (error instanceof ZodError) return { errorCode: "memory_output_invalid", retryable: false };
+  if (error instanceof ZodError) return { errorCode: "memory_output_invalid", retryable: false, deterministic: false };
 
   if (/^(?:ai_provider_unconfigured|ai_model_configuration_invalid|memory_provider_unconfigured)$/.test(message)) {
-    return { errorCode: "memory_configuration", retryable: false };
+    return { errorCode: "memory_configuration", retryable: false, deterministic: false };
   }
-  if (/^(?:memory_sources_invalid|memory_response_incomplete|ai_response_incomplete|ai_response_invalid)$/.test(message)) {
-    return { errorCode: "memory_output_invalid", retryable: false };
+  if (message === "memory_sources_invalid" || TRUNCATED_REPLY.test(message)) {
+    return { errorCode: "memory_output_invalid", retryable: false, deterministic: message === "memory_sources_invalid" };
   }
   const httpStatus = /^ai_provider_http_(\d{3})$/.exec(message)?.[1];
   if (httpStatus) {
     const status = Number(httpStatus);
     return status === 408 || status === 425 || status === 429 || status >= 500
-      ? { errorCode: "memory_provider_transient", retryable: true }
-      : { errorCode: "memory_provider_rejected", retryable: false };
+      ? { errorCode: "memory_provider_transient", retryable: true, deterministic: false }
+      : { errorCode: "memory_provider_rejected", retryable: false, deterministic: false };
   }
   const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
   if (error instanceof TypeError || error instanceof DOMException && (error.name === "AbortError" || error.name === "TimeoutError") ||
     /^(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND)$/.test(code)) {
-    return { errorCode: "memory_provider_transient", retryable: true };
+    return { errorCode: "memory_provider_transient", retryable: true, deterministic: false };
   }
-  return { errorCode: "memory_generation_failed", retryable: false };
+  return { errorCode: "memory_generation_failed", retryable: false, deterministic: false };
 }
 
 const later = (a: Date | null, b: Date | null) => !a ? b : !b ? a : a > b ? a : b;
@@ -62,7 +77,7 @@ export async function processMemory(
   config = memoryProviderConfig(),
   now = new Date(),
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<MemoryRunStatus> {
   if (!config) return "unconfigured";
   signal?.throwIfAborted();
   const memory = await prisma.culinaryMemory.findUnique({
@@ -100,15 +115,24 @@ export async function processMemory(
   const excluded = new Set([...excludedKeys, ...corrections.map(c => c.key)]);
   const hash = evidenceHash(evidence, memory.restaurant.identityLine, corrections, excludedKeys);
   const snapshot = { restaurantId, enabled: true, version: memory.version, dirtyRevision: memory.dirtyRevision };
-  const resetFailures = memory.lastFailedInputHash && memory.lastFailedInputHash !== hash
-    ? { lastFailedInputHash: null, failureCount: null } : {};
-  const repeatedFailure = memory.lastFailedInputHash === hash && (memory.failureCount ?? 0) >= 2;
-  if (evidence.length < MIN_TREND_SOURCES || hash === memory.inputHash || repeatedFailure || MemoryKeySchema.options.every(key => excluded.has(key))) {
+  const fingerprint = memoryFailureFingerprint({ inputHash: hash, model: config.model, promptVersion: MEMORY_PROMPT_VERSION });
+  const resetFailures = memory.lastFailedInputHash && memory.lastFailedInputHash !== fingerprint
+    ? { lastFailedInputHash: null, failureCount: null, lastFailedAt: null } : {};
+  if (evidence.length < MIN_TREND_SOURCES || hash === memory.inputHash || MemoryKeySchema.options.every(key => excluded.has(key))) {
     await prisma.culinaryMemory.updateMany({
       where: snapshot,
       data: { ...resetFailures, checkedRevision: memory.dirtyRevision, retryAt: null, nextCheckAt: new Date(+now + DAILY_INTERVAL) },
     });
     return "unchanged";
+  }
+  const suppressed = memory.lastFailedInputHash === fingerprint && (memory.failureCount ?? 0) >= MEMORY_FAILURE_SUSPENSION_THRESHOLD &&
+    !!memory.lastFailedAt && +now < +memory.lastFailedAt + MEMORY_SUPPRESSION_EXPIRY_MS;
+  if (suppressed) {
+    // Decided before any claim, so no lock is taken and nothing is paid. Like an unchanged input it is
+    // re-checked daily, without marking the revision checked, so a changed input or the expiry is noticed.
+    logger.warn("culinary_memory_suppressed", { restaurantId, failureCount: memory.failureCount, fingerprint: fingerprint.slice(0, 12) });
+    await prisma.culinaryMemory.updateMany({ where: snapshot, data: { retryAt: null, nextCheckAt: new Date(+now + DAILY_INTERVAL) } });
+    return "suppressed";
   }
 
   const token = randomUUID();
@@ -149,15 +173,24 @@ export async function processMemory(
   });
   if (!claimed) return "busy";
 
-  const discardedSchedule = {
-    lockToken: null, lockExpiresAt: null, lastAttemptAt: memory.lastAttemptAt,
-    cycleStartedAt: memory.cycleStartedAt, retryAt: memory.retryAt, nextCheckAt: now,
+  let providerResponded = false;
+  let usagePersisted = false;
+  // A discarded run releases its claim. A paid discard extends the streak; a streak below the limit retries
+  // promptly without consuming the weekly window, and a streak at the limit uses the regular weekly cadence.
+  const discardSchedule = (paid: boolean) => {
+    const discardStreak = (memory.discardStreak ?? 0) + (paid ? 1 : 0);
+    if (discardStreak < MEMORY_DISCARD_RETRY_LIMIT) {
+      return { lockToken: null, lockExpiresAt: null, lastAttemptAt: memory.lastAttemptAt, cycleStartedAt: memory.cycleStartedAt,
+        retryAt: memory.retryAt, nextCheckAt: now, discardStreak };
+    }
+    return { lockToken: null, lockExpiresAt: null, lastAttemptAt: now, cycleStartedAt, retryAt: null,
+      nextCheckAt: regularNextAt, discardStreak };
   };
   async function rescheduleDiscarded(tx: Prisma.TransactionClient) {
     // Restore this claim's previous cadence, including an already-due retry.
     // Scheduling is the only state we may change after a settings/version edit.
     const released = await tx.culinaryMemory.updateMany({
-      where: { restaurantId, enabled: true, lockToken: token }, data: discardedSchedule,
+      where: { restaurantId, enabled: true, lockToken: token }, data: discardSchedule(providerResponded),
     });
     if (released.count) return;
     // A privacy edit clears the lease. Do not overwrite a new lease or attempt,
@@ -168,11 +201,11 @@ export async function processMemory(
     if (!current?.enabled || current.lockToken !== null) return;
     await tx.culinaryMemory.updateMany({
       where: { restaurantId, enabled: true, version: current.version, lockToken: null,
-        lastAttemptAt: now, cycleStartedAt }, data: discardedSchedule,
+        lastAttemptAt: now, cycleStartedAt }, data: discardSchedule(providerResponded),
     });
   }
 
-  async function supersede(tx: Prisma.TransactionClient, errorCode?: string) {
+  async function supersede(tx: Prisma.TransactionClient, errorCode?: string): Promise<MemoryRunStatus> {
     await rescheduleDiscarded(tx);
     await tx.culinaryMemoryRun.updateMany({
       where: { id: token, status: "running" },
@@ -182,8 +215,6 @@ export async function processMemory(
     return "superseded";
   }
 
-  let providerResponded = false;
-  let usagePersisted = false;
   try {
     signal?.throwIfAborted();
     const result = await generator({
@@ -229,7 +260,7 @@ export async function processMemory(
     signal?.throwIfAborted();
 
     const preparedContext = memoryContext(corrections, learned, excludedKeys);
-    const status = await prisma.$transaction(async tx => {
+    const status = await prisma.$transaction(async (tx): Promise<MemoryRunStatus> => {
       const publish = (revision: number) => tx.culinaryMemory.updateMany({
         where: { ...snapshot, dirtyRevision: revision, lockToken: token },
         data: {
@@ -237,6 +268,8 @@ export async function processMemory(
           inputHash: hash,
           lastFailedInputHash: null,
           failureCount: null,
+          lastFailedAt: null,
+          discardStreak: 0,
           checkedRevision: revision,
           preparedContext,
           preparedRevision: revision,
@@ -281,20 +314,17 @@ export async function processMemory(
     if (error instanceof MemoryRunSuperseded) return await prisma.$transaction(tx => supersede(tx));
     const failure = classifyFailure(error, providerResponded, usagePersisted);
     const discarded = failure.errorCode === "memory_sources_changed";
-    const deterministic = failure.errorCode === "memory_output_invalid" || failure.errorCode === "memory_input_limit";
     try {
-      return await prisma.$transaction(async tx => {
+      return await prisma.$transaction(async (tx): Promise<MemoryRunStatus> => {
         const retryAt = !retryDue && failure.retryable ? new Date(+now + DAILY_INTERVAL) : null;
+        const schedule = discarded ? discardSchedule(providerResponded)
+          : { lockToken: null, lockExpiresAt: null, retryAt, nextCheckAt: retryAt ?? regularNextAt };
         const owned = await tx.culinaryMemory.updateMany({
           where: { restaurantId, enabled: true, lockToken: token },
           data: {
-            lockToken: null,
-            lockExpiresAt: null,
-            retryAt,
-            nextCheckAt: retryAt ?? regularNextAt,
-            ...(discarded ? discardedSchedule : {}),
-            ...(deterministic ? { lastFailedInputHash: hash,
-              failureCount: memory.lastFailedInputHash === hash ? (memory.failureCount ?? 0) + 1 : 1 } : {}),
+            ...schedule,
+            ...(failure.deterministic ? { lastFailedInputHash: fingerprint, lastFailedAt: now,
+              failureCount: memory.lastFailedInputHash === fingerprint ? (memory.failureCount ?? 0) + 1 : 1 } : {}),
           },
         });
         if (!owned.count) return supersede(tx, failure.errorCode);

@@ -508,6 +508,8 @@ model CulinaryMemory {
   inputHash String?
   lastFailedInputHash String?
   failureCount Int?
+  lastFailedAt DateTime?
+  discardStreak Int @default(0)
   preparedContext String? @db.Text
   preparedRevision Int @default(-1)
   preparedVersion Int @default(-1)

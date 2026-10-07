@@ -3,6 +3,7 @@ import type { CulinaryMemory } from "@atelier/db";
 import type { Evidence } from "./evidence";
 import type { MemoryGenerator } from "./provider";
 import { evidenceHash } from "./evidence";
+import { MEMORY_PROMPT_VERSION } from "./limits";
 
 const { db, loadEvidence } = vi.hoisted(() => ({
   db: {
@@ -15,13 +16,15 @@ const { db, loadEvidence } = vi.hoisted(() => ({
 vi.mock("@atelier/db", () => ({ prisma: db, Prisma: { DbNull: "DB_NULL" } }));
 vi.mock("./service", () => ({ loadEvidence, correctionsOf: (value: unknown) => value ?? [] }));
 
-import { maintainMemoryRuns, processMemory } from "./worker";
+import { maintainMemoryRuns, memoryFailureFingerprint, processMemory } from "./worker";
 
 const DAY = 86_400_000;
 const WEEK = 7 * DAY;
 const SLACK = 2 * 60 * 60 * 1000;
 const now = new Date("2026-09-08T05:30:00Z");
 const config = { provider: "fixture", model: "fixture" };
+const failureOf = (inputHash: string) =>
+  memoryFailureFingerprint({ inputHash, model: config.model, promptVersion: MEMORY_PROMPT_VERSION });
 const originalEvidence: Evidence[] = [1, 2, 3].map(n => ({
   id: `recipe-${n}`, hash: `hash-${n}`, duplicateKey: `distinct-${n}`,
   legacyHashes: { approved: `approved-${n}`, in_test: `test-${n}` },
@@ -70,7 +73,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   state = {
     restaurantId: "r1", enabled: true, version: 1, learned: [], corrections: [], excludedKeys: [],
-    inputHash: null, lastFailedInputHash: null, failureCount: null,
+    inputHash: null, lastFailedInputHash: null, failureCount: null, lastFailedAt: null, discardStreak: 0,
     preparedContext: null, preparedRevision: -1, preparedVersion: -1,
     dirtyRevision: 2, checkedRevision: 1, nextCheckAt: now, lastAttemptAt: null,
     cycleStartedAt: null, retryAt: null, updatedAt: null, lockToken: null, lockExpiresAt: null,
@@ -254,9 +257,9 @@ describe("A9 deterministic input failures", () => {
     });
     for (const [cycle, count] of [[0, 1], [1, 2]]) {
       expect(await processMemory("r1", generate, config, new Date(+now + cycle! * WEEK))).toBe("failed");
-      expect(state).toMatchObject({ lastFailedInputHash: hash, failureCount: count, inputHash: null, learned: [] });
+      expect(state).toMatchObject({ lastFailedInputHash: failureOf(hash), failureCount: count, inputHash: null, learned: [] });
     }
-    expect(["unchanged", "skipped"]).toContain(await processMemory("r1", generate, config, new Date(+now + 2 * WEEK)));
+    expect(await processMemory("r1", generate, config, new Date(+now + 2 * WEEK))).toBe("suppressed");
     expect(generate).toHaveBeenCalledTimes(2);
     expect(db.culinaryMemoryRun.create).toHaveBeenCalledTimes(2);
 
@@ -270,20 +273,22 @@ describe("A9 deterministic input failures", () => {
   });
 
   it("starts a fresh failure count when the input changes before it succeeds", async () => {
-    state.lastFailedInputHash = evidenceHash(sources, null, [], []);
+    state.lastFailedInputHash = failureOf(evidenceHash(sources, null, [], []));
     state.failureCount = 2;
+    state.lastFailedAt = new Date(+now - DAY);
     sources = sources.map((e, index) => index ? e : { ...e, hash: "different-input" });
     const generate = vi.fn<MemoryGenerator>().mockResolvedValue({ trends: [], rejected: 1 });
     expect(await processMemory("r1", generate, config, now)).toBe("failed");
-    expect(state).toMatchObject({ lastFailedInputHash: evidenceHash(sources, null, [], []), failureCount: 1 });
+    expect(state).toMatchObject({ lastFailedInputHash: failureOf(evidenceHash(sources, null, [], [])), failureCount: 1 });
   });
 
   it("does not bypass identical-input suppression for a noisy dirty revision", async () => {
-    state.lastFailedInputHash = evidenceHash(sources, null, [], []);
+    state.lastFailedInputHash = failureOf(evidenceHash(sources, null, [], []));
     state.failureCount = 2;
+    state.lastFailedAt = new Date(+now - DAY);
     state.dirtyRevision += 10;
     const generate = paidSuccess();
-    expect(["unchanged", "skipped"]).toContain(await processMemory("r1", generate, config, now));
+    expect(await processMemory("r1", generate, config, now)).toBe("suppressed");
     expect(generate).not.toHaveBeenCalled();
     expect(db.culinaryMemoryRun.create).not.toHaveBeenCalled();
   });

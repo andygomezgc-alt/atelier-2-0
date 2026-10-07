@@ -31,7 +31,7 @@ beforeEach(() => {
   vi.stubEnv("AI_GLM_MODEL", "");
   memory = {
     restaurantId: "mine", enabled: false, version: 0, learned: [], corrections: [], excludedKeys: [],
-    inputHash: null, lastFailedInputHash: null, failureCount: null,
+    inputHash: null, lastFailedInputHash: null, failureCount: null, lastFailedAt: null, discardStreak: 0,
     preparedContext: null, preparedRevision: -1, preparedVersion: -1,
     dirtyRevision: 0, checkedRevision: -1, nextCheckAt: new Date(), lastAttemptAt: null,
     cycleStartedAt: null, retryAt: null, updatedAt: null, lockToken: null, lockExpiresAt: null,

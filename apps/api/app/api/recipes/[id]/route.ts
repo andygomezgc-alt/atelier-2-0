@@ -172,11 +172,11 @@ export async function PATCH(
           select: { productId: true, position: true, rawText: true, qty: true, unit: true,
             pezzatura: true, mermaOverridePct: true, pesoCalculoG: true },
         });
-        const textFields = ["productId", "position", "rawText", "unit", "pezzatura"] as const;
+        const strictlyComparedFields = ["productId", "position", "rawText", "unit", "pezzatura"] as const;
         const numericFields = ["qty", "mermaOverridePct", "pesoCalculoG"] as const;
         const unchanged = rows.length === currentRows.length && rows.every((row, index) => {
           const current = currentRows[index]!;
-          return textFields.every(field => row[field] === current[field]) &&
+          return strictlyComparedFields.every(field => row[field] === current[field]) &&
             numericFields.every(field => row[field] === (current[field] === null ? null : Number(current[field])));
         });
         if (!unchanged) {

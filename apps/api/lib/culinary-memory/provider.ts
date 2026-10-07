@@ -3,6 +3,7 @@ import { aiConfig, providerConfigured } from "../ai/config";
 import { generateGlmJson } from "../ai/glm";
 import { MemoryKeySchema, type MemoryPreference } from "@atelier/shared";
 import { MIN_TREND_SOURCES, type Evidence } from "./evidence";
+import { MEMORY_PAYLOAD_CHAR_LIMIT } from "./limits";
 import { logger } from "../logger";
 
 export type MemoryUsage = { inputTokens: number; outputTokens: number; reasoningTokens: number };
@@ -61,11 +62,11 @@ function prepareMemoryPayload(input: MemoryInput) {
   })).sort((a, b) => a.time - b.time || b.ref - a.ref);
   let payload = serialize();
   for (const oldest of oldestFirst) {
-    if (payload.length <= 20_000 || recipes.length <= MIN_TREND_SOURCES) break;
+    if (payload.length <= MEMORY_PAYLOAD_CHAR_LIMIT || recipes.length <= MIN_TREND_SOURCES) break;
     recipes.splice(recipes.findIndex(recipe => recipe.ref === oldest.ref), 1);
     payload = serialize();
   }
-  if (payload.length > 20_000) throw new Error("memory_input_limit");
+  if (payload.length > MEMORY_PAYLOAD_CHAR_LIMIT) throw new Error("memory_input_limit");
   return { payload, refs: new Set(recipes.map(recipe => recipe.ref)) };
 }
 
