@@ -175,19 +175,24 @@ export async function processMemory(
 
   let providerResponded = false;
   let usagePersisted = false;
-  // A discarded run releases its claim. A paid discard extends the streak; a streak below the limit retries
-  // promptly without consuming the weekly window, and a streak at the limit uses the regular weekly cadence.
+  // Releases a discarded run's claim. Only a paid discard extends the streak. A paid discard that reaches
+  // MEMORY_DISCARD_RETRY_LIMIT takes the regular weekly cadence; every other discard restores the previous
+  // cadence, including an already-due retry, with nextCheckAt = now. An unpaid discard keeps the streak.
+  const restorePreviousCadence = (discardStreak: number) => ({
+    lockToken: null, lockExpiresAt: null, lastAttemptAt: memory.lastAttemptAt, cycleStartedAt: memory.cycleStartedAt,
+    retryAt: memory.retryAt, nextCheckAt: now, discardStreak,
+  });
   const discardSchedule = (paid: boolean) => {
-    const discardStreak = (memory.discardStreak ?? 0) + (paid ? 1 : 0);
-    if (discardStreak < MEMORY_DISCARD_RETRY_LIMIT) {
-      return { lockToken: null, lockExpiresAt: null, lastAttemptAt: memory.lastAttemptAt, cycleStartedAt: memory.cycleStartedAt,
-        retryAt: memory.retryAt, nextCheckAt: now, discardStreak };
-    }
-    return { lockToken: null, lockExpiresAt: null, lastAttemptAt: now, cycleStartedAt, retryAt: null,
-      nextCheckAt: regularNextAt, discardStreak };
+    if (!paid) return restorePreviousCadence(memory.discardStreak ?? 0);
+    const discardStreak = (memory.discardStreak ?? 0) + 1;
+    if (discardStreak < MEMORY_DISCARD_RETRY_LIMIT) return restorePreviousCadence(discardStreak);
+    return {
+      lockToken: null, lockExpiresAt: null, lastAttemptAt: now, cycleStartedAt, retryAt: null,
+      nextCheckAt: regularNextAt, discardStreak,
+    };
   };
+  // Releases a superseded run's claim with discardSchedule. A privacy edit may already have cleared the lease.
   async function rescheduleDiscarded(tx: Prisma.TransactionClient) {
-    // Restore this claim's previous cadence, including an already-due retry.
     // Scheduling is the only state we may change after a settings/version edit.
     const released = await tx.culinaryMemory.updateMany({
       where: { restaurantId, enabled: true, lockToken: token }, data: discardSchedule(providerResponded),
@@ -318,7 +323,7 @@ export async function processMemory(
       return await prisma.$transaction(async (tx): Promise<MemoryRunStatus> => {
         const retryAt = !retryDue && failure.retryable ? new Date(+now + DAILY_INTERVAL) : null;
         const schedule = discarded ? discardSchedule(providerResponded)
-          : { lockToken: null, lockExpiresAt: null, retryAt, nextCheckAt: retryAt ?? regularNextAt };
+          : { lockToken: null, lockExpiresAt: null, retryAt, nextCheckAt: retryAt ?? regularNextAt, discardStreak: 0 };
         const owned = await tx.culinaryMemory.updateMany({
           where: { restaurantId, enabled: true, lockToken: token },
           data: {
@@ -374,6 +379,7 @@ export async function maintainMemoryRuns(now = new Date(), deadline = Number.POS
           lockExpiresAt: null,
           retryAt,
           nextCheckAt: retryAt ?? new Date(+run.createdAt + WEEKLY_INTERVAL),
+          discardStreak: 0,
         },
       });
       const failed = await tx.culinaryMemoryRun.updateMany({
