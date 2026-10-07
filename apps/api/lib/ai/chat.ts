@@ -10,7 +10,11 @@ import { releaseGeneration, settleGeneration, settleInterruptedGeneration, type 
 import { logger } from "../logger";
 
 export type ChatEvent = { type: "delta"; text: string } | { type: "usage"; usage: AiUsage };
-type ChatInput = { model?: ChatModelSelection; system: ReturnType<typeof buildSystemBlocks>; messages: Msg[]; signal: AbortSignal; reservation: Reservation; userId?: string };
+type ChatInput = {
+  model?: ChatModelSelection; system: ReturnType<typeof buildSystemBlocks>; messages: Msg[];
+  signal: AbortSignal; reservation: Reservation; userId?: string;
+  deadlineAt?: number; inputCeiling?: number;
+};
 
 export type ChatErrorCode = Extract<ApiErrorCode,
   "ai_provider_failed" | "ai_rate_limited" | "ai_timeout" | "ai_response_blocked" | "chat_refused" | "chat_response_incomplete" | "chat_context_too_long">;
@@ -141,13 +145,18 @@ export async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator
  * `final` exact usage; `input` exact input/cache of a started stream (output
  * unknown); `nothingBilled` when the provider definitively generated nothing.
  */
-type Billing = { final?: AiUsage; input?: AiUsage; nothingBilled?: boolean };
+type Billing = { final?: AiUsage; input?: AiUsage; nothingBilled?: boolean; inputCeiling?: number };
 
 async function closeReservation(reservation: Reservation, billing: Billing): Promise<void> {
   if (billing.final) await settleGeneration(reservation, billing.final);
   else if (billing.nothingBilled) await releaseGeneration(reservation);
   else if (billing.input) await settleInterruptedGeneration(reservation, billing.input);
-  // Nothing known (e.g. aborted before any response): keep the hold for reconcile-ai-holds.
+  else if (billing.inputCeiling !== undefined) {
+    // A managed HTTP turn must close even when dispatch produced no usage.
+    // Never refund uncertain paid work: use its reserved input/output ceilings.
+    await settleInterruptedGeneration(reservation, { ...emptyUsage(), inputTokens: billing.inputCeiling });
+  }
+  // Unmanaged diagnostic callers retain A4's hold-for-reconciliation behavior.
 }
 
 /**
@@ -161,11 +170,12 @@ function anthropicGeneratedNothing(err: unknown): boolean {
 
 export async function* streamChat(input: ChatInput): AsyncGenerator<ChatEvent> {
   // prepare owns the hold until run; all pre-provider checks must also refund it.
-  const billing: Billing = { nothingBilled: true };
+  const billing: Billing = { nothingBilled: true, inputCeiling: input.inputCeiling };
   try {
     const config = chatConfig(input.model);
     providerKey(config.provider);
     input.signal.throwIfAborted();
+    if (input.deadlineAt !== undefined && Date.now() >= input.deadlineAt) throw new ChatError("ai_timeout");
     const messages = boundedChatHistory(input.messages);
     yield* streamChatProvider({ ...input, messages }, billing);
   } finally { await closeReservation(input.reservation, billing); }
@@ -173,14 +183,14 @@ export async function* streamChat(input: ChatInput): AsyncGenerator<ChatEvent> {
 
 async function* streamChatProvider(input: ChatInput, billing: Billing): AsyncGenerator<ChatEvent> {
   const config = chatConfig(input.model);
-  // Our own deadline, kept apart from the client's signal: a client abort keeps
-  // its raw AbortError so the route treats it as a disconnect, not a failure.
-  const deadline = AbortSignal.timeout(config.timeoutMs);
+  // Managed turns already carry their request-start deadline in input.signal.
+  // Keep the legacy adapter deadline only for callers without that lifecycle.
+  const deadline = input.deadlineAt === undefined ? AbortSignal.timeout(config.timeoutMs) : undefined;
   try {
-    yield* streamChatUpstream(input, AbortSignal.any([input.signal, deadline]), billing);
+    yield* streamChatUpstream(input, deadline ? AbortSignal.any([input.signal, deadline]) : input.signal, billing);
   } catch (err) {
     if (input.signal.aborted) throw err;
-    if (deadline.aborted) throw new ChatError("ai_timeout", { cause: err });
+    if (deadline?.aborted) throw new ChatError("ai_timeout", { cause: err });
     if (err instanceof ChatError) throw err;
     if (err instanceof APIError) throw anthropicChatError(err, config.model);
     throw new ChatError("ai_provider_failed", { cause: err });
@@ -193,7 +203,8 @@ async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, billin
   const messages = boundedChatHistory(input.messages);
   let text = "";
   if (config.provider === "anthropic") {
-    const client = new Anthropic({ apiKey: key, maxRetries: 0, timeout: config.timeoutMs });
+    const timeout = input.deadlineAt === undefined ? config.timeoutMs : Math.max(1, input.deadlineAt - Date.now());
+    const client = new Anthropic({ apiKey: key, maxRetries: 0, timeout });
     const messageBlocks = buildMessageBlocks(messages);
     signal.throwIfAborted();
     billing.nothingBilled = false; // From dispatch onward, preserve A4's uncertainty rules.

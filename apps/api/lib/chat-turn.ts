@@ -4,6 +4,16 @@ import { prisma } from "@atelier/db";
 export type ChatTurn = { conversationId: string; generationId: string; userMessageId: string };
 export type ClaimedChatTurn = Pick<ChatTurn, "conversationId" | "generationId"> & { userMessageId?: string };
 const headers = { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform" };
+export const CHAT_HEARTBEAT_MS = 8_000;
+// The messages route runs for at most 300 seconds; allow 30 seconds for cleanup.
+const STALE_LEASE_MS = (300 + 30) * 1_000;
+
+export async function ownsChatTurn(turn: Pick<ChatTurn, "conversationId" | "generationId">): Promise<boolean> {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: turn.conversationId }, select: { generationId: true },
+  });
+  return conversation?.generationId === turn.generationId;
+}
 
 export async function releaseChatTurn(turn: Pick<ChatTurn, "conversationId" | "generationId">) {
   await prisma.conversation.updateMany({ where: { id: turn.conversationId, generationId: turn.generationId }, data: { generationId: null, generationStartedAt: null } });
@@ -14,7 +24,7 @@ export async function claimChatTurn(conversationId: string, restaurantId: string
   const generationId = randomUUID();
   const claim = await prisma.conversation.updateMany({ where: {
     id: conversationId, restaurantId,
-    OR: [{ generationId: null }, { generationStartedAt: { lt: new Date(Date.now() - 10 * 60_000) } }],
+    OR: [{ generationId: null }, { generationStartedAt: { lt: new Date(Date.now() - STALE_LEASE_MS) } }],
   }, data: { generationId, generationStartedAt: new Date() } });
   if (!claim.count) return Response.json({ error: "chat_in_progress", code: "chat_in_progress" }, { status: 409, headers: { "Retry-After": "5" } });
   const turn = { conversationId, generationId };

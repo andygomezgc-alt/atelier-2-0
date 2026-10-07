@@ -10,13 +10,16 @@ import { recordAiTokens } from "@/lib/ai-quota";
 import { chatMemory } from "@/lib/culinary-memory/service";
 import { logger } from "@/lib/logger";
 import type { AuthedContext } from "@/lib/permissions-guard";
-import { claimChatTurn, saveChatTurn, finishChatTurn, releaseChatTurn, type ChatTurn, type ClaimedChatTurn } from "@/lib/chat-turn";
+import { CHAT_HEARTBEAT_MS, claimChatTurn, saveChatTurn, finishChatTurn, releaseChatTurn, ownsChatTurn, type ChatTurn, type ClaimedChatTurn } from "@/lib/chat-turn";
 
 interface PrepareChatTurnInput {
   conversationId: string;
   user: AuthedContext;
   message: PostMessageRequest;
   signal: AbortSignal;
+  generationSignal?: AbortSignal;
+  startedAt?: number;
+  deadlineAt?: number;
 }
 
 export interface PreparedChatTurn {
@@ -28,6 +31,7 @@ export interface PreparedChatTurn {
   turn?: ChatTurn;
   userId: string;
   startedAt: number;
+  deadlineAt?: number;
 }
 
 interface TurnUsage {
@@ -38,11 +42,16 @@ interface TurnUsage {
 
 interface TurnDoneEvent extends TurnUsage { type: "done" }
 interface TurnErrorEvent { type: "error"; code: StreamErrorCode; message: string; retryAfter?: number }
-export type ChatTurnEvent = { type: "delta"; text: string } | TurnDoneEvent | TurnErrorEvent;
+export type ChatTurnEvent = { type: "delta"; text: string } | TurnDoneEvent | TurnErrorEvent | { type: "stopped" };
 
 /** A refusal/replay is an HTTP response; a prepared turn owns a hold and optional lease. */
 export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<PreparedChatTurn | Response> {
   const { conversationId, user, message, signal } = input;
+  const startedAt = input.startedAt ?? Date.now();
+  const checkDeadline = () => {
+    input.generationSignal?.throwIfAborted();
+    if (input.deadlineAt !== undefined && Date.now() >= input.deadlineAt) throw new ChatError("ai_timeout");
+  };
   const isPreview = conversationId === "preview";
   const model = message.model ?? "daily";
   let config: ReturnType<typeof chatConfig>;
@@ -64,6 +73,7 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
   let reservation: Reservation | undefined;
   try {
     signal.throwIfAborted();
+    checkDeadline();
     let pinnedIdeaText: string | null = null;
     if (!isPreview) {
       const conversation = await prisma.conversation.findUnique({
@@ -87,13 +97,16 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
 
     if (isPreview) {
       restaurant = { name: "Tu cocina", identityLine: null };
-      const history: Msg[] = [...(message.history ?? [])];
+      const rawHistory = message.history ?? [];
+      const history: Msg[] = rawHistory.slice(-20);
+      let total = rawHistory.length;
       const last = history.at(-1);
       if (!last || last.role !== "user" || last.content !== message.content) {
         history.push({ role: "user", content: message.content });
+        total++;
       }
       // Count after appending, so each client window shares the saved-chat alignment.
-      messages = stableHistoryWindow(history, history.length);
+      messages = stableHistoryWindow(history, total);
     } else {
       const [r, history, total, recent, notes, preparedMemory] = await Promise.all([
         prisma.restaurant.findUnique({
@@ -131,34 +144,73 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
 
     const system = buildSystemBlocks(restaurant, recentRecipes, pinnedIdeaText, culinaryMemory);
     signal.throwIfAborted();
+    checkDeadline();
     // Estimate the exact prepared payload, but never persist a refused turn.
     reservation = await reserveGeneration(config, textInputCeiling({ system, messages }), user.userId);
-    signal.throwIfAborted();
+    // A reserved turn belongs to the server, not to the HTTP connection.
+    checkDeadline();
     // The claimed lease remains available to catch even if persistence fails.
     const turn = lease ? await saveChatTurn(lease, message.content, message.clientMessageId) : undefined;
-    signal.throwIfAborted();
-    return { model, config, system, messages, reservation, turn, userId: user.userId, startedAt: Date.now() };
+    checkDeadline();
+    return { model, config, system, messages, reservation, turn, userId: user.userId, startedAt, deadlineAt: input.deadlineAt };
   } catch (error) {
     // Independent cleanup: a failed refund must not strand the conversation lease.
     if (reservation) await releaseGeneration(reservation).catch(() => undefined);
     if (lease) await releaseChatTurn(lease).catch(() => undefined);
     const refusal = budgetErrorResponse(error);
     if (refusal) return refusal;
+    if (error instanceof ChatError && error.code === "ai_timeout") {
+      return Response.json({ error: error.code, code: error.code }, { status: 503 });
+    }
+    if ((error instanceof Error && error.name === "AbortError") || (!reservation && signal.aborted)) {
+      return Response.json({ error: "chat_response_incomplete", code: "chat_response_incomplete" }, { status: 499 });
+    }
     throw error;
   }
 }
 
 /** The adapter owns A4 billing from dispatch; this service owns persistence and the lease. */
 export async function* runChatTurn(prepared: PreparedChatTurn, signal: AbortSignal): AsyncGenerator<ChatTurnEvent> {
-  const { model, config, system, messages, reservation, turn, userId, startedAt } = prepared;
+  const { model, config, system, messages, reservation, turn, userId, startedAt, deadlineAt } = prepared;
   let assistantText = "";
   let inputTokens: number | undefined;
   let outputTokens: number | undefined;
   let cachedTokens: number | undefined;
   let aborted = false;
   let errored = false;
+  let stopped = false;
+  let adapterStarted = false;
+  let ownershipFailure: unknown;
+  let ownershipCheck: Promise<void> | undefined;
+  const stopController = new AbortController();
+  const providerSignal = AbortSignal.any([signal, stopController.signal]);
+  const checkOwnership = (): Promise<void> => {
+    if (!turn || stopped || ownershipFailure) return Promise.resolve();
+    if (ownershipCheck) return ownershipCheck;
+    ownershipCheck = ownsChatTurn(turn).then(owns => {
+      if (!owns) {
+        stopped = true;
+        stopController.abort(new DOMException("Chat stopped", "AbortError"));
+      }
+    }).catch(error => {
+      // Ownership uncertainty is a failure, not evidence of a human Stop.
+      ownershipFailure = error;
+      stopController.abort(new ChatError("ai_provider_failed", { cause: error }));
+    }).finally(() => { ownershipCheck = undefined; });
+    return ownershipCheck;
+  };
+  // This monitor survives SSE cancellation and also checks an idle provider.
+  const heartbeat = turn ? setInterval(() => { void checkOwnership(); }, CHAT_HEARTBEAT_MS) : undefined;
   try {
-    for await (const event of streamChat({ model, system, messages, signal, reservation, userId })) {
+    await checkOwnership();
+    if (stopped) { yield { type: "stopped" }; return; }
+    providerSignal.throwIfAborted();
+    if (deadlineAt !== undefined && Date.now() >= deadlineAt) throw new ChatError("ai_timeout");
+    adapterStarted = true;
+    for await (const event of streamChat({
+      model, system, messages, signal: providerSignal, reservation, userId, deadlineAt,
+      inputCeiling: textInputCeiling({ system, messages }),
+    })) {
       if (event.type === "usage") {
         inputTokens = event.usage.inputTokens;
         outputTokens = event.usage.outputTokens;
@@ -168,29 +220,40 @@ export async function* runChatTurn(prepared: PreparedChatTurn, signal: AbortSign
         yield event;
       }
     }
+    // No heartbeat may mistake finish's successful lease release for Stop.
+    clearInterval(heartbeat);
+    await checkOwnership();
+    if (stopped) { yield { type: "stopped" }; return; }
+    if (ownershipFailure) throw ownershipFailure;
     if (!assistantText.trim()) throw new ChatError("chat_response_incomplete");
     if (turn) await finishChatTurn(turn, assistantText, config.model, {
       inputTokens, outputTokens, cachedTokens, latencyMs: Date.now() - startedAt,
     });
     yield { type: "done", inputTokens, outputTokens, cachedTokens };
   } catch (err) {
-    if (signal.aborted) {
+    if (stopped || (err instanceof Error && err.message === "chat_generation_expired")) {
       aborted = true;
+      yield { type: "stopped" };
     } else {
       errored = true;
-      const { code, retryAfter } = streamErrorCode(err);
-      const cause = err instanceof Error && err.cause !== undefined ? err.cause : err;
+      const failure = ownershipFailure ?? (signal.aborted ? signal.reason : err);
+      const { code, retryAfter } = streamErrorCode(failure);
+      const cause = failure instanceof Error && failure.cause !== undefined ? failure.cause : failure;
       (code === "ai_provider_failed" || code === "ai_timeout" ? logger.error : logger.warn)("ai_stream_error", {
         provider: config.provider, modelId: config.model, model, code, retryAfter,
         detail: cause instanceof Error ? `${cause.name}: ${cause.message}`.slice(0, 500) : undefined,
-        ...(code === "ai_provider_failed" || code === "ai_timeout" ? { error: err } : {}),
+        ...(code === "ai_provider_failed" || code === "ai_timeout" ? { error: failure } : {}),
       });
       // Installed apps use this localized fallback; never expose provider text.
       const message = t(STREAM_ERROR_KEYS[code], await userLanguage(userId));
       yield { type: "error", code, message, retryAfter };
     }
   } finally {
-    aborted ||= signal.aborted;
+    clearInterval(heartbeat);
+    await ownershipCheck;
+    aborted ||= providerSignal.aborted;
+    // Before adapter dispatch the service still owns the prepared hold.
+    if (!adapterStarted) await releaseGeneration(reservation).catch(() => undefined);
     if (turn) await releaseChatTurn(turn).catch(() => undefined);
     console.log(JSON.stringify({
       evt: "ai_message", provider: config.provider, modelId: config.model, model,

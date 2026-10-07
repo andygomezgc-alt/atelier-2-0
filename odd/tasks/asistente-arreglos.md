@@ -56,7 +56,7 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
 - [x] A3 — errores honestos en el móvil
 - [x] A4 — reservas de presupuesto
 - [x] A5 — servicio de turno
-- [ ] A6 — respuesta que sobrevive y Detener (servidor)
+- [x] A6 — respuesta que sobrevive y Detener (servidor)
 - [ ] A7 — observabilidad
 - [ ] A8 — datos del restaurante en el prompt
 - [ ] A9 — worker de memoria
@@ -130,3 +130,5 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
   - RED observado por el padre: 42 / 124 y luego 12 fallos del reordenamiento; GREEN api 937/937 y tsc OK; móvil 245/245; `git diff --check` OK. Nota: la sesión anterior se cortó con Codex a mitad de A5; un trabajo zombi del companion se marcó cancelado a mano.
   - Commit `205db46`. RDD sobre 50f7177..205db46 (A4b+A5, 13 archivos, 1491 líneas, riesgo medio): Andy concedió; lente de fiabilidad **aprobada**, acuse hecho (`review-bec93d03902a5003`). Frontera revisada: `205db46`.
   - Avisos no bloqueantes, se resuelven en **A6** (que rehace el manejo de cortes): los chequeos de desconexión dentro de `prepareChatTurn` no tienen tests, y un corte justo después de guardar el mensaje relanza el AbortError por la ruta en vez de cerrar limpio; el preview ya no recorta `history` a 20 antes de calcular el techo de la reserva (solo la infla).
+- **A6** (Codex gpt-6.1-sol xhigh, dos pasos). La generación es una promesa propia registrada con `after()`: una desconexión solo deja de escribir en el SSE; la respuesta se guarda y la facturación se cierra igual. Plazo desde el inicio del pedido (`maxDuration` − 15 s = 285 s) y arriendo viejo a los 330 s (antes 10 min). `POST /api/conversations/[id]/messages/stop` (capture_idea, mismo restaurante, autor o admin, idempotente) libera el `generationId`; la generación lo comprueba en cada latido y antes de guardar, corta el proveedor, no guarda y emite `{type:"stopped"}`. La preparación ya no deja escapar AbortError. Preview: historial acotado a 20 entradas antes de la ventana. Turnos gestionados sin uso conocido se cierran al techo de la reserva (nunca subcontar) en vez de quedar retenidos.
+  - RED observado por el padre: 68 / 67 (dos grupos fallaban por el arnés de tests y Codex los corrigió antes de implementar); un test de preview tenía un desfase de uno en el fixture y se corrigió. GREEN: api 975/975 y tsc OK; móvil 245/245; `git diff --check` OK.

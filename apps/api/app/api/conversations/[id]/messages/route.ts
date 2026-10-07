@@ -1,8 +1,11 @@
-import { NextRequest } from "next/server";
+import { after, NextRequest } from "next/server";
 import { prisma } from "@atelier/db";
 import { PostMessageRequestSchema, can } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { prepareChatTurn, runChatTurn } from "@/lib/chat-turn-service";
+import { CHAT_HEARTBEAT_MS } from "@/lib/chat-turn";
+import { ChatError } from "@/lib/ai/chat";
+import { logger } from "@/lib/logger";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -42,6 +45,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const startedAt = Date.now();
+  // Leave fifteen seconds for persistence, billing and fenced lease cleanup.
+  const deadlineAt = startedAt + (maxDuration - 15) * 1_000;
   const { id: conversationId } = await params;
   const isPreview = conversationId === "preview";
   const ctx = isPreview
@@ -58,39 +64,54 @@ export async function POST(
   if (!parse.success)
     return new Response(JSON.stringify({ error: parse.error.flatten() }), { status: 400 });
 
-  const downstream = new AbortController();
-  const signal = AbortSignal.any([req.signal, downstream.signal]);
-  const prepared = await prepareChatTurn({ conversationId, user: ctx, message: parse.data, signal });
-  if (prepared instanceof Response) return prepared;
+  const generation = new AbortController();
+  const deadline = setTimeout(() => generation.abort(new ChatError("ai_timeout")), Math.max(0, deadlineAt - Date.now()));
+  let prepared: Awaited<ReturnType<typeof prepareChatTurn>>;
+  try {
+    prepared = await prepareChatTurn({
+      conversationId, user: ctx, message: parse.data, signal: req.signal,
+      generationSignal: generation.signal, startedAt, deadlineAt,
+    });
+  } catch (error) {
+    clearTimeout(deadline);
+    logger.error("ai_turn_preparation_failed", { error });
+    return Response.json({ error: "ai_provider_failed", code: "ai_provider_failed" }, { status: 503 });
+  }
+  if (prepared instanceof Response) { clearTimeout(deadline); return prepared; }
 
-  // HTTP owns transport only; the service owns generation, persistence and cleanup.
+  // HTTP mirrors one independently running promise; it never owns cancellation.
+  let connected = !req.signal.aborted;
+  const disconnect = () => { connected = false; };
+  req.signal.addEventListener("abort", disconnect, { once: true });
+  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+  const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
-    cancel() { downstream.abort(); },
-    async start(controller) {
-      const encoder = new TextEncoder();
-      const heartbeatInterval = setInterval(() => {
-        if (signal.aborted) return;
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "heartbeat", ts: Date.now() })}\n\n`));
-        } catch { /* The client disconnected; finally stops the heartbeat. */ }
-      }, 8_000);
-      try {
-        for await (const event of runChatTurn(prepared, signal)) {
-          if (event.type === "done" || event.type === "error") clearInterval(heartbeatInterval);
-          if (signal.aborted) break;
-          try {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-          } catch {
-            downstream.abort();
-            break;
-          }
-        }
-      } finally {
-        clearInterval(heartbeatInterval);
-        try { controller.close(); } catch { /* The stream was already cancelled. */ }
-      }
-    },
+    start(output) { controller = output; },
+    cancel: disconnect,
   });
+  const mirror = (event: unknown) => {
+    if (!connected || !controller) return;
+    try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)); }
+    catch { disconnect(); } // A closed transport must never stop the generator.
+  };
+  const heartbeat = setInterval(() => mirror({ type: "heartbeat", ts: Date.now() }), CHAT_HEARTBEAT_MS);
+  const completion = (async () => {
+    try {
+      for await (const event of runChatTurn(prepared, generation.signal)) mirror(event);
+    } finally {
+      clearInterval(heartbeat); clearTimeout(deadline);
+      req.signal.removeEventListener("abort", disconnect);
+      try { controller?.close(); } catch { /* The response was already cancelled. */ }
+    }
+  })();
+  try { after(completion); }
+  catch (error) {
+    // A host without waitUntil cannot safely dispatch an untracked generation.
+    generation.abort(new ChatError("ai_provider_failed", { cause: error }));
+    await completion;
+    logger.error("ai_background_registration_failed", { error });
+    return Response.json({ error: "ai_provider_failed", code: "ai_provider_failed" }, { status: 503 });
+  }
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",

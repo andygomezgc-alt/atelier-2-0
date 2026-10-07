@@ -9,7 +9,7 @@ import { logger } from "@/lib/logger";
 import { inspect } from "node:util";
 
 // Mocks elevados (el factory de vi.mock se iza sobre los consts).
-const { db, guard, authContext, quota, budget, anthro, streamMock, memoryChat, buildSystem, PrismaClientKnownRequestError } = vi.hoisted(() => {
+const { db, guard, authContext, quota, budget, anthro, streamMock, memoryChat, buildSystem, historyWindow, afterMock, PrismaClientKnownRequestError } = vi.hoisted(() => {
   const db = {
     conversation: { findUnique: vi.fn(), updateMany: vi.fn() },
     message: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
@@ -65,10 +65,14 @@ const { db, guard, authContext, quota, budget, anthro, streamMock, memoryChat, b
     streamMock,
     memoryChat: vi.fn(),
     buildSystem: vi.fn(() => [{ type: "text", text: "sys" }]),
+    historyWindow: vi.fn(), afterMock: vi.fn(),
     PrismaClientKnownRequestError,
   };
 });
 
+vi.mock("next/server", async importOriginal => ({
+  ...(await importOriginal<typeof import("next/server")>()), after: afterMock,
+}));
 vi.mock("@atelier/db", () => ({
   prisma: db,
   Prisma: { PrismaClientKnownRequestError },
@@ -95,11 +99,11 @@ vi.mock("@/lib/anthropic", async () => {
     MODEL_IDS: { haiku: "h", sonnet: "s", opus: "o" },
   };
 });
-vi.mock("@/lib/ai/chat", async () => ({
+vi.mock("@/lib/ai/chat", async () => {
   // Keep history validation and typed errors real; only the provider is stubbed.
-  ...(await vi.importActual<typeof import("@/lib/ai/chat")>("@/lib/ai/chat")),
-  streamChat: streamMock,
-}));
+  const actual = await vi.importActual<typeof import("@/lib/ai/chat")>("@/lib/ai/chat");
+  return { ...actual, streamChat: streamMock, stableHistoryWindow: historyWindow };
+});
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 
@@ -139,11 +143,15 @@ function expectReleasedLease() {
   });
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.stubEnv("GEMINI_API_KEY", "test-gemini");
   vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic");
   const stored: Array<Record<string, any>> = [];
-  db.conversation.updateMany.mockReset().mockResolvedValue({ count: 1 });
+  let generationId: string | null = null;
+  db.conversation.updateMany.mockReset().mockImplementation(async ({ data }) => {
+    generationId = data.generationId;
+    return { count: 1 };
+  });
   db.$transaction.mockReset().mockImplementation(async cb => cb(db));
   db.conversation.findUnique.mockReset();
   db.message.create.mockReset().mockImplementation(async ({ data }) => {
@@ -164,6 +172,12 @@ beforeEach(() => {
   db.user.findUnique.mockReset().mockResolvedValue({ languagePref: "es" });
   memoryChat.mockReset().mockResolvedValue(null);
   buildSystem.mockReset().mockReturnValue([{ type: "text", text: "sys" }]);
+  // restoreAllMocks clears implementations installed after vi.fn() creation.
+  const actualChat = await vi.importActual<typeof import("@/lib/ai/chat")>("@/lib/ai/chat");
+  historyWindow.mockReset().mockImplementation(actualChat.stableHistoryWindow);
+  afterMock.mockReset().mockImplementation((task: Promise<unknown> | (() => unknown)) => {
+    void Promise.resolve().then(() => typeof task === "function" ? task() : task).catch(() => undefined);
+  });
   authContext.restaurantId = "r1";
   authContext.role = "chef_executive";
   guard.requireAuth.mockReset().mockImplementation(async (_req: NextRequest, permission?: Permission) => {
@@ -180,11 +194,12 @@ beforeEach(() => {
   budget.settleGeneration.mockReset().mockResolvedValue(undefined);
   budget.settleInterruptedGeneration.mockReset().mockResolvedValue(undefined);
   streamMock.mockReset();
-  db.conversation.findUnique.mockResolvedValue({
+  db.conversation.findUnique.mockImplementation(async () => ({
     id: "conv-1",
     restaurantId: "r1",
+    authorId: "u1", generationId,
     idea: { text: null },
-  });
+  }));
 });
 
 describe("GET chat permissions", () => {
@@ -358,7 +373,8 @@ describe("POST chat — persistencia", () => {
     db.conversation.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValue({ count: 0 });
     streamMock.mockReturnValue(providerStream(["old response"], { in: 20, out: 5 }));
     const wire = await (await post({ content: "hello" })).text();
-    expect(wire).toContain('"type":"error"');
+    expect(wire).toContain('"type":"stopped"');
+    expect(wire).not.toContain('"type":"error"');
     expect(wire).not.toContain('"type":"done"');
     expect(assistantCreate()).toBeUndefined();
   });
@@ -382,7 +398,7 @@ describe("POST chat — persistencia", () => {
     expect(quota.recordAiTokens).toHaveBeenCalledWith("u1", 100, 20);
   });
 
-  it("si se corta a mitad (abort) NO persiste la respuesta parcial", async () => {
+  it("does not persist a partial response when the provider itself aborts", async () => {
     streamMock.mockReturnValue({
       async *[Symbol.asyncIterator]() {
         yield { type: "delta", text: "parcial" };
@@ -745,6 +761,33 @@ describe("POST chat — historial por bloques", () => {
   // Mensaje `i` de la conversación: pares del chef, impares del asistente.
   const stored = (i: number) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `m${i}` });
 
+  it.each([false, true])("preview bounds raw history before windowing and reserves only the sent payload (current included=%s)", async included => {
+    // The accepted 40-message payload can still contain 400k discarded characters.
+    const historyLength = included ? 39 : 40;
+    const discardedCount = historyLength - 20;
+    const history = Array.from({ length: historyLength }, (_, i) => ({
+      ...stored(i), content: i < discardedCount ? `discarded-${i}`.padEnd(20_000, ".") : `m${i}`,
+    }));
+    const content = included ? "m38" : "m40";
+    authContext.restaurantId = null;
+    streamMock.mockImplementation(() => providerStream(["Recipe"], { in: 10, out: 20 }));
+    const first = await post({ content, history }, "preview");
+    expect(await first.text()).toContain('"type":"done"');
+    const sent = streamMock.mock.calls[0]![0];
+    expect(sent.messages.length).toBeLessThanOrEqual(20);
+    expect(sent.messages.some((message: Msg) => message.content.startsWith("discarded-"))).toBe(false);
+    expect(sent.messages.filter((message: Msg) => message.content === content)).toHaveLength(1);
+    expect(budget.reserveGeneration.mock.calls[0]![1]).toBe(textInputCeiling({ system: sent.system, messages: sent.messages }));
+    const ceiling = budget.reserveGeneration.mock.calls[0]![1];
+    const boundedInput = historyWindow.mock.calls[0]![0] as Msg[];
+    // Twenty recent raw entries plus, at most, the new user message.
+    expect(boundedInput.length).toBeLessThanOrEqual(21);
+    expect(boundedInput.some(message => message.content.startsWith("discarded-"))).toBe(false);
+    await (await post({ content, history: history.map((message, i) => i < discardedCount ? { ...message, content: "ignored" } : message) }, "preview")).text();
+    expect(streamMock.mock.calls[1]![0].messages).toEqual(sent.messages);
+    expect(budget.reserveGeneration.mock.calls[1]![1]).toBe(ceiling);
+  });
+
   it.each([
     { historyLength: 25, current: 24, first: 10 },
     { historyLength: 27, current: 26, first: 10 },
@@ -999,12 +1042,14 @@ describe("A2 closed SSE error contract", () => {
     expect(db.user.findUnique).not.toHaveBeenCalled();
   });
 
-  it.each(["preview", "conv-1"])("does not emit an error after the client's AbortSignal aborts in %s", async id => {
+  it.each(["preview", "conv-1"])("continues generation without an SSE error after the client's AbortSignal aborts in %s", async id => {
     const controller = new AbortController();
     const infoLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
     streamMock.mockImplementation(async function* () {
+      yield { type: "delta", text: "Recipe" };
       controller.abort();
-      throw new DOMException("client disconnected", "AbortError");
+      yield { type: "delta", text: " finished" };
+      yield { type: "usage", usage: { inputTokens: 20, outputTokens: 5, cachedTokens: 0, reasoningTokens: 0 } };
     });
     const request = new NextRequest(`https://t.local/api/conversations/${id}/messages`, {
       method: "POST", headers: { "content-type": "application/json" },
@@ -1013,6 +1058,9 @@ describe("A2 closed SSE error contract", () => {
     const wire = await (await route.POST(request, { params: Promise.resolve({ id }) })).text();
     expect(wire).not.toContain('"type":"error"');
     expect(db.user.findUnique).not.toHaveBeenCalled();
-    expect(infoLog.mock.calls.flat().some(line => typeof line === "string" && line.includes('"aborted":true'))).toBe(true);
+    expect(assistantCreate()?.[0].data.content).toBe(id === "preview" ? undefined : "Recipe finished");
+    expect(quota.recordAiTokens).toHaveBeenCalledWith("u1", 20, 5);
+    expect(infoLog.mock.calls.flat().some(line => typeof line === "string" && line.includes('"aborted":false'))).toBe(true);
+    expect(afterMock).toHaveBeenCalledTimes(1);
   });
 });
