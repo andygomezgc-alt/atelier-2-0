@@ -19,7 +19,7 @@ Que el asistente no pierda respuestas ni presupuesto, diga la verdad cuando algo
 
 ## Decisiones
 - Implementa Codex con `gpt-6.1-sol`: esfuerzo `high`, y `xhigh` en las tareas complejas (pedido de Andy). El padre escribe la especificación, verifica de forma independiente, commitea y corre la revisión RDD.
-- Runtime de Codex: el CLI global (0.144.4) rechaza `gpt-6.1-sol` con cuenta ChatGPT. Se usa el runtime 0.160.1 de la app de escritorio (`%LOCALAPPDATA%/OpenAI/Codex/bin/5ea220ae823df3d7`), antepuesto al PATH del companion. No se toca `~/.codex/config.toml`.
+- Runtime de Codex: el CLI global (0.144.4) rechaza `gpt-6.1-sol` con cuenta ChatGPT. Se usa el runtime 0.160.1 de la app de escritorio (`%LOCALAPPDATA%/OpenAI/Codex/bin/5ea220ae823df3d7`), antepuesto al PATH del companion. No se toca `~/.codex/config.toml`. El 08-10 la app pasó a 0.162 y el sandbox del companion dejó de correr comandos; Andy eligió seguir con Haiku 5.5 xhigh como escritor y el padre supervisando.
 - Detener sin migración: detener libera el `generationId` de la conversación; la generación en curso lo detecta en el latido y corta.
 - Migraciones: SQL generado con `prisma migrate diff` contra HEAD; no se aplica a ninguna base remota sin permiso explícito. Producción la aplica el build de Vercel al fusionar.
 - Fuera de alcance: hallazgo 7; idioma de la memoria (requiere decidir quién fija el idioma del restaurante); TTL de 1 h de la caché (medir antes).
@@ -94,7 +94,7 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
 - Previsión: unas 3400 líneas con tests, muy por encima de 400. Estrategia `ask-on-risk` → Andy eligió (06-10) **tres PR encadenados a main** (`stacked-to-main`), fusionados en orden. Cada corte supera 400 líneas (sobre todo tests): excepción de tamaño aceptada por Andy al elegir los tres cortes.
 - Cortes (un commit por tarea):
   1. PR 1 — servidor: A1–A7.
-  2. PR 2 — prompt y memoria: A8–A9 (apila sobre PR 1).
+  2. PR 2 — prompt y memoria: A8, A9, A9b, A9c (apila sobre PR 1).
   3. PR 3 — móvil: A10–A13 (apila sobre PR 2).
 
 ## Progreso y evidencia
