@@ -1,4 +1,4 @@
-import { can, normalizeChatMode, type ChatMode } from "@atelier/shared";
+import { BULK_MESSAGES_MAX, MESSAGE_CONTENT_MAX, can, normalizeChatMode, type ChatMode } from "@atelier/shared";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -289,8 +289,8 @@ export default function AsistenteScreen() {
   const [conversationLoadError, setConversationLoadError] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const switchingRef = useRef(false);
-  // The conversation created for this chat until its history is uploaded.
-  const promotionRef = useRef<{ conversationId: string; uploaded: boolean } | null>(null);
+  // The conversation created for this chat, until its history is uploaded. storedIds: messages already on the server.
+  const promotionRef = useRef<{ conversationId: string; uploaded: boolean; storedIds: Set<string> } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [structuring, setStructuring] = useState(false);
@@ -471,37 +471,33 @@ export default function AsistenteScreen() {
   }, [ideaId, conversationIdParam, chatSession, loadAttempt]);
 
   // The first send that needs the server creates the conversation once and uploads the local history,
-  // in order, before anything else. promotionRef keeps the created id, so a failed upload retries only
-  // the upload and never creates a second conversation.
+  // in order, in chunks of at most BULK_MESSAGES_MAX, before anything else. promotionRef keeps the created
+  // id and the ids already stored, so a failed chunk stops the upload and a retry resumes with the rest.
   async function promoteChat(gen: number, pendingClientMessageId?: string): Promise<string> {
     let promotion = promotionRef.current;
     if (!promotion) {
       const conv = await createConversation({ ideaId: ideaId ?? null, modelUsed: model });
-      promotion = { conversationId: conv.id, uploaded: false };
+      promotion = { conversationId: conv.id, uploaded: false, storedIds: new Set() };
       promotionRef.current = promotion;
     }
+    const { conversationId: promotedId, storedIds } = promotion;
     if (!promotion.uploaded) {
-      const local = historyBefore(messages, pendingClientMessageId);
-      if (local.length > 0) {
-        // Legacy messages without an id get one now and keep it in state, so a retry sends the same ids.
-        const legacy = new Map(local.filter((m) => !m.clientMessageId).map((m): [string, string] => [m.id, createClientMessageId()]));
-        if (legacy.size > 0 && gen === streamGenRef.current) {
-          setMessages((prev) => prev.map((m) => (legacy.has(m.id) && !m.clientMessageId ? { ...m, clientMessageId: legacy.get(m.id) } : m)));
-        }
+      const pending = historyBefore(messages, pendingClientMessageId)
+        .map((m) => ({ role: m.role, content: m.content.slice(0, MESSAGE_CONTENT_MAX), clientMessageId: m.clientMessageId ?? undefined }))
+        .filter((m) => !m.clientMessageId || !storedIds.has(m.clientMessageId));
+      for (let start = 0; start < pending.length; start += BULK_MESSAGES_MAX) {
+        const chunk = pending.slice(start, start + BULK_MESSAGES_MAX);
         try {
-          await bulkAddMessages(promotion.conversationId, local.map((m) => ({
-            role: m.role,
-            content: m.content,
-            clientMessageId: m.clientMessageId ?? legacy.get(m.id),
-          })));
+          await bulkAddMessages(promotedId, chunk);
         } catch (err) {
-          throw new ChatHistoryUploadError(err, promotion.conversationId);
+          throw new ChatHistoryUploadError(err, promotedId);
         }
+        for (const m of chunk) if (m.clientMessageId) storedIds.add(m.clientMessageId);
       }
       promotion.uploaded = true;
     }
-    if (gen === streamGenRef.current) setConversationId(promotion.conversationId);
-    return promotion.conversationId;
+    if (gen === streamGenRef.current) setConversationId(promotedId);
+    return promotedId;
   }
 
   async function ensureConversation(gen: number, pendingClientMessageId?: string): Promise<string | null> {

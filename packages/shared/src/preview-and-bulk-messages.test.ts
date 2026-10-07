@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   PostMessageRequestSchema,
   BulkMessagesRequestSchema,
+  BULK_MESSAGES_MAX,
+  MESSAGE_CONTENT_MAX,
 } from "./api-contract";
 
 describe("PostMessageRequestSchema (A-12) — history opcional", () => {
@@ -95,5 +97,18 @@ describe("BulkMessagesRequestSchema (A-12)", () => {
         messages: [{ role: "user", content: "p1", clientMessageId: "" }],
       }).success,
     ).toBe(false);
+  });
+
+  it("exports the limits the bulk schema and the client upload share", () => {
+    expect(BULK_MESSAGES_MAX).toBe(40);
+    expect(MESSAGE_CONTENT_MAX).toBe(20_000);
+  });
+
+  it("still enforces 40 messages and 20000 characters with the literal limits", () => {
+    const fortyOne = Array.from({ length: 41 }, (_, i) => ({ role: "user" as const, content: String(i) }));
+    expect(BulkMessagesRequestSchema.safeParse({ messages: fortyOne.slice(0, 40) }).success).toBe(true);
+    expect(BulkMessagesRequestSchema.safeParse({ messages: fortyOne }).success).toBe(false);
+    expect(BulkMessagesRequestSchema.safeParse({ messages: [{ role: "user", content: "a".repeat(20_000) }] }).success).toBe(true);
+    expect(BulkMessagesRequestSchema.safeParse({ messages: [{ role: "user", content: "a".repeat(20_001) }] }).success).toBe(false);
   });
 });

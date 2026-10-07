@@ -39,8 +39,11 @@ export class ChatHistoryUploadError extends Error {
 export function classifyChatError(err: unknown, t: T, model: ChatMode): ChatFailure {
   if (err instanceof ChatHistoryUploadError) {
     const { status } = readError(err.source);
-    // Auth and forbidden keep their own explanation; any other upload failure can be retried.
+    // Auth and forbidden keep their own explanation.
     if (status === 401 || status === 403) return classifyChatError(err.source, t, model);
+    // The server refused the batch itself: the same batch would be refused again, so offer a new chat.
+    if (status === 400 || status === 422) return { message: t("chat_history_upload_failed"), retryable: false, action: "new_chat" };
+    // Any other upload failure (network, server) can be retried.
     return { message: t("chat_history_upload_failed"), retryable: true };
   }
   const { code, status, name } = readError(err);

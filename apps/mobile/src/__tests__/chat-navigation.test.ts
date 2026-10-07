@@ -378,6 +378,13 @@ describe("promoting a preview chat once the restaurant exists (A10)", () => {
   const settle = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(1500); }); };
   // clientMessageId of each message sent by upload call N (ids must be stable across retries).
   const sentIds = (call: number) => (bulk.mock.calls[call]![1] as unknown as Array<{ clientMessageId?: string }>).map((message) => message.clientMessageId);
+  const uploaded = (call: number) => (bulk.mock.calls[call]![1] as unknown as Array<{ content: string }>).map((message) => message.content);
+  // Preview turns without a restaurant: 2 messages per turn, answered locally by the stub.
+  async function previewTurns(count: number) {
+    h.restaurantId = null;
+    await render();
+    for (let i = 0; i < count; i++) await send(`Pregunta ${i}`);
+  }
   // The chef answers in preview (no restaurant), then a restaurant appears, e.g. created from Inicio.
   async function previewThenSignedIn(question = "Una receta") {
     h.restaurantId = null;
@@ -498,5 +505,48 @@ describe("promoting a preview chat once the restaurant exists (A10)", () => {
     expect(retry![1]).toBe("Segunda pregunta");
     expect(retry![5]).toEqual(answered);
     expect(retry![6]).toBe(failed![6]);
+  });
+
+  it("uploads a history longer than one request in ordered chunks of at most 40 messages", async () => {
+    await previewTurns(21);
+    h.restaurantId = "restaurant-1";
+    await update();
+    await send("Pregunta final");
+    const expected = Array.from({ length: 21 }, (_, i) => [`Pregunta ${i}`, "Respuesta nueva"]).flat();
+    expect(bulk.mock.calls.map((_, call) => uploaded(call).length)).toEqual([40, 2]);
+    expect([...uploaded(0), ...uploaded(1)]).toEqual(expected);
+    expect(new Set([...sentIds(0), ...sentIds(1)]).size).toBe(42);
+    expect(h.createConversation).toHaveBeenCalledTimes(1);
+    expect(h.streamMessage).toHaveBeenLastCalledWith("new-chat", "Pregunta final", "creative", expect.any(Function), expect.any(AbortSignal), undefined, expect.any(String));
+  });
+
+  it("a failed chunk stops the upload, and a retry resumes with the chunks not stored yet", async () => {
+    await previewTurns(21);
+    bulk.mockResolvedValueOnce({ inserted: 40 }).mockRejectedValueOnce(new Error("raw-network-detail"));
+    h.restaurantId = "restaurant-1";
+    await update();
+    await send("Pregunta final");
+    expect(actions("error_retry")).toHaveLength(1);
+    expect(h.streamMessage).toHaveBeenCalledTimes(21);
+
+    await act(async () => { actions("error_retry")[0]!.props.onPress(); });
+    await settle();
+    expect(bulk.mock.calls).toHaveLength(3);
+    expect(sentIds(2)).toEqual(sentIds(1));
+    expect(sentIds(2).some((id) => sentIds(0).includes(id))).toBe(false);
+    expect(new Set([...sentIds(0), ...sentIds(2)]).size).toBe(42);
+    expect(h.createConversation).toHaveBeenCalledTimes(1);
+    expect(h.streamMessage).toHaveBeenCalledTimes(22);
+  });
+
+  it("clamps each uploaded message to the content limit", async () => {
+    h.restaurantId = null;
+    await render();
+    await send("y".repeat(25_000));
+    h.restaurantId = "restaurant-1";
+    await update();
+    await send("Segunda pregunta");
+    expect(bulk).toHaveBeenCalledTimes(1);
+    expect(uploaded(0)[0]).toBe("y".repeat(20_000));
   });
 });

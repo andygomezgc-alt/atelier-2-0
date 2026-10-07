@@ -10,11 +10,13 @@ const h = vi.hoisted(() => ({
   userId: "chef-1",
   role: "chef_executive" as Parameters<typeof can>[0],
   createMany: vi.fn(),
+  latest: null as null | { createdAt: Date },
+  findFirst: vi.fn(),
 }));
 vi.mock("@atelier/db", () => {
   const db: Record<string, unknown> = {
     conversation: { findUnique: vi.fn(async () => h.conversation) },
-    message: { createMany: h.createMany },
+    message: { createMany: h.createMany, findFirst: h.findFirst },
   };
   db.$transaction = vi.fn(async (callback: (tx: unknown) => unknown) => callback(db));
   return { prisma: db };
@@ -66,6 +68,9 @@ beforeEach(() => {
   h.userId = "chef-1";
   h.role = "chef_executive";
   h.rows = [];
+  h.latest = null;
+  h.findFirst.mockReset();
+  h.findFirst.mockImplementation(async () => h.latest);
   h.createMany.mockReset();
   h.createMany.mockImplementation(async ({ data, skipDuplicates }: { data: Array<Record<string, unknown>>; skipDuplicates?: boolean }) =>
     insertRows(data, skipDuplicates));
@@ -119,5 +124,15 @@ describe("bulk message import (A10)", () => {
     expect((await post(Array.from({ length: 41 }, (_, i) => ({ role: "user", content: `m${i}` })))).status).toBe(400);
     expect((await post([{ role: "user", content: "a".repeat(20_001) }])).status).toBe(400);
     expect(h.createMany).not.toHaveBeenCalled();
+  });
+
+  it("starts after the latest stored message, even when its timestamp is ahead of this server's clock", async () => {
+    const ahead = Date.now() + 60_000;
+    h.latest = { createdAt: new Date(ahead) };
+    expect((await post(batch)).status).toBe(200);
+    const stamps = (h.createMany.mock.calls[0]![0].data as Array<{ createdAt: Date }>).map((row) => row.createdAt.getTime());
+    expect(stamps[0]).toBeGreaterThan(ahead);
+    for (let i = 1; i < stamps.length; i++) expect(stamps[i]).toBeGreaterThan(stamps[i - 1]!);
+    expect(h.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { conversationId: "conv-1" }, orderBy: { createdAt: "desc" } }));
   });
 });

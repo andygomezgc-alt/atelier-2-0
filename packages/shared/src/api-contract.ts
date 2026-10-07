@@ -342,6 +342,10 @@ export const ApiErrorResponseSchema = z.object({
 });
 export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
 
+// R3-001 — limits shared by the bulk schema and the client upload (the client chunks by BULK_MESSAGES_MAX).
+export const BULK_MESSAGES_MAX = 40;
+export const MESSAGE_CONTENT_MAX = 20_000;
+
 // A-12 — hidratación bulk de mensajes locales en una Conversation recién
 // creada. La consume `/api/conversations/[id]/messages/bulk`.
 export const BulkMessagesRequestSchema = z.object({
@@ -349,13 +353,13 @@ export const BulkMessagesRequestSchema = z.object({
     .array(
       z.object({
         role: z.enum(["user", "assistant"]),
-        content: z.string().min(1).max(20_000),
+        content: z.string().min(1).max(MESSAGE_CONTENT_MAX),
         // Stable per-message id: a replayed batch skips the messages already stored.
         clientMessageId: z.string().min(1).max(64).optional(),
       }),
     )
     .min(1)
-    .max(40),
+    .max(BULK_MESSAGES_MAX),
 });
 export type BulkMessagesRequest = z.infer<typeof BulkMessagesRequestSchema>;
 
