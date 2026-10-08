@@ -48,7 +48,8 @@ A1–A13. Commits por tarea en esta rama; push al cerrar (regla permanente de An
 | A9c | Seguimiento de A9b: la racha de descartes solo cuenta descartes pagados seguidos; un descarte sin pago no consume la semana | Haiku 5.5 xhigh (delegado) | Worker acotado |
 | A10 | Chat sin restaurante conserva el contexto; error visible al guardar receta; bulk endurecido | Codex xhigh | Móvil + API |
 | A10b | Seguimiento de A10: historial largo subido por tandas, orden monótono entre pedidos, rechazo de validación sin Reintentar | Haiku 5.5 xhigh (delegado) | Móvil + API acotado |
-| A11 | Listas numeradas en el markdown del chat | Codex high | Parser acotado |
+| A10c | Seguimiento de A10b: id determinista para todo mensaje subido, recorte sin partir emojis, mensajes vacíos omitidos | Haiku 5.5 xhigh (delegado) | Un archivo de producción |
+| A11 | Listas numeradas en el markdown del chat | Haiku 5.5 xhigh (delegado) | Parser acotado |
 | A12 | Pantalla del asistente en hooks con estado explícito; burbuja aislada; accesibilidad | Codex xhigh | Refactor grande |
 | A13 | Detener y reanudar en el móvil | Codex xhigh | Depende de A6 y A12 |
 
@@ -67,7 +68,8 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
 - [x] A9c — racha de descartes acotada a descartes pagados seguidos
 - [x] A10 — chat sin restaurante
 - [x] A10b — historial largo y rechazo de validación
-- [ ] A11 — listas numeradas
+- [ ] A10c — subida sin duplicados para mensajes sin id, recorte seguro y mensajes vacíos
+- [x] A11 — listas numeradas
 - [ ] A12 — pantalla en hooks
 - [ ] A13 — Detener y reanudar (móvil)
 
@@ -162,3 +164,7 @@ Orden: A1 → A2 → … → A13 (secuencial: varias tareas tocan la ruta del ch
   - Avisos → seguimiento **A10b**: un historial de más de 40 mensajes recibe 400 en cada intento y el Reintentar nunca funciona (subir por tandas; un 400 no se reintenta); ids asignados a mensajes viejos se guardan solo si la generación no cambió. El aviso del índice único no aplica: existe desde `20260721120000_message_client_id`.
 - **A10b** (Haiku 5.5 xhigh delegado, dos pasos). El móvil sube el historial en tandas de `BULK_MESSAGES_MAX` (40), en orden; una tanda fallida corta la subida y el reintento sigue con las pendientes (ids ya guardados en `promotionRef`). Cada contenido se recorta a `MESSAGE_CONTENT_MAX` (20 000); ambos límites se exportan desde shared y los usa el schema. El bulk arranca en `max(ahora, último createdAt + 1 ms)` dentro de la transacción, así el orden se mantiene entre tandas e instancias con relojes distintos. Un 400/422 de la subida no se reintenta: acción `new_chat`. La rama de ids heredados era inalcanzable (todo mensaje local nace con id; los del servidor solo llegan con conversación) y se quitó. RED 7 por la razón correcta (api 1, móvil 5, shared 1); GREEN api 1103/1103, móvil 258/258, shared 272/272, tsc OK, `expo export` Android OK (escritor); `git diff --check` OK.
   - Commit `0b31a30`. RDD assess sobre ddb3949..0b31a30: riesgo medio, `under_budget` (8 archivos, 176 líneas) → pendiente en el corte; frontera revisada sigue en `ddb3949`.
+  - El hook pidió revisar la rama entera otra vez (71 archivos, ~7000 líneas, mayor que la que ya excedió el contexto de las lentes); se redujo al tramo sin revisar. RDD sobre ddb3949..bf517f0 (A10b + docs, 9 archivos, 187 líneas, riesgo medio): Andy concedió; el primer START concedido se rechazó por un archivo sin trackear de A11 y se repitió el mismo objetivo excluyéndolo (`--untracked-scope=exclude`). **Aprobada**, acuse hecho (`review-280b32813294f049`). Frontera revisada: `bf517f0`.
+  - Avisos → seguimiento **A10c**: un mensaje local sin `clientMessageId` se reenviaría en cada reintento y quedaría duplicado (no hay test que pruebe que todos tienen id); el recorte con `slice` puede partir un par sustituto (emoji); un mensaje vacío provoca un 400 permanente que empuja a un chat nuevo.
+- **A11** (Haiku 5.5 xhigh delegado, dos pasos más una corrección). Causa verificada: `OL_RE` descartaba el número escrito, la lista se cerraba en cada línea en blanco o viñeta anidada, y `MarkdownText` pintaba `j + 1` por bloque. Primera versión: cada ítem mostraba el número escrito, con lo que «1. 1. 1.» salía 1, 1, 1 (instrucción equivocada del padre). Corregido a la regla de CommonMark con tests nuevos en rojo primero: una lista ordenada sigue abierta a través de líneas en blanco, viñetas anidadas y párrafos con sangría y numera `start + índice`; un párrafo sin sangría o un título la terminan; la lista siguiente empieza en su número escrito (bloque con `start`, omitido cuando es 1). El test del título lo agregó el padre (mutación: sin el corte, falla). RED 6 + 6 por la razón correcta; GREEN móvil 272/272, tsc OK, `expo export` Android OK (escritor); `git diff --check` OK.
+  - Commit `ff63208`. RDD assess sobre bf517f0..ff63208: riesgo medio, `under_budget` (4 archivos, 162 líneas) → pendiente en el corte; frontera revisada sigue en `bf517f0`.
