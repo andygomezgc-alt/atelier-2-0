@@ -1,4 +1,4 @@
-import { BULK_MESSAGES_MAX, MESSAGE_CONTENT_MAX, can, normalizeChatMode, type ChatMode } from "@atelier/shared";
+import { BULK_MESSAGES_MAX, can, normalizeChatMode, type ChatMode } from "@atelier/shared";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -49,6 +49,7 @@ import type { TranslationKey } from "@atelier/i18n";
 import { colors, fonts, fontSizes, radii, spacing, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
 import { apiErrorKey, apiErrorMessage } from "@/src/lib/api-error";
 import { ChatHistoryUploadError, classifyChatError, type ChatErrorAction } from "@/src/lib/chat-error";
+import { buildHistoryUpload } from "@/src/lib/chat-history-upload";
 import { NetworkError as TransportNetworkError } from "@/src/api/client";
 import { canRememberNote } from "@/src/lib/chef-notes";
 
@@ -482,9 +483,8 @@ export default function AsistenteScreen() {
     }
     const { conversationId: promotedId, storedIds } = promotion;
     if (!promotion.uploaded) {
-      const pending = historyBefore(messages, pendingClientMessageId)
-        .map((m) => ({ role: m.role, content: m.content.slice(0, MESSAGE_CONTENT_MAX), clientMessageId: m.clientMessageId ?? undefined }))
-        .filter((m) => !m.clientMessageId || !storedIds.has(m.clientMessageId));
+      // Ids already stored are left out, so a retry resumes with the chunks that did not reach the server.
+      const pending = buildHistoryUpload(historyBefore(messages, pendingClientMessageId), storedIds);
       for (let start = 0; start < pending.length; start += BULK_MESSAGES_MAX) {
         const chunk = pending.slice(start, start + BULK_MESSAGES_MAX);
         try {
@@ -492,7 +492,7 @@ export default function AsistenteScreen() {
         } catch (err) {
           throw new ChatHistoryUploadError(err, promotedId);
         }
-        for (const m of chunk) if (m.clientMessageId) storedIds.add(m.clientMessageId);
+        for (const item of chunk) storedIds.add(item.clientMessageId);
       }
       promotion.uploaded = true;
     }
