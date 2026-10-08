@@ -8,7 +8,7 @@ export type Block =
   | { type: "title"; text: string }
   | { type: "heading"; text: string }
   | { type: "paragraph"; spans: Span[] }
-  | { type: "list"; ordered: boolean; items: Span[][] };
+  | { type: "list"; ordered: boolean; start?: number; items: Span[][] }; // start: first number of an ordered list, omitted when 1
 
 // **bold** primero (no-greedy, sin * adentro), después *italic*.
 // Énfasis anidado (**x *y* z**) NO forma negrita: trade-off intencional del [^*\n]+.
@@ -36,7 +36,7 @@ export function parseInline(text: string): Span[] {
 
 const HEADING_RE = /^#{1,3}\s+(.*)$/;
 const UL_RE = /^[-*]\s+(.*)$/;
-const OL_RE = /^\d+\.\s+(.*)$/;
+const OL_RE = /^(\d+)\.\s+(.*)$/;
 
 export function parseAssistantMarkdown(input: string): Block[] {
   const blocks: Block[] = [];
@@ -61,7 +61,9 @@ export function parseAssistantMarkdown(input: string): Block[] {
     start = 1;
   }
 
-  let list: { ordered: boolean; items: Span[][] } | null = null;
+  let list: { ordered: boolean; start: number; items: Span[][] } | null = null;
+  // Numbering run of the current ordered list: items number start + index, whatever the model wrote next.
+  let run: { next: number } | null = null;
   let para: string[] = [];
 
   const flushPara = () => {
@@ -71,7 +73,8 @@ export function parseAssistantMarkdown(input: string): Block[] {
   };
   const flushList = () => {
     if (list && list.items.length > 0) {
-      blocks.push({ type: "list", ordered: list.ordered, items: list.items });
+      const { ordered, start, items } = list;
+      blocks.push(ordered && start !== 1 ? { type: "list", ordered, start, items } : { type: "list", ordered, items });
     }
     list = null;
   };
@@ -84,6 +87,7 @@ export function parseAssistantMarkdown(input: string): Block[] {
     if (h) {
       flushPara();
       flushList();
+      run = null;
       blocks.push({ type: "heading", text: h[1].trim() });
       continue;
     }
@@ -93,22 +97,35 @@ export function parseAssistantMarkdown(input: string): Block[] {
     if (ul || ol) {
       flushPara();
       const ordered = Boolean(ol);
-      const itemText = (ol ? ol[1] : ul![1]).trim();
-      if (!list || list.ordered !== ordered) {
-        flushList();
-        list = { ordered, items: [] };
+      const itemText = (ol ? ol[2] : ul![1]).trim();
+      if (ol) {
+        if (!run) run = { next: Number(ol[1]) };
+        if (!list || !list.ordered) {
+          flushList();
+          list = { ordered: true, start: run.next, items: [] };
+        }
+        list.items.push(parseInline(itemText));
+        run.next++;
+      } else {
+        if (!list || list.ordered) {
+          flushList();
+          list = { ordered: false, start: 1, items: [] };
+        }
+        list.items.push(parseInline(itemText));
       }
-      list.items.push(parseInline(itemText));
       continue;
     }
 
     if (line === "") {
       flushPara();
-      flushList();
+      // An ordered list stays open across blank lines; any non-item line closes it below.
+      if (!list?.ordered) flushList();
       continue;
     }
 
     flushList();
+    // Unindented text ends the numbering run; indented text only splits the list block.
+    if (!/^\s/.test(raw)) run = null;
     para.push(raw);
   }
   flushPara();
