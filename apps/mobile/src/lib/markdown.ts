@@ -107,6 +107,8 @@ export function parseAssistantMarkdown(input: string): Block[] {
         list.items.push(parseInline(itemText));
         run.next++;
       } else {
+        // An unindented bullet list ends the ordered list; an indented one is nested in an item.
+        if (!/^\s/.test(raw)) run = null;
         if (!list || list.ordered) {
           flushList();
           list = { ordered: false, start: 1, items: [] };

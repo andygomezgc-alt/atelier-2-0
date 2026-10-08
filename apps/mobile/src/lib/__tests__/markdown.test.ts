@@ -137,6 +137,11 @@ describe("ordered list numbering", () => {
     });
   }
 
+  it("restarts numbering after an unindented bullet list, like CommonMark", () => {
+    const blocks = parseAssistantMarkdown("1. A\n2. B\n- Nota\n1. C");
+    expect(visibleNumbers(blocks)).toEqual([1, 2, 1]);
+  });
+
   it("restarts lazy numbering after a heading, like CommonMark", () => {
     const blocks = parseAssistantMarkdown("## Masa\n1. Harina\n1. Agua\n## Relleno\n1. Ricota");
     expect(visibleNumbers(blocks)).toEqual([1, 2, 1]);
