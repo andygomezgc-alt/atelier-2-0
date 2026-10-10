@@ -259,3 +259,30 @@ describe("subscribers", () => {
     expect(stream.getSnapshot()).toBe("abcdef");
   });
 });
+
+// A13 — a recovered answer is shown at once, without the typewriter.
+describe("reveal", () => {
+  it("shows the whole final text at once, stops the ticker, and notifies subscribers once", async () => {
+    const stream = createStreamText();
+    const listener = vi.fn();
+    stream.subscribe(listener);
+    stream.push("Berenjena asada con yogur");
+
+    expect(stream.reveal("Berenjena asada con yogur")).toBe("Berenjena asada con yogur");
+    expect(stream.getSnapshot()).toBe("Berenjena asada con yogur");
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    await tick(TICK_MS * 5);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases a finish that was waiting for the reveal", async () => {
+    const stream = createStreamText();
+    stream.push("abcdef");
+    const pending = track(stream.finish("abcdef"));
+    stream.reveal("abcdef");
+    await flush();
+    expect(pending.settled).toBe(true);
+    expect(pending.value).toBe("abcdef");
+  });
+});

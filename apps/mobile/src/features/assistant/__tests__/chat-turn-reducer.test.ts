@@ -4,6 +4,7 @@ import {
   chatTurnReducer,
   initialChatTurnState,
   type ChatTurn,
+  RESUME_MAX_ATTEMPTS,
   type ChatTurnState,
 } from "../chat-turn-reducer";
 
@@ -79,6 +80,118 @@ describe("chat-turn reducer (A12)", () => {
     { phase: "streaming", turn },
     { phase: "error", turn, failure: { error: failure } },
   ])("resets to idle from $phase when the chat changes", (state) => {
+    expect(chatTurnReducer(state, { type: "reset" })).toEqual({ phase: "idle" });
+  });
+});
+
+// A13 — stop, the stopped outcome, background interruption and resume (RED: transitions not implemented yet).
+describe("chat-turn reducer: stop and resume (A13)", () => {
+  const conflict = Object.assign(new Error("chat_in_progress"), { code: "chat_in_progress", status: 409 });
+  const unanswered = { phase: "error", turn, failure: { error: null } } as const;
+
+  it.each<ChatTurnState>([
+    { phase: "sending", turn },
+    { phase: "streaming", turn },
+    { phase: "interrupted", turn },
+    { phase: "resuming", turn, attempt: 2 },
+  ])("stop moves $phase to stopping and keeps the turn", (state) => {
+    expect(chatTurnReducer(state, { type: "stop" })).toEqual({ phase: "stopping", turn });
+  });
+
+  it.each<ChatTurnState>([{ phase: "idle" }, { phase: "error", turn, failure: { error: conflict } }, { phase: "stopping", turn }])(
+    "ignores stop while $phase",
+    (state) => {
+      expect(chatTurnReducer(state, { type: "stop" })).toEqual(state);
+    },
+  );
+
+  it("ends a stop with the question unanswered, without a failure", () => {
+    expect(chatTurnReducer({ phase: "stopping", turn }, { type: "stopped" })).toEqual(unanswered);
+  });
+
+  it.each<ChatTurnState>([
+    { phase: "sending", turn },
+    { phase: "streaming", turn },
+  ])("a stopped event from the server ends $phase the same way", (state) => {
+    expect(chatTurnReducer(state, { type: "stopped" })).toEqual(unanswered);
+  });
+
+  it("keeps the answer when the stream completes while stopping", () => {
+    expect(chatTurnReducer({ phase: "stopping", turn }, { type: "complete" })).toEqual({ phase: "idle" });
+  });
+
+  it("a failure while stopping ends unanswered: the stop wins, no failure banner", () => {
+    expect(chatTurnReducer({ phase: "stopping", turn }, { type: "fail", error: conflict })).toEqual(unanswered);
+  });
+
+  it.each<ChatTurnState>([
+    { phase: "sending", turn },
+    { phase: "streaming", turn },
+    { phase: "resuming", turn, attempt: 1 },
+  ])("interrupt moves $phase to interrupted, keeping the turn", (state) => {
+    expect(chatTurnReducer(state, { type: "interrupt" })).toEqual({ phase: "interrupted", turn });
+  });
+
+  it.each<ChatTurnState>([{ phase: "idle" }, { phase: "error", turn, failure: { error: conflict } }, { phase: "stopping", turn }])(
+    "ignores interrupt while $phase",
+    (state) => {
+      expect(chatTurnReducer(state, { type: "interrupt" })).toEqual(state);
+    },
+  );
+
+  it("resume restarts an interrupted turn as attempt 1 with the same turn", () => {
+    expect(chatTurnReducer({ phase: "interrupted", turn }, { type: "resume" })).toEqual({
+      phase: "resuming",
+      turn,
+      attempt: 1,
+    });
+  });
+
+  it.each<ChatTurnState>([
+    { phase: "idle" },
+    { phase: "sending", turn },
+    { phase: "error", turn, failure: { error: conflict } },
+  ])("ignores resume while $phase", (state) => {
+    expect(chatTurnReducer(state, { type: "resume" })).toEqual(state);
+  });
+
+  it("the first replayed delta moves a resuming turn to streaming", () => {
+    expect(chatTurnReducer({ phase: "resuming", turn, attempt: 1 }, { type: "firstDelta" })).toEqual({
+      phase: "streaming",
+      turn,
+    });
+  });
+
+  it("a replayed answer completes a resuming turn", () => {
+    expect(chatTurnReducer({ phase: "resuming", turn, attempt: 1 }, { type: "complete" })).toEqual({ phase: "idle" });
+  });
+
+  it("a 409 while resuming asks again with the next attempt", () => {
+    expect(
+      chatTurnReducer({ phase: "resuming", turn, attempt: 1 }, { type: "resumeConflict", error: conflict }),
+    ).toEqual({ phase: "resuming", turn, attempt: 2 });
+  });
+
+  it("gives up after RESUME_MAX_ATTEMPTS conflicts, with the last conflict as the failure", () => {
+    expect(
+      chatTurnReducer(
+        { phase: "resuming", turn, attempt: RESUME_MAX_ATTEMPTS },
+        { type: "resumeConflict", error: conflict },
+      ),
+    ).toEqual({ phase: "error", turn, failure: { error: conflict } });
+  });
+
+  it("a failure while resuming shows the honest failure", () => {
+    expect(
+      chatTurnReducer({ phase: "resuming", turn, attempt: 2 }, { type: "fail", error: conflict }),
+    ).toEqual({ phase: "error", turn, failure: { error: conflict } });
+  });
+
+  it.each<ChatTurnState>([
+    { phase: "stopping", turn },
+    { phase: "interrupted", turn },
+    { phase: "resuming", turn, attempt: 3 },
+  ])("reset returns $phase to idle", (state) => {
     expect(chatTurnReducer(state, { type: "reset" })).toEqual({ phase: "idle" });
   });
 });

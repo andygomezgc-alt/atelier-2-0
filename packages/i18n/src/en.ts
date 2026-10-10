@@ -201,6 +201,7 @@ export const en: EsDict = {
   chat_mic_label: "Dictate by voice",
   chat_mic_stop: "Stop dictation",
   chat_send: "Send",
+  chat_stop_answer: "Stop",
   chat_profile_open: "Open profile",
   chat_input_label: "Message for the assistant",
   chat_answer_writing: "The assistant is writing the answer",

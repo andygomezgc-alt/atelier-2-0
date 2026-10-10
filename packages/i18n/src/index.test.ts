@@ -93,3 +93,16 @@ describe("A10 chat history upload copy", () => {
     }
   });
 });
+
+// A13 — the stop control is labelled in every language, with the same short imperative tone as "send".
+describe("A13 chat stop copy", () => {
+  test("has the Spanish copy and a translation in each language", () => {
+    expect((es as Record<string, string>).chat_stop_answer).toBe("Detener");
+    for (const dict of [en, itDict]) {
+      const value = (dict as Record<string, string>).chat_stop_answer;
+      expect(value?.trim(), "chat_stop_answer").toBeTruthy();
+      expect(value).not.toBe((es as Record<string, string>).chat_stop_answer);
+      expect(value).not.toContain("_");
+    }
+  });
+});

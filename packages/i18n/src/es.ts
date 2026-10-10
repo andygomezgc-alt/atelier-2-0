@@ -224,6 +224,7 @@ export const es = {
   chat_mic_label: "Dictar por voz",
   chat_mic_stop: "Detener dictado",
   chat_send: "Enviar",
+  chat_stop_answer: "Detener",
   chat_profile_open: "Abrir perfil",
   chat_input_label: "Mensaje para el asistente",
   chat_answer_writing: "El asistente está escribiendo la respuesta",

@@ -289,6 +289,9 @@ export const styles = StyleSheet.create({
   },
   micBtnActive: { backgroundColor: colors.terracota, borderColor: colors.terracota },
   micBtnDisabled: { opacity: 0.4 },
+  // A13 — the Stop control shown in place of Send while a turn runs.
+  stopBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.ink },
+  stopBtnDisabled: { opacity: 0.5 },
   // Visually hidden, still read by screen readers (the live region of the streaming bubble).
   srOnly: { position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" },
 });

@@ -134,6 +134,8 @@ export default function AsistenteScreen() {
   });
 
   const busy = turn.busy;
+  // While stopping, the partial text is already discarded: no streaming bubble.
+  const streamingVisible = busy && turn.phase !== "stopping";
   const composerBusy = busy || save.structuring || conversation.loading || conversation.loadError;
   const navigationBusy = busy || save.structuring || composer.listening;
   const showSaveButton =
@@ -333,7 +335,7 @@ export default function AsistenteScreen() {
               windowSize={11}
               removeClippedSubviews
               ListHeaderComponent={
-                busy ? (
+                streamingVisible ? (
                   <StreamingBubble
                     stream={turn.stream}
                     eyebrowLabel={assistantEyebrow}
@@ -393,9 +395,11 @@ export default function AsistenteScreen() {
           onChangeText={composer.setInput}
           composerBusy={composerBusy}
           listening={composer.listening}
-          streaming={busy}
+          busy={busy}
+          stopping={turn.phase === "stopping"}
           onMic={handleMic}
           onSend={handleSend}
+          onStop={() => void turn.stop(conversation.conversationId)}
         />
         {/* Empuja el composer por encima del teclado (Android edge-to-edge). */}
         <View style={{ height: kbPad }} />

@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   streamHeaders: {} as Record<string, string>,
   emitStreamError: null as null | (() => void),
   push: vi.fn(), screenRenders: 0,
+  stopMessage: vi.fn(), appStateListeners: [] as Array<(state: string) => void>,
 }));
 vi.mock("react-native", () => ({
   ActivityIndicator: "ActivityIndicator", FlatList: "FlatList", Image: "Image",
@@ -21,6 +22,14 @@ vi.mock("react-native", () => ({
   Alert: { alert: h.alert }, Keyboard: { dismiss: vi.fn() },
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: "android", select: (items: Record<string, unknown>) => items.android ?? items.default },
+  // A13: the screen listens for background/foreground; the harness fires the events.
+  AppState: {
+    currentState: "active",
+    addEventListener: (_type: string, listener: (state: string) => void) => {
+      h.appStateListeners.push(listener);
+      return { remove: () => { h.appStateListeners = h.appStateListeners.filter((l) => l !== listener); } };
+    },
+  },
 }));
 vi.mock("expo-router", () => ({ useLocalSearchParams: () => h.params, useRouter: () => ({ setParams: h.setParams, push: h.push }) }));
 vi.mock("@expo/vector-icons", () => ({ Ionicons: "Ionicons" }));
@@ -30,7 +39,7 @@ vi.mock("react-native-reanimated", () => ({ default: { View: "AnimatedView" }, E
 vi.mock("@/src/hooks/useAuth", () => ({ useAuth: () => ({ state: { status: "signed-in", user: { name: "Chef", restaurantId: h.restaurantId, role: h.role, defaultModel: "creative", languagePref: "es" } } }) }));
 vi.mock("@/src/hooks/useI18n", () => ({ useI18n: () => ({ t: h.t }), dateLocale: () => "es-ES" }));
 vi.mock("@/src/hooks/useSpeechInput", () => ({ speechAvailable: true, useSpeechInput: () => ({ listening: h.listening, start: vi.fn(), stop: vi.fn() }) }));
-vi.mock("@/src/api/conversations", () => ({ createConversation: h.createConversation, streamMessage: h.streamMessage, listMessages: h.listMessages, getConversationByIdea: h.getConversationByIdea, bulkAddMessages: vi.fn() }));
+vi.mock("@/src/api/conversations", () => ({ createConversation: h.createConversation, streamMessage: h.streamMessage, listMessages: h.listMessages, getConversationByIdea: h.getConversationByIdea, bulkAddMessages: vi.fn(), stopMessage: h.stopMessage }));
 vi.mock("@/src/api/recipes", () => ({ extractRecipeFromAssistant: h.extract }));
 vi.mock("@/src/components/LazyRestaurantHost", () => ({ ensureRestaurant: vi.fn() }));
 vi.mock("@/src/components/Toast", () => ({ showToast: h.toast }));
@@ -67,6 +76,7 @@ vi.mock("@/src/lib/api-error", async (importOriginal) => ({ ...(await importOrig
 import AsistenteScreen from "../../app/(tabs)/asistente";
 import { bulkAddMessages } from "@/src/api/conversations";
 import { setRecipeDraft } from "@/src/lib/recipe-draft";
+import { RESUME_MAX_ATTEMPTS } from "@/src/features/assistant/chat-turn-reducer";
 import { es, t as translate, type TranslationKey } from "@atelier/i18n";
 let screen: ReactTestRenderer;
 const saved = [
@@ -99,6 +109,8 @@ beforeEach(() => {
   h.streamHeaders = {};
   h.emitStreamError = null;
   h.screenRenders = 0;
+  h.appStateListeners = [];
+  h.stopMessage.mockResolvedValue(undefined);
   h.setParams.mockImplementation((params) => { h.params = { ...h.params, ...params }; });
   h.listMessages.mockResolvedValue(saved);
   h.getConversationByIdea.mockResolvedValue({ id: "saved-chat", messages: saved });
@@ -706,6 +718,244 @@ describe("chat turn, streaming and accessibility (A12)", () => {
       await send("Un plato");
       expect(actions(actionLabel)).toHaveLength(1);
       expect(untranslated()).toEqual([]);
+    });
+  });
+});
+
+// A13 — stop a running answer, and resume a saved one after the app returns from the background.
+// RED until step 2: the screen has no Stop control, no AppState listener and no resume.
+describe("stop and resume a running answer (A13)", () => {
+  const texts = () => screen.root.findAll((node) => (node.type as unknown) === "Text").map((node) => node.props.children);
+  const actions = (label: string) => screen.root.findAll((node) => (node.type as unknown) === "Pressable" && node.props.accessibilityLabel === label);
+  const stopAction = () => actions("chat_stop_answer");
+  const sendButtons = () => screen.root.findAllByType("SendButton" as never);
+  const sendButton = () => screen.root.findByType("SendButton" as never);
+  const list = () => screen.root.findAllByType("FlatList" as never)[0]!;
+  const contents = () => messages().map((m: { content: string }) => m.content);
+  const settle = async (ms = 0) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
+  const start = async (text: string) => {
+    await act(async () => { input().props.onChangeText(text); });
+    await act(async () => { void sendButton().props.onPress(); });
+    await settle();
+  };
+  const setAppState = async (state: "active" | "background") => {
+    await act(async () => { for (const listener of [...h.appStateListeners]) listener(state); });
+  };
+  const conflict = () => Object.assign(new Error("chat_in_progress"), { name: "StreamInterruptedError", code: "chat_in_progress", status: 409 });
+  const cutError = () => Object.assign(new Error("network"), { name: "StreamInterruptedError", partialText: "Berenjena" });
+  // A stream that stays open until the client aborts it, as the real transport does.
+  function openStream(partial: string) {
+    const seen: { signal?: AbortSignal } = {};
+    h.streamMessage.mockImplementationOnce((_c: unknown, _t: unknown, _m: unknown, onDelta: (delta: string) => void, signal: AbortSignal) => {
+      seen.signal = signal;
+      onDelta(partial);
+      return new Promise<string>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+      });
+    });
+    return seen;
+  }
+  // A stream the test cuts on demand, as a network loss while the app is in the background.
+  // Once-queued implementations do not survive clearAllMocks: each A13 test starts from a clean stream.
+  beforeEach(() => {
+    h.streamMessage.mockReset();
+    h.streamMessage.mockResolvedValue("Respuesta nueva");
+    h.stopMessage.mockReset();
+    h.stopMessage.mockResolvedValue(undefined);
+  });
+
+  function cuttableStream(partial: string) {
+    const control: { cut?: (error: unknown) => void } = {};
+    h.streamMessage.mockImplementationOnce((_c: unknown, _t: unknown, _m: unknown, onDelta: (delta: string) => void) => {
+      onDelta(partial);
+      return new Promise<string>((_resolve, reject) => { control.cut = reject; });
+    });
+    return control;
+  }
+
+  describe("Stop", () => {
+    it("shows a Stop control in place of Send while the answer arrives, labelled with a translation key", async () => {
+      openStream("Berenjena");
+      await render();
+      await start("Una receta");
+      expect(stopAction()).toHaveLength(1);
+      expect(sendButtons()).toHaveLength(0);
+      const label = stopAction()[0]!.props.accessibilityLabel;
+      expect(Object.keys(es)).toContain(label);
+      for (const lang of ["es", "it", "en"] as const) expect(translate(label as TranslationKey, lang)).not.toBe(label);
+    });
+
+    it("on a saved chat, Stop calls the stop endpoint for that conversation and aborts the stream", async () => {
+      h.params = { conversationId: "saved-chat" };
+      const seen = openStream("Berenjena");
+      await render();
+      await start("Una receta");
+      expect(stopAction()).toHaveLength(1);
+      await act(async () => { stopAction()[0]!.props.onPress(); });
+      await settle();
+      expect(h.stopMessage).toHaveBeenCalledWith("saved-chat");
+      expect(seen.signal!.aborted).toBe(true);
+    });
+
+    it("in the preview, Stop only aborts the stream: there is no server conversation to stop", async () => {
+      h.restaurantId = null;
+      const seen = openStream("Berenjena");
+      await render();
+      await start("Prueba sin restaurante");
+      expect(stopAction()).toHaveLength(1);
+      await act(async () => { stopAction()[0]!.props.onPress(); });
+      await settle();
+      expect(h.stopMessage).not.toHaveBeenCalled();
+      expect(seen.signal!.aborted).toBe(true);
+    });
+
+    it("discards the partial answer: the question stays unanswered, with Retry and no failure", async () => {
+      openStream("Berenjena asada");
+      await render();
+      await start("Una receta");
+      await settle(300);
+      expect(stopAction()).toHaveLength(1);
+      await act(async () => { stopAction()[0]!.props.onPress(); });
+      await settle();
+      expect(contents()).toEqual(["Una receta"]);
+      expect(list().props.ListHeaderComponent).toBeFalsy();
+      expect(texts()).toContain("chat_unanswered");
+      expect(texts()).not.toContain("error_ai_provider_failed");
+      expect(actions("error_retry")).toHaveLength(1);
+      expect(sendButtons()).toHaveLength(1);
+      expect(stopAction()).toHaveLength(0);
+    });
+
+    it("a failing stop request still ends the turn on this device, with no raw error", async () => {
+      h.params = { conversationId: "saved-chat" };
+      openStream("Berenjena");
+      h.stopMessage.mockRejectedValueOnce(new Error("raw-stop-detail"));
+      await render();
+      await start("Una receta");
+      expect(stopAction()).toHaveLength(1);
+      await act(async () => { stopAction()[0]!.props.onPress(); });
+      await settle();
+      expect(texts()).toContain("chat_unanswered");
+      expect(JSON.stringify(texts())).not.toContain("raw-stop-detail");
+      expect(sendButtons()).toHaveLength(1);
+    });
+
+    it("a stopped event from the server ends the turn the same way as Stop", async () => {
+      h.params = { conversationId: "saved-chat" };
+      h.streamMessage.mockRejectedValueOnce(Object.assign(new Error("stopped"), { name: "StreamStoppedError" }));
+      await render();
+      await start("Una receta");
+      expect(texts()).toContain("chat_unanswered");
+      expect(texts()).not.toContain("error_ai_provider_failed");
+      expect(actions("error_retry")).toHaveLength(1);
+      expect(h.stopMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("resume after the app returns from the background", () => {
+    it("resumes the cut answer with the same clientMessageId, without a second question", async () => {
+      const cut = cuttableStream("Berenjena");
+      h.streamMessage.mockResolvedValueOnce("Berenjena asada con yogur");
+      await render();
+      await start("Una receta");
+      await setAppState("background");
+      await act(async () => { cut.cut!(cutError()); });
+      await settle();
+      expect(h.streamMessage).toHaveBeenCalledTimes(1);
+      expect(actions("error_retry")).toHaveLength(0);
+      await setAppState("active");
+      await settle();
+      expect(h.streamMessage).toHaveBeenCalledTimes(2);
+      const [first, second] = h.streamMessage.mock.calls;
+      expect(second![1]).toBe("Una receta");
+      expect(second![6]).toBe(first![6]);
+      expect(second![0]).toBe(first![0]);
+      expect(messages().filter((m: { role: string }) => m.role === "user")).toHaveLength(1);
+      expect(contents()).toContain("Berenjena asada con yogur");
+      expect(actions("error_retry")).toHaveLength(0);
+    });
+
+    it("retries a 409 chat_in_progress with backoff until the saved answer replays", async () => {
+      const cut = cuttableStream("Berenjena");
+      h.streamMessage
+        .mockRejectedValueOnce(conflict())
+        .mockRejectedValueOnce(conflict())
+        .mockResolvedValueOnce("Berenjena asada con yogur");
+      await render();
+      await start("Una receta");
+      await setAppState("background");
+      await act(async () => { cut.cut!(cutError()); });
+      await settle();
+      await setAppState("active");
+      await settle(120_000);
+      expect(h.streamMessage).toHaveBeenCalledTimes(4);
+      expect(new Set(h.streamMessage.mock.calls.map((call) => call[6])).size).toBe(1);
+      expect(contents()).toContain("Berenjena asada con yogur");
+      expect(texts()).not.toContain("chat_in_progress");
+      expect(actions("error_retry")).toHaveLength(0);
+    });
+
+    it("gives up after the bounded retries: the honest banner with Retry shows, and nothing retries afterwards", async () => {
+      const cut = cuttableStream("Berenjena");
+      h.streamMessage.mockRejectedValue(conflict());
+      await render();
+      await start("Una receta");
+      await setAppState("background");
+      await act(async () => { cut.cut!(cutError()); });
+      await settle();
+      await setAppState("active");
+      await settle(120_000);
+      expect(texts()).toContain("chat_in_progress");
+      expect(actions("error_retry")).toHaveLength(1);
+      expect(h.streamMessage).toHaveBeenCalledTimes(1 + RESUME_MAX_ATTEMPTS);
+      const requests = h.streamMessage.mock.calls.length;
+      await settle(600_000);
+      expect(h.streamMessage).toHaveBeenCalledTimes(requests);
+    });
+
+    it("the preview does not resume: a cut shows the existing honest error, with Retry", async () => {
+      h.restaurantId = null;
+      const cut = cuttableStream("Berenjena");
+      await render();
+      await start("Prueba sin restaurante");
+      await setAppState("background");
+      await act(async () => { cut.cut!(cutError()); });
+      await settle();
+      await setAppState("active");
+      await settle(120_000);
+      expect(h.streamMessage).toHaveBeenCalledTimes(1);
+      expect(texts()).toContain("error_network");
+      expect(actions("error_retry")).toHaveLength(1);
+    });
+
+    it("a cut that lands after the app is back in the foreground resumes at once", async () => {
+      const cut = cuttableStream("Berenjena");
+      h.streamMessage.mockResolvedValueOnce("Berenjena asada con yogur");
+      await render();
+      await start("Una receta");
+      await setAppState("background");
+      await setAppState("active");
+      await act(async () => { cut.cut!(cutError()); });
+      await settle();
+      expect(h.streamMessage).toHaveBeenCalledTimes(2);
+      expect(contents()).toContain("Berenjena asada con yogur");
+    });
+
+    it("a stream that completes while the app is in the background is not resumed", async () => {
+      let finish!: (full: string) => void;
+      h.streamMessage.mockImplementationOnce((_c: unknown, _t: unknown, _m: unknown, onDelta: (delta: string) => void) => {
+        onDelta("Berenjena");
+        return new Promise<string>((resolve) => { finish = resolve; });
+      });
+      await render();
+      await start("Una receta");
+      await setAppState("background");
+      await act(async () => { finish("Berenjena asada con yogur"); });
+      await settle();
+      await setAppState("active");
+      await settle(120_000);
+      expect(h.streamMessage).toHaveBeenCalledTimes(1);
+      expect(contents()).toContain("Berenjena asada con yogur");
     });
   });
 });

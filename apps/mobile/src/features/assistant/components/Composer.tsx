@@ -1,4 +1,4 @@
-// Composer of the assistant: dictation, text input and send (moved out of the screen in A12).
+// Composer of the assistant: dictation, text input, and send or stop (moved out of the screen in A12, Stop in A13).
 import { Pressable, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SendButton } from "@/src/components/SendButton";
@@ -12,12 +12,15 @@ type Props = {
   onChangeText: (text: string) => void;
   composerBusy: boolean;
   listening: boolean;
-  streaming: boolean;
+  // A turn is running: the Stop control replaces Send.
+  busy: boolean;
+  stopping: boolean;
   onMic: () => void;
   onSend: () => void;
+  onStop: () => void;
 };
 
-export function Composer({ input, onChangeText, composerBusy, listening, streaming, onMic, onSend }: Props) {
+export function Composer({ input, onChangeText, composerBusy, listening, busy, stopping, onMic, onSend, onStop }: Props) {
   const { t } = useI18n();
   return (
     <View style={styles.composer}>
@@ -51,11 +54,24 @@ export function Composer({ input, onChangeText, composerBusy, listening, streami
         editable={!composerBusy}
         accessibilityLabel={t("chat_input_label")}
       />
-      <SendButton
-        disabled={!input.trim() || composerBusy || listening}
-        streaming={streaming}
-        onPress={onSend}
-      />
+      {busy ? (
+        <Pressable
+          onPress={onStop}
+          disabled={stopping}
+          style={[styles.stopBtn, stopping && styles.stopBtnDisabled]}
+          accessibilityRole="button"
+          accessibilityLabel={t("chat_stop_answer")}
+          accessibilityState={{ disabled: stopping }}
+        >
+          <Ionicons name="stop" size={16} color={colors.paper} />
+        </Pressable>
+      ) : (
+        <SendButton
+          disabled={!input.trim() || composerBusy || listening}
+          streaming={false}
+          onPress={onSend}
+        />
+      )}
     </View>
   );
 }

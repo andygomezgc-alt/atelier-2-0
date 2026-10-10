@@ -11,6 +11,8 @@ export type StreamText = {
   push: (delta: string) => boolean;
   // Sets the final text and resolves with it once the reveal has caught up.
   finish: (full: string) => Promise<string>;
+  // Shows the whole final text at once, with no typewriter (a recovered answer, A13). Returns it.
+  reveal: (full: string) => string;
   reset: () => void;
   dispose: () => void;
 };
@@ -75,6 +77,14 @@ export function createStreamText(): StreamText {
       target += delta;
       startTicker();
       return first;
+    },
+    reveal(full) {
+      target = full || target;
+      done = true;
+      stopTicker();
+      releaseWaiter();
+      publish(target);
+      return target;
     },
     finish(full) {
       target = full || target;
