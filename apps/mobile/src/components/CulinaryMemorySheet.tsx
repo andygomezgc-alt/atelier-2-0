@@ -7,7 +7,7 @@ import { deleteChefNote, getChefNotes } from "@/src/api/chef-notes";
 import { ApiError } from "@/src/api/client";
 import { useI18n } from "@/src/hooks/useI18n";
 import { apiErrorMessage } from "@/src/lib/api-error";
-import { hasUnsavedRelearn, relearnCategory } from "@/src/lib/culinary-memory-draft";
+import { hasUnsavedRelearn, memoryPatchBody, relearnCategory } from "@/src/lib/culinary-memory-draft";
 import { BottomSheet } from "./BottomSheet";
 import { ConfirmSheet } from "./ConfirmSheet";
 import { Button } from "./Button";
@@ -67,8 +67,7 @@ export function CulinaryMemorySheet({ restaurantId, onClose }: Props) {
   function close() { if (!busy) dirty ? setConfirm("close") : onClose(); }
   async function save(erase = false) {
     if (!draft || !data || busy) return;
-    const body = PatchCulinaryMemorySchema.safeParse({ expectedVersion: data.version, enabled: draft.enabled,
-      identityLine: draft.identityLine, corrections: draft.corrections, excludedKeys: draft.excludedKeys });
+    const body = PatchCulinaryMemorySchema.safeParse(memoryPatchBody(data, draft));
     if (!erase && !body.success) return;
     setBusy(true);
     try {
@@ -93,6 +92,10 @@ export function CulinaryMemorySheet({ restaurantId, onClose }: Props) {
           <TextInput accessibilityLabel={t("memory_identity")} style={styles.input} multiline maxLength={1000}
             editable={draft.canEdit && !busy} value={draft.identityLine ?? ""} placeholder={t("memory_identity_hint")}
             placeholderTextColor={colors.mute} onChangeText={identityLine => setDraft({ ...draft, identityLine })} />
+          <Text style={styles.label}>{t("memory_city")}</Text>
+          <TextInput accessibilityLabel={t("memory_city")} style={styles.input} maxLength={80}
+            editable={draft.canEdit && !busy} value={draft.city ?? ""} placeholder={t("memory_city_hint")}
+            placeholderTextColor={colors.mute} onChangeText={city => setDraft({ ...draft, city })} />
           <View style={styles.row}><Text style={[styles.label, { flex: 1 }]}>{t("memory_enabled")}</Text>
             <Switch accessibilityLabel={t("memory_enabled")} value={draft.enabled} disabled={!draft.canEdit || busy || (!draft.learningAvailable && !draft.enabled)}
               onValueChange={enabled => setDraft({ ...draft, enabled })} /></View>
