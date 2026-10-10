@@ -360,7 +360,7 @@ Ventana local, 10-10-2026. Rama `feat/memoria-encendida`, punto de partida `af93
 - **E9** (Haiku 5.5 alto; ruta delegada). Privacidad (voseo): memoria activada por defecto, cómo apagarla, aprendizaje al cargar y semanal, ingredientes contados sin IA, nombre, ciudad y mes que recibe el asistente. `docs/MEMORIA-ENCENDIDA-2026-10.md` nuevo (incluye «Pendiente») y entrada en `docs/ESTADO-ACTUAL.md`. Sin test de la página (ninguno la renderiza); tsc de api y `git diff --check` OK. Cuando se adapte E2, revisar que la privacidad siga describiendo bien el envío del nombre.
 
 ## Siguiente paso
-1. Esperar a que `codex/asistente-arreglos` entre en `main` (decisión de Andy).
+1. Esperar a que `codex/asistente-arreglos` entre en `main` (decisión de Andy). Va en 3 PR apilados que se fusionan en orden: #11 (servidor, contra `main`), #12 (prompt y memoria culinaria, contra #11) y #13 (app, contra #12). El punto de arranque es la fusión de #13 en `main`. Ojo en E7b: los estilos de contraste del PR #9 (chip de idea anclada y «Guardar como receta») viven ahora en `apps/mobile/src/features/assistant/chat-styles.ts`.
 2. Fusionar `main` en `feat/memoria-encendida` y resolver los 6 conflictos.
 3. Tareas nuevas de adaptación, con TDD y revisión: E2b (nombre de quien escribe, ciudad y mes como datos JSON bajo la cabecera de A8, carga en `chat-turn-service.ts`), E3b/E5b (ingredientes frecuentes y aprendizaje tras carga sobre el `worker.ts` de A9), E7b (`MemoryChip` en la estructura dividida de A12).
 4. Revisión RDD de toda la porción desde `5d94a58` y cierre (incluido `npx expo export --platform android`).
