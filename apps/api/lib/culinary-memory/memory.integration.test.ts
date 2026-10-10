@@ -15,12 +15,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Prisma, prisma } from "@atelier/db";
+import { saveNewRecipe } from "../create-recipe";
 import { chatMemory, patchCulinaryMemory } from "./service";
-import { maintainMemoryRuns, processMemory } from "./worker";
+import { learnAfterImport, maintainMemoryRuns, processMemory } from "./worker";
 import type { MemoryGenerator } from "./provider";
 
 const enabled = process.env.CULINARY_MEMORY_IT === "1";
 const DAY = 24 * 60 * 60 * 1000;
+const WEEK = 7 * DAY;
 const config = { provider: "fixture", model: "fixture" };
 const run = `it-${randomUUID().slice(0, 8)}`;
 
@@ -54,6 +56,17 @@ async function seed(name: string, recipes = 3) {
   }
   return id;
 }
+
+/** Carga una receta como lo hace la app (origen "import"); un admin la deja aprobada. */
+async function importRecipe(restaurantId: string, ingredient: string) {
+  const { recipe } = await saveNewRecipe(restaurantId, `${restaurantId}-user`, {
+    title: ingredient, origin: "import",
+    contentJson: { ingredients: [`200 g ${ingredient}`], method: [`Asar ${ingredient}`], notes: "" },
+  }, "admin");
+  return recipe;
+}
+const sourceIds = async (restaurantId: string) =>
+  ((await memoryOf(restaurantId)).learned as Array<{ sources: { id: string }[] }>).flatMap(fact => fact.sources.map(source => source.id));
 
 // Fórmula de huella ANTERIOR a v2 (título + ingredientes + método + estado),
 // escrita aparte a propósito para no fabricar los datos con el código a probar.
@@ -242,5 +255,81 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
     if (kind === "renamed") await prisma.recipe.update({ where: { id: `${id}-0` }, data: { title: "Nombre nuevo que no conserva el anterior" } });
     if (kind === "changed") await prisma.recipe.update({ where: { id: `${id}-0` }, data: { contentJson: { ingredients: ["200 g tomate"], method: ["Hervir tomate"] } } });
     expect((await contextOf(id)).includes("verduras asadas")).toBe(survives);
+  });
+
+  it("con la memoria ya aprendida esta semana, una carga vuelve a aprender al momento", async () => {
+    const id = await seed("import-relearn");
+    expect(await processMemory(id, roasted, config, new Date())).toBe("completed");
+    const recipe = await importRecipe(id, "pimiento");
+    expect(recipe.state).toBe("approved");
+    // El cron sigue esperando a la semana; la carga no.
+    expect(await processMemory(id, roasted, config, new Date())).toBe("skipped");
+    expect(await learnAfterImport(id, { generator: roasted, config, pollMs: 10 })).toBe("completed");
+    expect(await sourceIds(id)).toContain(recipe.id);
+    expect(await publishedRuns(id)).toBe(2);
+    expect((await prisma.culinaryMemoryRun.findFirstOrThrow({ where: { restaurantId: id }, orderBy: { createdAt: "desc" } })).isRetry).toBe(false);
+  });
+
+  it("dos cargas solapadas acaban publicando con las dos recetas", async () => {
+    const id = await seed("import-overlap", 2);
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const ready = new Promise<void>(resolve => { started = resolve; });
+    const slow: MemoryGenerator = async (input, onUsage) => { started(); await gate; return roasted(input, onUsage); };
+    let secondCalls = 0;
+    const second: MemoryGenerator = async (input, onUsage) => { secondCalls++; return roasted(input, onUsage); };
+
+    const first = await importRecipe(id, "pimiento");
+    const firstRun = learnAfterImport(id, { generator: slow, config, pollMs: 20 });
+    await ready;
+    const other = await importRecipe(id, "cebolla");
+    const secondRun = learnAfterImport(id, { generator: second, config, pollMs: 20 });
+    try {
+      // La segunda corrida encuentra el bloqueo y espera.
+      await new Promise(resolve => setTimeout(resolve, 150));
+      expect(secondCalls).toBe(0);
+    } finally {
+      release();
+    }
+    // La primera generó sin la segunda receta: sus fuentes cambiaron y no publica.
+    expect(await firstRun).toBe("failed");
+    expect(await secondRun).toBe("completed");
+    expect(secondCalls).toBe(1);
+    const sources = await sourceIds(id);
+    expect(sources).toEqual(expect.arrayContaining([first.id, other.id]));
+    expect(await contextOf(id)).toMatch(/verduras asadas/);
+  });
+
+  it("con la memoria apagada, una carga no llama al proveedor", async () => {
+    const id = await seed("import-off");
+    const { version } = await memoryOf(id);
+    await patchCulinaryMemory(id, { expectedVersion: version, enabled: false });
+    let calls = 0;
+    const counted: MemoryGenerator = async (input, onUsage) => { calls++; return roasted(input, onUsage); };
+    await importRecipe(id, "pimiento");
+    expect(await learnAfterImport(id, { generator: counted, config, pollMs: 10 })).toBe("skipped");
+    expect(calls).toBe(0);
+    expect(await prisma.culinaryMemoryRun.count({ where: { restaurantId: id } })).toBe(0);
+  });
+
+  it("después de una carga, el cron sigue respetando la semana", async () => {
+    const id = await seed("import-cadence");
+    await importRecipe(id, "pimiento");
+    expect(await learnAfterImport(id, { generator: roasted, config, pollMs: 10 })).toBe("completed");
+    const learned = await memoryOf(id);
+    const anchor = learned.lastAttemptAt!;
+    expect(learned.cycleStartedAt).toEqual(anchor);
+    expect(learned.retryAt).toBeNull();
+    expect(+learned.nextCheckAt).toBe(+anchor + WEEK);
+    // Un cambio posterior que no es una carga espera al intento semanal.
+    await prisma.recipe.update({ where: { id: `${id}-0` }, data: { contentJson: { ingredients: ["200 g tomate"], method: ["Asar tomate entero"] } } });
+    let calls = 0;
+    const counted: MemoryGenerator = async (input, onUsage) => { calls++; return roasted(input, onUsage); };
+    expect(await processMemory(id, counted, config, new Date(+anchor + DAY))).toBe("skipped");
+    expect(calls).toBe(0);
+    expect(+(await memoryOf(id)).nextCheckAt).toBe(+anchor + WEEK);
+    expect(await processMemory(id, counted, config, new Date(+anchor + WEEK))).toBe("completed");
+    expect(calls).toBe(1);
   });
 });

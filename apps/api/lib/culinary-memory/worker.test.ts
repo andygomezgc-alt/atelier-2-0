@@ -13,7 +13,7 @@ const { db, loadEvidence, loadIngredientStats } = vi.hoisted(() => ({
 vi.mock("@atelier/db", () => ({ prisma: db, Prisma: { DbNull: "DB_NULL" } }));
 vi.mock("./service", () => ({ loadEvidence, loadIngredientStats, correctionsOf: (v: unknown) => v ?? [] }));
 
-import { maintainMemoryRuns, processMemory } from "./worker";
+import { learnAfterImport, maintainMemoryRuns, processMemory } from "./worker";
 
 const DAY = 86_400_000;
 const WEEK = 7 * DAY;
@@ -320,6 +320,90 @@ describe("weekly memory worker", () => {
     const generate = vi.fn().mockResolvedValue({ trends: [] });
     await processMemory("r1", generate, config, now, controller.signal);
     expect(generate.mock.calls[0]![0].signal).toBe(controller.signal);
+  });
+});
+
+describe("learning right after an import", () => {
+  const claimOf = () => db.culinaryMemory.updateMany.mock.calls.find(([arg]) => arg.data.lockToken)?.[0];
+
+  it("skips the weekly window and reserves with only the lock condition, as a regular attempt", async () => {
+    const lastAttemptAt = new Date(+now - DAY);
+    db.culinaryMemory.findUnique.mockResolvedValue(memory({ lastAttemptAt, cycleStartedAt: lastAttemptAt }));
+    expect(await processMemory("r1", successful(), config, now, undefined, { afterImport: true })).toBe("completed");
+    const claim = claimOf();
+    expect(claim.where).toEqual({
+      restaurantId: "r1", enabled: true, version: 1, dirtyRevision: 2,
+      AND: [{}, { OR: [{ lockExpiresAt: null }, { lockExpiresAt: { lte: now } }] }],
+    });
+    expect(claim.data).toMatchObject({ lastAttemptAt: now, cycleStartedAt: now, retryAt: null, nextCheckAt: new Date(+now + WEEK) });
+    expect(db.culinaryMemoryRun.create).toHaveBeenCalledWith({ data: expect.objectContaining({ isRetry: false, cycleStartedAt: now }) });
+  });
+
+  it("skips a pending retry wait and counts as a regular attempt, not the retry", async () => {
+    const cycleStartedAt = new Date(+now - DAY);
+    db.culinaryMemory.findUnique.mockResolvedValue(memory({ lastAttemptAt: cycleStartedAt, cycleStartedAt, retryAt: new Date(+now + DAY) }));
+    expect(await processMemory("r1", successful(), config, now, undefined, { afterImport: true })).toBe("completed");
+    expect(db.culinaryMemoryRun.create).toHaveBeenCalledWith({ data: expect.objectContaining({ isRetry: false, cycleStartedAt: now }) });
+    expect(claimOf().data).toMatchObject({ retryAt: null, cycleStartedAt: now, nextCheckAt: new Date(+now + WEEK) });
+  });
+
+  it("does not treat a due retry as the retry either", async () => {
+    const cycleStartedAt = new Date(+now - 2 * DAY);
+    db.culinaryMemory.findUnique.mockResolvedValue(memory({ lastAttemptAt: cycleStartedAt, cycleStartedAt, retryAt: new Date(+now - 1) }));
+    expect(await processMemory("r1", successful(), config, now, undefined, { afterImport: true })).toBe("completed");
+    expect(db.culinaryMemoryRun.create).toHaveBeenCalledWith({ data: expect.objectContaining({ isRetry: false, cycleStartedAt: now }) });
+  });
+
+  it("returns locked with a live lock, while the regular mode keeps returning skipped", async () => {
+    const generate = vi.fn();
+    db.culinaryMemory.findUnique.mockResolvedValue(memory({ lockExpiresAt: new Date(+now + 60_000) }));
+    expect(await processMemory("r1", generate, config, now, undefined, { afterImport: true })).toBe("locked");
+    expect(await processMemory("r1", generate, config, now)).toBe("skipped");
+    expect(generate).not.toHaveBeenCalled();
+    expect(db.culinaryMemoryRun.create).not.toHaveBeenCalled();
+  });
+
+  it("keeps every other gate: memory off, no changes and fewer than two recipes", async () => {
+    const generate = vi.fn();
+    db.culinaryMemory.findUnique.mockResolvedValueOnce(memory({ enabled: false }));
+    expect(await processMemory("r1", generate, config, now, undefined, { afterImport: true })).toBe("skipped");
+    db.culinaryMemory.findUnique.mockResolvedValueOnce(memory({ checkedRevision: 2 }));
+    expect(await processMemory("r1", generate, config, now, undefined, { afterImport: true })).toBe("unchanged");
+    loadEvidence.mockResolvedValueOnce(evidence.slice(0, 1));
+    expect(await processMemory("r1", generate, config, now, undefined, { afterImport: true })).toBe("unchanged");
+    expect(generate).not.toHaveBeenCalled();
+  });
+});
+
+describe("learnAfterImport", () => {
+  const locked = () => memory({ lockExpiresAt: new Date(Date.now() + 60_000) });
+
+  it("retries while the memory is locked or busy and returns the first other result", async () => {
+    db.culinaryMemory.findUnique.mockResolvedValueOnce(locked());
+    db.culinaryMemory.updateMany.mockResolvedValueOnce({ count: 0 });
+    const generate = successful();
+    expect(await learnAfterImport("r1", { generator: generate, config, pollMs: 1 })).toBe("completed");
+    expect(db.culinaryMemory.findUnique).toHaveBeenCalledTimes(3);
+    expect(generate).toHaveBeenCalledOnce();
+    expect(db.culinaryMemoryRun.create).toHaveBeenCalledOnce();
+    expect(db.culinaryMemoryRun.create).toHaveBeenCalledWith({ data: expect.objectContaining({ isRetry: false }) });
+  });
+
+  it.each<[string, () => void]>([
+    ["unchanged", () => db.culinaryMemory.findUnique.mockResolvedValueOnce(memory({ checkedRevision: 2 }))],
+    ["skipped", () => db.culinaryMemory.findUnique.mockResolvedValueOnce(memory({ enabled: false }))],
+    ["failed", () => loadEvidence.mockResolvedValueOnce(evidence).mockResolvedValueOnce([])],
+  ])("stops at once on %s", async (result, arrange) => {
+    arrange();
+    expect(await learnAfterImport("r1", { generator: successful(), config, pollMs: 1 })).toBe(result);
+    expect(db.culinaryMemory.findUnique).toHaveBeenCalledOnce();
+  });
+
+  it("stops waiting when the signal aborts", async () => {
+    const controller = new AbortController();
+    db.culinaryMemory.findUnique.mockImplementation(async () => { controller.abort(new Error("deadline")); return locked(); });
+    await expect(learnAfterImport("r1", { generator: vi.fn(), config, signal: controller.signal, pollMs: 60_000 })).rejects.toThrow("deadline");
+    expect(db.culinaryMemory.findUnique).toHaveBeenCalledOnce();
   });
 });
 
