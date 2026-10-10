@@ -50,10 +50,12 @@ function clampContent(content: string): string {
 export function buildHistoryUpload(history: HistoryUploadSource[], storedIds: ReadonlySet<string>): HistoryUploadItem[] {
   const items: HistoryUploadItem[] = [];
   for (const message of history) {
-    if (!message.content.trim()) continue;
+    // Checked on what is uploaded: text that only starts past the limit would leave a blank upload.
+    const content = clampContent(message.content);
+    if (!content.trim()) continue;
     const clientMessageId = message.clientMessageId || derivedClientMessageId(message.id);
     if (storedIds.has(clientMessageId)) continue;
-    items.push({ role: message.role, content: clampContent(message.content), clientMessageId });
+    items.push({ role: message.role, content, clientMessageId });
   }
   return items;
 }

@@ -65,6 +65,11 @@ describe("buildHistoryUpload (A10c)", () => {
     expect(items.map((item) => item.content)).toEqual(["Válido"]);
   });
 
+  it("skips a message that is only whitespace within the limit, since that is what would be uploaded", () => {
+    const items = buildHistoryUpload([user("u1", " ".repeat(MESSAGE_CONTENT_MAX) + "texto tardío", "c1")], none);
+    expect(items).toEqual([]);
+  });
+
   it("keeps the order of the history", () => {
     const items = buildHistoryUpload([user("u1", "Uno", "c1"), assistant("a1", "Dos", "c1:assistant"), user("u2", "Tres", "c2")], none);
     expect(items.map((item) => [item.content, item.clientMessageId])).toEqual([
