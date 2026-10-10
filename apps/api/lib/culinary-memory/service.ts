@@ -68,7 +68,10 @@ export async function patchCulinaryMemory(restaurantId: string, patch: PatchCuli
     } });
     if (!changed.count) throw new MemoryConflict();
     if (erase) await tx.culinaryMemoryRun.updateMany({ where: { restaurantId }, data: { publishedTrends: Prisma.DbNull } });
-    if (patch.identityLine !== undefined) await tx.restaurant.update({ where: { id: restaurantId }, data: { identityLine: patch.identityLine || null } });
+    if (patch.identityLine !== undefined || patch.city !== undefined) await tx.restaurant.update({ where: { id: restaurantId }, data: {
+      ...(patch.identityLine !== undefined ? { identityLine: patch.identityLine || null } : {}),
+      ...(patch.city !== undefined ? { city: patch.city?.trim() || null } : {}),
+    } });
     // `enabled` solo cambia aquí y siempre sube la versión: si la lectura tenía la
     // versión esperada, `before` es justo el estado que este cambio sustituye.
     return !erase && patch.enabled === true && !before.enabled && before.version === patch.expectedVersion;

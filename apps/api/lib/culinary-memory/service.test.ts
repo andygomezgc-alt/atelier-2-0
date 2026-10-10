@@ -12,7 +12,7 @@ const { db } = vi.hoisted(() => ({
 vi.mock("@atelier/db", () => ({ prisma: db, Prisma: { DbNull: "DB_NULL" } }));
 
 import { recipeEvidence } from "./evidence";
-import { chatMemory, evidenceSelect, loadIngredientStats, patchCulinaryMemory } from "./service";
+import { chatMemory, evidenceSelect, getCulinaryMemory, loadIngredientStats, patchCulinaryMemory } from "./service";
 
 const recipe = (id: string) => ({ id, title: id, state: "approved", updatedAt: new Date(),
   contentJson: { ingredients: [`200 g ${id}`], method: [`Asar ${id}`] }, recipeIngredients: [] });
@@ -165,6 +165,92 @@ describe("ingredient statistics in prepared memory", () => {
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ preparedContext: expect.stringContaining('"ingredientesFrecuentes":"azafrán 2, ricciola 2"') }),
     }));
+  });
+});
+
+describe("culinary memory city", () => {
+  it("returns the restaurant city", async () => {
+    db.restaurant.findUniqueOrThrow.mockResolvedValue({ identityLine: "Cocina de mercado", city: "Ancona" });
+    expect(await getCulinaryMemory("r1", true)).toMatchObject({
+      restaurantId: "r1", identityLine: "Cocina de mercado", city: "Ancona",
+    });
+    expect(db.restaurant.findUniqueOrThrow).toHaveBeenCalledWith({
+      where: { id: "r1" }, select: { identityLine: true, city: true },
+    });
+  });
+
+  it("writes city and identityLine in the same memory patch transaction", async () => {
+    let transactionWrites = 0;
+    db.$transaction.mockImplementationOnce(async (fn: (tx: typeof db) => Promise<unknown>) => {
+      expect(db.restaurant.update).not.toHaveBeenCalled();
+      expect(db.culinaryMemory.updateMany).not.toHaveBeenCalled();
+      const result = await fn(db);
+      expect(db.restaurant.update).toHaveBeenCalledWith({
+        where: { id: "r1" }, data: expect.objectContaining({ city: "Ancona" }),
+      });
+      expect(db.restaurant.update).toHaveBeenCalledWith({
+        where: { id: "r1" }, data: expect.objectContaining({ identityLine: "Cocina de mercado" }),
+      });
+      expect(db.culinaryMemory.upsert).toHaveBeenCalledTimes(1);
+      expect(db.culinaryMemory.updateMany).toHaveBeenCalledTimes(1);
+      transactionWrites = db.restaurant.update.mock.calls.length;
+      return result;
+    });
+    await patchCulinaryMemory("r1", { expectedVersion: 4, identityLine: "Cocina de mercado", city: "Ancona" });
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(db.restaurant.update).toHaveBeenCalledTimes(transactionWrites);
+  });
+
+  it.each([
+    ["empty", ""],
+    ["blank", " \t "],
+    ["null", null],
+  ])("stores null when the patched city is %s", async (_label, city) => {
+    await patchCulinaryMemory("r1", { expectedVersion: 4, city });
+    expect(db.restaurant.update).toHaveBeenCalledWith({
+      where: { id: "r1" }, data: expect.objectContaining({ city: null }),
+    });
+  });
+
+  it("does not touch city when the patch only updates identityLine", async () => {
+    db.restaurant.findUniqueOrThrow.mockResolvedValue({ identityLine: "Cocina de mercado", city: "Ancona" });
+    const result = await patchCulinaryMemory("r1", { expectedVersion: 4, identityLine: "Cocina de mercado" });
+    expect(db.restaurant.update).toHaveBeenCalledTimes(1);
+    expect(db.restaurant.update).toHaveBeenCalledWith({
+      where: { id: "r1" }, data: { identityLine: "Cocina de mercado" },
+    });
+    expect(db.restaurant.update.mock.calls[0]![0].data).not.toHaveProperty("city");
+    expect(result.memory.city).toBe("Ancona");
+  });
+});
+
+describe("memory created by a patch", () => {
+  it.each([
+    ["identity only", { identityLine: "Cocina de mercado" }],
+    ["enabled requested", { enabled: true }],
+  ])("keeps new rows enabled without reporting turnedOn and schedules the cron now for %s", async (_label, patch) => {
+    const now = new Date("2026-10-10T12:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    try {
+      // La fila recién creada usa enabled=true por defecto y version=0.
+      db.culinaryMemory.upsert.mockResolvedValueOnce(memory({ enabled: true, version: 0 }));
+      db.culinaryMemory.findUnique.mockResolvedValue(memory({ enabled: true, version: 1 }));
+      const result = await patchCulinaryMemory("r1", { expectedVersion: 0, ...patch });
+      expect(db.culinaryMemory.upsert).toHaveBeenCalledTimes(1);
+      expect(db.culinaryMemory.upsert).toHaveBeenCalledWith({
+        where: { restaurantId: "r1" }, create: expect.objectContaining({ restaurantId: "r1" }), update: {},
+      });
+      expect(db.culinaryMemory.upsert.mock.calls[0]![0].create.enabled).not.toBe(false);
+      expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith({
+        where: { restaurantId: "r1", version: 0 }, data: expect.objectContaining({ nextCheckAt: now }),
+      });
+      expect(db.culinaryMemory.updateMany.mock.calls[0]![0].data.enabled).not.toBe(false);
+      expect(result.memory.enabled).toBe(true);
+      expect(result.turnedOn).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
