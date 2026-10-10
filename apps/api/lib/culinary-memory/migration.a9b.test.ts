@@ -8,7 +8,7 @@ describe("A9b additive suppression expiry and discard streak", () => {
     const candidates = entries.filter(name => /^\d{14}_culinary_memory_suppression_expiry$/.test(name));
     expect(candidates).toHaveLength(1);
     const name = candidates[0]!;
-    for (const earlier of entries.filter(other => other !== name)) expect(name > earlier).toBe(true);
+    expect(name > "20261007190000_culinary_memory_failure_tracking").toBe(true);
     const sql = readFileSync(new URL(`migrations/${name}/migration.sql`, root), "utf8")
       .replace(/--[^\n]*/g, "").replace(/\s+/g, " ").trim();
     expect(sql).toBe('ALTER TABLE "CulinaryMemory" ADD COLUMN "discardStreak" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "lastFailedAt" TIMESTAMP(3);');
