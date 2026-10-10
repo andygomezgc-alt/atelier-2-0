@@ -10,7 +10,7 @@ vi.mock("expo-secure-store", () => ({
 
 import { t } from "@atelier/i18n";
 import { ApiErrorCodeSchema, isRetryableChatError } from "@atelier/shared";
-import { classifyChatError } from "../chat-error";
+import { ChatHistoryUploadError, classifyChatError } from "../chat-error";
 import { ApiError, NetworkError } from "@/src/api/client";
 import { StreamInterruptedError, StreamTimeoutError } from "@/src/api/conversations";
 
@@ -118,6 +118,26 @@ describe("classifyChatError (A3)", () => {
   it("falls back to a legacy message that is itself a known code", () => {
     expect(classifyChatError(new Error("ai_daily_weekly_limit"), tStub, "daily")).toEqual({
       message: "[ai_daily_weekly_limit]", retryable: false,
+    });
+  });
+});
+
+// R3-001 — a refused upload (400/422) cannot succeed on retry; an interrupted one can.
+describe("A10 history upload failures", () => {
+  const upload = (source: unknown) => new ChatHistoryUploadError(source, "conv-1");
+
+  it.each([400, 422])("a %i refusal of the upload is not retryable and offers a new chat", (status) => {
+    expect(classifyChatError(upload(new ApiError(status, "Raw validation text")), tStub, "creative")).toEqual({
+      message: "[chat_history_upload_failed]", retryable: false, action: "new_chat",
+    });
+  });
+
+  it("keeps Retry for an interrupted upload and the forbidden explanation for a 403", () => {
+    expect(classifyChatError(upload(new NetworkError()), tStub, "creative")).toEqual({
+      message: "[chat_history_upload_failed]", retryable: true,
+    });
+    expect(classifyChatError(upload(new ApiError(403, "Raw forbidden text")), tStub, "creative")).toEqual({
+      message: "[error_forbidden]", retryable: false,
     });
   });
 });

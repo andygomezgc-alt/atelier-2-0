@@ -80,3 +80,44 @@ describe("A3b no sign-in button in the chat banner", () => {
     for (const dict of [es, en, itDict]) expect(Object.keys(dict)).not.toContain("chat_sign_in");
   });
 });
+
+// A10 — a failed history upload has its own reason, not the generic "the assistant did not answer".
+describe("A10 chat history upload copy", () => {
+  test("has the Spanish copy and a translation in each language", () => {
+    expect((es as Record<string, string>).chat_history_upload_failed).toBe("No se pudo guardar el historial de este chat. Inténtalo de nuevo.");
+    for (const dict of [en, itDict]) {
+      const value = (dict as Record<string, string>).chat_history_upload_failed;
+      expect(value?.trim(), "chat_history_upload_failed").toBeTruthy();
+      expect(value).not.toBe((es as Record<string, string>).chat_history_upload_failed);
+      expect(value).not.toContain("_");
+    }
+  });
+});
+
+// A13 — the stop control is labelled in every language, with the same short imperative tone as "send".
+describe("A13 chat stop copy", () => {
+  test("has the Spanish copy and a translation in each language", () => {
+    expect((es as Record<string, string>).chat_stop_answer).toBe("Detener");
+    for (const dict of [en, itDict]) {
+      const value = (dict as Record<string, string>).chat_stop_answer;
+      expect(value?.trim(), "chat_stop_answer").toBeTruthy();
+      expect(value).not.toBe((es as Record<string, string>).chat_stop_answer);
+      expect(value).not.toContain("_");
+    }
+  });
+});
+
+// A13b — a recovered answer shows a status while it is being recovered, in every language.
+describe("A13b chat recovering copy", () => {
+  test("has a translation in each language, distinct from the Spanish one", () => {
+    const key = "chat_answer_recovering";
+    const spanish = (es as Record<string, string>)[key];
+    for (const dict of [es, en, itDict]) {
+      const value = (dict as Record<string, string>)[key];
+      expect(value?.trim(), key).toBeTruthy();
+      expect(value, key).not.toContain("_");
+    }
+    expect((en as Record<string, string>)[key], key).not.toBe(spanish);
+    expect((itDict as Record<string, string>)[key], key).not.toBe(spanish);
+  });
+});

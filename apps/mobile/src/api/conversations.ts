@@ -22,6 +22,14 @@ export class StreamInterruptedError extends Error {
   }
 }
 
+// A13 — the server ended the answer because it was stopped: nothing was saved, the partial text is discarded.
+export class StreamStoppedError extends Error {
+  constructor(readonly partialText: string) {
+    super("stream_stopped");
+    this.name = "StreamStoppedError";
+  }
+}
+
 export class StreamTimeoutError extends StreamInterruptedError {
   constructor(partialText = "") {
     super("stream_timeout", partialText);
@@ -62,7 +70,7 @@ export const listMessages = (conversationId: string) =>
 // needs-restaurant → signed-in.
 export const bulkAddMessages = (
   conversationId: string,
-  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  messages: Array<{ role: "user" | "assistant"; content: string; clientMessageId?: string }>,
 ) =>
   apiFetch<{ inserted: number }>(
     `/api/conversations/${encodeURIComponent(conversationId)}/messages/bulk`,
@@ -97,6 +105,7 @@ export type SseEvent =
   | { type: "delta"; text: string }
   | { type: "heartbeat"; ts: number }
   | { type: "done" }
+  | { type: "stopped" }
   | { type: "error"; message: string; code?: ApiErrorCode; retryAfter?: number };
 
 export function parseSseEvent(data: string): SseEvent | null {
@@ -113,6 +122,7 @@ export function parseSseEvent(data: string): SseEvent | null {
         return { type: "heartbeat", ts: json.ts };
       }
       if (json.type === "done") return { type: "done" };
+      if (json.type === "stopped") return { type: "stopped" };
       if (json.type === "error") {
         // A2 — newer servers send a closed `code` (+ `retryAfter` seconds);
         // `message` stays as the fallback for servers that only send text.
@@ -230,6 +240,8 @@ export async function streamMessage(
         // empezar a generar.
       } else if (ev.type === "done") {
         settle(() => resolve(full));
+      } else if (ev.type === "stopped") {
+        settle(() => reject(new StreamStoppedError(full)));
       } else if (ev.type === "error") {
         settle(() => reject(new StreamInterruptedError(ev.code ?? ev.message, full, ev.code, ev.retryAfter)));
       }
@@ -255,4 +267,9 @@ export async function streamMessage(
       });
     });
   });
+}
+
+// A13 — stops the running answer of a saved conversation (POST .../messages/stop, 204).
+export async function stopMessage(conversationId: string): Promise<void> {
+  await apiFetch<void>(`/api/conversations/${encodeURIComponent(conversationId)}/messages/stop`, { method: "POST" });
 }

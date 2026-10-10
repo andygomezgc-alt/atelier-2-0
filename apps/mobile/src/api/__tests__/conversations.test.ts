@@ -58,6 +58,7 @@ import {
   getConversationByIdea,
   listMessages,
   parseSseEvent,
+  stopMessage,
   streamMessage,
   StreamInterruptedError,
   StreamTimeoutError,
@@ -310,5 +311,51 @@ describe("A3 stream transport errors and encoded ids", () => {
     expect(urls[0]).toMatch(/\/api\/conversations\/a%2Fb%3Fc\/messages$/);
     expect(urls[1]).toMatch(/\/api\/conversations\/a%2Fb%3Fc\/messages\/bulk$/);
     expect(urls[2]).toMatch(/\/api\/ideas\/i%2Fd%231\/conversation$/);
+  });
+});
+
+// A13 — stop and stopped events (RED: the stop request and the stopped event are not implemented yet).
+describe("A13 stop", () => {
+  it("parses the stopped event the server sends when a generation is stopped", () => {
+    expect(parseSseEvent('{"type":"stopped"}')).toEqual({ type: "stopped" });
+  });
+
+  it("ends the stream as StreamStoppedError when the server reports it stopped", async () => {
+    const M = await getMock();
+    let outcome: { ok?: string; err?: { name?: string } } | null = null;
+    const promise = streamMessage("conv-1", "hi", "daily", vi.fn());
+    promise.then(
+      (ok) => { outcome = { ok }; },
+      (err: { name?: string }) => { outcome = { err }; },
+    );
+    await new Promise((r) => setImmediate(r));
+    try {
+      M.lastInstance.emit("message", { type: "message", data: '{"type":"delta","text":"Berenjena"}' });
+      M.lastInstance.emit("message", { type: "message", data: '{"type":"stopped"}' });
+      await new Promise((r) => setImmediate(r));
+      expect(outcome).not.toBeNull();
+      expect((outcome as { err?: { name?: string } } | null)?.err?.name).toBe("StreamStoppedError");
+    } finally {
+      // Settle the stream if it is still open, so its inactivity timer does not outlive the test.
+      M.lastInstance.emit("message", { type: "message", data: '{"type":"done"}' });
+    }
+  });
+
+  it("reports a 409 chat_in_progress reply with its code and status (the resume precondition)", async () => {
+    const M = await getMock();
+    const promise = streamMessage("conv-1", "hi", "daily", vi.fn());
+    const assertion = expect(promise).rejects.toMatchObject({ name: "StreamInterruptedError", code: "chat_in_progress", status: 409 });
+    await new Promise((r) => setImmediate(r));
+    M.lastInstance.emit("error", { type: "error", xhrStatus: 409, message: '{"error":"chat_in_progress","code":"chat_in_progress"}' });
+    await assertion;
+  });
+
+  it("POSTs the stop request for the conversation, encodes its id, and resolves on 204", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(stopMessage("a/b?c")).resolves.toBeUndefined();
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toMatch(/\/api\/conversations\/a%2Fb%3Fc\/messages\/stop$/);
+    expect(init.method).toBe("POST");
   });
 });
