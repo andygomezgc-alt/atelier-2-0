@@ -50,18 +50,18 @@ import {
   getProduct,
 } from "@/src/api/products";
 import { showToast } from "@/src/components/Toast";
-import { recipeIngredientPayload } from "@/src/lib/recipe-editor";
+import { buildRecipeRequestBody } from "@/src/lib/recipe-editor";
 import { consumeRecipeDraft } from "@/src/lib/recipe-draft";
 import { recipeDraftKey, loadRecipeDraft, saveRecipeDraft, clearRecipeDraft } from "@/src/lib/recipe-autosave";
 import {
   can,
+  importedRecipeState,
   parseIngredient,
   resolvePezzaturaMode,
 } from "@atelier/shared";
 import type {
   ProductCategory,
   ProductListItem,
-  RecipeIngredientInput,
   CreateRecipeRequest,
 } from "@atelier/shared";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
@@ -91,6 +91,7 @@ export default function NuevaRecetaScreen() {
   const [portionsText, setPortionsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  const [origin, setOrigin] = useState<"import" | null>(null);
   const [clientRequestId, setClientRequestId] = useState(() => `${Date.now()}-${Math.random().toString(36).slice(2, 14)}`);
   const saveRequestRef = useRef<CreateRecipeRequest | undefined>(undefined);
   const saveFingerprintRef = useRef<string | undefined>(undefined);
@@ -269,6 +270,7 @@ export default function NuevaRecetaScreen() {
     setMethod(draft.contentJson.method.length ? draft.contentJson.method : [""]);
     setNotes(draft.contentJson.notes ?? "");
     if (draft.editId) setEditId(draft.editId);
+    setOrigin(draft.editId ? null : draft.origin ?? null);
     // El vínculo con la conversación del Asistente se perdía acá: el draft
     // lo traía pero el payload del save no lo incluía. El server lo usa para
     // archivar la nota (Idea) de origen al guardar la receta.
@@ -297,6 +299,7 @@ export default function NuevaRecetaScreen() {
             setTitle(stored.title); setIngredients(stored.ingredients); setMethod(stored.method);
             setNotes(stored.notes); setPortionsText(stored.portionsText);
             setEditId(stored.editId); setSourceConversationId(stored.sourceConversationId);
+            setOrigin(stored.editId ? null : stored.origin ?? null);
             if (stored.clientRequestId) setClientRequestId(stored.clientRequestId);
             saveRequestRef.current = stored.saveRequest;
             saveFingerprintRef.current = stored.saveFingerprint;
@@ -325,19 +328,22 @@ export default function NuevaRecetaScreen() {
           showToast(t("recipe_draft_storage_error"));
         }
       });
-  }, [draftReady, title, ingredients, method, notes, portionsText, editId, sourceConversationId, clientRequestId]);
+  }, [draftReady, title, ingredients, method, notes, portionsText, editId, sourceConversationId, origin, clientRequestId]);
 
   function formFingerprint() {
-    return JSON.stringify({ title, ingredients, method, notes, portionsText, editId, sourceConversationId });
+    return JSON.stringify({ title, ingredients, method, notes, portionsText, editId, sourceConversationId, origin });
   }
 
   function editorSnapshot() {
-    return { title, ingredients, method, notes, portionsText, editId, sourceConversationId, clientRequestId,
+    return { title, ingredients, method, notes, portionsText, editId, sourceConversationId, origin, clientRequestId,
       saveRequest: saveRequestRef.current, saveFingerprint: saveFingerprintRef.current };
   }
 
   async function submitRecipe(payload: CreateRecipeRequest) {
-    if (editId) await patchRecipe(editId, payload);
+    if (editId) {
+      const { origin: _origin, ...editPayload } = payload;
+      await patchRecipe(editId, editPayload);
+    }
     else await createRecipe(payload);
     await finishDraft();
     showToast(t("toast_recipe_saved"));
@@ -494,22 +500,10 @@ export default function NuevaRecetaScreen() {
       // Product drafts are created inside the recipe transaction on the server.
       for (const idx of draftIndices) workingIngredients[idx]!.createProductDraft = true;
 
-      const recipeIngredients: RecipeIngredientInput[] = workingIngredients.map(recipeIngredientPayload);
-
-      const payload = {
-        title: title.trim(),
-        portions: portionsText.trim() ? Number(portionsText) : null,
-        contentJson: {
-          ingredients: workingIngredients.map((i) => i.rawText),
-          method: method.map((m) => m.trim()).filter(Boolean),
-          notes: notes.trim(),
-        },
-        recipeIngredients,
-      };
-
-      const request: CreateRecipeRequest = { ...payload, clientRequestId,
-        ...(sourceConversationId ? { sourceConversationId } : {}),
-      };
+      const request = buildRecipeRequestBody({
+        title, portionsText, workingIngredients, method, notes, clientRequestId,
+        sourceConversationId, origin, editId,
+      });
       saveRequestRef.current = request;
       saveFingerprintRef.current = formFingerprint();
       if (autosaveKey.current) await saveRecipeDraft(autosaveKey.current, editorSnapshot())
@@ -729,6 +723,11 @@ export default function NuevaRecetaScreen() {
             onPress={handleSave}
             disabled={!title.trim() || saving}
           />
+          {origin === "import" && !editId && (
+            <Text style={styles.importState}>
+              {t(importedRecipeState(role) === "approved" ? "recipe_import_approved" : "recipe_import_in_test")}
+            </Text>
+          )}
       </ScrollView>
 
       {currentMatch ? (
@@ -839,4 +838,10 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
   savingRow: { alignItems: "center", paddingVertical: spacing.sm },
+  importState: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.mute,
+    textAlign: "center",
+  },
 });
