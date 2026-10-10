@@ -9,6 +9,7 @@ import type { CreateRestaurantResponse } from "@atelier/shared";
 import { Button } from "@/src/components/Button";
 import { showToast } from "@/src/components/Toast";
 import { apiErrorMessage } from "@/src/lib/api-error";
+import { createRestaurantBody } from "@/src/lib/restaurant-create";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
@@ -20,6 +21,7 @@ export default function CreateRestaurantScreen() {
 
   const [name, setName] = useState("");
   const [identityLine, setIdentityLine] = useState("");
+  const [city, setCity] = useState("");
   const [loading, setLoading] = useState(false);
 
   const valid = name.trim().length > 0;
@@ -34,7 +36,7 @@ export default function CreateRestaurantScreen() {
       // restaurante pero refreshMe falla y el cliente queda en estado roto.
       const res = await apiFetch<CreateRestaurantResponse>("/api/restaurant", {
         method: "POST",
-        body: JSON.stringify({ name: name.trim(), identityLine: identityLine.trim() || undefined }),
+        body: JSON.stringify(createRestaurantBody({ name, identityLine, city })),
       });
       patchLocalUser({
         restaurantId: res.id,
@@ -82,6 +84,16 @@ export default function CreateRestaurantScreen() {
           onChangeText={setIdentityLine}
           multiline
           maxLength={140}
+        />
+
+        <Text style={styles.label}>{t("onboard_create_city_label")}</Text>
+        <TextInput
+          style={styles.input}
+          placeholder={t("onboard_create_city_placeholder")}
+          placeholderTextColor={colors.mute}
+          value={city}
+          onChangeText={setCity}
+          maxLength={80}
         />
 
         <View style={styles.actions}>
