@@ -58,12 +58,12 @@ Codex: usar el id exacto de GPT-6.1 que acepte el CLI instalado (`--model <id> -
 - [x] E1 — cimientos (`7744427`)
 - [x] E2 — nombre, ubicación y mes (`bf64a66`)
 - [x] E3 — ingredientes frecuentes (`66d3228`)
-- [ ] E4 — memoria al crear y ciudad en el servidor
-- [ ] E5 — cargadas aprobadas/en prueba y aprendizaje al momento
+- [x] E4 — memoria al crear y ciudad en el servidor (`9372f6e`)
+- [x] E5 — cargadas aprobadas/en prueba y aprendizaje al momento (`54495d4`; pendiente de adaptar tras asistente-arreglos)
 - [x] E6 — app: recetas cargadas (`5d94a58`)
-- [ ] E7 — app: botón «Memoria»
+- [x] E7 — app: botón «Memoria» (`2b14c87`; pendiente de adaptar tras asistente-arreglos)
 - [x] E8 — app: ciudad (`03d398b`)
-- [ ] E9 — privacidad y documentación
+- [x] E9 — privacidad y documentación (ver evidencia)
 
 ## Especificación por tarea
 
@@ -350,6 +350,17 @@ Ventana local, 10-10-2026. Rama `feat/memoria-encendida`, punto de partida `af93
 - **E6** (`5d94a58`, Codex GPT-6.1 alto, dos fases). RED observado por el padre: 9 fallos (orígenes inválidos aceptados; `buildRecipeRequestBody` no existe). GREEN. Detalle aceptado: `contentJson.ingredients` sale ahora recortado, igual que `recipeIngredients`.
 - **Cierre de O2** (padre): api 825/825, app 204/204, shared 280/280, i18n 35/35; tsc de los cuatro OK; `git diff --check` OK. Un primer run de api falló al cargar `leave.test.ts` (intermitente, igual que en la línea base); pasó solo y en la repetición completa.
 - **RDD de la porción** `af93843..5d94a58` (incluye la fusión de `main`): riesgo alto solo por `package.json` de `main`; sin la fusión, medio con presupuesto superado (702 líneas). Andy concedió la revisión; linaje `review-bfb3856b4a2d88ae`, cuatro lentes. **Aprobada** y acusada (`authority: burned`); nuevo límite revisado `5d94a58`. 17 avisos informativos, no bloqueantes; los relevantes para lo que falta: la ciudad aún no se persiste en el PATCH y el estado de carga aún no existe en el servidor (los cierran E4 y E5); una app nueva contra un servidor viejo rechazaría `city` en el PATCH estricto (por eso el servidor se publica antes); `chatMemory` recorre hasta 300 recetas al reconstruir el contexto en la ruta del chat (aceptado en el plan); en la vista previa del chat, un fallo al leer el nombre no tiene guarda propia.
+- **E7** (`2b14c87`, Opus 5.5 alto; ruta delegada). RED: 7 fallos (no existe `MemoryChip`). GREEN 7/7 y app 211/211 tras añadir el padre dos mocks a `chat-navigation.test.ts` (la pantalla importaba la hoja y la API reales). Diff revisado: sin restaurante no hay botón; oculto mientras carga o si falla; respuestas tardías ignoradas; hooks antes de cualquier `return`. El Lector no lo ve porque leer la memoria exige `capture_idea` (403).
+- **E4** (`9372f6e`, Codex GPT-6.1 alto, dos fases). RED observado por el padre: 10 fallos (4 casos ya los cumplía el código: GET con ciudad, PATCH sin ciudad y filas nuevas encendidas sin `turnedOn`). GREEN 120/120 en restaurante y servicio.
+- **E5** (`54495d4`, Opus 5.5 alto; ruta delegada). RED unitario 17 fallos (estado `draft`, ventana semanal y reintento activos, `"skipped"` con bloqueo, `learnAfterImport` inexistente, la ruta sin rol ni `after`). RED de integración: 4 fallos con `worker.ts` y `create-recipe.ts` de `HEAD`. GREEN: 66/66 unitarios, integración 19/19 tres veces. Riesgos anotados: el caso de cargas solapadas espera 150 ms fijos; un fallo transitorio tras una carga programa el reintento de 24 h como cualquier intento.
+- **Cierre de O3** (padre): api 863/863, app 211/211, shared 280/280, i18n 35/35, tsc OK, integración 19/19 en Postgres local, `git diff --check` OK.
+- **RDD de O3** (`5d94a58..54495d4`): riesgo alto (754 líneas). Andy concedió la revisión, pero **quedó en pausa antes de empezar** (ver abajo).
+- **Pausa por choque con `codex/asistente-arreglos`** (aviso de la sesión «Arquitectura del asistente», confirmado con `git merge-tree`): conflictos en `messages/route.ts`, `lib/anthropic.ts`, `culinary-memory/worker.ts`, `memory.integration.test.ts`, `(tabs)/asistente.tsx` y el `index.test.ts` de i18n. Esa rama mueve la carga de contexto del chat a `chat-turn-service.ts` (A5), pasa los textos del restaurante y del usuario a datos JSON en `buildSystemBlocks` (A8: la línea cruda «Quien escribe» de E2 reabriría una vía de inyección), rehace `worker.ts` (A9) y divide `asistente.tsx` (A12). El aviso llegó con E5 y E7 ya commiteadas. Decisión de Andy: pausar y adaptar.
+
+- **E9** (Haiku 5.5 alto; ruta delegada). Privacidad (voseo): memoria activada por defecto, cómo apagarla, aprendizaje al cargar y semanal, ingredientes contados sin IA, nombre, ciudad y mes que recibe el asistente. `docs/MEMORIA-ENCENDIDA-2026-10.md` nuevo (incluye «Pendiente») y entrada en `docs/ESTADO-ACTUAL.md`. Sin test de la página (ninguno la renderiza); tsc de api y `git diff --check` OK. Cuando se adapte E2, revisar que la privacidad siga describiendo bien el envío del nombre.
 
 ## Siguiente paso
-Abrir la ventana local y pegar el mensaje de «Arranque en local».
+1. Esperar a que `codex/asistente-arreglos` entre en `main` (decisión de Andy).
+2. Fusionar `main` en `feat/memoria-encendida` y resolver los 6 conflictos.
+3. Tareas nuevas de adaptación, con TDD y revisión: E2b (nombre de quien escribe, ciudad y mes como datos JSON bajo la cabecera de A8, carga en `chat-turn-service.ts`), E3b/E5b (ingredientes frecuentes y aprendizaje tras carga sobre el `worker.ts` de A9), E7b (`MemoryChip` en la estructura dividida de A12).
+4. Revisión RDD de toda la porción desde `5d94a58` y cierre (incluido `npx expo export --platform android`).
