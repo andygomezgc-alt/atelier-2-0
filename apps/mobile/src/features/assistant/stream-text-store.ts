@@ -70,7 +70,8 @@ export function createStreamText(): StreamText {
     },
     getSnapshot: () => shown,
     push(delta) {
-      const first = target === "";
+      // The first text of the turn, not the first call: an empty delta must not signal the start twice.
+      const first = target === "" && delta !== "";
       target += delta;
       startTicker();
       return first;
