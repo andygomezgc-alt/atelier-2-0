@@ -10,6 +10,8 @@ import { NetworkError } from "@/src/components/NetworkError";
 import { PreviousChatsSheet } from "@/src/components/PreviousChatsSheet";
 import { ProfileSheet } from "@/src/components/ProfileSheet";
 import { RememberNoteSheet } from "@/src/components/RememberNoteSheet";
+import { CulinaryMemorySheet } from "@/src/components/CulinaryMemorySheet";
+import { MemoryChip } from "@/src/components/MemoryChip";
 import { useI18n, dateLocale } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
 import type { ChatMessage } from "@/src/api/conversations";
@@ -25,6 +27,7 @@ import { useChatComposer } from "@/src/features/assistant/use-chat-composer";
 import { useChatConversation } from "@/src/features/assistant/use-chat-conversation";
 import { useChatTurn } from "@/src/features/assistant/use-chat-turn";
 import { useSaveRecipe } from "@/src/features/assistant/use-save-recipe";
+import { useMemoryChip } from "@/src/features/assistant/use-memory-chip";
 import { MessageBubble } from "@/src/features/assistant/components/MessageBubble";
 import { StreamingBubble } from "@/src/features/assistant/components/StreamingBubble";
 import { ChatFailureBanner } from "@/src/features/assistant/components/ChatFailureBanner";
@@ -99,6 +102,12 @@ export default function AsistenteScreen() {
       ? authState.user.restaurantId
       : null,
   );
+  // Botón «Memoria»: solo con restaurante real; oculto mientras carga o si falla.
+  const restaurantId =
+    authState.status === "signed-in" || authState.status === "needs-restaurant"
+      ? authState.user.restaurantId ?? null
+      : null;
+  const memory = useMemoryChip(restaurantId);
 
   // Order: the composer, then the conversation (owns the session generation), then the turn and the save.
   // The route-change callbacks reach the turn through `turn`, declared below; they run after this render.
@@ -278,6 +287,15 @@ export default function AsistenteScreen() {
           <Ionicons name="time-outline" size={18} color={colors.ink} />
           <Text style={styles.historyLabel}>{t("chat_history")}</Text>
         </Pressable>
+        {restaurantId && memory.enabled !== null ? (
+          <MemoryChip
+            enabled={memory.enabled}
+            onPress={() => {
+              Keyboard.dismiss();
+              memory.openSheet();
+            }}
+          />
+        ) : null}
       </View>
       <View style={styles.divider} />
 
@@ -297,6 +315,9 @@ export default function AsistenteScreen() {
       <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} />
       {rememberText !== null && canRemember ? (
         <RememberNoteSheet text={rememberText} onClose={() => setRememberText(null)} />
+      ) : null}
+      {memory.open && restaurantId ? (
+        <CulinaryMemorySheet key={restaurantId} restaurantId={restaurantId} onClose={memory.closeSheet} />
       ) : null}
 
       <View style={{ flex: 1 }}>
