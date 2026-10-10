@@ -163,6 +163,7 @@ export const DeleteMeRequestSchema = z.object({
 export const CreateRestaurantRequestSchema = z.object({
   name: z.string().min(1).max(100),
   identityLine: z.string().max(1000).optional(),
+  city: z.string().trim().max(80).optional(),
 });
 
 export const JoinRestaurantRequestSchema = z.object({
@@ -363,6 +364,7 @@ export const RecipeIngredientInputSchema = z.object({
 
 export const CreateRecipeRequestSchema = z.object({
   clientRequestId: z.string().min(1).max(100).optional(),
+  origin: z.literal("import").optional(),
   portions: z.number().int().positive().max(1000).nullable().optional(),
   title: z.string().min(1).max(200),
   contentJson: RecipeContentSchema,

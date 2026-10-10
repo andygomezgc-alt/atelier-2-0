@@ -138,6 +138,7 @@ model Restaurant {
   id              String   @id @default(cuid())
   name            String
   identityLine    String?
+  city            String?  @db.VarChar(80)
   photoUrl        String?
   languageDefault String   @default("es")
   inviteCode      String   @unique
@@ -497,7 +498,7 @@ model IdeaCreateReceipt {
 model CulinaryMemory {
   restaurantId String @id
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  enabled Boolean @default(false)
+  enabled Boolean @default(true)
   version Int @default(0)
   learned Json @default("[]")
   corrections Json @default("[]")
