@@ -378,9 +378,9 @@ export default function AsistenteScreen() {
               accessibilityState={{ busy: save.structuring }}
             >
               {save.structuring ? (
-                <ActivityIndicator size="small" color={colors.terracota} />
+                <ActivityIndicator size="small" color={colors.paper} />
               ) : (
-                <Ionicons name="bookmark-outline" size={14} color={colors.terracota} />
+                <Ionicons name="bookmark-outline" size={14} color={colors.paper} />
               )}
               <Text style={styles.saveActionLabel}>
                 {save.structuring ? t("chat_structuring") : t("chat_save_recipe")}

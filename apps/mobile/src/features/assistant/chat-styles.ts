@@ -77,14 +77,17 @@ export const styles = StyleSheet.create({
   },
 
   // ── Idea anclada (chip) ─────────────────────────────────────────────
-  // Bloque 4 · C-03 — el chip de "iniciar conversación" es afirmación pasiva
-  // (la idea ya se ancló al chat, no hay que tomar acción), por eso tealSoft
-  // en lugar de terracotaSoft.
+  // Bloque 4 · C-03 — el chip es afirmación pasiva (la idea ya se ancló al
+  // chat, no hay que tomar acción): superficie neutra de papel cálido con
+  // filete, sin color de acción. Sobre tealSoft el rótulo teal y el texto en
+  // tinta no se leían (contraste < 2:1); sobre papel cálido superan 10:1.
   pinChip: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: spacing.sm,
-    backgroundColor: colors.tealSoft,
+    backgroundColor: colors.paperWarm,
+    borderWidth: 0.5,
+    borderColor: colors.edge,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     marginHorizontal: spacing.xl,
@@ -235,12 +238,12 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
     borderRadius: radii.pill,
-    backgroundColor: colors.terracotaSoft,
+    backgroundColor: colors.terracota,
   },
   saveActionLabel: {
     fontFamily: fonts.sans,
     fontSize: fontSizes.caption,
-    color: colors.terracota,
+    color: colors.paper,
     fontWeight: "600",
   },
   saveHint: {

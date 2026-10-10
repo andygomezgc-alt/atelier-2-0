@@ -1142,3 +1142,48 @@ describe("stop and resume a running answer (A13)", () => {
     });
   });
 });
+
+describe("legibility of the pinned idea and the save action", () => {
+  // WCAG 2.x contrast ratio, same formula as src/lib/style-preview.ts.
+  const contrast = (fg: string, bg: string) => {
+    const luminance = (hex: string) => {
+      const n = parseInt(hex.slice(1), 16);
+      const [r, g, b] = [16, 8, 0].map((shift) => {
+        const c = ((n >> shift) & 0xff) / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const [hi, lo] = [luminance(fg), luminance(bg)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const flat = (style: unknown) => Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
+
+  it("keeps the pinned idea label, text and icon readable on the chip (WCAG AA)", async () => {
+    h.params = { conversationId: "saved-chat", ideaText: "Berenjena" };
+    await render();
+    const icon = screen.root.findByProps({ name: "pricetag" });
+    const chip = icon.parent!;
+    const bg = flat(chip.props.style).backgroundColor;
+    const [label, idea] = chip.findAllByType("Text" as never);
+    expect(contrast(flat(label!.props.style).color, bg)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(flat(idea!.props.style).color, bg)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(icon.props.color, bg)).toBeGreaterThanOrEqual(3);
+  });
+
+  // Same pairing as the primary buttons (paper on terracota, about 3:1): the
+  // WCAG floor for icons and large text. Small text would need 4.5:1.
+  it("keeps the save action label, icon and busy spinner readable on the button", async () => {
+    h.params = { conversationId: "saved-chat" };
+    h.extract.mockImplementationOnce(() => new Promise(() => {}));
+    await render();
+    const icon = screen.root.findByProps({ name: "bookmark-outline" });
+    const save = icon.parent!;
+    const bg = flat(save.props.style).backgroundColor;
+    expect(contrast(flat(save.findByType("Text" as never).props.style).color, bg)).toBeGreaterThanOrEqual(3);
+    expect(contrast(icon.props.color, bg)).toBeGreaterThanOrEqual(3);
+    await act(async () => { save.props.onPress(); });
+    const spinner = screen.root.findByType("ActivityIndicator" as never);
+    expect(contrast(spinner.props.color, flat(spinner.parent!.props.style).backgroundColor)).toBeGreaterThanOrEqual(3);
+  });
+});
