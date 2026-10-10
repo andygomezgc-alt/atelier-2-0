@@ -958,4 +958,111 @@ describe("stop and resume a running answer (A13)", () => {
       expect(contents()).toContain("Berenjena asada con yogur");
     });
   });
+
+  // A13b — a late stop never touches a newer turn, and the bubble says what it is doing while an answer is recovered.
+  // RED until step 2: stop() ends whichever turn is active when its stop request returns, and interrupted/resuming show
+  // the "writing" status with no text.
+  describe("A13b: a late stop never touches a newer turn; recovering status", () => {
+    const headerRenderer = async (): Promise<ReactTestRenderer> => {
+      const header = list().props.ListHeaderComponent;
+      expect(header, "the streaming bubble is shown").toBeTruthy();
+      let rendered!: ReactTestRenderer;
+      await act(async () => { rendered = create(typeof header === "function" ? createElement(header) : header); });
+      return rendered;
+    };
+    const headerTexts = (rendered: ReactTestRenderer) => rendered.root.findAll((node) => (node.type as unknown) === "Text").map((node) => node.props.children);
+    const liveTexts = (rendered: ReactTestRenderer) => rendered.root
+      .findAll((node) => node.props.accessibilityLiveRegion === "polite")
+      .map((node) => node.findAll((child) => (child.type as unknown) === "Text").map((child) => child.props.children));
+    const streamedText = (rendered: ReactTestRenderer) => rendered.root.findAllByType("MarkdownText" as never).map((node) => node.props.text).join("");
+
+    it("a send made while the stop request is pending keeps the new turn running, its text intact, with no unanswered banner", async () => {
+      h.params = { conversationId: "saved-chat" };
+      let finishFirst!: (full: string) => void;
+      // The first answer was saved before the stop took effect: the stream ignores the abort and still completes.
+      h.streamMessage.mockImplementationOnce((_c: unknown, _t: unknown, _m: unknown, onDelta: (delta: string) => void) => {
+        onDelta("Berenjena");
+        return new Promise<string>((resolve) => { finishFirst = resolve; });
+      });
+      let releaseStop!: () => void;
+      h.stopMessage.mockImplementationOnce(() => new Promise<void>((resolve) => { releaseStop = resolve; }));
+      let secondSignal: AbortSignal | undefined;
+      let finishSecond!: (full: string) => void;
+      h.streamMessage.mockImplementationOnce((_c: unknown, _t: unknown, _m: unknown, onDelta: (delta: string) => void, signal: AbortSignal) => {
+        secondSignal = signal;
+        onDelta("Otra respuesta");
+        return new Promise<string>((resolve) => { finishSecond = resolve; });
+      });
+      await render();
+      await start("Una receta");
+      expect(stopAction()).toHaveLength(1);
+      await act(async () => { stopAction()[0]!.props.onPress(); });
+      await settle();
+      await act(async () => { finishFirst("Berenjena asada con yogur"); });
+      await settle(1500);
+      expect(contents()).toContain("Berenjena asada con yogur");
+      // The chef sends again while the stop request of the first turn is still pending.
+      await start("Otra pregunta");
+      expect(stopAction()).toHaveLength(1);
+      await act(async () => { releaseStop(); });
+      await settle(400);
+      expect(texts()).not.toContain("chat_unanswered");
+      expect(stopAction()).toHaveLength(1);
+      expect(secondSignal!.aborted).toBe(false);
+      expect(streamedText(await headerRenderer())).toContain("Otra respuesta");
+      await act(async () => { finishSecond("Otra respuesta completa"); });
+      await settle(1500);
+      expect(contents()).toContain("Otra respuesta completa");
+    });
+
+    it("while an interrupted answer waits to be recovered, the bubble shows a recovering status, not a writing status", async () => {
+      const cut = cuttableStream("Berenjena");
+      await render();
+      await start("Una receta");
+      await setAppState("background");
+      await act(async () => { cut.cut!(cutError()); });
+      await settle();
+      const rendered = await headerRenderer();
+      expect(headerTexts(rendered)).toContain("chat_answer_recovering");
+      expect(headerTexts(rendered)).not.toContain("chat_answer_writing");
+      expect(liveTexts(rendered)).toEqual([["chat_answer_recovering"]]);
+    });
+
+    it("while a resume waits out its backoff, the bubble keeps the recovering status", async () => {
+      const cut = cuttableStream("Berenjena");
+      h.streamMessage.mockRejectedValueOnce(conflict());
+      await render();
+      await start("Una receta");
+      await setAppState("background");
+      await act(async () => { cut.cut!(cutError()); });
+      await settle();
+      await setAppState("active");
+      await settle();
+      expect(h.streamMessage).toHaveBeenCalledTimes(2);
+      const rendered = await headerRenderer();
+      expect(headerTexts(rendered)).toContain("chat_answer_recovering");
+      expect(headerTexts(rendered)).not.toContain("chat_answer_writing");
+      expect(liveTexts(rendered)).toEqual([["chat_answer_recovering"]]);
+    });
+
+    it("while stopping, the streaming bubble stays hidden (guard)", async () => {
+      openStream("Berenjena");
+      h.stopMessage.mockImplementationOnce(() => new Promise<void>(() => {}));
+      await render();
+      await start("Una receta");
+      await act(async () => { stopAction()[0]!.props.onPress(); });
+      await settle();
+      expect(list().props.ListHeaderComponent).toBeFalsy();
+    });
+
+    it("while an answer streams normally, the bubble keeps the writing status (guard)", async () => {
+      openStream("Berenjena");
+      await render();
+      await start("Una receta");
+      await settle(300);
+      const rendered = await headerRenderer();
+      expect(headerTexts(rendered)).toContain("chat_answer_writing");
+      expect(liveTexts(rendered)).toEqual([["chat_answer_writing"]]);
+    });
+  });
 });

@@ -294,4 +294,7 @@ export const styles = StyleSheet.create({
   stopBtnDisabled: { opacity: 0.5 },
   // Visually hidden, still read by screen readers (the live region of the streaming bubble).
   srOnly: { position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" },
+  // A13b — the status shown in place of the writing dots while an interrupted answer is recovered.
+  recoveringStatus: { paddingVertical: spacing.sm },
+  recoveringText: { fontFamily: fonts.sans, fontSize: fontSizes.bodySm, color: colors.mute },
 });

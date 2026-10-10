@@ -228,6 +228,7 @@ export const es = {
   chat_profile_open: "Abrir perfil",
   chat_input_label: "Mensaje para el asistente",
   chat_answer_writing: "El asistente está escribiendo la respuesta",
+  chat_answer_recovering: "El asistente está recuperando la respuesta",
   error_mic_permission: "Necesito permiso del micrófono para dictar. Actívalo en los ajustes del teléfono.",
   error_mic_unavailable: "El dictado por voz no está disponible en este teléfono.",
   day_today: "hoy",

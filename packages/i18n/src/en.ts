@@ -205,6 +205,7 @@ export const en: EsDict = {
   chat_profile_open: "Open profile",
   chat_input_label: "Message for the assistant",
   chat_answer_writing: "The assistant is writing the answer",
+  chat_answer_recovering: "The assistant is recovering the answer",
   error_mic_permission: "I need microphone permission to dictate. Enable it in your phone settings.",
   error_mic_unavailable: "Voice dictation isn't available on this phone.",
   day_today: "today",

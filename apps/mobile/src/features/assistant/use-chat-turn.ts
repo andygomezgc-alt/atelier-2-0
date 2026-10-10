@@ -222,8 +222,9 @@ export function useChatTurn({
   // Stop: the local stream is aborted at once; the server is asked to stop the saved generation.
   // The partial text is discarded (the server saves nothing on stop); the question stays unanswered.
   async function stop(conversationId: string | null) {
-    const phase = stateRef.current.phase;
-    if (phase !== "sending" && phase !== "streaming" && phase !== "resuming" && phase !== "interrupted") return;
+    const current = stateRef.current;
+    if (current.phase !== "sending" && current.phase !== "streaming" && current.phase !== "resuming" && current.phase !== "interrupted") return;
+    const stoppedTurn = current.turn.clientMessageId;
     cancelResume();
     dispatch({ type: "stop" });
     abortRef.current?.abort();
@@ -234,6 +235,10 @@ export function useChatTurn({
         // The turn ends on this device either way; no raw error reaches the chef.
       }
     }
+    // The request can outlive its turn: the answer may complete meanwhile and a newer turn may start.
+    // Only the stopped turn is ended here; a newer turn keeps its phase and its streamed text.
+    const latest = stateRef.current;
+    if (latest.phase !== "stopping" || latest.turn.clientMessageId !== stoppedTurn) return;
     dispatch({ type: "stopped" });
     stream.reset();
   }

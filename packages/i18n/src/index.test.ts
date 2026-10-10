@@ -106,3 +106,18 @@ describe("A13 chat stop copy", () => {
     }
   });
 });
+
+// A13b — a recovered answer shows a status while it is being recovered, in every language.
+describe("A13b chat recovering copy", () => {
+  test("has a translation in each language, distinct from the Spanish one", () => {
+    const key = "chat_answer_recovering";
+    const spanish = (es as Record<string, string>)[key];
+    for (const dict of [es, en, itDict]) {
+      const value = (dict as Record<string, string>)[key];
+      expect(value?.trim(), key).toBeTruthy();
+      expect(value, key).not.toContain("_");
+    }
+    expect((en as Record<string, string>)[key], key).not.toBe(spanish);
+    expect((itDict as Record<string, string>)[key], key).not.toBe(spanish);
+  });
+});

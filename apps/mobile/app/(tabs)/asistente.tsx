@@ -136,6 +136,7 @@ export default function AsistenteScreen() {
   const busy = turn.busy;
   // While stopping, the partial text is already discarded: no streaming bubble.
   const streamingVisible = busy && turn.phase !== "stopping";
+  const recovering = turn.phase === "interrupted" || turn.phase === "resuming";
   const composerBusy = busy || save.structuring || conversation.loading || conversation.loadError;
   const navigationBusy = busy || save.structuring || composer.listening;
   const showSaveButton =
@@ -339,7 +340,8 @@ export default function AsistenteScreen() {
                   <StreamingBubble
                     stream={turn.stream}
                     eyebrowLabel={assistantEyebrow}
-                    statusLabel={t("chat_answer_writing")}
+                    statusLabel={recovering ? t("chat_answer_recovering") : t("chat_answer_writing")}
+                    recovering={recovering}
                   />
                 ) : null
               }
