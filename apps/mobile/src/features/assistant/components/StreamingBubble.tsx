@@ -13,25 +13,24 @@ type Props = {
   eyebrowLabel: string;
   // Announced once, politely; the live region never carries the streamed text.
   statusLabel: string;
-  // Interrupted or resuming (A13b): the status is shown in place of the writing dots until the text starts.
+  // Interrupted or resuming (A13b/A13c): only the visible status shows; any partial text of the cut is discarded.
   recovering?: boolean;
 };
 
 export function StreamingBubble({ stream, eyebrowLabel, statusLabel, recovering = false }: Props) {
   const shown = useSyncExternalStore(stream.subscribe, stream.getSnapshot);
-  const visibleStatus = recovering && !shown;
   return (
     <View style={styles.assistantWrap}>
       <Text style={styles.assistantEyebrow}>{eyebrowLabel}</Text>
       <View style={styles.assistantRule} />
-      <View accessibilityLiveRegion="polite" style={visibleStatus ? styles.recoveringStatus : styles.srOnly}>
-        <Text style={visibleStatus ? styles.recoveringText : undefined}>{statusLabel}</Text>
+      <View accessibilityLiveRegion="polite" style={recovering ? styles.recoveringStatus : styles.srOnly}>
+        <Text style={recovering ? styles.recoveringText : undefined}>{statusLabel}</Text>
       </View>
-      {shown ? (
+      {recovering ? null : shown ? (
         <View style={styles.assistantBody}>
           <MarkdownText text={stripRecipePayload(shown)} />
         </View>
-      ) : visibleStatus ? null : (
+      ) : (
         <TypingDots />
       )}
     </View>

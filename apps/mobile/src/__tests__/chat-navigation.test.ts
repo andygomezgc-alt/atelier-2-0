@@ -1064,5 +1064,74 @@ describe("stop and resume a running answer (A13)", () => {
       expect(headerTexts(rendered)).toContain("chat_answer_writing");
       expect(liveTexts(rendered)).toEqual([["chat_answer_writing"]]);
     });
+
+    // A13c — the recovering status is visible text, not only the screen-reader-only live region, with no writing dots,
+    // and an interrupted or resuming answer shows no partial text. The partial-text rule is decided by the supervisor:
+    // the streamed text of a cut is discarded and the recovered answer replaces it.
+    const statusTexts = (rendered: ReactTestRenderer) => rendered.root.findAll((node) => (node.type as unknown) === "Text" && node.props.children === "chat_answer_recovering");
+    const visibleStatus = (rendered: ReactTestRenderer) => statusTexts(rendered).filter((node) => {
+      const viewStyle = node.parent?.props.style as { position?: unknown; opacity?: unknown } | undefined;
+      const textStyle = node.props.style as { fontSize?: unknown } | undefined;
+      return !(viewStyle?.position === "absolute" && viewStyle?.opacity === 0) && textStyle?.fontSize !== undefined;
+    });
+
+    it("while interrupted, the recovering status is visible text, not the screen-reader-only node, with no writing dots", async () => {
+      const cut = cuttableStream("Berenjena");
+      await render();
+      await start("Una receta");
+      await setAppState("background");
+      await act(async () => { cut.cut!(cutError()); });
+      await settle();
+      const rendered = await headerRenderer();
+      expect(visibleStatus(rendered)).toHaveLength(1);
+      expect(rendered.root.findAllByType("TypingDots" as never)).toHaveLength(0);
+    });
+
+    it("while a resume waits out its backoff, the recovering status is visible text with no writing dots", async () => {
+      const cut = cuttableStream("Berenjena");
+      h.streamMessage.mockRejectedValueOnce(conflict());
+      await render();
+      await start("Una receta");
+      await setAppState("background");
+      await act(async () => { cut.cut!(cutError()); });
+      await settle();
+      await setAppState("active");
+      await settle();
+      expect(h.streamMessage).toHaveBeenCalledTimes(2);
+      const rendered = await headerRenderer();
+      expect(visibleStatus(rendered)).toHaveLength(1);
+      expect(rendered.root.findAllByType("TypingDots" as never)).toHaveLength(0);
+    });
+
+    it("a cut that left partial text shows no partial text, only the visible recovering status", async () => {
+      const cut = cuttableStream("Berenjena");
+      await render();
+      await start("Una receta");
+      await settle(100);
+      await setAppState("background");
+      await act(async () => { cut.cut!(cutError()); });
+      await settle();
+      const rendered = await headerRenderer();
+      expect(rendered.root.findAllByType("MarkdownText" as never)).toHaveLength(0);
+      expect(JSON.stringify(headerTexts(rendered))).not.toContain("Berenjena");
+      expect(visibleStatus(rendered)).toHaveLength(1);
+      expect(contents().join(" ")).not.toContain("Berenjena");
+    });
+
+    it("while a resume waits out its backoff, no partial text of the cut is shown", async () => {
+      const cut = cuttableStream("Berenjena");
+      h.streamMessage.mockRejectedValueOnce(conflict());
+      await render();
+      await start("Una receta");
+      await settle(100);
+      await setAppState("background");
+      await act(async () => { cut.cut!(cutError()); });
+      await settle();
+      await setAppState("active");
+      await settle();
+      const rendered = await headerRenderer();
+      expect(rendered.root.findAllByType("MarkdownText" as never)).toHaveLength(0);
+      expect(JSON.stringify(headerTexts(rendered))).not.toContain("Berenjena");
+    });
   });
 });
