@@ -7,8 +7,8 @@ export class MemoryConflict extends Error {}
 export const evidenceSelect = { id: true, title: true, state: true, contentJson: true, updatedAt: true,
   recipeIngredients: { orderBy: { position: "asc" as const }, select: { rawText: true } } } as const;
 
-export async function loadEvidence(restaurantId: string) {
-  const groups = await Promise.all(["approved", "in_test"].map(state => prisma.recipe.findMany({
+export async function loadEvidence(restaurantId: string, db: Pick<Prisma.TransactionClient, "recipe"> = prisma) {
+  const groups = await Promise.all(["approved", "in_test"].map(state => db.recipe.findMany({
     where: { restaurantId, deletedAt: null, state: state as "approved" | "in_test" },
     orderBy: [{ updatedAt: "desc" }, { id: "asc" }], take: 100, select: evidenceSelect,
   })));
@@ -53,7 +53,8 @@ export async function patchCulinaryMemory(restaurantId: string, patch: PatchCuli
       ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
       ...(patch.corrections !== undefined ? { corrections: patch.corrections } : {}),
       ...(patch.excludedKeys !== undefined ? { excludedKeys: patch.excludedKeys } : {}),
-      ...(erase ? { enabled: false, learned: [], corrections: [], excludedKeys: [], inputHash: null, updatedAt: null } : {}),
+      ...(erase ? { enabled: false, learned: [], corrections: [], excludedKeys: [], inputHash: null,
+        lastFailedInputHash: null, failureCount: null, updatedAt: null } : {}),
     } });
     if (!changed.count) throw new MemoryConflict();
     if (erase) await tx.culinaryMemoryRun.updateMany({ where: { restaurantId }, data: { publishedTrends: Prisma.DbNull } });

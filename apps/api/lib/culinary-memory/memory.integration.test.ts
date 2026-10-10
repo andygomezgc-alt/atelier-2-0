@@ -21,6 +21,7 @@ import type { MemoryGenerator } from "./provider";
 
 const enabled = process.env.CULINARY_MEMORY_IT === "1";
 const DAY = 24 * 60 * 60 * 1000;
+const SLACK = 2 * 60 * 60 * 1000;
 const config = { provider: "fixture", model: "fixture" };
 const run = `it-${randomUUID().slice(0, 8)}`;
 
@@ -134,18 +135,85 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
     expect(context).not.toMatch(/servidor anterior/);
   });
 
-  it("un fallo transitorio concede un único reintento a partir de 24 horas", async () => {
+  it("un fallo transitorio concede un único reintento diario con holgura para el cron", async () => {
     const id = await seed("retry");
     const now = new Date();
     let attempts = 0;
     const unavailable: MemoryGenerator = async () => { attempts++; throw new Error("ai_provider_http_503"); };
     expect(await processMemory(id, unavailable, config, now)).toBe("failed");
-    expect(+(await memoryOf(id)).retryAt!).toBe(+now + DAY);
-    expect(await processMemory(id, unavailable, config, new Date(+now + DAY - 1))).toBe("skipped");
-    expect(await processMemory(id, unavailable, config, new Date(+now + DAY))).toBe("failed");
+    expect(+(await memoryOf(id)).retryAt!).toBe(+now + DAY - SLACK);
+    expect(await processMemory(id, unavailable, config, new Date(+now + DAY - SLACK - 1))).toBe("skipped");
+    expect(await processMemory(id, unavailable, config, new Date(+now + DAY - SLACK))).toBe("failed");
     expect(await processMemory(id, unavailable, config, new Date(+now + 2 * DAY))).toBe("skipped");
     expect(attempts).toBe(2);
     expect((await memoryOf(id)).retryAt).toBeNull();
+  });
+
+  it("A9 publishes after unchanged structured ingredients are recreated during a paid run", async () => {
+    const id = await seed("unchanged-ingredient-race");
+    const rows = ["tomate", "berenjena", "calabaza"].map((ingredient, index) => ({
+      recipeId: `${id}-${index}`, rawText: `200 g ${ingredient}`, qty: 200, unit: "g", position: 0,
+    }));
+    await prisma.recipeIngredient.createMany({ data: rows });
+    const before = await memoryOf(id);
+    const generate = vi.fn<MemoryGenerator>(async (input, onUsage) => {
+      const result = await roasted(input, onUsage);
+      await prisma.$transaction(async tx => {
+        await tx.recipeIngredient.deleteMany({ where: { recipeId: { in: rows.map(row => row.recipeId) } } });
+        await tx.recipeIngredient.createMany({ data: rows });
+      });
+      return result;
+    });
+    expect(await processMemory(id, generate, config, new Date())).toBe("completed");
+    const published = await memoryOf(id);
+    expect(published.dirtyRevision).toBeGreaterThan(before.dirtyRevision);
+    expect(published.checkedRevision).toBe(published.dirtyRevision);
+    expect(published.preparedRevision).toBe(published.dirtyRevision);
+    expect(generate).toHaveBeenCalledOnce();
+    expect(await publishedRuns(id)).toBe(1);
+  });
+
+  it("A9 discards changed evidence without using the weekly slot and retries on the next cron", async () => {
+    const id = await seed("changed-source-retry");
+    const now = new Date();
+    const generate = vi.fn<MemoryGenerator>(roasted).mockImplementationOnce(async (input, onUsage) => {
+      const result = await roasted(input, onUsage);
+      await prisma.recipe.update({ where: { id: `${id}-0` }, data: {
+        contentJson: { ingredients: ["200 g tomate"], method: ["Cocer tomate al vapor"] },
+      } });
+      return result;
+    });
+    expect(["failed", "superseded"]).toContain(await processMemory(id, generate, config, now));
+    expect(+(await memoryOf(id)).nextCheckAt).toBeLessThanOrEqual(+now);
+    expect(await publishedRuns(id)).toBe(0);
+    expect(generate).toHaveBeenCalledOnce();
+    expect(await processMemory(id, generate, config, new Date(+now + DAY))).toBe("completed");
+    expect(generate).toHaveBeenCalledTimes(2);
+  });
+
+  it("A9 stops paying for identical invalid output after two failures and resumes for changed sources", async () => {
+    const id = await seed("invalid-input-backoff");
+    const now = new Date();
+    const generate = vi.fn<MemoryGenerator>(async (_input, onUsage) => {
+      await onUsage({ inputTokens: 30, outputTokens: 10, reasoningTokens: 0 });
+      return { trends: [], rejected: 1 };
+    });
+    expect(await processMemory(id, generate, config, now)).toBe("failed");
+    const first = await memoryOf(id);
+    expect(first.lastFailedInputHash).toEqual(expect.any(String));
+    expect(first.failureCount).toBe(1);
+    expect(await processMemory(id, generate, config, new Date(+now + 7 * DAY))).toBe("failed");
+    expect((await memoryOf(id)).failureCount).toBe(2);
+    expect(await processMemory(id, generate, config, new Date(+now + 14 * DAY))).toBe("suppressed");
+    expect(generate).toHaveBeenCalledTimes(2);
+    await prisma.recipe.update({ where: { id: `${id}-0` }, data: {
+      contentJson: { ingredients: ["200 g tomate"], method: ["Asar lentamente tomate"] },
+    } });
+    generate.mockImplementationOnce(roasted);
+    expect(await processMemory(id, generate, config, new Date(+now + 15 * DAY))).toBe("completed");
+    const recovered = await memoryOf(id);
+    expect(recovered.lastFailedInputHash).toBeNull();
+    expect(recovered.failureCount ?? 0).toBe(0);
   });
 
   it.each<[string, boolean]>([

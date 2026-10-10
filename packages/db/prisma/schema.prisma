@@ -506,6 +506,11 @@ model CulinaryMemory {
   corrections Json @default("[]")
   excludedKeys String[] @default([])
   inputHash String?
+  /// memoryFailureFingerprint(input hash, model, prompt version): a SHA-256 hex digest, not a raw input hash.
+  lastFailedInputHash String?
+  failureCount Int?
+  lastFailedAt DateTime?
+  discardStreak Int @default(0)
   preparedContext String? @db.Text
   preparedRevision Int @default(-1)
   preparedVersion Int @default(-1)
