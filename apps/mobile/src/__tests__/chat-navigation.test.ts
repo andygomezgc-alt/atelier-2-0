@@ -1,7 +1,7 @@
 // Actual screen, native/transport boundaries replaced. No AI calls.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
 const h = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   apiErrorMessage: vi.fn((_err: unknown, _t: unknown): string => "error"),
   streamHeaders: {} as Record<string, string>,
   emitStreamError: null as null | (() => void),
+  push: vi.fn(), screenRenders: 0,
 }));
 vi.mock("react-native", () => ({
   ActivityIndicator: "ActivityIndicator", FlatList: "FlatList", Image: "Image",
@@ -21,9 +22,10 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: "android", select: (items: Record<string, unknown>) => items.android ?? items.default },
 }));
-vi.mock("expo-router", () => ({ useLocalSearchParams: () => h.params, useRouter: () => ({ setParams: h.setParams, push: vi.fn() }) }));
+vi.mock("expo-router", () => ({ useLocalSearchParams: () => h.params, useRouter: () => ({ setParams: h.setParams, push: h.push }) }));
 vi.mock("@expo/vector-icons", () => ({ Ionicons: "Ionicons" }));
-vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: "SafeAreaView", useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
+// The screen reads the insets once per render: a render probe for the screen itself.
+vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: "SafeAreaView", useSafeAreaInsets: () => { h.screenRenders += 1; return { top: 0, bottom: 0 }; } }));
 vi.mock("react-native-reanimated", () => ({ default: { View: "AnimatedView" }, Easing: {}, withSpring: vi.fn(), withTiming: vi.fn() }));
 vi.mock("@/src/hooks/useAuth", () => ({ useAuth: () => ({ state: { status: "signed-in", user: { name: "Chef", restaurantId: h.restaurantId, role: h.role, defaultModel: "creative", languagePref: "es" } } }) }));
 vi.mock("@/src/hooks/useI18n", () => ({ useI18n: () => ({ t: h.t }), dateLocale: () => "es-ES" }));
@@ -65,6 +67,7 @@ vi.mock("@/src/lib/api-error", async (importOriginal) => ({ ...(await importOrig
 import AsistenteScreen from "../../app/(tabs)/asistente";
 import { bulkAddMessages } from "@/src/api/conversations";
 import { setRecipeDraft } from "@/src/lib/recipe-draft";
+import { es, t as translate, type TranslationKey } from "@atelier/i18n";
 let screen: ReactTestRenderer;
 const saved = [
   { id: "m1", role: "user", content: "Un plato de berenjena", createdAt: "2026-09-09T10:00:00Z" },
@@ -95,6 +98,7 @@ beforeEach(() => {
   h.getToken.mockResolvedValue(null);
   h.streamHeaders = {};
   h.emitStreamError = null;
+  h.screenRenders = 0;
   h.setParams.mockImplementation((params) => { h.params = { ...h.params, ...params }; });
   h.listMessages.mockResolvedValue(saved);
   h.getConversationByIdea.mockResolvedValue({ id: "saved-chat", messages: saved });
@@ -269,6 +273,17 @@ describe("honest chat errors (A3)", () => {
     h.streamMessage.mockResolvedValueOnce("Ahora sí");
     await act(async () => { actions("error_retry")[0]!.props.onPress(); });
     expect(h.streamMessage.mock.calls[1]![6]).toBe(h.streamMessage.mock.calls[0]![6]);
+  });
+
+  it("retry after a failed answer saves the reply and clears the banner", async () => {
+    h.streamMessage.mockRejectedValueOnce(streamFailure("ai_rate_limited"));
+    await render();
+    await send("Un plato");
+    await act(async () => { actions("error_retry")[0]!.props.onPress(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(texts()).not.toContain("error_ai_rate_limited");
+    expect(actions("error_retry")).toHaveLength(0);
+    expect(messages().map((m: { content: string }) => m.content)).toContain("Respuesta nueva");
   });
 
   it.each(["chat_request_conflict", "ai_daily_weekly_limit", "forbidden"])("hides Retry for %s", async (code) => {
@@ -548,5 +563,149 @@ describe("promoting a preview chat once the restaurant exists (A10)", () => {
     await send("Segunda pregunta");
     expect(bulk).toHaveBeenCalledTimes(1);
     expect(uploaded(0)[0]).toBe("y".repeat(20_000));
+  });
+});
+
+describe("chat turn, streaming and accessibility (A12)", () => {
+  const texts = () => screen.root.findAll((node) => (node.type as unknown) === "Text").map((node) => node.props.children);
+  const actions = (label: string) => screen.root.findAll((node) => (node.type as unknown) === "Pressable" && node.props.accessibilityLabel === label);
+  const pressableWithText = (label: string) => screen.root.findAll((node) => (node.type as unknown) === "Pressable"
+    && node.findAll((child) => (child.type as unknown) === "Text" && child.props.children === label).length > 0)[0]!;
+  const list = () => screen.root.findAllByType("FlatList" as never)[0]!;
+  // The streaming bubble is the FlatList header: render it on its own to inspect it.
+  async function streamingHeader(): Promise<ReactTestRenderer | null> {
+    const header = list().props.ListHeaderComponent;
+    if (!header) return null;
+    let rendered!: ReactTestRenderer;
+    await act(async () => { rendered = create(typeof header === "function" ? createElement(header) : header); });
+    return rendered;
+  }
+  async function streamedText(): Promise<string | null> {
+    const header = await streamingHeader();
+    return header ? header.root.findAllByType("MarkdownText" as never).map((node) => node.props.text).join("") : null;
+  }
+  const sendButton = () => screen.root.findByType("SendButton" as never);
+
+  it("streams the answer into the live bubble, then saves it as the assistant reply", async () => {
+    let finish!: (full: string) => void;
+    h.streamMessage.mockImplementationOnce(async (_c, _t, _m, onDelta) => {
+      onDelta("Berenjena ");
+      onDelta("asada con yogur");
+      return new Promise<string>((resolve) => { finish = resolve; });
+    });
+    await render();
+    await act(async () => { input().props.onChangeText("Una receta"); });
+    await act(async () => { void sendButton().props.onPress(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(await streamedText()).toContain("Berenjena");
+    await act(async () => { finish("Berenjena asada con yogur"); await vi.advanceTimersByTimeAsync(1500); });
+    expect(await streamedText()).toBeNull();
+    // The FlatList data is inverted: newest first.
+    expect(messages().map((m: { content: string }) => m.content)).toEqual(["Berenjena asada con yogur", "Una receta"]);
+    expect(messages()[0].id).toMatch(/^assistant-/);
+    expect(h.createConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the message list's data, renderItem and keyExtractor the same while the answer streams", async () => {
+    h.streamMessage.mockImplementationOnce(async (_c, _t, _m, onDelta) => {
+      onDelta("Berenjena");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      onDelta(" asada");
+      return new Promise(() => {});
+    });
+    await render();
+    await act(async () => { input().props.onChangeText("Otra pregunta"); });
+    await act(async () => { void sendButton().props.onPress(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    const { data, renderItem, keyExtractor } = list().props;
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(list().props.data).toBe(data);
+    expect(list().props.renderItem).toBe(renderItem);
+    expect(list().props.keyExtractor).toBe(keyExtractor);
+  });
+
+  it("switches the model with the chips, and the next send uses the chosen model", async () => {
+    await render();
+    await act(async () => { pressableWithText("model_daily").props.onPress(); });
+    await send("Pregunta diaria");
+    expect(h.streamMessage).toHaveBeenLastCalledWith("new-chat", "Pregunta diaria", "daily", expect.any(Function), expect.any(AbortSignal), undefined, expect.any(String));
+    await act(async () => { pressableWithText("model_creative").props.onPress(); });
+    await send("Pregunta creativa");
+    expect(h.streamMessage).toHaveBeenLastCalledWith("new-chat", "Pregunta creativa", "creative", expect.any(Function), expect.any(AbortSignal), undefined, expect.any(String));
+  });
+
+  it("save as recipe extracts the recipe from the chat and opens the editor on that conversation", async () => {
+    h.params = { conversationId: "saved-chat" };
+    h.extract.mockResolvedValueOnce({ title: "Receta", portions: null, contentJson: { ingredients: [], method: [], notes: "" }, recipeIngredients: [], pendingMatches: [] });
+    await render();
+    await act(async () => { await pressableWithText("chat_save_recipe").props.onPress(); });
+    await update();
+    expect(h.extract).toHaveBeenCalledWith(expect.stringContaining("Berenjena asada con yogur"));
+    expect(setRecipeDraft).toHaveBeenCalledWith(expect.objectContaining({ sourceConversationId: "saved-chat" }));
+    expect(h.push).toHaveBeenCalledWith("/recetas/nueva");
+  });
+
+  it("re-renders the screen on turn changes only, not on every streamed chunk", async () => {
+    h.streamMessage.mockImplementationOnce(async (_c, _t, _m, onDelta) => {
+      for (let i = 0; i < 30; i++) {
+        onDelta(`trozo ${i} `);
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      }
+      return new Promise(() => {});
+    });
+    await render();
+    await act(async () => { input().props.onChangeText("Dame una receta"); });
+    await act(async () => { void sendButton().props.onPress(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    const before = h.screenRenders;
+    // One act per step: React flushes state updates at the end of each act scope, as a frame would.
+    for (let step = 0; step < 25; step++) await act(async () => { await vi.advanceTimersByTimeAsync(40); });
+    // Today: one screen render per 33 ms typewriter tick (about 25 in this window).
+    expect(h.screenRenders - before).toBeLessThanOrEqual(3);
+  });
+
+  it("announces the streaming bubble politely, without the streamed text inside the live region", async () => {
+    h.streamMessage.mockImplementationOnce(async (_c, _t, _m, onDelta) => {
+      onDelta("Berenjena asada");
+      return new Promise(() => {});
+    });
+    await render();
+    await act(async () => { input().props.onChangeText("Una receta"); });
+    await act(async () => { void sendButton().props.onPress(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    const header = await streamingHeader();
+    const live = header!.root.findAll((node) => node.props.accessibilityLiveRegion === "polite");
+    expect(live).toHaveLength(1);
+    expect(live[0]!.findAllByType("MarkdownText" as never)).toHaveLength(0);
+  });
+
+  describe("translated accessibility labels", () => {
+    const LANGS = ["es", "it", "en"] as const;
+    const isTranslatedLabel = (label: unknown) => typeof label === "string"
+      && Object.prototype.hasOwnProperty.call(es, label)
+      && LANGS.every((lang) => translate(label as TranslationKey, lang) !== label);
+    const describeNode = (node: ReactTestInstance) => `${String(node.type)} label=${JSON.stringify(node.props.accessibilityLabel ?? null)} text=[${node.findAll((child) => (child.type as unknown) === "Text").map((child) => String(child.props.children)).join(" ")}]`;
+    const untranslated = () => screen.root
+      .findAll((node) => (node.type as unknown) === "Pressable" || (node.type as unknown) === "TextInput")
+      .filter((node) => !isTranslatedLabel(node.props.accessibilityLabel))
+      .map(describeNode);
+
+    it("every control on a saved chat has a label translated in es, it and en", async () => {
+      h.params = { conversationId: "saved-chat" };
+      await render();
+      expect(screen.root.findAll((node) => (node.type as unknown) === "TextInput")).toHaveLength(1);
+      expect(untranslated()).toEqual([]);
+    });
+
+    it.each([
+      ["ai_rate_limited", "error_retry"],
+      ["ai_creative_limit", "chat_use_daily"],
+    ])("the failure banner for %s labels its action in every language", async (code, actionLabel) => {
+      h.streamMessage.mockRejectedValueOnce(Object.assign(new Error(code), { name: "StreamInterruptedError", partialText: "", code }));
+      await render();
+      await send("Un plato");
+      expect(actions(actionLabel)).toHaveLength(1);
+      expect(untranslated()).toEqual([]);
+    });
   });
 });
