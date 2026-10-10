@@ -169,7 +169,7 @@ beforeEach(async () => {
   db.restaurant.findUnique.mockReset().mockResolvedValue({ name: "Kokoo", identityLine: null });
   db.recipe.findMany.mockReset().mockResolvedValue([]);
   db.chefNote.findMany.mockReset().mockResolvedValue([]);
-  db.user.findUnique.mockReset().mockResolvedValue({ languagePref: "es" });
+  db.user.findUnique.mockReset().mockResolvedValue({ name: "Andy", languagePref: "es" });
   memoryChat.mockReset().mockResolvedValue(null);
   buildSystem.mockReset().mockReturnValue([{ type: "text", text: "sys" }]);
   // restoreAllMocks clears implementations installed after vi.fn() creation.
@@ -898,6 +898,7 @@ describe("POST chat — selección de proveedor", () => {
       expect.anything(),
       null,
       null,
+      { speakerName: "Andy" },
     );
   });
   it("loads and forwards recent titles when useful memory is ready", async () => {
@@ -916,6 +917,7 @@ describe("POST chat — selección de proveedor", () => {
       [{ title: "Receta reciente" }],
       null,
       "Técnicas de brasa",
+      { speakerName: "Andy" },
     );
   });
 
@@ -929,7 +931,47 @@ describe("POST chat — selección de proveedor", () => {
     streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
     await (await post({ content: "receta" })).text();
     expect(db.recipe.findMany).toHaveBeenCalledTimes(1);
-    expect(buildSystem).toHaveBeenCalledWith(expect.anything(), [{ title: "Receta reciente" }], null, null);
+    expect(buildSystem).toHaveBeenCalledWith(expect.anything(), [{ title: "Receta reciente" }], null, null, { speakerName: "Andy" });
+  });
+
+  it("pasa el nombre de quien escribe y la ciudad del restaurante", async () => {
+    db.restaurant.findUnique.mockResolvedValue({ name: "Kokoo", identityLine: null, city: "Valencia" });
+    db.user.findUnique.mockResolvedValue({ name: "Andy" });
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    await (await post({ content: "receta" })).text();
+    expect(db.user.findUnique).toHaveBeenCalledWith({ where: { id: "u1" }, select: { name: true } });
+    expect(db.restaurant.findUnique).toHaveBeenCalledWith({
+      where: { id: "r1" },
+      select: { name: true, identityLine: true, city: true },
+    });
+    expect(buildSystem).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Kokoo", city: "Valencia" }),
+      expect.anything(),
+      null,
+      null,
+      { speakerName: "Andy" },
+    );
+  });
+
+  it("la vista previa pasa el nombre de quien escribe sin buscar restaurante", async () => {
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    await (await post({ content: "receta" }, "preview")).text();
+    expect(db.user.findUnique).toHaveBeenCalledWith({ where: { id: "u1" }, select: { name: true } });
+    expect(db.restaurant.findUnique).not.toHaveBeenCalled();
+    expect(buildSystem).toHaveBeenCalledWith(
+      { name: "Tu cocina", identityLine: null },
+      expect.anything(),
+      null,
+      null,
+      { speakerName: "Andy" },
+    );
+  });
+
+  it.each(["conv-1", "preview"])("un fallo al leer el nombre no corta el turno en %s", async (id) => {
+    db.user.findUnique.mockRejectedValue(new Error("database unavailable"));
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    expect(await (await post({ content: "receta" }, id)).text()).toContain('"type":"done"');
+    expect(buildSystem).toHaveBeenCalledWith(expect.anything(), expect.anything(), null, null, { speakerName: null });
   });
 
   it.each([["daily", "gemini-3.8-flash"], ["sonnet", "gemini-3.8-flash"], ["haiku", "gemini-3.8-flash"], ["creative", "claude-opus-5-5"], ["opus", "claude-opus-5-5"]])("%s conserva el modelo real en la conversación", async (model, expected) => {
@@ -1039,7 +1081,7 @@ describe("A2 closed SSE error contract", () => {
   it("queries language only for an error, not a successful stream", async () => {
     streamMock.mockReturnValue(providerStream(["Listo"], { in: 5, out: 3 }));
     expect(await (await post({ content: "receta" })).text()).toContain('"type":"done"');
-    expect(db.user.findUnique).not.toHaveBeenCalled();
+    expect(db.user.findUnique).not.toHaveBeenCalledWith(expect.objectContaining({ select: { languagePref: true } }));
   });
 
   it.each(["conv-1"])("continues generation without an SSE error after the client's AbortSignal aborts in %s", async id => {
@@ -1057,7 +1099,7 @@ describe("A2 closed SSE error contract", () => {
     });
     const wire = await (await route.POST(request, { params: Promise.resolve({ id }) })).text();
     expect(wire).not.toContain('"type":"error"');
-    expect(db.user.findUnique).not.toHaveBeenCalled();
+    expect(db.user.findUnique).not.toHaveBeenCalledWith(expect.objectContaining({ select: { languagePref: true } }));
     expect(assistantCreate()?.[0].data.content).toBe(id === "preview" ? undefined : "Recipe finished");
     expect(quota.recordAiTokens).toHaveBeenCalledWith("u1", 20, 5);
     expect(infoLog).toHaveBeenCalledWith("ai_turn", expect.objectContaining({ outcome: "done" }));
