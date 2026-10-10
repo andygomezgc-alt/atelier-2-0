@@ -21,7 +21,7 @@ export default function PrivacidadPage() {
         Política de privacidad
       </h1>
       <p style={{ fontFamily: "system-ui, sans-serif", fontSize: 13, color: muted, margin: "0 0 32px" }}>
-        Última actualización: 13 de septiembre de 2026
+        Última actualización: 10 de octubre de 2026
       </p>
 
       <h2 style={h2Style}>Responsable</h2>
@@ -36,7 +36,7 @@ export default function PrivacidadPage() {
       <h2 style={h2Style}>Qué datos tratamos</h2>
       <p style={pStyle}>
         Tu email, nombre, identificador de acceso con Google o Apple, foto y
-        descripción opcionales; el restaurante y tu rol en el equipo; recetas,
+        descripción opcionales; el restaurante, su ciudad o zona si la indicás, y tu rol en el equipo; recetas,
         ideas, menús, productos, conversaciones y archivos que cargás. También
         tratamos datos técnicos de sesión, dispositivo, errores y consumo de IA
         para mantener el servicio y controlar las cuotas y el presupuesto.
@@ -47,17 +47,24 @@ export default function PrivacidadPage() {
         El contenido del restaurante se comparte con sus miembros según sus
         permisos. El chat Diario utiliza Google Gemini y el Creativo utiliza
         Anthropic Claude. Enviamos el mensaje, una parte acotada de la conversación
-        y el contexto culinario necesario para responder. Z.AI (GLM) procesa las
+        y el contexto culinario necesario para responder. Ese contexto incluye el
+        nombre de perfil de quien escribe, la ciudad o zona si se indicó y el mes
+        actual, para proponer producto de temporada. Z.AI (GLM) procesa las
         recetas y los documentos o imágenes que elegís analizar, los estilos de
         menú y el aprendizaje de preferencias culinarias. Los costes de recetas
         se calculan con reglas, sin enviar el banco de precios a la IA para ese cálculo.
       </p>
       <p style={pStyle}>
-        En Perfil → Nuestra cocina podés indicar el estilo del restaurante y
-        gestionar su memoria. El aprendizaje es opcional: analiza una selección
-        limitada de recetas y guarda tendencias breves, compartidas por el equipo.
-        Podés corregirlas, excluirlas o borrarlas y desactivar el aprendizaje.
-        Desactivarlo no borra por sí solo las preferencias ya guardadas.
+        En Perfil → Nuestra cocina podés indicar el estilo del restaurante, su
+        ciudad o zona y gestionar su memoria. La memoria culinaria viene
+        activada en los restaurantes nuevos y en los que todavía no tomaron
+        ninguna decisión; podés apagarla en Perfil → Nuestra cocina o con el botón
+        «Memoria» del chat. Aprende de las recetas en prueba o aprobadas al cargar
+        una y una vez por semana: analiza una selección limitada de recetas y
+        guarda tendencias breves, compartidas por el equipo. También cuenta, sin
+        IA, los ingredientes que más se repiten en esas recetas. Podés corregir
+        las tendencias, excluirlas o borrarlas. Apagar la memoria no borra por sí
+        solo las preferencias ya guardadas.
         Quienes tienen permiso pueden guardar desde el chat &quot;Notas del chef&quot;
         (hasta 10, de 160 caracteres cada una): se envían al asistente como
         contexto del restaurante, se borran una a una y se eliminan junto con el restaurante.
