@@ -1,26 +1,65 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
+import { can, type Permission } from "@atelier/shared";
 
 const h = vi.hoisted(() => ({
   findMany: vi.fn(), create: vi.fn(), restaurantId: "restaurant-1" as string | null,
+  role: "chef_executive" as Parameters<typeof can>[0],
 }));
 vi.mock("@atelier/db", () => ({ prisma: { conversation: { findMany: h.findMany, create: h.create } } }));
 vi.mock("@/lib/permissions-guard", () => ({
-  requireAuth: vi.fn(async () => ({ userId: "chef-1", restaurantId: h.restaurantId })),
+  requireAuth: vi.fn(async (_req: NextRequest, permission?: Permission) => {
+    if (permission && !h.restaurantId)
+      return NextResponse.json({ error: "Not in a restaurant" }, { status: 403 });
+    if (permission && !can(h.role, permission))
+      return NextResponse.json({ error: "Forbidden", code: "forbidden" }, { status: 403 });
+    return { userId: "chef-1", restaurantId: h.restaurantId, role: h.role };
+  }),
   isNextResponse: (value: unknown) => value instanceof NextResponse,
 }));
 vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn() } }));
 import { GET, POST } from "../route";
+import { GET as ideaConversation } from "../../ideas/[id]/conversation/route";
+import { POST as bulkMessages } from "../[id]/messages/bulk/route";
 
 const url = "https://atelier.test/api/conversations";
 const row = { id: "chat-1", modelUsed: "daily", createdAt: new Date("2026-09-09T10:00:00Z"), idea: null, messages: [] };
 beforeEach(() => {
   h.restaurantId = "restaurant-1";
+  h.role = "chef_executive";
   h.findMany.mockReset();
   h.create.mockReset();
 });
 
 describe("conversation history and new chats", () => {
+  it("rejects a viewer listing restaurant chats before querying history", async () => {
+    h.role = "viewer";
+    h.findMany.mockResolvedValue([row]);
+    const res = await GET(new NextRequest(url));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Forbidden", code: "forbidden" });
+    expect(h.findMany).not.toHaveBeenCalled();
+  });
+
+  it("lets a sous-chef list restaurant chats", async () => {
+    h.role = "sous_chef";
+    h.findMany.mockResolvedValue([row]);
+    const res = await GET(new NextRequest(url));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toHaveLength(1);
+  });
+
+  it("rejects viewers on idea conversations and bulk chat imports", async () => {
+    h.role = "viewer";
+    const params = { params: Promise.resolve({ id: "idea-1" }) };
+    const idea = await ideaConversation(new NextRequest(url), params);
+    const bulk = await bulkMessages(new NextRequest(url, { method: "POST" }), params);
+    for (const res of [idea, bulk]) {
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "Forbidden", code: "forbidden" });
+    }
+  });
+
   it("names an unanchored chat with its first message, without returning the full conversation", async () => {
     h.findMany.mockResolvedValue([{ ...row, messages: [{ content: "  Un menú\n de otoño  " }] }]);
     const res = await GET(new NextRequest(url));

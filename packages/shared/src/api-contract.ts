@@ -315,14 +315,37 @@ export const ApiErrorCodeSchema = z.enum([
   "last_admin",
   "case_changed",
   "stripe_cancel_failed",
+  "ai_provider_failed",
+  "ai_rate_limited",
+  "ai_timeout",
+  "ai_response_blocked",
+  "chat_refused",
+  "chat_response_incomplete",
+  "chat_context_too_long",
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
+
+// A2 — single source of truth for which chat stream errors are worth retrying.
+const RETRYABLE_CHAT_ERRORS: ReadonlySet<string> = new Set<ApiErrorCode>([
+  "ai_provider_failed",
+  "ai_rate_limited",
+  "ai_timeout",
+  "chat_response_incomplete",
+]);
+
+export function isRetryableChatError(code: string): boolean {
+  return RETRYABLE_CHAT_ERRORS.has(code);
+}
 
 export const ApiErrorResponseSchema = z.object({
   error: z.string(),
   code: ApiErrorCodeSchema.optional(),
 });
 export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
+
+// R3-001 — limits shared by the bulk schema and the client upload (the client chunks by BULK_MESSAGES_MAX).
+export const BULK_MESSAGES_MAX = 40;
+export const MESSAGE_CONTENT_MAX = 20_000;
 
 // A-12 — hidratación bulk de mensajes locales en una Conversation recién
 // creada. La consume `/api/conversations/[id]/messages/bulk`.
@@ -331,11 +354,13 @@ export const BulkMessagesRequestSchema = z.object({
     .array(
       z.object({
         role: z.enum(["user", "assistant"]),
-        content: z.string().min(1).max(20_000),
+        content: z.string().min(1).max(MESSAGE_CONTENT_MAX),
+        // Stable per-message id: a replayed batch skips the messages already stored.
+        clientMessageId: z.string().min(1).max(64).optional(),
       }),
     )
     .min(1)
-    .max(40),
+    .max(BULK_MESSAGES_MAX),
 });
 export type BulkMessagesRequest = z.infer<typeof BulkMessagesRequestSchema>;
 

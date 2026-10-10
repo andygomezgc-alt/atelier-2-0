@@ -1,7 +1,8 @@
-import { apiFetch } from "./client";
+import { apiFetch, notifyUnauthorized } from "./client";
 import * as SecureStore from "@/src/lib/secure-storage";
 import { TOKEN_KEY } from "./client";
 import EventSource from "react-native-sse";
+import { ApiErrorCodeSchema, type ApiErrorCode } from "@atelier/shared";
 
 const BASE = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 
@@ -11,9 +12,21 @@ export class StreamInterruptedError extends Error {
   constructor(
     message: string,
     readonly partialText: string,
+    readonly code?: ApiErrorCode,
+    readonly retryAfter?: number,
+    // A3 — HTTP status of a failed stream request (0/undefined = no response).
+    readonly status?: number,
   ) {
     super(message);
     this.name = "StreamInterruptedError";
+  }
+}
+
+// A13 — the server ended the answer because it was stopped: nothing was saved, the partial text is discarded.
+export class StreamStoppedError extends Error {
+  constructor(readonly partialText: string) {
+    super("stream_stopped");
+    this.name = "StreamStoppedError";
   }
 }
 
@@ -50,17 +63,17 @@ export const listConversations = () =>
   apiFetch<ConversationSummary[]>("/api/conversations");
 
 export const listMessages = (conversationId: string) =>
-  apiFetch<ChatMessage[]>(`/api/conversations/${conversationId}/messages`);
+  apiFetch<ChatMessage[]>(`/api/conversations/${encodeURIComponent(conversationId)}/messages`);
 
 // A-12 — hidrata mensajes locales (modo preview) en una Conversation real
 // recién creada. Lo usa `saveAsRecipe` en Asistente cuando el chef pasa de
 // needs-restaurant → signed-in.
 export const bulkAddMessages = (
   conversationId: string,
-  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  messages: Array<{ role: "user" | "assistant"; content: string; clientMessageId?: string }>,
 ) =>
   apiFetch<{ inserted: number }>(
-    `/api/conversations/${conversationId}/messages/bulk`,
+    `/api/conversations/${encodeURIComponent(conversationId)}/messages/bulk`,
     {
       method: "POST",
       body: JSON.stringify({ messages }),
@@ -80,7 +93,7 @@ export type IdeaConversation = {
  * times always returns the same conversation with its full history.
  */
 export const getConversationByIdea = (ideaId: string) =>
-  apiFetch<IdeaConversation>(`/api/ideas/${ideaId}/conversation`);
+  apiFetch<IdeaConversation>(`/api/ideas/${encodeURIComponent(ideaId)}/conversation`);
 
 /**
  * Parses a single SSE `data:` payload string. Returns a typed event or `null`
@@ -92,7 +105,8 @@ export type SseEvent =
   | { type: "delta"; text: string }
   | { type: "heartbeat"; ts: number }
   | { type: "done" }
-  | { type: "error"; message: string };
+  | { type: "stopped" }
+  | { type: "error"; message: string; code?: ApiErrorCode; retryAfter?: number };
 
 export function parseSseEvent(data: string): SseEvent | null {
   try {
@@ -108,8 +122,17 @@ export function parseSseEvent(data: string): SseEvent | null {
         return { type: "heartbeat", ts: json.ts };
       }
       if (json.type === "done") return { type: "done" };
+      if (json.type === "stopped") return { type: "stopped" };
       if (json.type === "error") {
-        return { type: "error", message: typeof json.message === "string" ? json.message : "stream_error" };
+        // A2 — newer servers send a closed `code` (+ `retryAfter` seconds);
+        // `message` stays as the fallback for servers that only send text.
+        const event: SseEvent = { type: "error", message: typeof json.message === "string" ? json.message : "stream_error" };
+        const code = ApiErrorCodeSchema.safeParse(json.code);
+        if (code.success) event.code = code.data;
+        if (typeof json.retryAfter === "number" && Number.isFinite(json.retryAfter) && json.retryAfter > 0) {
+          event.retryAfter = json.retryAfter;
+        }
+        return event;
       }
     }
     return null;
@@ -153,7 +176,7 @@ export async function streamMessage(
     };
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const pathSegment = conversationId ?? "preview";
+    const pathSegment = conversationId ? encodeURIComponent(conversationId) : "preview";
     const body: Record<string, unknown> = { content, model };
     if (!conversationId && history) body.history = history;
     if (clientMessageId) body.clientMessageId = clientMessageId;
@@ -217,20 +240,36 @@ export async function streamMessage(
         // empezar a generar.
       } else if (ev.type === "done") {
         settle(() => resolve(full));
+      } else if (ev.type === "stopped") {
+        settle(() => reject(new StreamStoppedError(full)));
       } else if (ev.type === "error") {
-        settle(() => reject(new StreamInterruptedError(ev.message, full)));
+        settle(() => reject(new StreamInterruptedError(ev.code ?? ev.message, full, ev.code, ev.retryAfter)));
       }
     });
 
     es.addEventListener("error", (event) => {
       if (timedOut || aborted) return; // already settled
       const ev = event as { type: string; message?: string; xhrStatus?: number };
-      let msg = ev.message || `stream_error${ev.xhrStatus ? `_${ev.xhrStatus}` : ""}`;
+      const fallback = `stream_error${ev.xhrStatus ? `_${ev.xhrStatus}` : ""}`;
+      let msg = ev.message || fallback;
+      let code: ApiErrorCode | undefined;
       try {
-        const body = JSON.parse(msg);
-        if (typeof body?.code === "string") msg = body.code;
+        // HTTP error bodies are JSON; keep only a closed code, never the raw body.
+        const parsed = ApiErrorCodeSchema.safeParse(JSON.parse(msg)?.code);
+        if (parsed.success) code = parsed.data;
+        msg = code ?? fallback;
       } catch { /* Non-JSON transport error. */ }
-      settle(() => reject(new StreamInterruptedError(msg, full)));
+      settle(() => {
+        // Chat always requires authentication, even if local token storage is empty.
+        // Keep sign-out inside settlement so repeated transport errors cannot repeat it.
+        if (ev.xhrStatus === 401) notifyUnauthorized();
+        reject(new StreamInterruptedError(msg, full, code, undefined, ev.xhrStatus));
+      });
     });
   });
+}
+
+// A13 — stops the running answer of a saved conversation (POST .../messages/stop, 204).
+export async function stopMessage(conversationId: string): Promise<void> {
+  await apiFetch<void>(`/api/conversations/${encodeURIComponent(conversationId)}/messages/stop`, { method: "POST" });
 }

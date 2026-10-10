@@ -1,22 +1,9 @@
 import { can, normalizeChatMode, type ChatMode } from "@atelier/shared";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Image,
-  Keyboard,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { ActivityIndicator, Alert, FlatList, Image, Keyboard, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { Easing, withSpring, withTiming } from "react-native-reanimated";
-import type { EntryExitAnimationFunction } from "react-native-reanimated";
 
 import { Empty } from "@/src/components/Empty";
 import { NetworkError } from "@/src/components/NetworkError";
@@ -25,176 +12,27 @@ import { ProfileSheet } from "@/src/components/ProfileSheet";
 import { RememberNoteSheet } from "@/src/components/RememberNoteSheet";
 import { CulinaryMemorySheet } from "@/src/components/CulinaryMemorySheet";
 import { MemoryChip } from "@/src/components/MemoryChip";
-import { getCulinaryMemory } from "@/src/api/culinary-memory";
-import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n, dateLocale } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
-import { speechAvailable, useSpeechInput } from "@/src/hooks/useSpeechInput";
-import {
-  bulkAddMessages,
-  createConversation,
-  getConversationByIdea,
-  listMessages,
-  streamMessage,
-  type ChatMessage,
-} from "@/src/api/conversations";
-import { extractRecipeFromAssistant } from "@/src/api/recipes";
-import { recipeConversationText } from "@/src/lib/recipe-conversation";
-import { showToast } from "@/src/components/Toast";
-import { stripRecipePayload } from "@/src/lib/recipe-payload";
-import { setRecipeDraft } from "@/src/lib/recipe-draft";
-import { MarkdownText } from "@/src/components/MarkdownText";
-import { TypingDots } from "@/src/components/TypingDots";
-import { SendButton } from "@/src/components/SendButton";
+import type { ChatMessage } from "@/src/api/conversations";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
-import { selection, tapLight } from "@/src/lib/haptics";
-import type { TranslationKey } from "@atelier/i18n";
-import { colors, fonts, fontSizes, radii, spacing, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
-import { apiErrorMessage } from "@/src/lib/api-error";
+import { tapLight } from "@/src/lib/haptics";
+import { stripRecipePayload } from "@/src/lib/recipe-payload";
 import { canRememberNote } from "@/src/lib/chef-notes";
-
-type ModelKey = ChatMode;
-
-function createClientMessageId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
-}
-
-const MODEL_LABEL_KEYS: Record<ModelKey, TranslationKey> = {
-  daily: "model_daily",
-  creative: "model_creative",
-};
-
-function initials(name: string): string {
-  return name
-    .split(" ")
-    .map((w) => w[0] ?? "")
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
-
-function formatTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-    return `${hh}:${mm}`;
-  } catch {
-    return "";
-  }
-}
-
-// Dictado por voz: app lang → BCP-47 del reconocedor nativo.
-const SPEECH_LANG: Record<"es" | "it" | "en", string> = {
-  es: "es-ES",
-  it: "it-IT",
-  en: "en-US",
-};
-
-// Separador de día (pulido spec 2026-06-23): "hoy" / "ayer" / "12 jun".
-function dayLabel(
-  iso: string,
-  t: (k: TranslationKey) => string,
-  locale: string,
-): string {
-  try {
-    const d = new Date(iso);
-    const now = new Date();
-    const startOf = (x: Date) =>
-      new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-    const diff = Math.round((startOf(now) - startOf(d)) / 86_400_000);
-    if (diff <= 0) return t("day_today");
-    if (diff === 1) return t("day_yesterday");
-    // Idioma del chef, no el del teléfono.
-    return d.toLocaleDateString(locale, { day: "numeric", month: "short" });
-  } catch {
-    return "";
-  }
-}
-
-// Entrada "con más vida" (spec): fade + sube 14px + scale desde 0.97, spring
-// con mini rebote. Worklet custom porque FadeInDown no trae scale.
-const messageEntering: EntryExitAnimationFunction = () => {
-  "worklet";
-  const SPRING = { damping: 14, stiffness: 170, mass: 0.8 };
-  return {
-    initialValues: {
-      opacity: 0,
-      transform: [{ translateY: 14 }, { scale: 0.97 }],
-    },
-    animations: {
-      opacity: withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) }),
-      transform: [
-        { translateY: withSpring(0, SPRING) },
-        { scale: withSpring(1, SPRING) },
-      ],
-    },
-  };
-};
-
-// A-03 — Bubble memoizada (igual que antes). `animate` solo es true para
-// mensajes que llegan en vivo; el historial carga quieto. `onRemember` llega
-// estable (useCallback) para no romper el memo durante el streaming; sin él
-// (sin permiso o en la vista previa) la burbuja no tiene pulsación larga.
-const Bubble = memo(function Bubble({
-  m,
-  eyebrowLabel,
-  animate,
-  onRemember,
-  rememberLabel,
-}: {
-  m: ChatMessage;
-  eyebrowLabel: string;
-  animate: boolean;
-  onRemember?: (m: ChatMessage) => void;
-  rememberLabel: string;
-}) {
-  const wrapStyle = m.role === "user" ? styles.userWrap : styles.assistantWrap;
-  const inner =
-    m.role === "user" ? (
-      <>
-        <View style={styles.userBubble}>
-          <Text style={styles.userText}>{m.content}</Text>
-        </View>
-        <Text style={styles.userTime}>{formatTime(m.createdAt)}</Text>
-      </>
-    ) : (
-      <>
-        <Text style={styles.assistantEyebrow}>{eyebrowLabel}</Text>
-        <View style={styles.assistantRule} />
-        <View style={styles.assistantBody}>
-          <MarkdownText text={stripRecipePayload(m.content).trim()} />
-        </View>
-      </>
-    );
-  if (onRemember) {
-    // "Recordar esto": pulsación larga (y acción de accesibilidad equivalente).
-    const pressable = (
-      <Pressable
-        style={wrapStyle}
-        onLongPress={() => onRemember(m)}
-        accessibilityActions={[{ name: "longpress", label: rememberLabel }]}
-        onAccessibilityAction={(e) => {
-          if (e.nativeEvent.actionName === "longpress") onRemember(m);
-        }}
-      >
-        {inner}
-      </Pressable>
-    );
-    return animate ? (
-      <Animated.View entering={messageEntering}>{pressable}</Animated.View>
-    ) : (
-      pressable
-    );
-  }
-  return animate ? (
-    <Animated.View entering={messageEntering} style={wrapStyle}>
-      {inner}
-    </Animated.View>
-  ) : (
-    <View style={wrapStyle}>{inner}</View>
-  );
-});
+import type { ChatErrorAction } from "@/src/lib/chat-error";
+import { colors, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
+import { styles } from "@/src/features/assistant/chat-styles";
+import { createClientMessageId, dayLabel, initials } from "@/src/features/assistant/chat-helpers";
+import { useChatComposer } from "@/src/features/assistant/use-chat-composer";
+import { useChatConversation } from "@/src/features/assistant/use-chat-conversation";
+import { useChatTurn } from "@/src/features/assistant/use-chat-turn";
+import { useSaveRecipe } from "@/src/features/assistant/use-save-recipe";
+import { useMemoryChip } from "@/src/features/assistant/use-memory-chip";
+import { MessageBubble } from "@/src/features/assistant/components/MessageBubble";
+import { StreamingBubble } from "@/src/features/assistant/components/StreamingBubble";
+import { ChatFailureBanner } from "@/src/features/assistant/components/ChatFailureBanner";
+import { ModelSwitch } from "@/src/features/assistant/components/ModelSwitch";
+import { Composer } from "@/src/features/assistant/components/Composer";
 
 export default function AsistenteScreen() {
   const { t } = useI18n();
@@ -214,6 +52,7 @@ export default function AsistenteScreen() {
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [rememberText, setRememberText] = useState<string | null>(null);
 
   const kb = useKeyboardHeight();
   const insets = useSafeAreaInsets();
@@ -228,12 +67,12 @@ export default function AsistenteScreen() {
   // usa el Diario. El servidor rechaza igual si alguien fuerza el modo.
   const puedeCreativo = chefRole != null && can(chefRole, "use_creative_chat");
 
-  const modeloPreferido: ModelKey =
+  const modeloPreferido: ChatMode =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
       ? normalizeChatMode(authState.user.defaultModel)
       : "daily";
   // Una preferencia vieja de Creativo no vale si el rol ya no lo permite.
-  const userModel: ModelKey = puedeCreativo ? modeloPreferido : "daily";
+  const userModel: ChatMode = puedeCreativo ? modeloPreferido : "daily";
 
   const userName =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -263,350 +102,94 @@ export default function AsistenteScreen() {
       ? authState.user.restaurantId
       : null,
   );
-  const [rememberText, setRememberText] = useState<string | null>(null);
-
-  // "Memoria" chip: real restaurant only; hidden (null) while loading or on error.
-  const memoryRestaurantId =
+  // Botón «Memoria»: solo con restaurante real; oculto mientras carga o si falla.
+  const restaurantId =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
       ? authState.user.restaurantId ?? null
       : null;
-  const [memoryEnabled, setMemoryEnabled] = useState<boolean | null>(null);
-  const [memoryOpen, setMemoryOpen] = useState(false);
-  const [memoryReload, setMemoryReload] = useState(0);
-  useEffect(() => {
-    setMemoryEnabled(null);
-    setMemoryOpen(false);
-  }, [memoryRestaurantId]);
-  useEffect(() => {
-    if (!memoryRestaurantId) return;
-    // Ignore responses that arrive after the restaurant changed or the screen unmounted.
-    let current = true;
-    getCulinaryMemory()
-      .then((memory) => {
-        if (current && memory.restaurantId === memoryRestaurantId) setMemoryEnabled(memory.enabled);
-      })
-      .catch(() => {
-        if (current) setMemoryEnabled(null);
-      });
-    return () => {
-      current = false;
-    };
-  }, [memoryRestaurantId, memoryReload]);
+  const memory = useMemoryChip(restaurantId);
 
-  const [model, setModel] = useState<ModelKey>(userModel);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [conversationLoading, setConversationLoading] = useState(Boolean(conversationIdParam || ideaId));
-  const [conversationLoadError, setConversationLoadError] = useState(false);
-  const [loadAttempt, setLoadAttempt] = useState(0);
-  const switchingRef = useRef(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [structuring, setStructuring] = useState(false);
-  const [streaming, setStreaming] = useState(false);
-  const [streamShown, setStreamShown] = useState("");
-  const [streamError, setStreamError] = useState<{
-    content: string;
-    model: ModelKey;
-    clientMessageId: string;
-  } | null>(null);
-
-  const abortRef = useRef<AbortController | null>(null);
-
-  // Typewriter: los deltas de red se acumulan en streamTargetRef; un ticker los
-  // revela de a pocos caracteres por frame para que la respuesta se "escriba"
-  // fluida en vez de aparecer a golpes de chunk.
-  const streamTargetRef = useRef("");
-  const streamShownRef = useRef("");
-  const streamDoneRef = useRef(false);
-  const tickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const drainResolveRef = useRef<(() => void) | null>(null);
-  // Se incrementa al cambiar de idea/conversación; un runStream con generación
-  // vieja no debe commitear su respuesta en el chat nuevo ni pisar su estado.
-  const streamGenRef = useRef(0);
-
-  // Dictado por voz: el texto reconocido se vuelca en el input en vivo.
-  const { listening, start: startMic, stop: stopMic } = useSpeechInput({
-    lang: SPEECH_LANG[langPref] ?? "es-ES",
-    onText: setInput,
-    onError: (code) =>
-      showToast(
-        t(code === "permission" ? "error_mic_permission" : "error_mic_unavailable"),
-      ),
+  // Order: the composer, then the conversation (owns the session generation), then the turn and the save.
+  // The route-change callbacks reach the turn through `turn`, declared below; they run after this render.
+  const composer = useChatComposer(langPref);
+  const conversation = useChatConversation({
+    ideaId,
+    conversationIdParam,
+    chatSession,
+    hasRestaurant,
+    userModel,
+    t,
+    onSwitch: () => {
+      turn.reset();
+      composer.setInput("");
+    },
+    onUnansweredQuestion: (question) => turn.restoreUnanswered(question),
+  });
+  const turn = useChatTurn({
+    generation: conversation.generation,
+    messages: conversation.messages,
+    setMessages: conversation.setMessages,
+    ensureConversation: conversation.ensureConversation,
+    preloadedIds: conversation.preloadedIds,
+    setModel: conversation.setModel,
+  });
+  const save = useSaveRecipe({
+    messages: conversation.messages,
+    conversationId: conversation.conversationId,
+    generation: conversation.generation,
+    promoteChat: conversation.promoteChat,
+    isBlocked: () => turn.busy || turn.failed !== null || conversation.switchingRef.current,
+    t,
   });
 
-  // Los mensajes presentes al cargar la conversación NO se animan; solo los
-  // que llegan en vivo. Set de ids conocidos al momento del load.
-  const preloadedIds = useRef<Set<string>>(new Set());
+  const busy = turn.busy;
+  // While stopping, the partial text is already discarded: no streaming bubble.
+  const streamingVisible = busy && turn.phase !== "stopping";
+  const recovering = turn.phase === "interrupted" || turn.phase === "resuming";
+  const composerBusy = busy || save.structuring || conversation.loading || conversation.loadError;
+  const navigationBusy = busy || save.structuring || composer.listening;
+  const showSaveButton =
+    turn.phase === "idle" && conversation.messages.some((m) => m.role === "assistant");
 
-  function stopTicker() {
-    if (tickerRef.current) {
-      clearInterval(tickerRef.current);
-      tickerRef.current = null;
-    }
-  }
+  // A-03 — FlatList invertida: data en orden inverso así el último mensaje
+  // queda visualmente abajo. inverted + ListHeaderComponent garantiza que
+  // el bubble en progreso / "Atelier piensa" siempre quede al fondo del
+  // scroll sin scrollToEnd manual.
+  const reversedData = useMemo(() => [...conversation.messages].reverse(), [conversation.messages]);
 
-  // El paso escala con el backlog: nunca se atrasa más de ~medio segundo
-  // respecto de la red, pero mantiene un mínimo de ritmo "typewriter".
-  function startTicker() {
-    if (tickerRef.current) return;
-    tickerRef.current = setInterval(() => {
-      const target = streamTargetRef.current;
-      const shown = streamShownRef.current;
-      if (shown.length < target.length) {
-        const backlog = target.length - shown.length;
-        const step = Math.max(3, Math.ceil(backlog / 12));
-        let end = shown.length + step;
-        // No partir un par sustituto (emoji) en el borde del reveal.
-        const code = target.charCodeAt(end - 1);
-        if (end < target.length && code >= 0xd800 && code <= 0xdbff) end += 1;
-        const next = target.slice(0, end);
-        streamShownRef.current = next;
-        setStreamShown(next);
-      } else {
-        // Alcanzó: parar en vez de idlear; cada delta nuevo lo reinicia.
-        stopTicker();
-        if (streamDoneRef.current) {
-          drainResolveRef.current?.();
-          drainResolveRef.current = null;
-        }
-      }
-    }, 33);
-  }
-
-  function resetStream() {
-    stopTicker();
-    // Desbloquea un drain pendiente para que runStream no cuelgue si cambia la
-    // idea a mitad del reveal; el caller ya capturó su texto final.
-    drainResolveRef.current?.();
-    drainResolveRef.current = null;
-    streamTargetRef.current = "";
-    streamShownRef.current = "";
-    streamDoneRef.current = false;
-    setStreamShown("");
-  }
-
-  // Initialize the model preference once.
-  const initialized = useRef(false);
-  useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
-    setModel(userModel);
-  }, [userModel]);
-
-  // Cancel any in-flight stream when the screen unmounts.
-  useEffect(() => {
-    return () => {
-      streamGenRef.current += 1;
-      abortRef.current?.abort();
-      if (tickerRef.current) clearInterval(tickerRef.current);
-      drainResolveRef.current?.();
-    };
+  const assistantEyebrow = t("assistant_eyebrow");
+  const rememberLabel = t("notes_remember");
+  const openRemember = useCallback((m: ChatMessage) => {
+    Keyboard.dismiss();
+    tapLight();
+    setRememberText(m.role === "assistant" ? stripRecipePayload(m.content) : m.content);
   }, []);
-
-  // Reset chat state and load the right conversation when params change.
-  useEffect(() => {
-    // Mata cualquier stream en vuelo de la idea anterior; sin esto su respuesta
-    // sigue escribiéndose (y se commitearía) en el chat nuevo.
-    streamGenRef.current += 1;
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setStreaming(false);
-    setConversationId(null);
-    setMessages([]);
-    setInput("");
-    setConversationLoading(Boolean(conversationIdParam || ideaId));
-    setConversationLoadError(false);
-    switchingRef.current = false;
-    resetStream();
-    setStreamError(null);
-    preloadedIds.current = new Set();
-
-    let cancelled = false;
-    const gen = streamGenRef.current;
-    const isCurrent = () => !cancelled && gen === streamGenRef.current;
-
-    if (conversationIdParam) {
-      (async () => {
-        try {
-          const msgs = await listMessages(conversationIdParam);
-          if (!isCurrent()) return;
-          setConversationId(conversationIdParam);
-          preloadedIds.current = new Set(msgs.map((m) => m.id));
-          setMessages(msgs);
-          const pending = msgs.at(-1);
-          if (pending?.role === "user" && pending.clientMessageId) setStreamError({ content: pending.content, clientMessageId: pending.clientMessageId, model: userModel });
-        } catch (err) {
-          if (cancelled) return;
-          setConversationLoadError(true);
-          showToast(apiErrorMessage(err, t));
-        } finally {
-          if (!cancelled) setConversationLoading(false);
-        }
-      })();
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (ideaId) {
-      (async () => {
-        try {
-          const conv = await getConversationByIdea(ideaId);
-          if (!isCurrent()) return;
-          setConversationId(conv.id);
-          preloadedIds.current = new Set(conv.messages.map((m) => m.id));
-          setMessages(conv.messages);
-          const pending = conv.messages.at(-1);
-          if (pending?.role === "user" && pending.clientMessageId) setStreamError({ content: pending.content, clientMessageId: pending.clientMessageId, model: userModel });
-        } catch (err) {
-          if (cancelled) return;
-          setConversationLoadError(true);
-          showToast(apiErrorMessage(err, t));
-        } finally {
-          if (!cancelled) setConversationLoading(false);
-        }
-      })();
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  // Language/model changes must not reopen or clear the chef's conversation.
-  }, [ideaId, conversationIdParam, chatSession, loadAttempt]);
-
-  const ensureConversation = useCallback(async (): Promise<string | null> => {
-    if (conversationId) return conversationId;
-    if (!hasRestaurant) return null;
-    const gen = streamGenRef.current;
-    const conv = await createConversation({ ideaId: ideaId ?? null, modelUsed: model });
-    if (gen === streamGenRef.current) setConversationId(conv.id);
-    return conv.id;
-  }, [conversationId, ideaId, model, hasRestaurant]);
-
-  async function runStream(text: string, modelToUse: ModelKey, clientMessageId: string) {
-    const gen = streamGenRef.current;
-    setStreaming(true);
-    resetStream();
-    setStreamError(null);
-
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-
-    try {
-      const convId = await ensureConversation();
-      if (gen !== streamGenRef.current || ac.signal.aborted) return;
-      const previewHistory = convId
-        ? undefined
-        : messages
-            .filter((m) => m.role === "user" || m.role === "assistant")
-            .map((m) => ({ role: m.role, content: m.content }));
-      const full = await streamMessage(
-        convId,
-        text,
-        modelToUse,
-        (delta) => {
-          if (gen !== streamGenRef.current || ac.signal.aborted) return;
-          if (streamTargetRef.current === "") selection();
-          streamTargetRef.current += delta;
-          startTicker();
-        },
-        ac.signal,
-        previewHistory,
-        clientMessageId,
-      );
-      if (gen !== streamGenRef.current) return;
-      const finalText = full || streamTargetRef.current;
-      streamTargetRef.current = finalText;
-      // Dejar que el typewriter alcance antes de swappear al bubble final,
-      // si no el final de la respuesta aparece de golpe.
-      streamDoneRef.current = true;
-      if (streamShownRef.current.length < finalText.length) {
-        startTicker();
-        await new Promise<void>((resolve) => {
-          drainResolveRef.current = resolve;
-        });
-        if (gen !== streamGenRef.current) return;
-      }
-      // Pre-marcar el id como "preloaded" para que el bubble commiteado NO
-      // re-corra la animación de entrada (el usuario ya lo vio escribirse).
-      const id = `assistant-${Date.now()}`;
-      preloadedIds.current.add(id);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id,
-          role: "assistant",
-          content: finalText,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-    } catch (err) {
-      if (gen !== streamGenRef.current) return;
-      if (err instanceof Error && err.name === "AbortError") return;
-      // P1-8 — CUALQUIER error del stream que no sea un abort (corte de red real,
-      // error del server a mitad, o el timeout de inactividad) va al banner con
-      // reintento, conservando el texto del chef. Antes solo StreamTimeoutError
-      // lo hacía; el resto caía a un toast fugaz y el mensaje ya se había borrado
-      // del input — había que recordarlo y reescribirlo.
-      setStreamError({ content: text, model: modelToUse, clientMessageId });
-      showToast(apiErrorMessage(err, t));
-    } finally {
-      if (abortRef.current === ac) abortRef.current = null;
-      // Generación vieja = la idea cambió y ya reseteó este estado para el chat
-      // nuevo; no lo pises.
-      if (gen === streamGenRef.current) {
-        setStreaming(false);
-        resetStream();
-      }
-    }
-  }
-
-  async function handleSend() {
-    const text = input.trim();
-    if (!text || streaming || structuring || conversationLoading || conversationLoadError || switchingRef.current || abortRef.current) return;
-    tapLight();
-    setInput("");
-    const clientMessageId = createClientMessageId();
-
-    const userMsg: ChatMessage = {
-      id: `local-${clientMessageId}`,
-      role: "user",
-      content: text,
-      createdAt: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    await runStream(text, model, clientMessageId);
-  }
-
-  function handleMic() {
-    if (streaming || structuring || conversationLoading || conversationLoadError || switchingRef.current) return;
-    if (listening) {
-      stopMic();
-      return;
-    }
-    tapLight();
-    startMic(input);
-  }
-
-  async function retryStream() {
-    if (!streamError || streaming || switchingRef.current || abortRef.current) return;
-    await runStream(streamError.content, streamError.model, streamError.clientMessageId);
-  }
+  const renderItem = useCallback(
+    ({ item }: { item: ChatMessage }) => (
+      <MessageBubble
+        m={item}
+        eyebrowLabel={assistantEyebrow}
+        animate={!conversation.preloadedIds.current.has(item.id)}
+        onRemember={canRemember ? openRemember : undefined}
+        rememberLabel={rememberLabel}
+      />
+    ),
+    [assistantEyebrow, canRemember, openRemember, rememberLabel],
+  );
+  const keyExtractor = useCallback((m: ChatMessage) => m.id, []);
 
   function changeConversation(action: () => void) {
-    if (streaming || structuring || listening || switchingRef.current || abortRef.current) return;
+    if (navigationBusy || conversation.switchingRef.current || turn.inFlight()) return;
     const proceed = () => {
-      switchingRef.current = true;
       // Invalidate old asynchronous work before navigation commits its params.
-      streamGenRef.current += 1;
+      conversation.beginSwitch();
       Keyboard.dismiss();
       action();
     };
-    const warning = !conversationId && messages.length > 0
+    const warning = !conversation.conversationId && conversation.messages.length > 0
       ? "chat_leave_unsaved"
-      : streamError ? "chat_leave_pending"
-      : input.trim() ? "chat_leave_draft" : null;
+      : turn.failed ? "chat_leave_pending"
+      : composer.input.trim() ? "chat_leave_draft" : null;
     if (!warning) { proceed(); return; }
     Alert.alert(t("chat_leave_title"), t(warning), [
       { text: t("confirm_cancel"), style: "cancel" },
@@ -626,124 +209,37 @@ export default function AsistenteScreen() {
     });
   }
 
-  // Sin restaurante, ensureConversationForSave hace lazy-create + crea
-  // Conversation real + sube messages locales con bulk antes de seguir.
-  async function ensureConversationForSave(): Promise<string | null> {
-    if (conversationId) return conversationId;
-    try {
-      await ensureRestaurant();
-    } catch {
-      return null;
-    }
-    const conv = await createConversation({
-      ideaId: ideaId ?? null,
-      modelUsed: model,
-    });
-    setConversationId(conv.id);
-    const toUpload = messages
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role, content: m.content }));
-    if (toUpload.length > 0) {
-      try {
-        await bulkAddMessages(conv.id, toUpload);
-      } catch {
-        // Si bulk falla, la receta se sigue guardando con sourceConversationId
-        // apuntando a la Conversation creada (sin history); no se pierde la
-        // receta. Aceptable.
-      }
-    }
-    return conv.id;
-  }
-
-  async function saveAsRecipe() {
-    if (messages.length === 0 || streaming || structuring || streamError || switchingRef.current) return;
-    const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-    if (!lastAssistant) return;
-
-    setStructuring(true);
-    try {
-      const convId = await ensureConversationForSave();
-      if (!convId) {
-        setStructuring(false);
-        return;
-      }
-
-      // Extract the latest complete recipe together with subsequent revisions.
-      // Bound the context without silently cutting ingredients or later changes.
-      let recipeText: string;
-      try { recipeText = recipeConversationText(messages); }
-      catch { showToast(t("recipe_context_too_long")); return; }
-      try {
-        const ex = await extractRecipeFromAssistant(recipeText);
-        setRecipeDraft({
-          title: ex.title,
-          portions: ex.portions ?? null,
-          contentJson: ex.contentJson,
-          recipeIngredients: ex.recipeIngredients,
-          pendingMatches: ex.pendingMatches,
-          sourceConversationId: convId,
-        });
-        router.push("/recetas/nueva");
-      } catch {
-        Alert.alert(t("extract_fail_title"), t("extract_fail_body"), [
-          {
-            text: t("extract_fail_draft"),
-            onPress: () => {
-              setRecipeDraft({
-                title: t("recipe_untitled"),
-                contentJson: {
-                  ingredients: [],
-                  method: [],
-                  notes: recipeText.slice(0, 5000),
-                },
-                sourceConversationId: convId,
-              });
-              router.push("/recetas/nueva");
-            },
-          },
-          { text: t("extract_fail_cancel"), style: "cancel" },
-        ]);
-      }
-    } finally {
-      setStructuring(false);
-    }
-  }
-
-  // A-03 — FlatList invertida: data en orden inverso así el último mensaje
-  // queda visualmente abajo. inverted + ListHeaderComponent garantiza que
-  // el bubble en progreso / "Atelier piensa" siempre quede al fondo del
-  // scroll sin scrollToEnd manual.
-  const reversedData = useMemo(() => [...messages].slice().reverse(), [messages]);
-
-  const assistantEyebrow = t("assistant_eyebrow");
-  const rememberLabel = t("notes_remember");
-  const openRemember = useCallback((m: ChatMessage) => {
-    Keyboard.dismiss();
+  async function handleSend() {
+    const text = composer.input.trim();
+    if (!text || composerBusy || conversation.switchingRef.current || turn.inFlight()) return;
     tapLight();
-    setRememberText(m.role === "assistant" ? stripRecipePayload(m.content) : m.content);
-  }, []);
-  const renderItem = useCallback(
-    ({ item }: { item: ChatMessage }) => (
-      <Bubble
-        m={item}
-        eyebrowLabel={assistantEyebrow}
-        animate={!preloadedIds.current.has(item.id)}
-        onRemember={canRemember ? openRemember : undefined}
-        rememberLabel={rememberLabel}
-      />
-    ),
-    [assistantEyebrow, canRemember, openRemember, rememberLabel],
-  );
-  const keyExtractor = useCallback((m: ChatMessage) => m.id, []);
+    composer.setInput("");
+    await turn.send(text, conversation.model);
+  }
 
-  // A-05 — indicador discreto cuando el modelo todavía no escupió el primer
-  // delta. Aparece debajo del último mensaje del chef y desaparece apenas
-  // llega texto.
-  const awaitingFirstDelta = streaming && streamShown.length === 0;
-  const navigationBusy = streaming || structuring || listening;
-  const composerBusy = streaming || structuring || conversationLoading || conversationLoadError;
-  const showSaveButton =
-    !streaming && !streamError && messages.some((m) => m.role === "assistant");
+  function handleMic() {
+    composer.toggleMic(composerBusy || conversation.switchingRef.current);
+  }
+
+  // Retry and the Diario switch need a failed turn and nothing else in flight.
+  function canResume() {
+    return turn.failed !== null && !busy && !conversation.switchingRef.current && !turn.inFlight();
+  }
+
+  function retryStream() {
+    if (canResume()) void turn.retry();
+  }
+
+  function continueWithDaily() {
+    if (canResume()) void turn.continueWithDaily();
+  }
+
+  function handleErrorAction(action: ChatErrorAction) {
+    if (action === "use_daily") continueWithDaily();
+    else startNewChat();
+  }
+
+  const chatFailed = turn.failed;
 
   return (
     <SafeAreaView edges={["top"]} style={styles.root}>
@@ -757,7 +253,8 @@ export default function AsistenteScreen() {
           <Pressable
             style={styles.avatar}
             onPress={() => setProfileOpen(true)}
-            accessibilityLabel={userName}
+            accessibilityRole="button"
+            accessibilityLabel={t("chat_profile_open")}
           >
             {userPhotoUrl ? (
               <Image source={{ uri: userPhotoUrl }} style={styles.avatarImg} />
@@ -790,12 +287,12 @@ export default function AsistenteScreen() {
           <Ionicons name="time-outline" size={18} color={colors.ink} />
           <Text style={styles.historyLabel}>{t("chat_history")}</Text>
         </Pressable>
-        {memoryRestaurantId && memoryEnabled !== null ? (
+        {restaurantId && memory.enabled !== null ? (
           <MemoryChip
-            enabled={memoryEnabled}
+            enabled={memory.enabled}
             onPress={() => {
               Keyboard.dismiss();
-              setMemoryOpen(true);
+              memory.openSheet();
             }}
           />
         ) : null}
@@ -806,7 +303,7 @@ export default function AsistenteScreen() {
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         onPick={(conv) => {
-          if (conv.id === conversationId) return;
+          if (conv.id === conversation.conversationId) return;
           changeConversation(() => router.setParams({
             ideaId: undefined,
             ideaText: conv.ideaText ?? undefined,
@@ -819,15 +316,8 @@ export default function AsistenteScreen() {
       {rememberText !== null && canRemember ? (
         <RememberNoteSheet text={rememberText} onClose={() => setRememberText(null)} />
       ) : null}
-      {memoryOpen && memoryRestaurantId ? (
-        <CulinaryMemorySheet
-          key={memoryRestaurantId}
-          restaurantId={memoryRestaurantId}
-          onClose={() => {
-            setMemoryOpen(false);
-            setMemoryReload((n) => n + 1);
-          }}
-        />
+      {memory.open && restaurantId ? (
+        <CulinaryMemorySheet key={restaurantId} restaurantId={restaurantId} onClose={memory.closeSheet} />
       ) : null}
 
       <View style={{ flex: 1 }}>
@@ -841,28 +331,14 @@ export default function AsistenteScreen() {
           </View>
         ) : null}
 
-        {puedeCreativo ? (
-          <View style={styles.modelRow}>
-            {(["daily", "creative"] as const).map((m) => (
-              <Pressable
-                key={m}
-                style={[styles.modelChip, model === m && styles.modelChipActive]}
-                onPress={() => setModel(m)}
-              >
-                <Text style={[styles.modelLabel, model === m && styles.modelLabelActive]}>
-                  {t(MODEL_LABEL_KEYS[m])}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
+        {puedeCreativo ? <ModelSwitch model={conversation.model} onChange={conversation.setModel} /> : null}
 
         <View style={{ flex: 1 }}>
-          {conversationLoading ? (
+          {conversation.loading ? (
             <ActivityIndicator style={{ flex: 1 }} color={colors.terracota} />
-          ) : conversationLoadError ? (
-            <NetworkError onRetry={() => setLoadAttempt((attempt) => attempt + 1)} />
-          ) : messages.length === 0 && !streaming ? (
+          ) : conversation.loadError ? (
+            <NetworkError sub={t("error_offline_generic_sub")} onRetry={conversation.retryLoad} />
+          ) : conversation.messages.length === 0 && !busy ? (
             <Empty
               icon="chatbubble-outline"
               title={t("empty_chat_title")}
@@ -881,27 +357,20 @@ export default function AsistenteScreen() {
               windowSize={11}
               removeClippedSubviews
               ListHeaderComponent={
-                streaming && streamShown ? (
-                  <View style={styles.assistantWrap}>
-                    <Text style={styles.assistantEyebrow}>{assistantEyebrow}</Text>
-                    <View style={styles.assistantRule} />
-                    <View style={styles.assistantBody}>
-                      <MarkdownText text={stripRecipePayload(streamShown)} />
-                    </View>
-                  </View>
-                ) : awaitingFirstDelta ? (
-                  <View style={styles.assistantWrap}>
-                    <Text style={styles.assistantEyebrow}>{assistantEyebrow}</Text>
-                    <View style={styles.assistantRule} />
-                    <TypingDots />
-                  </View>
+                streamingVisible ? (
+                  <StreamingBubble
+                    stream={turn.stream}
+                    eyebrowLabel={assistantEyebrow}
+                    statusLabel={recovering ? t("chat_answer_recovering") : t("chat_answer_writing")}
+                    recovering={recovering}
+                  />
                 ) : null
               }
               ListFooterComponent={
-                messages.length > 0 ? (
+                conversation.messages.length > 0 ? (
                   <View style={styles.daySep}>
                     <Text style={styles.dayChip}>
-                      {dayLabel(messages[0].createdAt, t, dateLocale(langPref))}
+                      {dayLabel(conversation.messages[0].createdAt, t, dateLocale(langPref))}
                     </Text>
                   </View>
                 ) : null
@@ -910,26 +379,32 @@ export default function AsistenteScreen() {
           )}
         </View>
 
-        {streamError ? (
-          <View style={styles.errorBanner}>
-            <NetworkError onRetry={retryStream} />
-          </View>
+        {chatFailed ? (
+          <ChatFailureBanner
+            failure={chatFailed.failure}
+            model={chatFailed.turn.model}
+            onAction={handleErrorAction}
+            onRetry={retryStream}
+          />
         ) : null}
 
         {showSaveButton ? (
           <View style={styles.saveStack}>
             <Pressable
-              style={[styles.saveAction, structuring && { opacity: 0.6 }]}
-              onPress={saveAsRecipe}
-              disabled={structuring}
+              style={[styles.saveAction, save.structuring && { opacity: 0.6 }]}
+              onPress={save.saveAsRecipe}
+              disabled={save.structuring}
+              accessibilityRole="button"
+              accessibilityLabel={save.structuring ? t("chat_structuring") : t("chat_save_recipe")}
+              accessibilityState={{ busy: save.structuring }}
             >
-              {structuring ? (
+              {save.structuring ? (
                 <ActivityIndicator size="small" color={colors.paper} />
               ) : (
                 <Ionicons name="bookmark-outline" size={14} color={colors.paper} />
               )}
               <Text style={styles.saveActionLabel}>
-                {structuring ? t("chat_structuring") : t("chat_save_recipe")}
+                {save.structuring ? t("chat_structuring") : t("chat_save_recipe")}
               </Text>
             </Pressable>
             {!hasRestaurant ? (
@@ -938,311 +413,20 @@ export default function AsistenteScreen() {
           </View>
         ) : null}
 
-        <View style={styles.composer}>
-          {/* Sin el módulo nativo (Expo Go) el mic se esconde; en el APK está. */}
-          {speechAvailable ? (
-            <Pressable
-              onPress={handleMic}
-              disabled={composerBusy}
-              style={[
-                styles.micBtn,
-                listening && styles.micBtnActive,
-                composerBusy && styles.micBtnDisabled,
-              ]}
-              accessibilityLabel={listening ? t("chat_mic_stop") : t("chat_mic_label")}
-            >
-              <Ionicons
-                name={listening ? "stop" : "mic-outline"}
-                size={18}
-                color={listening ? colors.paper : colors.terracota}
-              />
-            </Pressable>
-          ) : null}
-          <TextInput
-            value={input}
-            onChangeText={setInput}
-            placeholder={t("chat_placeholder_voice")}
-            placeholderTextColor={colors.mute}
-            style={styles.composerInput}
-            multiline
-            editable={!composerBusy}
-          />
-          <SendButton
-            disabled={!input.trim() || composerBusy || listening}
-            streaming={streaming}
-            onPress={handleSend}
-          />
-        </View>
+        <Composer
+          input={composer.input}
+          onChangeText={composer.setInput}
+          composerBusy={composerBusy}
+          listening={composer.listening}
+          busy={busy}
+          stopping={turn.phase === "stopping"}
+          onMic={handleMic}
+          onSend={handleSend}
+          onStop={() => void turn.stop(conversation.conversationId)}
+        />
         {/* Empuja el composer por encima del teclado (Android edge-to-edge). */}
         <View style={{ height: kbPad }} />
       </View>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper },
-
-  // ── Header del mockup ───────────────────────────────────────────────
-  header: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.md,
-    gap: spacing.md,
-  },
-  headerLeft: { flex: 1, gap: 4 },
-  headerEyebrow: {
-    fontFamily: fonts.sans,
-    fontSize: fontSizes.eyebrow,
-    color: colors.mute,
-    letterSpacing: 1.4,
-  },
-  headerGreet: {
-    fontFamily: fonts.serifItalic,
-    fontSize: fontSizes.serifXl,
-    color: colors.ink,
-    lineHeight: fontSizes.serifXl * 1.2,
-  },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  chatActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-  },
-  newChatPill: { backgroundColor: colors.teal, borderColor: colors.teal },
-  newChatLabel: { color: colors.paper },
-  actionDimmed: { opacity: 0.5 },
-  historyPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    borderWidth: 0.5,
-    borderColor: colors.edge,
-    borderRadius: radii.pill,
-    minHeight: 48,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  historyLabel: {
-    fontFamily: fonts.serifItalic,
-    fontSize: fontSizes.serifBodySm,
-    color: colors.ink,
-  },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.teal,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarImg: { width: 32, height: 32, borderRadius: 16 },
-  avatarText: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    fontWeight: "600",
-    color: colors.paper,
-    letterSpacing: 0.5,
-  },
-  divider: {
-    height: 0.5,
-    backgroundColor: colors.edge,
-    marginHorizontal: spacing.xl,
-  },
-
-  // ── Idea anclada (chip) ─────────────────────────────────────────────
-  // Bloque 4 · C-03 — el chip es afirmación pasiva (la idea ya se ancló al
-  // chat, no hay que tomar acción): superficie neutra de papel cálido con
-  // filete, sin color de acción. Sobre tealSoft el rótulo teal y el texto en
-  // tinta no se leían (contraste < 2:1); sobre papel cálido superan 10:1.
-  pinChip: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: spacing.sm,
-    backgroundColor: colors.paperWarm,
-    borderWidth: 0.5,
-    borderColor: colors.edge,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    marginHorizontal: spacing.xl,
-    marginTop: spacing.md,
-    borderRadius: radii.md,
-  },
-  pinIcon: { marginTop: 2 },
-  pinTextWrap: { flex: 1, flexShrink: 1 },
-  pinLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 10.5,
-    color: colors.teal,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 1.2,
-    marginBottom: 2,
-  },
-  pinText: {
-    fontFamily: fonts.serifItalic,
-    fontSize: fontSizes.serifBodySm,
-    color: colors.ink,
-    lineHeight: fontSizes.bodySm * 1.4,
-  },
-
-  // ── Chips de modelo (Sous-chef / Creativo / Ejecutivo) ──────────────
-  modelRow: {
-    flexDirection: "row",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  modelChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: radii.pill,
-    borderWidth: 0.5,
-    borderColor: colors.edge,
-    backgroundColor: colors.paper,
-  },
-  modelChipActive: { backgroundColor: colors.teal, borderColor: colors.teal },
-  modelLabel: { fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.inkSoft },
-  modelLabelActive: { color: colors.paper, fontWeight: "600" },
-
-  // ── Messages container ──────────────────────────────────────────────
-  messages: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    // Pulido (spec 2026-06-23): más aire entre mensajes.
-    gap: 28,
-  },
-
-  // ── Separador de día (chip discreto al tope de la conversación) ──────
-  daySep: { alignItems: "center", marginBottom: spacing.lg, marginTop: spacing.xs },
-  dayChip: {
-    fontFamily: fonts.sans,
-    fontSize: fontSizes.caption,
-    color: colors.mute,
-    backgroundColor: colors.paperWarm,
-    borderRadius: radii.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 3,
-    overflow: "hidden",
-  },
-
-  // ── Bubble del chef (verde teal, derecha, hora abajo) ───────────────
-  userWrap: { alignItems: "flex-end", gap: 4 },
-  userBubble: {
-    backgroundColor: colors.teal,
-    borderRadius: radii.xl,
-    paddingHorizontal: spacing.md + 2,
-    paddingVertical: spacing.sm + 2,
-    maxWidth: "85%",
-  },
-  userText: {
-    fontFamily: fonts.sans,
-    fontSize: fontSizes.body,
-    color: colors.paper,
-    lineHeight: fontSizes.body * 1.5,
-  },
-  userTime: {
-    fontFamily: fonts.sans,
-    fontSize: fontSizes.caption,
-    color: colors.mute,
-    marginRight: spacing.xs,
-  },
-
-  // ── Bubble del asistente (eyebrow + regla + body) ───────────────────
-  assistantWrap: { alignItems: "flex-start", gap: spacing.xs },
-  assistantEyebrow: {
-    fontFamily: fonts.sans,
-    fontSize: fontSizes.eyebrow,
-    color: colors.mute,
-    letterSpacing: 1.4,
-    paddingHorizontal: spacing.xs,
-  },
-  // ── Mensaje del asistente: cuaderno editorial (sin tarjeta) ──────────
-  assistantRule: {
-    width: 28,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: colors.terracota,
-    marginTop: 2,
-    marginBottom: spacing.xs,
-  },
-  assistantBody: {
-    maxWidth: "94%",
-  },
-
-  // ── Error banner ────────────────────────────────────────────────────
-  errorBanner: {
-    height: 200,
-    borderTopWidth: 0.5,
-    borderTopColor: colors.edge,
-  },
-
-  // ── Save action ────────────────────────────────────────────────────
-  saveStack: { alignItems: "center", gap: 4, marginBottom: spacing.sm },
-  saveAction: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: radii.pill,
-    backgroundColor: colors.terracota,
-  },
-  saveActionLabel: {
-    fontFamily: fonts.sans,
-    fontSize: fontSizes.caption,
-    color: colors.paper,
-    fontWeight: "600",
-  },
-  saveHint: {
-    fontFamily: fonts.sans,
-    fontSize: fontSizes.caption,
-    color: colors.mute,
-    textAlign: "center",
-    paddingHorizontal: spacing.xl,
-  },
-
-  // ── Composer (input redondeado grande + botón terracota; SIN mic) ──
-  composer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderTopWidth: 0.5,
-    borderTopColor: colors.edge,
-    backgroundColor: colors.paper,
-  },
-  composerInput: {
-    flex: 1,
-    backgroundColor: colors.paperSoft,
-    borderWidth: 0.5,
-    borderColor: colors.edge,
-    borderRadius: radii.pill,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 10,
-    fontFamily: fonts.serifItalic,
-    fontSize: fontSizes.serifBody,
-    color: colors.ink,
-    maxHeight: 120,
-  },
-
-  // ── Micrófono (dictado por voz) ─────────────────────────────────────
-  micBtn: {
-    // Objetivo táctil mínimo recomendado 44px (accesibilidad). Antes 38.
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: colors.terracota,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  micBtnActive: { backgroundColor: colors.terracota, borderColor: colors.terracota },
-  micBtnDisabled: { opacity: 0.4 },
-});

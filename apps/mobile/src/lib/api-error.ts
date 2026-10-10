@@ -68,7 +68,19 @@ const CODE_TO_KEY: Record<KnownApiErrorCode, TranslationKey> = {
   last_admin: "error_last_admin",
   case_changed: "error_case_changed",
   stripe_cancel_failed: "error_stripe_cancel_failed",
+  ai_provider_failed: "error_ai_provider_failed",
+  ai_rate_limited: "error_ai_rate_limited",
+  ai_timeout: "error_ai_timeout",
+  ai_response_blocked: "error_ai_response_blocked",
+  chat_refused: "error_chat_refused",
+  chat_response_incomplete: "error_chat_response_incomplete",
+  chat_context_too_long: "error_chat_context_too_long",
 };
+
+// A3 — the chat error classifier reuses this table for closed codes.
+export function apiErrorKey(code: string): TranslationKey | undefined {
+  return Object.prototype.hasOwnProperty.call(CODE_TO_KEY, code) ? CODE_TO_KEY[code as KnownApiErrorCode] : undefined;
+}
 
 type T = (key: TranslationKey, vars?: Record<string, string | number>) => string;
 
@@ -84,8 +96,9 @@ export function apiErrorMessage(err: unknown, t: T): string {
   // request_timeout), no texto para humanos.
   if (err instanceof NetworkError) return t("error_network");
   if (err instanceof Error) {
-    if (err.message.startsWith("ai_provider_http_") || ["ai_response_blocked", "ai_stream_invalid", "ai_response_invalid", "chat_context_too_long"].includes(err.message) || err.name === "TimeoutError") return t("ai_provider_failed");
-    if (err.message === "chat_response_incomplete" || err.message === "chat_generation_expired") return t("chat_response_incomplete");
+    // Legacy stream messages from servers that predate the closed A2 codes.
+    if (err.message.startsWith("ai_provider_http_") || ["ai_stream_invalid", "ai_response_invalid"].includes(err.message) || err.name === "TimeoutError") return t("error_ai_provider_failed");
+    if (err.message === "chat_generation_expired") return t("error_chat_response_incomplete");
     const key = CODE_TO_KEY[err.message as KnownApiErrorCode];
     return key ? t(key) : err.message;
   }

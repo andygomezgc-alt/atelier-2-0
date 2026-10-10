@@ -12,6 +12,8 @@ vi.mock("expo-secure-store", () => ({
 import { apiErrorMessage } from "../api-error";
 import { ApiError } from "@/src/api/client";
 import { t } from "@atelier/i18n";
+import { ApiErrorCodeSchema } from "@atelier/shared";
+import { StreamInterruptedError } from "@/src/api/conversations";
 
 // Mock minimal de `t` — devuelve el key entre corchetes. Suficiente para
 // validar que el helper hace el lookup correcto sin acoplarnos al texto
@@ -72,5 +74,32 @@ describe("apiErrorMessage (A-11)", () => {
       const err = new ApiError(400, "fallback", code as never);
       expect(apiErrorMessage(err, tStub as never)).toBe(expected);
     }
+  });
+});
+
+describe("A2 chat error localization", () => {
+  const codes = [
+    "ai_provider_failed", "ai_rate_limited", "ai_timeout", "ai_response_blocked",
+    "chat_refused", "chat_response_incomplete", "chat_context_too_long",
+  ];
+
+  it("maps every new closed code to its error_<code> translation", () => {
+    for (const code of codes) {
+      expect(ApiErrorCodeSchema.safeParse(code).success, code).toBe(true);
+      const error = new ApiError(503, "private upstream text", code as never);
+      expect(apiErrorMessage(error, tStub as never), code).toBe(`[error_${code}]`);
+    }
+  });
+
+  it("maps typed SSE errors through the same code-to-key table", () => {
+    for (const code of codes) {
+      const error = new StreamInterruptedError(code, "Partial");
+      expect(apiErrorMessage(error, tStub as never), code).toBe(`[error_${code}]`);
+    }
+  });
+
+  it("never shows a raw provider message for a known coded error", () => {
+    const error = new ApiError(500, "secret provider body", "ai_provider_failed" as never);
+    expect(apiErrorMessage(error, key => t(key, "es"))).toBe("El asistente no respondió. Inténtalo de nuevo.");
   });
 });

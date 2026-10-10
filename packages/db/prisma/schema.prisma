@@ -267,6 +267,7 @@ model Conversation {
 model Message {
   responseToId String? @unique
   modelId String?
+  generationId String?
   id              String       @id @default(cuid())
   conversationId  String
   conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -278,11 +279,13 @@ model Message {
   inputTokens  Int?
   outputTokens Int?
   cachedTokens Int?
+  cacheWriteTokens Int?
   latencyMs    Int?
 
   // PostgreSQL permite múltiples NULL en este unique; no hace falta un índice parcial.
   @@unique([conversationId, clientMessageId])
   @@index([conversationId, createdAt])
+  @@index([generationId])
 }
 
 /// Cuota diaria de acciones técnicas y telemetría de tokens de todos los chats
@@ -504,6 +507,11 @@ model CulinaryMemory {
   corrections Json @default("[]")
   excludedKeys String[] @default([])
   inputHash String?
+  /// memoryFailureFingerprint(input hash, model, prompt version): a SHA-256 hex digest, not a raw input hash.
+  lastFailedInputHash String?
+  failureCount Int?
+  lastFailedAt DateTime?
+  discardStreak Int @default(0)
   preparedContext String? @db.Text
   preparedRevision Int @default(-1)
   preparedVersion Int @default(-1)

@@ -13,10 +13,13 @@ const { db, loadEvidence, loadIngredientStats } = vi.hoisted(() => ({
 vi.mock("@atelier/db", () => ({ prisma: db, Prisma: { DbNull: "DB_NULL" } }));
 vi.mock("./service", () => ({ loadEvidence, loadIngredientStats, correctionsOf: (v: unknown) => v ?? [] }));
 
-import { learnAfterImport, maintainMemoryRuns, processMemory } from "./worker";
+import { learnAfterImport, maintainMemoryRuns, memoryFailureFingerprint, processMemory } from "./worker";
+import { evidenceHash } from "./evidence";
+import { MEMORY_FAILURE_SUSPENSION_THRESHOLD, MEMORY_PROMPT_VERSION } from "./limits";
 
 const DAY = 86_400_000;
 const WEEK = 7 * DAY;
+const SLACK = 2 * 60 * 60 * 1000;
 const now = new Date("2026-09-08T12:00:00Z");
 const config = { model: "test", provider: "fixture", key: "test" };
 const evidence = [1, 2, 3].map(n => ({ id: String(n), hash: `h${n}`, legacyHashes: { approved: `a${n}`, in_test: `t${n}` },
@@ -70,7 +73,7 @@ describe("weekly memory worker", () => {
     expect(db.culinaryMemoryRun.create).not.toHaveBeenCalled();
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith({
       where: { restaurantId: "r1", version: 3, dirtyRevision: 5 },
-      data: { nextCheckAt: new Date(+lastAttemptAt + WEEK) },
+      data: { nextCheckAt: new Date(+lastAttemptAt + WEEK - SLACK) },
     });
   });
 
@@ -82,7 +85,7 @@ describe("weekly memory worker", () => {
     expect(db.culinaryMemoryRun.create).toHaveBeenCalledWith({ data: expect.objectContaining({ isRetry: true, cycleStartedAt }) });
     const claim = db.culinaryMemory.updateMany.mock.calls.find(([arg]) => arg.data.lockToken)?.[0];
     expect(claim.data).toMatchObject({ lastAttemptAt: now, retryAt: null });
-    expect(claim.data.nextCheckAt).toEqual(new Date(+now + WEEK));
+    expect(claim.data.nextCheckAt).toEqual(new Date(+now + WEEK - SLACK));
   });
 
   it("schedules one 24h retry only for an eligible transient failure", async () => {
@@ -93,7 +96,7 @@ describe("weekly memory worker", () => {
     }));
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ lockToken: expect.any(String) }),
-      data: expect.objectContaining({ retryAt: new Date(+now + DAY), nextCheckAt: new Date(+now + DAY) }),
+      data: expect.objectContaining({ retryAt: new Date(+now + DAY - SLACK), nextCheckAt: new Date(+now + DAY - SLACK) }),
     }));
   });
 
@@ -335,7 +338,7 @@ describe("learning right after an import", () => {
       restaurantId: "r1", enabled: true, version: 1, dirtyRevision: 2,
       AND: [{}, { OR: [{ lockExpiresAt: null }, { lockExpiresAt: { lte: now } }] }],
     });
-    expect(claim.data).toMatchObject({ lastAttemptAt: now, cycleStartedAt: now, retryAt: null, nextCheckAt: new Date(+now + WEEK) });
+    expect(claim.data).toMatchObject({ lastAttemptAt: now, cycleStartedAt: now, retryAt: null, nextCheckAt: new Date(+now + WEEK - SLACK) });
     expect(db.culinaryMemoryRun.create).toHaveBeenCalledWith({ data: expect.objectContaining({ isRetry: false, cycleStartedAt: now }) });
   });
 
@@ -344,7 +347,7 @@ describe("learning right after an import", () => {
     db.culinaryMemory.findUnique.mockResolvedValue(memory({ lastAttemptAt: cycleStartedAt, cycleStartedAt, retryAt: new Date(+now + DAY) }));
     expect(await processMemory("r1", successful(), config, now, undefined, { afterImport: true })).toBe("completed");
     expect(db.culinaryMemoryRun.create).toHaveBeenCalledWith({ data: expect.objectContaining({ isRetry: false, cycleStartedAt: now }) });
-    expect(claimOf().data).toMatchObject({ retryAt: null, cycleStartedAt: now, nextCheckAt: new Date(+now + WEEK) });
+    expect(claimOf().data).toMatchObject({ retryAt: null, cycleStartedAt: now, nextCheckAt: new Date(+now + WEEK - SLACK) });
   });
 
   it("does not treat a due retry as the retry either", async () => {
@@ -399,6 +402,20 @@ describe("learnAfterImport", () => {
     expect(db.culinaryMemory.findUnique).toHaveBeenCalledOnce();
   });
 
+  it("keeps the failure suppression: an import does not pay again for the same failed input", async () => {
+    const fingerprint = memoryFailureFingerprint({ inputHash: evidenceHash(evidence, null, [], []), model: config.model, promptVersion: MEMORY_PROMPT_VERSION });
+    const suppressed = { lastFailedInputHash: fingerprint, failureCount: MEMORY_FAILURE_SUSPENSION_THRESHOLD, lastFailedAt: new Date(Date.now() - DAY) };
+    db.culinaryMemory.findUnique.mockResolvedValue(memory(suppressed));
+    const generate = successful();
+    expect(await learnAfterImport("r1", { generator: generate, config, pollMs: 1 })).toBe("suppressed");
+    expect(generate).not.toHaveBeenCalled();
+    expect(db.culinaryMemoryRun.create).not.toHaveBeenCalled();
+    // The imported recipe changes the evidence, and with it the fingerprint: learning goes ahead.
+    loadEvidence.mockResolvedValue([...evidence, { ...evidence[0]!, id: "4", hash: "h4", duplicateKey: "d4" }]);
+    expect(await learnAfterImport("r1", { generator: generate, config, pollMs: 1 })).toBe("completed");
+    expect(generate).toHaveBeenCalledOnce();
+  });
+
   it("stops waiting when the signal aborts", async () => {
     const controller = new AbortController();
     db.culinaryMemory.findUnique.mockImplementation(async () => { controller.abort(new Error("deadline")); return locked(); });
@@ -426,15 +443,15 @@ describe("memory run maintenance", () => {
     }));
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { restaurantId: "r1", lockToken: "regular" },
-      data: expect.objectContaining({ lockToken: null, retryAt: new Date(+regularAt + DAY), nextCheckAt: new Date(+regularAt + DAY) }),
+      data: expect.objectContaining({ lockToken: null, retryAt: new Date(+regularAt + DAY - SLACK), nextCheckAt: new Date(+regularAt + DAY - SLACK) }),
     }));
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { restaurantId: "r2", lockToken: "retry" },
-      data: expect.objectContaining({ lockToken: null, retryAt: null, nextCheckAt: new Date(+regularAt + WEEK) }),
+      data: expect.objectContaining({ lockToken: null, retryAt: null, nextCheckAt: new Date(+regularAt + WEEK - SLACK) }),
     }));
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { restaurantId: "r3", lockToken: "paid" },
-      data: expect.objectContaining({ lockToken: null, retryAt: null, nextCheckAt: new Date(+regularAt + WEEK) }),
+      data: expect.objectContaining({ lockToken: null, retryAt: null, nextCheckAt: new Date(+regularAt + WEEK - SLACK) }),
     }));
     expect(db.culinaryMemoryRun.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "paid", status: "running" }, data: expect.objectContaining({ errorCode: "memory_worker_interrupted_after_response" }),
