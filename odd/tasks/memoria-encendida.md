@@ -359,8 +359,14 @@ Ventana local, 10-10-2026. Rama `feat/memoria-encendida`, punto de partida `af93
 
 - **E9** (Haiku 5.5 alto; ruta delegada). Privacidad (voseo): memoria activada por defecto, cómo apagarla, aprendizaje al cargar y semanal, ingredientes contados sin IA, nombre, ciudad y mes que recibe el asistente. `docs/MEMORIA-ENCENDIDA-2026-10.md` nuevo (incluye «Pendiente») y entrada en `docs/ESTADO-ACTUAL.md`. Sin test de la página (ninguno la renderiza); tsc de api y `git diff --check` OK. Cuando se adapte E2, revisar que la privacidad siga describiendo bien el envío del nombre.
 
+- **Fusión de asistente-arreglos (11-10-2026).** A petición de Andy, el padre fusionó #11 (`5ad3525`), #12 (`4be1b99`) y #13 (`cabc15d`) en `main`, con CI verde en cada uno (#12 y #13 se reapuntaron a `main` y se reabrieron para lanzar CI; ramas sin borrar). `main` se fusionó en la rama (`d66c20d`): el padre resolvió el test de i18n y un escritor Opus 5.5 alto los otros 5 conflictos adaptando E2b/E3b/E5b/E7b:
+  - E2b: ciudad en la identidad JSON de A8 solo si existe (texto cacheado idéntico sin ella); `speakerName` y `currentMonth` como datos JSON del bloque dinámico; nombre y ciudad se cargan en `chat-turn-service.ts`; si falla leer el nombre, el turno sigue sin él. RED: 7 fallos en `anthropic.test.ts` (incluido un nombre malicioso con saltos de línea y «# Instrucciones») y 8 en la ruta; GREEN 197/197.
+  - E3b/E5b: sobre el `worker.ts` de A9; `"locked"` en `MemoryRunStatus`; próxima revisión `WEEKLY_INTERVAL`. Se mantiene la supresión de A9 también tras una carga: una receta nueva cambia la evidencia y la clave, así que no bloquea el aprendizaje.
+  - E7b: `useMemoryChip` en `src/features/assistant/`, con test (RED: módulo inexistente; GREEN 5/5).
+  - Tests de A9 adaptados: mocks de `loadIngredientStats` y `migration.a9b.test.ts` comprueba el orden contra su migración en vez de exigir que sea la última.
+  - Comprobación del padre: api 1177/1177, app 416/416, shared 291/291, i18n 41/41, tsc OK, integración 22/22 en Postgres local, sin marcadores de conflicto; `npx expo export --platform android`: «android bundles (1)» (`dist` borrado).
+- **RDD final** contra `main` (57 archivos, 2.208 líneas): Andy la concedió, pero START devolvió `lens_context_budget_exceeded` y no se creó autoridad de revisión. Revisado: la porción `af93843..5d94a58`. Sin revisar por RDD: E4, E5, E7, E9 y la adaptación.
+
 ## Siguiente paso
-1. Esperar a que `codex/asistente-arreglos` entre en `main` (decisión de Andy). Va en 3 PR apilados que se fusionan en orden: #11 (servidor, contra `main`), #12 (prompt y memoria culinaria, contra #11) y #13 (app, contra #12). El punto de arranque es la fusión de #13 en `main`. Ojo en E7b: los estilos de contraste del PR #9 (chip de idea anclada y «Guardar como receta») viven ahora en `apps/mobile/src/features/assistant/chat-styles.ts`.
-2. Fusionar `main` en `feat/memoria-encendida` y resolver los 6 conflictos.
-3. Tareas nuevas de adaptación, con TDD y revisión: E2b (nombre de quien escribe, ciudad y mes como datos JSON bajo la cabecera de A8, carga en `chat-turn-service.ts`), E3b/E5b (ingredientes frecuentes y aprendizaje tras carga sobre el `worker.ts` de A9), E7b (`MemoryChip` en la estructura dividida de A12).
-4. Revisión RDD de toda la porción desde `5d94a58` y cierre (incluido `npx expo export --platform android`).
+1. Revisión RDD en candidatos que quepan: dividir lo que la rama añade sobre `main` en PR encadenados (skill `chained-pr`), por ejemplo servidor (E1, E3, E4, E5), asistente (E2) y app (E6, E7, E8) más documentación.
+2. Decisión de Andy sobre la entrega: fusión con `main` (Vercel aplica la migración), después binarios de Android e iPhone.

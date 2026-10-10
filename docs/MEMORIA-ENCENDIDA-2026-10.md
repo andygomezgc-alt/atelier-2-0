@@ -40,12 +40,8 @@ Commits de la rama: E1 `7744427` (cimientos), E2 `bf64a66` (nombre, ubicación y
 
 Nada de esto se fusiona ni se despliega sin decisión de Andy.
 
-## Pendiente
+## Estado (11-10-2026)
 
-Esta rama choca con `codex/asistente-arreglos` en `apps/api/app/api/conversations/[id]/messages/route.ts`, `apps/api/lib/anthropic.ts`, `apps/api/lib/culinary-memory/worker.ts`, `memory.integration.test.ts`, `apps/mobile/app/(tabs)/asistente.tsx` y el test de idiomas `index.test.ts`.
+`codex/asistente-arreglos` ya está en `main` (PR #11, #12 y #13) y `main` se fusionó en `feat/memoria-encendida` (`d66c20d`). Se adaptaron E2 (la ciudad va en los datos de identidad cacheados solo si existe; el nombre de quien escribe y el mes van como datos JSON del bloque dinámico, cargados en `chat-turn-service.ts`), E3 y E5 (sobre el `worker.ts` de A9, que conserva su supresión) y E7 (`useMemoryChip` en la pantalla dividida).
 
-Cuando `codex/asistente-arreglos` aterrice en `main`:
-
-1. fusionar `main` en `feat/memoria-encendida`;
-2. adaptar y revisar de nuevo E2 (nombre del perfil como dato JSON, no como línea suelta), E3, E5 y E7;
-3. la revisión RDD de E4, E5 y E7 queda en espera hasta entonces.
+Pendiente: la revisión RDD de lo que la rama añade sobre `main` (2.208 líneas) no cabe en el presupuesto de los revisores; hay que revisarla en partes más pequeñas (por ejemplo, PR encadenados). Después, fusión con `main` (Vercel aplica la migración) y binarios nuevos de Android e iPhone, cuando Andy lo decida.
