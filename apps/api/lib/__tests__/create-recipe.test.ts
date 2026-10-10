@@ -27,20 +27,20 @@ beforeEach(() => {
 });
 describe("atomic, retryable recipe creation", () => {
   it("reuses the original recipe for an identical retry", async () => {
-    expect((await saveNewRecipe("r1", "u1", request)).reused).toBe(false);
-    expect((await saveNewRecipe("r1", "u1", request)).reused).toBe(true);
+    expect((await saveNewRecipe("r1", "u1", request, "admin")).reused).toBe(false);
+    expect((await saveNewRecipe("r1", "u1", request, "admin")).reused).toBe(true);
     expect(db.recipe.create).toHaveBeenCalledOnce();
     expect(db.product.create).toHaveBeenCalledOnce();
     expect(db.recipeIngredient.createMany).toHaveBeenCalledOnce();
     expect(db.recipe.findUnique.mock.calls[1]![0].where).toEqual({ restaurantId_authorId_clientRequestId: { restaurantId: "r1", authorId: "u1", clientRequestId: "recipe-attempt" } });
   });
   it("rejects changed content under the same identifier", async () => {
-    await saveNewRecipe("r1", "u1", request);
-    await expect(saveNewRecipe("r1", "u1", { ...request, title: "Otra" })).rejects.toMatchObject({ code: "recipe_save_conflict", status: 409 });
+    await saveNewRecipe("r1", "u1", request, "admin");
+    await expect(saveNewRecipe("r1", "u1", { ...request, title: "Otra" }, "admin")).rejects.toMatchObject({ code: "recipe_save_conflict", status: 409 });
     expect(db.recipe.create).toHaveBeenCalledOnce();
   });
   it("creates one product for repeated ingredients while preserving individual quantities", async () => {
-    await saveNewRecipe("r1", "u1", request);
+    await saveNewRecipe("r1", "u1", request, "admin");
     expect(db.product.create).toHaveBeenCalledOnce();
     expect(db.recipeIngredient.createMany.mock.calls[0]![0].data).toMatchObject([
       { productId: "flour", qty: 200, unit: "g", position: 0 }, { productId: "flour", qty: 100, unit: "g", position: 1 },
@@ -49,28 +49,55 @@ describe("atomic, retryable recipe creation", () => {
   });
   it("reuses exact bank matches, without accepting a probable match automatically", async () => {
     db.product.findMany.mockResolvedValue([{ id: "existing", name: "Harina", aliases: [] }]);
-    await saveNewRecipe("r1", "u1", request);
+    await saveNewRecipe("r1", "u1", request, "admin");
     expect(db.product.create).not.toHaveBeenCalled();
     expect(db.recipeIngredient.createMany.mock.calls[0]![0].data[0].productId).toBe("existing");
   });
   it("keeps explicitly unlinked ingredients unlinked", async () => {
-    await saveNewRecipe("r1", "u1", { ...request, recipeIngredients: [{ rawText: "200 g harina" }] });
+    await saveNewRecipe("r1", "u1", { ...request, recipeIngredients: [{ rawText: "200 g harina" }] }, "admin");
     expect(db.product.create).not.toHaveBeenCalled();
     expect(db.recipeIngredient.createMany.mock.calls[0]![0].data[0].productId).toBeNull();
   });
   it("rejects another restaurant's source conversation before creating anything", async () => {
-    await expect(saveNewRecipe("r1", "u1", { ...request, sourceConversationId: "foreign" })).rejects.toMatchObject({ code: "invalid_conversation_reference" });
+    await expect(saveNewRecipe("r1", "u1", { ...request, sourceConversationId: "foreign" }, "admin")).rejects.toMatchObject({ code: "invalid_conversation_reference" });
     expect(db.conversation.findFirst.mock.calls[0]![0].where).toEqual({ id: "foreign", restaurantId: "r1" });
     expect(db.product.create).not.toHaveBeenCalled();
     expect(db.recipe.create).not.toHaveBeenCalled();
   });
   it("rejects invalid product references before creating any draft", async () => {
-    await expect(saveNewRecipe("r1", "u1", { ...request, recipeIngredients: [...request.recipeIngredients!, { rawText: "sal", productId: "foreign" }] })).rejects.toMatchObject({ code: "invalid_product_reference" });
+    await expect(saveNewRecipe("r1", "u1", { ...request, recipeIngredients: [...request.recipeIngredients!, { rawText: "sal", productId: "foreign" }] }, "admin")).rejects.toMatchObject({ code: "invalid_product_reference" });
     expect(db.product.create).not.toHaveBeenCalled();
+  });
+  it("keeps a manual recipe as a draft for every role", async () => {
+    for (const role of ["admin", "chef_executive", "sous_chef"] as const) {
+      await saveNewRecipe("r1", "u1", { ...request, clientRequestId: `manual-${role}` }, role);
+      expect(db.recipe.create.mock.lastCall![0].data).toMatchObject({ state: "draft" });
+      expect(db.recipe.create.mock.lastCall![0].data.approvedById).toBeUndefined();
+    }
+  });
+  it("approves an admin's imported recipe with approver and date", async () => {
+    const before = Date.now();
+    await saveNewRecipe("r1", "u1", { ...request, origin: "import" }, "admin");
+    const data = db.recipe.create.mock.calls[0]![0].data;
+    expect(data).toMatchObject({ state: "approved", approvedById: "u1" });
+    expect(data.approvedAt).toBeInstanceOf(Date);
+    expect(+data.approvedAt).toBeGreaterThanOrEqual(before);
+  });
+  it.each(["chef_executive", "sous_chef"] as const)("keeps a %s's imported recipe in testing without approval", async role => {
+    await saveNewRecipe("r1", "u1", { ...request, origin: "import" }, role);
+    const data = db.recipe.create.mock.calls[0]![0].data;
+    expect(data.state).toBe("in_test");
+    expect(data.approvedById).toBeUndefined();
+    expect(data.approvedAt).toBeUndefined();
+  });
+  it("treats the import origin as part of the retry fingerprint", async () => {
+    await saveNewRecipe("r1", "u1", request, "admin");
+    await expect(saveNewRecipe("r1", "u1", { ...request, origin: "import" }, "admin")).rejects.toMatchObject({ code: "recipe_save_conflict", status: 409 });
+    expect(db.recipe.create).toHaveBeenCalledOnce();
   });
   it("propagates a write failure out of the transaction instead of returning success", async () => {
     db.recipeIngredient.createMany.mockRejectedValue(new Error("write failed"));
-    await expect(saveNewRecipe("r1", "u1", request)).rejects.toThrow("write failed");
+    await expect(saveNewRecipe("r1", "u1", request, "admin")).rejects.toThrow("write failed");
     expect(db.recipe.findUniqueOrThrow).not.toHaveBeenCalled();
   });
 });

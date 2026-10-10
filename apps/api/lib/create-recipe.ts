@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { prisma } from "@atelier/db";
-import type { CreateRecipeRequest } from "@atelier/shared";
+import { importedRecipeState, type CreateRecipeRequest, type Role } from "@atelier/shared";
 import { recipeListInclude } from "./projections";
 import { lockRecipeSave, resolveIngredientDrafts, RecipeSaveError } from "./products/recipe-save";
 
-export async function saveNewRecipe(restaurantId: string, userId: string, body: CreateRecipeRequest) {
+export async function saveNewRecipe(restaurantId: string, userId: string, body: CreateRecipeRequest, role: Role) {
   const requestHash = createHash("sha256").update(JSON.stringify({ ...body, clientRequestId: undefined })).digest("hex");
   return prisma.$transaction(async tx => {
     await lockRecipeSave(tx, restaurantId);
@@ -18,11 +18,13 @@ export async function saveNewRecipe(restaurantId: string, userId: string, body: 
     const source = body.sourceConversationId ? await tx.conversation.findFirst({ where: { id: body.sourceConversationId, restaurantId }, select: { ideaId: true } }) : null;
     if (body.sourceConversationId && !source) throw new RecipeSaveError("invalid_conversation_reference");
     const rows = await resolveIngredientDrafts(tx, restaurantId, body.recipeIngredients ?? []);
+    // Imported recipes skip the draft so the culinary memory can learn from them right away.
+    const state = body.origin === "import" ? importedRecipeState(role) : "draft";
     const created = await tx.recipe.create({ data: {
       restaurantId, authorId: userId, title: body.title, contentJson: body.contentJson,
       portions: body.portions ?? null, sourceConversationId: body.sourceConversationId ?? null,
       clientRequestId: body.clientRequestId ?? null, requestHash: body.clientRequestId ? requestHash : null,
-      state: "draft", priority: false, version: 1,
+      state, ...(state === "approved" ? { approvedById: userId, approvedAt: new Date() } : {}), priority: false, version: 1,
     } });
     if (rows.length) await tx.recipeIngredient.createMany({ data: rows.map(row => ({ ...row, recipeId: created.id })) });
     if (source?.ideaId) await tx.idea.updateMany({ where: { id: source.ideaId, restaurantId, status: { not: "archived" } }, data: { status: "archived" } });
