@@ -3,7 +3,7 @@ import { Prisma, prisma } from "@atelier/db";
 import { MemoryKeySchema } from "@atelier/shared";
 import { ZodError } from "zod";
 import { AiBudgetError } from "../ai/budget-policy";
-import { loadEvidence, correctionsOf } from "./service";
+import { loadEvidence, loadIngredientStats, correctionsOf } from "./service";
 import { evidenceHash, memoryContext, MIN_TREND_SOURCES, type StoredFact } from "./evidence";
 import { generateMemory, MAX_TRENDS, memoryProviderConfig, type MemoryGenerator } from "./provider";
 
@@ -190,7 +190,7 @@ export async function processMemory(
     if (evidenceHash(latest, memory.restaurant.identityLine, corrections, excludedKeys) !== hash) throw new Error("memory_sources_changed");
     signal?.throwIfAborted();
 
-    const preparedContext = memoryContext(corrections, learned, excludedKeys);
+    const preparedContext = memoryContext(corrections, learned, excludedKeys, await loadIngredientStats(restaurantId));
     const status = await prisma.$transaction(async tx => {
       const saved = await tx.culinaryMemory.updateMany({
         where: { ...snapshot, lockToken: token },

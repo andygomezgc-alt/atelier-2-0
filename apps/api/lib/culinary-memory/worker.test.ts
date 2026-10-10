@@ -1,16 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AiBudgetError } from "../ai/budget-policy";
 
-const { db, loadEvidence } = vi.hoisted(() => ({
+const { db, loadEvidence, loadIngredientStats } = vi.hoisted(() => ({
   db: {
     culinaryMemory: { findUnique: vi.fn(), updateMany: vi.fn() },
     culinaryMemoryRun: { create: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
     $transaction: vi.fn(),
   },
   loadEvidence: vi.fn(),
+  loadIngredientStats: vi.fn(),
 }));
 vi.mock("@atelier/db", () => ({ prisma: db, Prisma: { DbNull: "DB_NULL" } }));
-vi.mock("./service", () => ({ loadEvidence, correctionsOf: (v: unknown) => v ?? [] }));
+vi.mock("./service", () => ({ loadEvidence, loadIngredientStats, correctionsOf: (v: unknown) => v ?? [] }));
 
 import { maintainMemoryRuns, processMemory } from "./worker";
 
@@ -34,6 +35,7 @@ beforeEach(() => {
   db.culinaryMemoryRun.findMany.mockResolvedValue([]);
   db.$transaction.mockImplementation((fn: (tx: typeof db) => unknown) => fn(db));
   loadEvidence.mockResolvedValue(evidence);
+  loadIngredientStats.mockResolvedValue([]);
 });
 
 describe("weekly memory worker", () => {
@@ -254,6 +256,63 @@ describe("weekly memory worker", () => {
       where: expect.objectContaining({ status: "running" }), data: expect.objectContaining({ status: "superseded" }),
     }));
     expect(db.culinaryMemoryRun.updateMany.mock.calls.some(([arg]) => arg.data.status === "completed")).toBe(false);
+  });
+
+  it("loads current ingredient statistics after the final source reread and before the publication transaction", async () => {
+    let generatorFinished = false;
+    let finalSourcesRead = false;
+    loadEvidence.mockImplementation(async () => {
+      if (generatorFinished) finalSourcesRead = true;
+      return evidence;
+    });
+    loadIngredientStats.mockImplementation(async () => finalSourcesRead
+      ? [{ name: "ricciola", recipes: 8 }, { name: "azafrán", recipes: 6 }]
+      : [{ name: "stale ingredient", recipes: 99 }]);
+    const generate = vi.fn(async () => {
+      generatorFinished = true;
+      return { trends: [{ key: "techniques" as const, text: "Tendencia", sources: [1, 2] }] };
+    });
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    expect(loadIngredientStats).toHaveBeenCalledTimes(1);
+    expect(loadIngredientStats).toHaveBeenCalledWith("r1");
+    const statsOrder = loadIngredientStats.mock.invocationCallOrder[0]!;
+    expect(statsOrder).toBeGreaterThan(loadEvidence.mock.invocationCallOrder[1]!);
+    expect(statsOrder).toBeGreaterThan(generate.mock.invocationCallOrder[0]!);
+    const transactions = db.$transaction.mock.invocationCallOrder;
+    expect(statsOrder).toBeLessThan(transactions[transactions.length - 1]!);
+    const update = db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0];
+    expect(update.data.preparedContext).toContain('"ingredientesFrecuentes":"ricciola 8, azafrán 6"');
+    expect(update.data.preparedContext).toContain("ingredientesFrecuentes dice en cuántas recetas en prueba o aprobadas aparece cada ingrediente.");
+    expect(update.data.preparedContext).toContain("Tendencia");
+    expect(update.data.preparedContext).not.toContain("stale ingredient");
+  });
+
+  it("publishes ingredient-only prepared context when the generator returns no trends", async () => {
+    loadIngredientStats.mockResolvedValue([{ name: "ricciola", recipes: 8 }]);
+    expect(await processMemory("r1", vi.fn().mockResolvedValue({ trends: [] }), config, now)).toBe("completed");
+    const update = db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0];
+    expect(update.data.learned).toEqual([]);
+    expect(update.data.preparedContext).toContain('"ingredientesFrecuentes":"ricciola 8"');
+  });
+
+  it("omits ingredient statistics and their explanation from publication when ingredients are excluded", async () => {
+    db.culinaryMemory.findUnique.mockResolvedValue(memory({ excludedKeys: ["ingredients"] }));
+    loadIngredientStats.mockResolvedValue([{ name: "ricciola", recipes: 8 }]);
+    expect(await processMemory("r1", successful(), config, now)).toBe("completed");
+    const update = db.culinaryMemory.updateMany.mock.calls.find(([arg]) => "learned" in arg.data)![0];
+    expect(update.data.preparedContext).toContain("Tendencia");
+    expect(update.data.preparedContext).not.toContain("ingredientesFrecuentes");
+    expect(update.data.preparedContext).not.toContain("ricciola");
+  });
+
+  it("does not load ingredient statistics or publish when the final sources changed", async () => {
+    loadEvidence.mockResolvedValueOnce(evidence).mockResolvedValueOnce(evidence.map(item => ({ ...item, hash: `changed-${item.hash}` })));
+    expect(await processMemory("r1", successful(), config, now)).toBe("failed");
+    expect(loadIngredientStats).not.toHaveBeenCalled();
+    expect(db.culinaryMemory.updateMany.mock.calls.some(([arg]) => "learned" in arg.data)).toBe(false);
+    expect(db.culinaryMemoryRun.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ errorCode: "memory_sources_changed" }),
+    }));
   });
 
   it("passes the deadline signal to the provider", async () => {

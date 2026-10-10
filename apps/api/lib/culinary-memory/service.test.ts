@@ -12,7 +12,7 @@ const { db } = vi.hoisted(() => ({
 vi.mock("@atelier/db", () => ({ prisma: db, Prisma: { DbNull: "DB_NULL" } }));
 
 import { recipeEvidence } from "./evidence";
-import { chatMemory, patchCulinaryMemory } from "./service";
+import { chatMemory, evidenceSelect, loadIngredientStats, patchCulinaryMemory } from "./service";
 
 const recipe = (id: string) => ({ id, title: id, state: "approved", updatedAt: new Date(),
   contentJson: { ingredients: [`200 g ${id}`], method: [`Asar ${id}`] }, recipeIngredients: [] });
@@ -20,6 +20,9 @@ const evidence = ["a", "b", "c"].map(id => recipeEvidence(recipe(id)));
 const learned = [{ key: "techniques", text: "Predominan asados", sources: evidence.map(e => ({ id: e.id, hash: e.hash, version: 2 })) }];
 const memory = (extra = {}) => ({ restaurantId: "r1", enabled: true, version: 4, dirtyRevision: 7,
   preparedRevision: 6, preparedVersion: 3, preparedContext: null, learned, corrections: [], excludedKeys: [], ...extra });
+const ingredientRecipe = (id: string, extra = {}) => ({ ...recipe(id),
+  contentJson: { ingredients: ["200 g Ricciola", "50 g Azafrán", "sal fina"], method: [`Preparar ${id}`] }, ...extra });
+const ingredientRecipes = () => [ingredientRecipe("a"), ingredientRecipe("b", { state: "in_test" })];
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -27,7 +30,7 @@ beforeEach(() => {
   db.culinaryMemory.findUnique.mockResolvedValue(memory());
   db.culinaryMemory.upsert.mockResolvedValue(memory());
   db.culinaryMemory.updateMany.mockResolvedValue({ count: 1 });
-  db.recipe.findMany.mockResolvedValue(["a", "b", "c"].map(recipe));
+  db.recipe.findMany.mockImplementation(async ({ take }: { take?: number }) => take === 300 ? [] : ["a", "b", "c"].map(recipe));
   db.restaurant.findUniqueOrThrow.mockResolvedValue({ identityLine: null });
 });
 
@@ -43,7 +46,7 @@ describe("prepared culinary memory", () => {
   it("invalidates a cache when a legacy server increments version without dirtyRevision", async () => {
     db.culinaryMemory.findUnique.mockResolvedValue(memory({ preparedRevision: 7, preparedVersion: 3, preparedContext: "contexto anterior" }));
     expect(await chatMemory("r1")).toContain("Predominan asados");
-    expect(db.recipe.findMany).toHaveBeenCalledTimes(1);
+    expect(db.recipe.findMany.mock.calls.filter(([query]) => query.take !== 300)).toHaveLength(1);
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ preparedVersion: 4 }) }));
   });
 
@@ -52,7 +55,7 @@ describe("prepared culinary memory", () => {
     db.culinaryMemory.findUnique.mockResolvedValue(memory({ learned: legacy }));
     const context = await chatMemory("r1");
     expect(context).toContain("Predominan asados");
-    expect(db.recipe.findMany).toHaveBeenCalledTimes(1);
+    expect(db.recipe.findMany.mock.calls.filter(([query]) => query.take !== 300)).toHaveLength(1);
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith({
       where: { restaurantId: "r1", enabled: true, version: 4, dirtyRevision: 7 },
       data: expect.objectContaining({ preparedRevision: 7, preparedVersion: 4, preparedContext: expect.stringContaining("Predominan asados"), learned }),
@@ -72,13 +75,96 @@ describe("prepared culinary memory", () => {
     db.culinaryMemory.findUnique
       .mockResolvedValueOnce(memory({ dirtyRevision: 8, preparedRevision: 7, preparedVersion: 4 }))
       .mockResolvedValueOnce(memory({ dirtyRevision: 9, preparedRevision: 8, preparedVersion: 4 }));
-    db.recipe.findMany
-      .mockResolvedValueOnce(["a"].map(recipe))
-      .mockResolvedValueOnce(["a", "b", "c"].map(recipe));
+    let sourceReads = 0;
+    db.recipe.findMany.mockImplementation(async ({ take }: { take?: number }) => {
+      if (take === 300) return [];
+      return (++sourceReads === 1 ? ["a"] : ["a", "b", "c"]).map(recipe);
+    });
     expect(await chatMemory("r1")).toBe("");
     expect(db.culinaryMemory.updateMany.mock.calls[0]![0].data.learned).toEqual(learned);
     expect(await chatMemory("r1")).toContain("Predominan asados");
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("ingredient statistics", () => {
+  it("loads at most three hundred eligible recipes with deterministic ordering and the evidence projection", async () => {
+    const base = ingredientRecipe("a");
+    const scaledCopy = ingredientRecipe("copy", { contentJson: {
+      ingredients: ["400 g Ricciola", "100 g Azafrán", "sal fina"], method: ["Preparar a"],
+    } });
+    expect(recipeEvidence(scaledCopy).duplicateKey).toBe(recipeEvidence(base).duplicateKey);
+    db.recipe.findMany.mockResolvedValue([
+      base, scaledCopy, ingredientRecipe("b", { state: "in_test" }),
+      ingredientRecipe("c", { recipeIngredients: [{ rawText: "500 g RICCIOLA" }] }),
+    ]);
+    expect(await loadIngredientStats("r1")).toEqual([{ name: "ricciola", recipes: 3 }, { name: "azafrán", recipes: 2 }]);
+    expect(db.recipe.findMany).toHaveBeenCalledTimes(1);
+    expect(db.recipe.findMany).toHaveBeenCalledWith({
+      where: { restaurantId: "r1", deletedAt: null, state: { in: ["approved", "in_test"] } },
+      orderBy: [{ updatedAt: "desc" }, { id: "asc" }], take: 300, select: evidenceSelect,
+    });
+  });
+
+  it("counts recipes beyond the twenty-recipe AI evidence window without calling the provider", async () => {
+    db.recipe.findMany.mockResolvedValue(Array.from({ length: 24 }, (_, index) => ingredientRecipe(String.fromCharCode(97 + index), {
+      contentJson: { ingredients: ["200 g ricciola"], method: [`Preparar ${String.fromCharCode(97 + index)}`] },
+    })));
+    expect(await loadIngredientStats("r1")).toEqual([{ name: "ricciola", recipes: 24 }]);
+  });
+
+  it("returns no statistics when the restaurant has no eligible recipes", async () => {
+    db.recipe.findMany.mockResolvedValue([]);
+    expect(await loadIngredientStats("r1")).toEqual([]);
+  });
+});
+
+describe("ingredient statistics in prepared memory", () => {
+  it.each([
+    ["dirty revision", { preparedRevision: 6, preparedVersion: 4 }],
+    ["stale version", { preparedRevision: 7, preparedVersion: 3 }],
+  ])("rebuilds and persists ingredient counts after a %s changes", async (_reason, revisions) => {
+    db.culinaryMemory.findUnique.mockResolvedValue(memory({ ...revisions, learned: [], preparedContext: "contexto anterior" }));
+    db.recipe.findMany.mockResolvedValue(ingredientRecipes());
+    const context = await chatMemory("r1");
+    expect(context).toContain('"ingredientesFrecuentes":"azafrán 2, ricciola 2"');
+    expect(context).not.toContain("contexto anterior");
+    expect(db.recipe.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 300 }));
+    expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith({
+      where: { restaurantId: "r1", enabled: true, version: 4, dirtyRevision: 7 },
+      data: expect.objectContaining({ preparedContext: context, preparedRevision: 7, preparedVersion: 4 }),
+    });
+  });
+
+  it("keeps verified trends while adding independently loaded ingredient counts", async () => {
+    db.recipe.findMany.mockImplementation(async ({ take }: { take?: number }) => take === 300 ? ingredientRecipes() : ["a", "b", "c"].map(recipe));
+    const context = await chatMemory("r1");
+    expect(context).toContain("Predominan asados");
+    expect(context).toContain('"ingredientesFrecuentes":"azafrán 2, ricciola 2"');
+    expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ preparedContext: context, learned }),
+    }));
+  });
+
+  it("does not publish ingredient statistics or their explanation when ingredients are excluded", async () => {
+    db.culinaryMemory.findUnique.mockResolvedValue(memory({ corrections: [{ key: "cuisine", text: "Vegetal" }], learned: [], excludedKeys: ["ingredients"] }));
+    db.recipe.findMany.mockResolvedValue(ingredientRecipes());
+    const context = await chatMemory("r1");
+    expect(context).toContain("Vegetal");
+    expect(context).not.toContain("ingredientesFrecuentes");
+    expect(context).not.toContain("ricciola");
+  });
+
+  it("discards freshly counted ingredients if the prepared snapshot loses its dirty-revision guard", async () => {
+    db.culinaryMemory.findUnique
+      .mockResolvedValueOnce(memory({ learned: [] }))
+      .mockResolvedValueOnce(memory({ learned: [], dirtyRevision: 8, preparedRevision: 7, preparedVersion: 4, preparedContext: "stale" }));
+    db.recipe.findMany.mockResolvedValue(ingredientRecipes());
+    db.culinaryMemory.updateMany.mockResolvedValue({ count: 0 });
+    expect(await chatMemory("r1")).toBe("");
+    expect(db.culinaryMemory.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ preparedContext: expect.stringContaining('"ingredientesFrecuentes":"azafrán 2, ricciola 2"') }),
+    }));
   });
 });
 
