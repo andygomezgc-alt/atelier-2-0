@@ -314,8 +314,27 @@ export const ApiErrorCodeSchema = z.enum([
   "last_admin",
   "case_changed",
   "stripe_cancel_failed",
+  "ai_provider_failed",
+  "ai_rate_limited",
+  "ai_timeout",
+  "ai_response_blocked",
+  "chat_refused",
+  "chat_response_incomplete",
+  "chat_context_too_long",
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
+
+// A2 — single source of truth for which chat stream errors are worth retrying.
+const RETRYABLE_CHAT_ERRORS: ReadonlySet<string> = new Set<ApiErrorCode>([
+  "ai_provider_failed",
+  "ai_rate_limited",
+  "ai_timeout",
+  "chat_response_incomplete",
+]);
+
+export function isRetryableChatError(code: string): boolean {
+  return RETRYABLE_CHAT_ERRORS.has(code);
+}
 
 export const ApiErrorResponseSchema = z.object({
   error: z.string(),

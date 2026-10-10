@@ -54,17 +54,23 @@ async function getMock() {
 }
 
 import {
+  bulkAddMessages,
+  getConversationByIdea,
+  listMessages,
   parseSseEvent,
   streamMessage,
   StreamInterruptedError,
   StreamTimeoutError,
 } from "../conversations";
+import { setUnauthorizedHandler } from "../client";
 
 afterEach(async () => {
   const M = await getMock();
   M.lastInstance = null;
   M.constructorArgs = null;
   vi.useRealTimers();
+  vi.unstubAllGlobals();
+  setUnauthorizedHandler(null);
 });
 
 describe("parseSseEvent", () => {
@@ -76,6 +82,14 @@ describe("parseSseEvent", () => {
   });
   it("returns error event with message", () => {
     expect(parseSseEvent('{"type":"error","message":"boom"}')).toEqual({ type: "error", message: "boom" });
+  });
+  it("preserves a closed code and retryAfter while retaining message fallback", () => {
+    expect(parseSseEvent('{"type":"error","code":"ai_rate_limited","message":"fallback","retryAfter":35}')).toEqual({
+      type: "error", code: "ai_rate_limited", message: "fallback", retryAfter: 35,
+    });
+    expect(parseSseEvent('{"type":"error","code":"made_up","message":"legacy","retryAfter":-5}')).toEqual({
+      type: "error", message: "legacy",
+    });
   });
   it("returns null for non-JSON", () => {
     expect(parseSseEvent("ping")).toBeNull();
@@ -210,5 +224,91 @@ describe("streamMessage", () => {
     await new Promise((r) => setImmediate(r));
     M.lastInstance.emit("message", { type: "message", data: '{"type":"error","message":"upstream_failed"}' });
     await expect(promise).rejects.toThrow("upstream_failed");
+  });
+
+  it("prefers a typed SSE code over legacy message and keeps retry metadata and partial text", async () => {
+    const M = await getMock();
+    const promise = streamMessage("conv-1", "recipe", "daily", vi.fn());
+    const assertion = expect(promise).rejects.toMatchObject({
+      name: "StreamInterruptedError", code: "ai_rate_limited", retryAfter: 35,
+      partialText: "Partial", message: "ai_rate_limited",
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    M.lastInstance.emit("message", { data: '{"type":"delta","text":"Partial"}' });
+    M.lastInstance.emit("message", { data: '{"type":"error","code":"ai_rate_limited","message":"private provider text","retryAfter":35}' });
+    await assertion;
+    expect(M.lastInstance.closed).toBe(true);
+  });
+
+  it("still uses a message from an older server that sends no code", async () => {
+    const M = await getMock();
+    const promise = streamMessage("conv-1", "recipe", "daily", vi.fn());
+    const assertion = expect(promise).rejects.toMatchObject({ message: "legacy message", partialText: "" });
+    await new Promise(resolve => setImmediate(resolve));
+    M.lastInstance.emit("message", { data: '{"type":"error","message":"legacy message"}' });
+    await assertion;
+  });
+});
+
+describe("A3 stream transport errors and encoded ids", () => {
+  it("signs out like apiFetch on a 401 and rejects without the raw JSON body", async () => {
+    const M = await getMock();
+    const unauthorized = vi.fn();
+    setUnauthorizedHandler(unauthorized);
+    const promise = streamMessage("conv-1", "hi", "daily", vi.fn());
+    const assertion = expect(promise).rejects.toMatchObject({ name: "StreamInterruptedError", status: 401, message: "stream_error_401" });
+    await new Promise(resolve => setImmediate(resolve));
+    M.lastInstance.emit("error", { type: "error", xhrStatus: 401, message: '{"error":"Unauthorized"}' });
+    await assertion;
+    expect(unauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it("signs out exactly once on a stream 401 even when no token was sent", async () => {
+    const M = await getMock();
+    const SecureStore = await import("expo-secure-store");
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValueOnce(null);
+    const unauthorized = vi.fn();
+    setUnauthorizedHandler(unauthorized);
+    const promise = streamMessage("conv-1", "hi", "daily", vi.fn());
+    const assertion = expect(promise).rejects.toMatchObject({ name: "StreamInterruptedError", status: 401 });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(M.lastInstance.options.headers.Authorization).toBeUndefined();
+    M.lastInstance.emit("error", { type: "error", xhrStatus: 401, message: '{"error":"Unauthorized"}' });
+    await assertion;
+    expect(M.lastInstance.closed).toBe(true);
+    expect(unauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not sign out for other HTTP failures and keeps a closed code from the JSON body", async () => {
+    const M = await getMock();
+    const unauthorized = vi.fn();
+    setUnauthorizedHandler(unauthorized);
+    const promise = streamMessage("conv-1", "hi", "daily", vi.fn());
+    const assertion = expect(promise).rejects.toMatchObject({ status: 429, code: "ai_daily_chat_limit", message: "ai_daily_chat_limit" });
+    await new Promise(resolve => setImmediate(resolve));
+    M.lastInstance.emit("error", { type: "error", xhrStatus: 429, message: '{"error":"limit","code":"ai_daily_chat_limit"}' });
+    await assertion;
+    expect(unauthorized).not.toHaveBeenCalled();
+  });
+
+  it("encodes the conversation id in the stream URL", async () => {
+    const M = await getMock();
+    const promise = streamMessage("a/b?c", "hi", "daily", vi.fn());
+    await new Promise(resolve => setImmediate(resolve));
+    expect(M.constructorArgs?.url).toMatch(/\/api\/conversations\/a%2Fb%3Fc\/messages$/);
+    M.lastInstance.emit("message", { data: '{"type":"done"}' });
+    await promise;
+  });
+
+  it("encodes ids in every REST path", async () => {
+    const fetchMock = vi.fn(async () => new Response("[]", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await listMessages("a/b?c");
+    await bulkAddMessages("a/b?c", [{ role: "user", content: "x" }]);
+    await getConversationByIdea("i/d#1");
+    const urls = fetchMock.mock.calls.map(call => String((call as unknown[])[0]));
+    expect(urls[0]).toMatch(/\/api\/conversations\/a%2Fb%3Fc\/messages$/);
+    expect(urls[1]).toMatch(/\/api\/conversations\/a%2Fb%3Fc\/messages\/bulk$/);
+    expect(urls[2]).toMatch(/\/api\/ideas\/i%2Fd%231\/conversation$/);
   });
 });

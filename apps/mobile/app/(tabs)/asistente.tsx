@@ -48,6 +48,7 @@ import { selection, tapLight } from "@/src/lib/haptics";
 import type { TranslationKey } from "@atelier/i18n";
 import { colors, fonts, fontSizes, radii, spacing, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
+import { classifyChatError, type ChatErrorAction } from "@/src/lib/chat-error";
 import { canRememberNote } from "@/src/lib/chef-notes";
 
 type ModelKey = ChatMode;
@@ -59,6 +60,11 @@ function createClientMessageId(): string {
 const MODEL_LABEL_KEYS: Record<ModelKey, TranslationKey> = {
   daily: "model_daily",
   creative: "model_creative",
+};
+
+const ERROR_ACTION_KEYS: Record<ChatErrorAction, TranslationKey> = {
+  use_daily: "chat_use_daily",
+  new_chat: "chat_new",
 };
 
 function initials(name: string): string {
@@ -277,6 +283,8 @@ export default function AsistenteScreen() {
     content: string;
     model: ModelKey;
     clientMessageId: string;
+    // A3 — null: el chat se abrió con la última pregunta sin respuesta (no es un error).
+    error: unknown;
   } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -300,6 +308,7 @@ export default function AsistenteScreen() {
     onError: (code) =>
       showToast(
         t(code === "permission" ? "error_mic_permission" : "error_mic_unavailable"),
+        "error",
       ),
   });
 
@@ -403,11 +412,11 @@ export default function AsistenteScreen() {
           preloadedIds.current = new Set(msgs.map((m) => m.id));
           setMessages(msgs);
           const pending = msgs.at(-1);
-          if (pending?.role === "user" && pending.clientMessageId) setStreamError({ content: pending.content, clientMessageId: pending.clientMessageId, model: userModel });
+          if (pending?.role === "user" && pending.clientMessageId) setStreamError({ content: pending.content, clientMessageId: pending.clientMessageId, model: userModel, error: null });
         } catch (err) {
           if (cancelled) return;
           setConversationLoadError(true);
-          showToast(apiErrorMessage(err, t));
+          showToast(apiErrorMessage(err, t), "error");
         } finally {
           if (!cancelled) setConversationLoading(false);
         }
@@ -426,11 +435,11 @@ export default function AsistenteScreen() {
           preloadedIds.current = new Set(conv.messages.map((m) => m.id));
           setMessages(conv.messages);
           const pending = conv.messages.at(-1);
-          if (pending?.role === "user" && pending.clientMessageId) setStreamError({ content: pending.content, clientMessageId: pending.clientMessageId, model: userModel });
+          if (pending?.role === "user" && pending.clientMessageId) setStreamError({ content: pending.content, clientMessageId: pending.clientMessageId, model: userModel, error: null });
         } catch (err) {
           if (cancelled) return;
           setConversationLoadError(true);
-          showToast(apiErrorMessage(err, t));
+          showToast(apiErrorMessage(err, t), "error");
         } finally {
           if (!cancelled) setConversationLoading(false);
         }
@@ -518,8 +527,9 @@ export default function AsistenteScreen() {
       // reintento, conservando el texto del chef. Antes solo StreamTimeoutError
       // lo hacía; el resto caía a un toast fugaz y el mensaje ya se había borrado
       // del input — había que recordarlo y reescribirlo.
-      setStreamError({ content: text, model: modelToUse, clientMessageId });
-      showToast(apiErrorMessage(err, t));
+      // A3 — el banner es el único aviso: muestra el motivo real y solo las
+      // salidas que sirven. Un toast encima repetía lo mismo y desaparecía.
+      setStreamError({ content: text, model: modelToUse, clientMessageId, error: err });
     } finally {
       if (abortRef.current === ac) abortRef.current = null;
       // Generación vieja = la idea cambió y ya reseteó este estado para el chat
@@ -561,6 +571,18 @@ export default function AsistenteScreen() {
   async function retryStream() {
     if (!streamError || streaming || switchingRef.current || abortRef.current) return;
     await runStream(streamError.content, streamError.model, streamError.clientMessageId);
+  }
+
+  // Mismo clientMessageId: el server retoma con Diario la pregunta sin respuesta.
+  async function continueWithDaily() {
+    if (!streamError || streaming || switchingRef.current || abortRef.current) return;
+    setModel("daily");
+    await runStream(streamError.content, "daily", streamError.clientMessageId);
+  }
+
+  function handleErrorAction(action: ChatErrorAction) {
+    if (action === "use_daily") void continueWithDaily();
+    else startNewChat();
   }
 
   function changeConversation(action: () => void) {
@@ -641,7 +663,7 @@ export default function AsistenteScreen() {
       // Bound the context without silently cutting ingredients or later changes.
       let recipeText: string;
       try { recipeText = recipeConversationText(messages); }
-      catch { showToast(t("recipe_context_too_long")); return; }
+      catch { showToast(t("recipe_context_too_long"), "error"); return; }
       try {
         const ex = await extractRecipeFromAssistant(recipeText);
         setRecipeDraft({
@@ -713,6 +735,12 @@ export default function AsistenteScreen() {
   const composerBusy = streaming || structuring || conversationLoading || conversationLoadError;
   const showSaveButton =
     !streaming && !streamError && messages.some((m) => m.role === "assistant");
+  // Se traduce al pintar: si el chef cambia de idioma, el banner lo sigue.
+  const chatFailure = !streamError
+    ? null
+    : streamError.error === null
+      ? { message: t("chat_unanswered"), retryable: true, action: undefined }
+      : classifyChatError(streamError.error, t, streamError.model);
 
   return (
     <SafeAreaView edges={["top"]} style={styles.root}>
@@ -811,7 +839,7 @@ export default function AsistenteScreen() {
           {conversationLoading ? (
             <ActivityIndicator style={{ flex: 1 }} color={colors.terracota} />
           ) : conversationLoadError ? (
-            <NetworkError onRetry={() => setLoadAttempt((attempt) => attempt + 1)} />
+            <NetworkError sub={t("error_offline_generic_sub")} onRetry={() => setLoadAttempt((attempt) => attempt + 1)} />
           ) : messages.length === 0 && !streaming ? (
             <Empty
               icon="chatbubble-outline"
@@ -860,9 +888,40 @@ export default function AsistenteScreen() {
           )}
         </View>
 
-        {streamError ? (
+        {chatFailure ? (
           <View style={styles.errorBanner}>
-            <NetworkError onRetry={retryStream} />
+            <View style={styles.errorRow}>
+              <Ionicons
+                name={streamError?.error === null ? "information-circle" : "alert-circle"}
+                size={16}
+                color={streamError?.error === null ? colors.mute : colors.danger}
+              />
+              <Text style={styles.errorText}>{chatFailure.message}</Text>
+            </View>
+            {chatFailure.action || chatFailure.retryable ? (
+              <View style={styles.errorActions}>
+                {chatFailure.action ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t(ERROR_ACTION_KEYS[chatFailure.action])}
+                    style={styles.errorAction}
+                    onPress={() => chatFailure.action && handleErrorAction(chatFailure.action)}
+                  >
+                    <Text style={styles.errorActionLabel}>{t(ERROR_ACTION_KEYS[chatFailure.action])}</Text>
+                  </Pressable>
+                ) : null}
+                {chatFailure.retryable ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t("error_retry")}
+                    style={styles.errorAction}
+                    onPress={retryStream}
+                  >
+                    <Text style={styles.errorActionLabel}>{t("error_retry")}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -1127,9 +1186,34 @@ const styles = StyleSheet.create({
 
   // ── Error banner ────────────────────────────────────────────────────
   errorBanner: {
-    height: 200,
     borderTopWidth: 0.5,
     borderTopColor: colors.edge,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  errorRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.xs },
+  errorText: {
+    flex: 1,
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.bodySm,
+    color: colors.ink,
+    lineHeight: fontSizes.bodySm * 1.5,
+  },
+  errorActions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: spacing.sm },
+  errorAction: {
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.terracota,
+  },
+  errorActionLabel: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.terracota,
+    fontWeight: "600",
   },
 
   // ── Save action ────────────────────────────────────────────────────

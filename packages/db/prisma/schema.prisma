@@ -266,6 +266,7 @@ model Conversation {
 model Message {
   responseToId String? @unique
   modelId String?
+  generationId String?
   id              String       @id @default(cuid())
   conversationId  String
   conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -277,11 +278,13 @@ model Message {
   inputTokens  Int?
   outputTokens Int?
   cachedTokens Int?
+  cacheWriteTokens Int?
   latencyMs    Int?
 
   // PostgreSQL permite múltiples NULL en este unique; no hace falta un índice parcial.
   @@unique([conversationId, clientMessageId])
   @@index([conversationId, createdAt])
+  @@index([generationId])
 }
 
 /// Cuota diaria de acciones técnicas y telemetría de tokens de todos los chats

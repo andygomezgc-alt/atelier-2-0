@@ -7,8 +7,11 @@ const h = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
   setParams: vi.fn(), listMessages: vi.fn(), getConversationByIdea: vi.fn(),
   createConversation: vi.fn(), streamMessage: vi.fn(), alert: vi.fn(), toast: vi.fn(),
-  extract: vi.fn(), listening: false, restaurantId: "restaurant-1" as string | null, role: "chef_executive",
+  extract: vi.fn(), notifyUnauthorized: vi.fn(), listening: false, restaurantId: "restaurant-1" as string | null, role: "chef_executive",
   t: (key: string) => key,
+  getToken: vi.fn(),
+  streamHeaders: {} as Record<string, string>,
+  emitStreamError: null as null | (() => void),
 }));
 vi.mock("react-native", () => ({
   ActivityIndicator: "ActivityIndicator", FlatList: "FlatList", Image: "Image",
@@ -39,7 +42,24 @@ vi.mock("@/src/components/RememberNoteSheet", () => ({ RememberNoteSheet: "Remem
 vi.mock("@/src/lib/keyboard", () => ({ useKeyboardHeight: () => 0 }));
 vi.mock("@/src/lib/haptics", () => ({ selection: vi.fn(), tapLight: vi.fn() }));
 vi.mock("@/src/lib/recipe-draft", () => ({ setRecipeDraft: vi.fn() }));
-vi.mock("@/src/lib/api-error", () => ({ apiErrorMessage: () => "error" }));
+// The real code→key table backs the chat error classifier; only the generic helper is stubbed.
+vi.mock("expo-secure-store", () => ({ getItemAsync: h.getToken }));
+vi.mock("react-native-sse", () => ({
+  default: class {
+    private errorListener: ((event: { type: string; xhrStatus: number; message: string }) => void) | null = null;
+    constructor(_url: string, options: { headers: Record<string, string> }) {
+      h.streamHeaders = options.headers;
+      h.emitStreamError = () => this.errorListener?.({ type: "error", xhrStatus: 401, message: '{"error":"Unauthorized"}' });
+    }
+    addEventListener(type: string, listener: NonNullable<typeof this.errorListener>) {
+      if (type === "error") this.errorListener = listener;
+    }
+    removeAllEventListeners() { this.errorListener = null; }
+    close() {}
+  },
+}));
+vi.mock("@/src/api/client", async (importOriginal) => ({ ...(await importOriginal<object>()), notifyUnauthorized: h.notifyUnauthorized }));
+vi.mock("@/src/lib/api-error", async (importOriginal) => ({ ...(await importOriginal<object>()), apiErrorMessage: () => "error" }));
 
 import AsistenteScreen from "../../app/(tabs)/asistente";
 let screen: ReactTestRenderer;
@@ -69,6 +89,9 @@ beforeEach(() => {
   h.restaurantId = "restaurant-1";
   h.role = "chef_executive";
   h.listening = false;
+  h.getToken.mockResolvedValue(null);
+  h.streamHeaders = {};
+  h.emitStreamError = null;
   h.setParams.mockImplementation((params) => { h.params = { ...h.params, ...params }; });
   h.listMessages.mockResolvedValue(saved);
   h.getConversationByIdea.mockResolvedValue({ id: "saved-chat", messages: saved });
@@ -222,6 +245,124 @@ describe("remember a chat message as a chef note", () => {
     await send("Prueba sin restaurante");
     const first = screen.root.findAllByType("FlatList" as never)[0]!.props.data[0].id;
     expect(longPressTargets(await bubbleFor(first))).toHaveLength(0);
+  });
+});
+
+describe("honest chat errors (A3)", () => {
+  const streamFailure = (code?: string, status?: number) =>
+    Object.assign(new Error(code ?? "stream_error"), { name: "StreamInterruptedError", partialText: "", code, status });
+  const texts = () => screen.root.findAll((node) => (node.type as unknown) === "Text").map((node) => node.props.children);
+  const actions = (label: string) => screen.root.findAll((node) => (node.type as unknown) === "Pressable" && node.props.accessibilityLabel === label);
+
+  it("shows the coded reason with Retry when retrying can work, without the offline banner or a toast", async () => {
+    h.streamMessage.mockRejectedValueOnce(streamFailure("ai_rate_limited"));
+    await render();
+    await send("Un plato");
+    expect(texts()).toContain("error_ai_rate_limited");
+    expect(texts()).not.toContain("error_offline_title");
+    expect(screen.root.findAllByType("NetworkError" as never)).toHaveLength(0);
+    expect(actions("error_retry")).toHaveLength(1);
+    expect(h.toast).not.toHaveBeenCalled();
+    h.streamMessage.mockResolvedValueOnce("Ahora sí");
+    await act(async () => { actions("error_retry")[0]!.props.onPress(); });
+    expect(h.streamMessage.mock.calls[1]![6]).toBe(h.streamMessage.mock.calls[0]![6]);
+  });
+
+  it.each(["chat_request_conflict", "ai_daily_weekly_limit", "forbidden"])("hides Retry for %s", async (code) => {
+    h.streamMessage.mockRejectedValueOnce(streamFailure(code));
+    await render();
+    await send("Un plato");
+    expect(actions("error_retry")).toHaveLength(0);
+  });
+
+  it("switches to Diario and resends the same message after the Creativo limit", async () => {
+    h.streamMessage.mockRejectedValueOnce(streamFailure("ai_creative_limit"));
+    await render();
+    await send("Un plato creativo");
+    expect(texts()).toContain("ai_creative_limit");
+    expect(actions("error_retry")).toHaveLength(0);
+    await act(async () => { actions("chat_use_daily")[0]!.props.onPress(); });
+    const [first, second] = h.streamMessage.mock.calls;
+    expect(first![2]).toBe("creative");
+    expect(second!.slice(1, 3)).toEqual(["Un plato creativo", "daily"]);
+    expect(second![6]).toBe(first![6]);
+    expect(texts()).not.toContain("ai_creative_limit");
+  });
+
+  it("offers a new chat when the conversation is too long", async () => {
+    h.streamMessage.mockRejectedValueOnce(streamFailure("chat_context_too_long"));
+    await render();
+    await send("Una pregunta más");
+    expect(texts()).toContain("error_chat_context_too_long");
+    expect(actions("error_retry")).toHaveLength(0);
+    expect(actions("chat_new")).toHaveLength(2);
+  });
+
+  it("signs out exactly once after a stream 401: the transport does it, the banner only explains", async () => {
+    // The real transport signs out before rejecting; the screen must not do it again.
+    h.streamMessage.mockImplementationOnce(async () => {
+      h.notifyUnauthorized();
+      throw streamFailure(undefined, 401);
+    });
+    await render();
+    await send("Un plato");
+    expect(texts()).toContain("error_session_expired");
+    expect(actions("error_retry")).toHaveLength(0);
+    // The banner offers nothing to press: no dead "sign in" button after the redirect.
+    const reason = screen.root.find((node) => (node.type as unknown) === "Text" && node.props.children === "error_session_expired");
+    const banner = reason.parent!.parent!;
+    expect(banner.findAll((node) => (node.type as unknown) === "Pressable")).toHaveLength(0);
+    expect(h.notifyUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { token: "test-token", restaurantId: "restaurant-1" },
+    { token: null, restaurantId: "restaurant-1" },
+    { token: "test-token", restaurantId: null },
+    { token: null, restaurantId: null },
+  ])("signs out exactly once through the real stream after 401 (token=$token, restaurant=$restaurantId)", async ({ token, restaurantId }) => {
+    const transport = await vi.importActual<typeof import("@/src/api/conversations")>("@/src/api/conversations");
+    h.getToken.mockResolvedValue(token);
+    h.restaurantId = restaurantId;
+    h.streamMessage.mockImplementationOnce(transport.streamMessage);
+    await render();
+    await send("Un plato");
+    expect(h.streamMessage).toHaveBeenCalledTimes(1);
+    expect(h.streamHeaders.Authorization).toBe(token ? `Bearer ${token}` : undefined);
+    expect(h.emitStreamError).not.toBeNull();
+    await act(async () => { h.emitStreamError!(); });
+    expect(texts()).toContain("error_session_expired");
+    expect(actions("error_retry")).toHaveLength(0);
+    const reason = screen.root.find((node) => (node.type as unknown) === "Text" && node.props.children === "error_session_expired");
+    expect(reason.parent!.parent!.findAll((node) => (node.type as unknown) === "Pressable")).toHaveLength(0);
+    await update();
+    expect(h.notifyUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a generic translated message for transport errors, never the raw text", async () => {
+    h.streamMessage.mockRejectedValueOnce(streamFailure(undefined, 502));
+    await render();
+    await send("Un plato");
+    expect(texts()).toContain("error_ai_provider_failed");
+    expect(texts()).not.toContain("stream_error");
+    expect(actions("error_retry")).toHaveLength(1);
+  });
+
+  it("opening a chat whose last question is unanswered shows a neutral note with Retry", async () => {
+    h.listMessages.mockResolvedValueOnce([{ id: "m1", role: "user", content: "¿Y el fondo?", clientMessageId: "cm-1", createdAt: "2026-09-09T10:00:00Z" }]);
+    h.params = { conversationId: "saved-chat" };
+    await render();
+    expect(texts()).toContain("chat_unanswered");
+    expect(texts()).not.toContain("error_offline_title");
+    await act(async () => { actions("error_retry")[0]!.props.onPress(); });
+    expect(h.streamMessage).toHaveBeenCalledWith("saved-chat", "¿Y el fondo?", "creative", expect.any(Function), expect.any(AbortSignal), undefined, "cm-1");
+  });
+
+  it("styles the history load failure toast as an error", async () => {
+    h.listMessages.mockRejectedValueOnce(new Error("offline"));
+    h.params = { conversationId: "saved-chat" };
+    await render();
+    expect(h.toast).toHaveBeenCalledWith("error", "error");
   });
 });
 
