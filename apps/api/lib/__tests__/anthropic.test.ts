@@ -143,3 +143,78 @@ describe("buildMessageBlocks", () => {
     expect(buildMessageBlocks([])).toEqual([]);
   });
 });
+
+describe("buildSystemBlocks — ciudad, nombre y mes", () => {
+  const sinCiudad = "# Restaurante: Casa\nIdentidad: Cocina vegetal\n";
+
+  it("añade la ciudad recortada justo después del nombre del restaurante", () => {
+    expect(
+      buildSystemBlocks({ name: "Casa", identityLine: "Cocina vegetal", city: "  Valencia " }, [], null)[1]!.text,
+    ).toBe("# Restaurante: Casa\nUbicación: Valencia\nIdentidad: Cocina vegetal\n");
+  });
+
+  it("no añade línea de ubicación si la ciudad es nula, vacía o solo espacios", () => {
+    expect(buildSystemBlocks({ name: "Casa", identityLine: "Cocina vegetal", city: null }, [], null)[1]!.text).toBe(sinCiudad);
+    expect(buildSystemBlocks({ name: "Casa", identityLine: "Cocina vegetal", city: "   " }, [], null)[1]!.text).toBe(sinCiudad);
+  });
+
+  it("el bloque de conversación lleva quien escribe y el mes UTC, sin marcador de caché", () => {
+    const blocks = buildSystemBlocks(
+      { name: "Casa", identityLine: null },
+      [],
+      null,
+      null,
+      { speakerName: "Andy", now: new Date("2026-10-10T12:00:00Z") },
+    );
+    const dynamic = blocks.at(-1)!;
+    expect(dynamic.text).toBe("# Conversación\n- Quien escribe: Andy\n- Mes actual: octubre de 2026");
+    expect("cache_control" in dynamic).toBe(false);
+  });
+
+  it("usa el mes UTC aunque la hora local ya esté en el mes siguiente", () => {
+    const blocks = buildSystemBlocks(
+      { name: "Casa", identityLine: null },
+      [],
+      null,
+      null,
+      { speakerName: "Andy", now: new Date("2026-01-01T00:30:00Z") },
+    );
+    expect(blocks.at(-1)!.text).toContain("- Mes actual: enero de 2026");
+  });
+
+  it("separa el bloque de conversación con una línea en blanco cuando hay recetas o idea", () => {
+    const blocks = buildSystemBlocks(
+      { name: "Casa", identityLine: null },
+      [{ title: "Receta reciente" }],
+      "Idea actual",
+      null,
+      { speakerName: "Andy", now: new Date("2026-10-10T12:00:00Z") },
+    );
+    expect(blocks.at(-1)!.text).toBe(
+      "# Recetas recientes del cuaderno\n- Receta reciente\n\n# Idea anclada\nIdea actual\n\n" +
+        "# Conversación\n- Quien escribe: Andy\n- Mes actual: octubre de 2026",
+    );
+  });
+
+  it("sin nombre no escribe la línea «Quien escribe»", () => {
+    const text = buildSystemBlocks(
+      { name: "Casa", identityLine: null },
+      [],
+      null,
+      null,
+      { speakerName: null, now: new Date("2026-10-10T12:00:00Z") },
+    ).at(-1)!.text;
+    expect(text).toBe("# Conversación\n- Mes actual: octubre de 2026");
+  });
+
+  it("mantiene tres marcadores de caché en el sistema aunque cambie el bloque dinámico", () => {
+    const blocks = buildSystemBlocks(
+      { name: "Casa", identityLine: "Vegetal", city: "Valencia" },
+      [{ title: "Receta reciente" }],
+      "Idea actual",
+      "Técnicas de brasa",
+      { speakerName: "Andy", now: new Date("2026-10-10T12:00:00Z") },
+    );
+    expect(blocks.filter((block) => "cache_control" in block)).toHaveLength(3);
+  });
+});

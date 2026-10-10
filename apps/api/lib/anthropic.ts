@@ -14,6 +14,7 @@ type RestaurantContext = {
   name: string;
   identityLine: string | null;
   chefNotes?: string[];
+  city?: string | null;
 };
 
 type RecentRecipe = {
@@ -22,11 +23,17 @@ type RecentRecipe = {
 
 export type Msg = { role: "user" | "assistant"; content: string };
 
+const MONTHS_ES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
 export function buildSystemBlocks(
   restaurant: RestaurantContext,
   recentRecipes: RecentRecipe[],
   pinnedIdea: string | null,
   culinaryMemory?: string | null,
+  conversation?: { speakerName?: string | null; now?: Date },
 ) {
   const principles = loadSystemPrompt();
 
@@ -43,9 +50,10 @@ export function buildSystemBlocks(
         .map((note) => `- ${note}`)
         .join("\n")}\n`
     : "";
+  const city = restaurant.city?.trim();
   const identityText = `# Restaurante: ${restaurant.name}\n${
-    restaurant.identityLine ? `Identidad: ${restaurant.identityLine}\n` : ""
-  }${chefNotesText}`;
+    city ? `Ubicación: ${city}\n` : ""
+  }${restaurant.identityLine ? `Identidad: ${restaurant.identityLine}\n` : ""}${chefNotesText}`;
   const identityBlock = {
     type: "text" as const,
     text: identityText,
@@ -79,9 +87,15 @@ export function buildSystemBlocks(
     dynamicLines.push(pinnedIdea);
   }
 
-  if (dynamicLines.length > 0) {
-    blocks.push({ type: "text", text: dynamicLines.join("\n") });
-  }
+  // Who writes and the current month change per person and per month, so they
+  // stay after the cached blocks and never alter the cached prefix.
+  const speakerName = conversation?.speakerName?.trim();
+  const now = conversation?.now ?? new Date();
+  if (dynamicLines.length > 0) dynamicLines.push("");
+  dynamicLines.push("# Conversación");
+  if (speakerName) dynamicLines.push(`- Quien escribe: ${speakerName}`);
+  dynamicLines.push(`- Mes actual: ${MONTHS_ES[now.getUTCMonth()]} de ${now.getUTCFullYear()}`);
+  blocks.push({ type: "text", text: dynamicLines.join("\n") });
   return blocks;
 }
 

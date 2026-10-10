@@ -88,12 +88,14 @@ export async function POST(
   let culinaryMemory: string | null = null;
   let messages: Msg[] = [];
   let pinnedIdeaText: string | null = null;
+  let speakerName: string | null = null;
 
   let turn: ChatTurn | undefined;
   try {
   if (isPreview) {
     // Restaurante placeholder — el chef todavía no le puso nombre.
     restaurant = { name: "Tu cocina", identityLine: null };
+    speakerName = (await prisma.user.findUnique({ where: { id: ctx.userId }, select: { name: true } }))?.name ?? null;
 
     // El cliente manda `history: [{ role, content }, ...]` con los últimos
     // mensajes acumulados localmente (incluye el user msg actual ya pusheado
@@ -132,10 +134,10 @@ export async function POST(
     turn = started;
 
     // Build context: recent recipes + pinned idea.
-    const [r, history, total, recent, notes, preparedMemory] = await Promise.all([
+    const [r, history, total, recent, notes, preparedMemory, speaker] = await Promise.all([
       prisma.restaurant.findUnique({
         where: { id: ctx.restaurantId },
-        select: { name: true, identityLine: true },
+        select: { name: true, identityLine: true, city: true },
       }),
       // Ventana por bloques: solo re-enviamos los últimos 20 mensajes al modelo.
       // Más allá de ese tope la conversación crece linealmente en costo/latencia
@@ -166,11 +168,13 @@ export async function POST(
         select: { text: true },
       }),
       chatMemory(ctx.restaurantId).catch(() => null),
+      prisma.user.findUnique({ where: { id: ctx.userId }, select: { name: true } }),
     ]);
 
     if (!r) throw new Error("Restaurant not found");
 
     restaurant = { ...r, chefNotes: notes.map((note) => note.text) };
+    speakerName = speaker?.name ?? null;
     recentRecipes = recent;
     culinaryMemory = preparedMemory || null;
     messages = stableHistoryWindow(
@@ -190,7 +194,7 @@ export async function POST(
 
   let system;
   try {
-    system = buildSystemBlocks(restaurant, recentRecipes, pinnedIdeaText, culinaryMemory);
+    system = buildSystemBlocks(restaurant, recentRecipes, pinnedIdeaText, culinaryMemory, { speakerName });
   }
   catch (error) {
     if (turn) await releaseChatTurn(turn).catch(() => undefined);
