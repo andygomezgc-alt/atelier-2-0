@@ -873,6 +873,10 @@ describe("stop and resume a running answer (A13)", () => {
       expect(messages().filter((m: { role: string }) => m.role === "user")).toHaveLength(1);
       expect(contents()).toContain("Berenjena asada con yogur");
       expect(actions("error_retry")).toHaveLength(0);
+      // A successful resume ends the recovering state: the status is gone and the answer is the saved one.
+      expect(texts()).not.toContain("chat_answer_recovering");
+      expect(stopAction()).toHaveLength(0);
+      expect(sendButtons()).toHaveLength(1);
     });
 
     it("retries a 409 chat_in_progress with backoff until the saved answer replays", async () => {
@@ -892,6 +896,9 @@ describe("stop and resume a running answer (A13)", () => {
       expect(new Set(h.streamMessage.mock.calls.map((call) => call[6])).size).toBe(1);
       expect(contents()).toContain("Berenjena asada con yogur");
       expect(texts()).not.toContain("chat_in_progress");
+      expect(texts()).not.toContain("chat_answer_recovering");
+      expect(stopAction()).toHaveLength(0);
+      expect(sendButtons()).toHaveLength(1);
       expect(actions("error_retry")).toHaveLength(0);
     });
 
