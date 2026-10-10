@@ -77,7 +77,9 @@ export async function POST(req: NextRequest) {
         data: {
           name: parse.data.name,
           identityLine: parse.data.identityLine,
+          city: parse.data.city || null,
           inviteCode,
+          culinaryMemory: { create: {} },
         },
       });
       const claim = await tx.user.updateMany({

@@ -1,6 +1,6 @@
 import { Prisma, prisma } from "@atelier/db";
 import { MemoryPreferencesSchema, MemoryKeySchema, type CulinaryMemoryResponse, type PatchCulinaryMemory, type MemoryPreference } from "@atelier/shared";
-import { assessFacts, recipeEvidence, selectEvidence, StoredFactsSchema, memoryContext, type StoredFact } from "./evidence";
+import { assessFacts, recipeEvidence, selectEvidence, frequentIngredients, StoredFactsSchema, memoryContext, type StoredFact } from "./evidence";
 import { memoryProviderConfig } from "./provider";
 
 export class MemoryConflict extends Error {}
@@ -13,6 +13,17 @@ export async function loadEvidence(restaurantId: string, db: Pick<Prisma.Transac
     orderBy: [{ updatedAt: "desc" }, { id: "asc" }], take: 100, select: evidenceSelect,
   })));
   return selectEvidence(groups.flat());
+}
+
+export async function loadIngredientStats(restaurantId: string) {
+  const recipes = await prisma.recipe.findMany({
+    where: { restaurantId, deletedAt: null, state: { in: ["approved", "in_test"] } },
+    orderBy: [{ updatedAt: "desc" }, { id: "asc" }], take: 300, select: evidenceSelect,
+  });
+  const seen = new Set<string>();
+  const evidence = recipes.map(recipeEvidence)
+    .filter(r => { if (seen.has(r.duplicateKey)) return false; seen.add(r.duplicateKey); return true; });
+  return frequentIngredients(evidence);
 }
 
 async function supportedFactState(restaurantId: string, stored: unknown): Promise<{ valid: StoredFact[]; migrated: StoredFact[] | null }> {
@@ -58,7 +69,10 @@ export async function patchCulinaryMemory(restaurantId: string, patch: PatchCuli
     } });
     if (!changed.count) throw new MemoryConflict();
     if (erase) await tx.culinaryMemoryRun.updateMany({ where: { restaurantId }, data: { publishedTrends: Prisma.DbNull } });
-    if (patch.identityLine !== undefined) await tx.restaurant.update({ where: { id: restaurantId }, data: { identityLine: patch.identityLine || null } });
+    if (patch.identityLine !== undefined || patch.city !== undefined) await tx.restaurant.update({ where: { id: restaurantId }, data: {
+      ...(patch.identityLine !== undefined ? { identityLine: patch.identityLine || null } : {}),
+      ...(patch.city !== undefined ? { city: patch.city?.trim() || null } : {}),
+    } });
     // `enabled` solo cambia aquí y siempre sube la versión: si la lectura tenía la
     // versión esperada, `before` es justo el estado que este cambio sustituye.
     return !erase && patch.enabled === true && !before.enabled && before.version === patch.expectedVersion;
@@ -80,7 +94,7 @@ export async function chatMemory(restaurantId: string): Promise<string | null> {
     return memory.preparedContext;
   }
   const facts = await supportedFactState(restaurantId, memory.learned);
-  const context = memoryContext(correctionsOf(memory.corrections), facts.valid, exclusionsOf(memory.excludedKeys));
+  const context = memoryContext(correctionsOf(memory.corrections), facts.valid, exclusionsOf(memory.excludedKeys), await loadIngredientStats(restaurantId));
   const saved = await prisma.culinaryMemory.updateMany({
     where: { restaurantId, enabled: true, version: memory.version, dirtyRevision: memory.dirtyRevision },
     data: {
