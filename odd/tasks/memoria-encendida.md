@@ -55,14 +55,14 @@ E1 añade todos los textos nuevos de la entrega, para que E6, E7 y E8 no toquen 
 
 Codex: usar el id exacto de GPT-6.1 que acepte el CLI instalado (`--model <id> --effort high`); no inventarlo. Si sigue sin poder lanzar procesos con `--write` (`CreateProcessAsUserW failed: 5`), funciona como autor: recibe el código en el prompt y devuelve ediciones exactas, y un operador Haiku 5.5 en alto las aplica y corre RED/GREEN.
 
-- [ ] E1 — cimientos
-- [ ] E2 — nombre, ubicación y mes
-- [ ] E3 — ingredientes frecuentes
+- [x] E1 — cimientos (`7744427`)
+- [x] E2 — nombre, ubicación y mes (`bf64a66`)
+- [x] E3 — ingredientes frecuentes (`66d3228`)
 - [ ] E4 — memoria al crear y ciudad en el servidor
 - [ ] E5 — cargadas aprobadas/en prueba y aprendizaje al momento
-- [ ] E6 — app: recetas cargadas
+- [x] E6 — app: recetas cargadas (`5d94a58`)
 - [ ] E7 — app: botón «Memoria»
-- [ ] E8 — app: ciudad
+- [x] E8 — app: ciudad (`03d398b`)
 - [ ] E9 — privacidad y documentación
 
 ## Especificación por tarea
@@ -333,7 +333,23 @@ Retoma la entrega 3 de la memoria culinaria ("memoria encendida") en atelier-2-0
 ```
 
 ## Progreso y evidencia
-_(vacío: se rellena en la ventana local)_
+Ventana local, 10-10-2026. Rama `feat/memoria-encendida`, punto de partida `af93843`. RDD: activado (global); porción revisada desde `af93843`.
+
+- **Entorno.** Codex: runtime de la app 0.162.0-alpha.17.2 (`%LOCALAPPDATA%/OpenAI/Codex/bin/2e5e00daee91c61d`) vía companion con `--write --model gpt-6.1-sol --effort high`; su sandbox ejecuta comandos pero no puede abrir esbuild (vitest de api y app) ni escribir `.git`, así que el padre corre esas suites y hace los commits. Postgres desechable: `embedded-postgres` 15.18 (igual que CI, `postgres:15-alpine`) en el scratchpad, puerto 54329, UTF8.
+- **Línea base.** api 794/794 y tsc OK; shared 14 archivos verdes; i18n 1; app 186/186; integración de memoria 15/15 en Postgres local.
+- **E1** (`7744427`, Codex GPT-6.1 alto; ruta delegada, disparador de escritura: 2+ archivos no triviales).
+  - RED (observado por el padre): shared 15 fallos (`city`/`origin` descartados por zod, módulo `recipe-import` inexistente) e i18n 30 fallos (claves que faltan).
+  - GREEN: shared 280/280, i18n 35/35, api 794/794, app 186/186; tsc de shared, i18n, db, api y app OK; `git diff --check` OK. El padre corrigió un `noUncheckedIndexedAccess` en el test de i18n.
+  - Desvío mínimo: `CulinaryMemoryResponse.city` obligó a que `getCulinaryMemory` devuelva `city` ya en E1 (E4 lo cubre con tests); fixture de la app con `city: null`.
+  - Migración en Postgres local: sin memoria → encendida; apagada → sigue apagada; contexto preparado borrado y revisiones a -1; `enabled` por defecto `true`; `city` VARCHAR(80). `migrate diff --from-migrations` contra el esquema solo muestra la deriva de las FK de `CulinaryMemory`/`CulinaryMemoryRun`, que ya existe en `HEAD` sin esta migración (fuera de alcance).
+  - RDD: riesgo medio, `under_budget` (193 líneas): pendiente en la porción.
+- **Fusión ajena a las tareas.** `4531d2d` (22:21) fusionó `main` local (`5c84bce`: PR #9 contraste del asistente y PR #10 avisos de dependencias) en la rama; no lo hizo ningún agente de esta ventana. Benigna; trae `pnpm-lock.yaml` nuevo (se reinstaló) y un `asistente.tsx` nuevo sobre el que trabaja E7.
+- **E2** (`bf64a66`, Haiku 5.5 alto; ruta delegada). RED observado por el agente: 11 fallos (falta `Ubicación`, falta `# Conversación`, la ruta pasa 4 argumentos y no consulta `user.findUnique`). GREEN 53/53 en los dos archivos; el padre lo repitió (53/53) y revisó el diff: identidad cambia solo con ciudad, nombre y mes en el bloque dinámico, sin marcadores nuevos. Tres aserciones antiguas de la ruta ganan el quinto argumento `{ speakerName }`.
+- **E8** (`03d398b`, Haiku 5.5 alto; ruta delegada). RED: 5 fallos (`memoryPatchBody` y `createRestaurantBody` no existen). GREEN 7/7 y `hooks-order` 8/8; el padre repitió 15/15 y revisó el diff.
+- **E3** (`66d3228`, Codex GPT-6.1 alto, dos fases). RED observado por el padre: 17 fallos (`frequentIngredients`/`loadIngredientStats` no son funciones; contexto sin `ingredientesFrecuentes`). GREEN tras corregir el padre un tipo en `worker.test.ts` (`key` como literal).
+- **E6** (`5d94a58`, Codex GPT-6.1 alto, dos fases). RED observado por el padre: 9 fallos (orígenes inválidos aceptados; `buildRecipeRequestBody` no existe). GREEN. Detalle aceptado: `contentJson.ingredients` sale ahora recortado, igual que `recipeIngredients`.
+- **Cierre de O2** (padre): api 825/825, app 204/204, shared 280/280, i18n 35/35; tsc de los cuatro OK; `git diff --check` OK. Un primer run de api falló al cargar `leave.test.ts` (intermitente, igual que en la línea base); pasó solo y en la repetición completa.
+- **RDD de la porción** `af93843..5d94a58` (incluye la fusión de `main`): riesgo alto solo por `package.json` de `main`; sin la fusión, medio con presupuesto superado (702 líneas). Andy concedió la revisión; linaje `review-bfb3856b4a2d88ae`, cuatro lentes. **Aprobada** y acusada (`authority: burned`); nuevo límite revisado `5d94a58`. 17 avisos informativos, no bloqueantes; los relevantes para lo que falta: la ciudad aún no se persiste en el PATCH y el estado de carga aún no existe en el servidor (los cierran E4 y E5); una app nueva contra un servidor viejo rechazaría `city` en el PATCH estricto (por eso el servidor se publica antes); `chatMemory` recorre hasta 300 recetas al reconstruir el contexto en la ruta del chat (aceptado en el plan); en la vista previa del chat, un fallo al leer el nombre no tiene guarda propia.
 
 ## Siguiente paso
 Abrir la ventana local y pegar el mensaje de «Arranque en local».
