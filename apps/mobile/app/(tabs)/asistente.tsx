@@ -23,6 +23,9 @@ import { NetworkError } from "@/src/components/NetworkError";
 import { PreviousChatsSheet } from "@/src/components/PreviousChatsSheet";
 import { ProfileSheet } from "@/src/components/ProfileSheet";
 import { RememberNoteSheet } from "@/src/components/RememberNoteSheet";
+import { CulinaryMemorySheet } from "@/src/components/CulinaryMemorySheet";
+import { MemoryChip } from "@/src/components/MemoryChip";
+import { getCulinaryMemory } from "@/src/api/culinary-memory";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n, dateLocale } from "@/src/hooks/useI18n";
 import { useAuth } from "@/src/hooks/useAuth";
@@ -261,6 +264,34 @@ export default function AsistenteScreen() {
       : null,
   );
   const [rememberText, setRememberText] = useState<string | null>(null);
+
+  // "Memoria" chip: real restaurant only; hidden (null) while loading or on error.
+  const memoryRestaurantId =
+    authState.status === "signed-in" || authState.status === "needs-restaurant"
+      ? authState.user.restaurantId ?? null
+      : null;
+  const [memoryEnabled, setMemoryEnabled] = useState<boolean | null>(null);
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const [memoryReload, setMemoryReload] = useState(0);
+  useEffect(() => {
+    setMemoryEnabled(null);
+    setMemoryOpen(false);
+  }, [memoryRestaurantId]);
+  useEffect(() => {
+    if (!memoryRestaurantId) return;
+    // Ignore responses that arrive after the restaurant changed or the screen unmounted.
+    let current = true;
+    getCulinaryMemory()
+      .then((memory) => {
+        if (current && memory.restaurantId === memoryRestaurantId) setMemoryEnabled(memory.enabled);
+      })
+      .catch(() => {
+        if (current) setMemoryEnabled(null);
+      });
+    return () => {
+      current = false;
+    };
+  }, [memoryRestaurantId, memoryReload]);
 
   const [model, setModel] = useState<ModelKey>(userModel);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -759,6 +790,15 @@ export default function AsistenteScreen() {
           <Ionicons name="time-outline" size={18} color={colors.ink} />
           <Text style={styles.historyLabel}>{t("chat_history")}</Text>
         </Pressable>
+        {memoryRestaurantId && memoryEnabled !== null ? (
+          <MemoryChip
+            enabled={memoryEnabled}
+            onPress={() => {
+              Keyboard.dismiss();
+              setMemoryOpen(true);
+            }}
+          />
+        ) : null}
       </View>
       <View style={styles.divider} />
 
@@ -778,6 +818,16 @@ export default function AsistenteScreen() {
       <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} />
       {rememberText !== null && canRemember ? (
         <RememberNoteSheet text={rememberText} onClose={() => setRememberText(null)} />
+      ) : null}
+      {memoryOpen && memoryRestaurantId ? (
+        <CulinaryMemorySheet
+          key={memoryRestaurantId}
+          restaurantId={memoryRestaurantId}
+          onClose={() => {
+            setMemoryOpen(false);
+            setMemoryReload((n) => n + 1);
+          }}
+        />
       ) : null}
 
       <View style={{ flex: 1 }}>
