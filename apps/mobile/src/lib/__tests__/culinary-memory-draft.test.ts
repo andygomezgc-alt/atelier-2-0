@@ -9,6 +9,7 @@ const base: CulinaryMemoryResponse = {
   version: 1,
   enabled: true,
   identityLine: null,
+  city: null,
   learned: [],
   corrections: [cuisineCorrection, techniqueCorrection],
   excludedKeys: ["textures"],
