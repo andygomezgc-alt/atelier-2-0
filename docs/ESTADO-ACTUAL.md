@@ -1,6 +1,10 @@
-# Estado actual de Atelier — 30 de septiembre de 2026
+# Estado actual de Atelier — 10 de octubre de 2026
 
-Punto de entrada al retomar el proyecto. **El 29 y 30 de septiembre se auditó y mejoró la memoria culinaria** (PR #7 y #8, en producción):
+Punto de entrada al retomar el proyecto.
+
+**Memoria encendida (10-10-2026):** implementada en `feat/memoria-encendida`, **sin fusionar, sin desplegar** y pendiente de adaptarse tras `codex/asistente-arreglos`. La memoria culinaria viene encendida en los restaurantes nuevos y en los que nunca decidieron; el asistente recibe el nombre de quien escribe, la ciudad o zona si se indica y el mes actual; las recetas cargadas aprenden al momento (aprobadas si las carga un admin, en prueba si las carga el chef ejecutivo o el sous-chef) y los ingredientes más repetidos entran en la memoria, contados sin IA. Botón «Memoria» en el chat. Orden de entrega: servidor, después binarios. Detalle, coste y vuelta atrás en [Memoria encendida](MEMORIA-ENCENDIDA-2026-10.md).
+
+**El 29 y 30 de septiembre se auditó y mejoró la memoria culinaria** (PR #7 y #8, en producción):
 - el historial del chat se recorta por bloques para que la caché acierte;
 - el asistente ve siempre las recetas recientes;
 - una tendencia mal formada ya no tira la semana y bastan 2 recetas;
