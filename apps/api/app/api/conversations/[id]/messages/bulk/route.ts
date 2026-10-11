@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@atelier/db";
 import { BulkMessagesRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
+import { canAccessConversation } from "@/lib/conversation-access";
 
 export const dynamic = "force-dynamic";
 
@@ -29,13 +30,11 @@ export async function POST(
   // IDOR: la Conversation tiene que pertenecer al restaurante del caller.
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { id: true, restaurantId: true, authorId: true },
+    select: { id: true, restaurantId: true, authorId: true, ideaId: true, idea: { select: { authorId: true } } },
   });
-  if (!conv || conv.restaurantId !== ctx.restaurantId)
+  // Visibility rule shared with the other chat routes: a chat the caller cannot see is a 404.
+  if (!conv || conv.restaurantId !== ctx.restaurantId || !canAccessConversation(conv, ctx))
     return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
-  // Same rule as the stop route: only the chat's author or an admin writes into it.
-  if (conv.authorId !== ctx.userId && ctx.role !== "admin")
-    return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
 
   if (parse.data.messages.length === 0) {
     return Response.json({ inserted: 0 });
