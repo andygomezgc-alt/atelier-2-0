@@ -27,6 +27,9 @@ const SLACK = 2 * 60 * 60 * 1000;
 const WEEKLY = 7 * DAY - SLACK;
 const config = { provider: "fixture", model: "fixture" };
 const run = `it-${randomUUID().slice(0, 8)}`;
+/** An import run right away: a full deadline, no quiet wait and a short poll. */
+const importRun = (ticket: number | null, generator: MemoryGenerator, extra = {}) =>
+  ({ generator, config, ticket: ticket!, deadline: Date.now() + 270_000, quietMs: 0, pollMs: 10, ...extra });
 
 const roasted: MemoryGenerator = async (input, onUsage) => {
   await onUsage({ inputTokens: 30, outputTokens: 10, reasoningTokens: 0 });
@@ -64,9 +67,6 @@ const importSaved = (restaurantId: string, ingredient: string) => saveNewRecipe(
   title: ingredient, origin: "import",
   contentJson: { ingredients: [`200 g ${ingredient}`], method: [`Asar ${ingredient}`], notes: "" },
 }, "admin");
-async function importRecipe(restaurantId: string, ingredient: string) {
-  return (await importSaved(restaurantId, ingredient)).recipe;
-}
 const sourceIds = async (restaurantId: string) =>
   ((await memoryOf(restaurantId)).learned as Array<{ sources: { id: string }[] }>).flatMap(fact => fact.sources.map(source => source.id));
 
@@ -329,11 +329,12 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
   it("con la memoria ya aprendida esta semana, una carga vuelve a aprender al momento", async () => {
     const id = await seed("import-relearn");
     expect(await processMemory(id, roasted, config, new Date())).toBe("completed");
-    const recipe = await importRecipe(id, "pimiento");
+    const { recipe, importTicket } = await importSaved(id, "pimiento");
     expect(recipe.state).toBe("approved");
     // El cron sigue esperando a la semana; la carga no.
     expect(await processMemory(id, roasted, config, new Date())).toBe("skipped");
-    expect(await learnAfterImport(id, { generator: roasted, config, pollMs: 10 })).toBe("completed");
+    expect(await learnAfterImport(id, importRun(importTicket, roasted))).toBe("completed");
+    expect((await memoryOf(id)).importPendingAt).toBeNull();
     expect(await sourceIds(id)).toContain(recipe.id);
     expect(await publishedRuns(id)).toBe(2);
     expect((await prisma.culinaryMemoryRun.findFirstOrThrow({ where: { restaurantId: id }, orderBy: { createdAt: "desc" } })).isRetry).toBe(false);
@@ -349,11 +350,11 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
     let secondCalls = 0;
     const second: MemoryGenerator = async (input, onUsage) => { secondCalls++; return roasted(input, onUsage); };
 
-    const first = await importRecipe(id, "pimiento");
-    const firstRun = learnAfterImport(id, { generator: slow, config, pollMs: 20 });
+    const { recipe: first, importTicket: firstTicket } = await importSaved(id, "pimiento");
+    const firstRun = learnAfterImport(id, importRun(firstTicket, slow, { pollMs: 20 }));
     await ready;
-    const other = await importRecipe(id, "cebolla");
-    const secondRun = learnAfterImport(id, { generator: second, config, pollMs: 20 });
+    const { recipe: other, importTicket: otherTicket } = await importSaved(id, "cebolla");
+    const secondRun = learnAfterImport(id, importRun(otherTicket, second, { pollMs: 20 }));
     try {
       // La segunda corrida encuentra el bloqueo y espera.
       await new Promise(resolve => setTimeout(resolve, 150));
@@ -376,10 +377,44 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
     await patchCulinaryMemory(id, { expectedVersion: version, enabled: false });
     let calls = 0;
     const counted: MemoryGenerator = async (input, onUsage) => { calls++; return roasted(input, onUsage); };
-    await importRecipe(id, "pimiento");
-    expect(await learnAfterImport(id, { generator: counted, config, pollMs: 10 })).toBe("skipped");
+    // Sin ticket la ruta no programa nada; si la memoria se apaga durante la espera, la corrida tampoco paga.
+    expect((await importSaved(id, "pimiento")).importTicket).toBeNull();
+    expect(await learnAfterImport(id, importRun(0, counted))).toBe("skipped");
     expect(calls).toBe(0);
     expect(await prisma.culinaryMemoryRun.count({ where: { restaurantId: id } })).toBe(0);
+  });
+
+  it("veinte cargas seguidas pagan una sola llamada: las demás se apartan sin escribir", async () => {
+    const id = await seed("import-burst");
+    let calls = 0;
+    const counted: MemoryGenerator = async (input, onUsage) => { calls++; return roasted(input, onUsage); };
+    const runs: Promise<string>[] = [];
+    const recipes: string[] = [];
+    for (let index = 0; index < 20; index++) {
+      const { recipe, importTicket } = await importSaved(id, `verdura ${index}`);
+      recipes.push(recipe.id);
+      runs.push(learnAfterImport(id, importRun(importTicket, counted, { quietMs: 1_000, checkMs: 50, pollMs: 20 })));
+      await new Promise(resolve => setTimeout(resolve, 30));
+    }
+    const results = await Promise.all(runs);
+    expect(calls).toBe(1);
+    expect(results.filter(result => result === "debounced")).toHaveLength(19);
+    expect(results.at(-1)).toBe("completed");
+    // La evidencia llega a 20 recetas: la última carga entra seguro.
+    expect(await sourceIds(id)).toContain(recipes.at(-1));
+    expect(await prisma.culinaryMemoryRun.count({ where: { restaurantId: id } })).toBe(1);
+    expect((await memoryOf(id)).importPendingAt).toBeNull();
+  });
+
+  it("dos cargas más separadas que la ventana de silencio pagan dos llamadas", async () => {
+    const id = await seed("import-apart");
+    let calls = 0;
+    const counted: MemoryGenerator = async (input, onUsage) => { calls++; return roasted(input, onUsage); };
+    for (const ingredient of ["pimiento", "cebolla"]) {
+      const { importTicket } = await importSaved(id, ingredient);
+      expect(await learnAfterImport(id, importRun(importTicket, counted, { quietMs: 150, checkMs: 50 }))).toBe("completed");
+    }
+    expect(calls).toBe(2);
   });
 
   it("cada carga nueva toma un ticket y deja la marca; con la memoria apagada no hay ticket", async () => {
@@ -400,8 +435,8 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
 
   it("después de una carga, el cron sigue respetando la semana", async () => {
     const id = await seed("import-cadence");
-    await importRecipe(id, "pimiento");
-    expect(await learnAfterImport(id, { generator: roasted, config, pollMs: 10 })).toBe("completed");
+    const { importTicket } = await importSaved(id, "pimiento");
+    expect(await learnAfterImport(id, importRun(importTicket, roasted))).toBe("completed");
     const learned = await memoryOf(id);
     const anchor = learned.lastAttemptAt!;
     expect(learned.cycleStartedAt).toEqual(anchor);

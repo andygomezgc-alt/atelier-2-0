@@ -11,6 +11,7 @@ import { generateMemory, MAX_TRENDS, memoryProviderConfig, type MemoryGenerator 
 import {
   MEMORY_DISCARD_RETRY_LIMIT, MEMORY_FAILURE_SUSPENSION_THRESHOLD, MEMORY_PROMPT_VERSION, MEMORY_SUPPRESSION_EXPIRY_MS,
 } from "./limits";
+import { IMPORT_QUIET_CHECK_MS, IMPORT_QUIET_MS, MINIMUM_ROW_TIME_MS } from "./scheduling";
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
@@ -26,6 +27,10 @@ class MemoryRunSuperseded extends Error {}
 const TRUNCATED_REPLY = /^(?:memory_response_incomplete|ai_response_incomplete|ai_response_invalid)$/;
 
 export type MemoryRunStatus = "unconfigured" | "skipped" | "locked" | "unchanged" | "suppressed" | "busy" | "completed" | "superseded" | "failed";
+/** "debounced": a later import took the ticket and will learn instead. "deferred": too little time left to run. */
+export type ImportRunStatus = MemoryRunStatus | "debounced" | "deferred";
+// Results after which the import has been taken into account. Any other end keeps the marker for the cron.
+const IMPORT_SETTLED = new Set<MemoryRunStatus>(["completed", "unchanged", "suppressed", "skipped"]);
 
 /** Identifies one deterministic input failure: the same input fails again only under the same model and prompt. */
 export function memoryFailureFingerprint(input: { inputHash: string; model: string; promptVersion: string }): string {
@@ -362,23 +367,43 @@ export async function processMemory(
 }
 
 /**
- * Learns right after an imported recipe. While another run holds the lock it waits
- * and tries again, so two imports close together end up learning from both recipes.
- * The signal bounds the whole wait.
+ * Learns after an imported recipe once imports have been quiet for a while, so a burst pays one run.
+ * The run holds the ticket its import took; when a later import takes the next one, this run steps
+ * aside without writing and the later run learns from both recipes. While another run holds the lock
+ * it waits and tries again. The absolute deadline bounds the whole wait.
  */
 export async function learnAfterImport(
   restaurantId: string,
-  { generator, config, signal, pollMs = 3000 }: {
+  { generator, config, ticket, deadline, quietMs = IMPORT_QUIET_MS, checkMs = IMPORT_QUIET_CHECK_MS, pollMs = 3000 }: {
     generator?: MemoryGenerator;
     config?: ReturnType<typeof memoryProviderConfig>;
-    signal?: AbortSignal;
+    ticket: number;
+    deadline: number;
+    quietMs?: number;
+    checkMs?: number;
     pollMs?: number;
-  } = {},
-): Promise<MemoryRunStatus> {
+  },
+): Promise<ImportRunStatus> {
+  const signal = AbortSignal.timeout(Math.max(1, deadline - Date.now()));
+  const wait = (ms: number) => sleep(ms, undefined, { signal }).catch(error => { signal.throwIfAborted(); throw error; });
+  const replaced = async () => await prisma.culinaryMemory.count({ where: { restaurantId, importTicket: ticket } }) === 0;
+  const quietUntil = Date.now() + quietMs;
+  for (let left = quietMs; left > 0; left = quietUntil - Date.now()) {
+    await wait(Math.min(checkMs, left));
+    if (await replaced()) return "debounced";
+  }
+  // Starting a paid run that cannot finish would only waste it: the cron recovers the marker.
+  if (deadline - Date.now() <= MINIMUM_ROW_TIME_MS) return "deferred";
   for (;;) {
     const result = await processMemory(restaurantId, generator, config, new Date(), signal, { afterImport: true });
-    if (result !== "locked" && result !== "busy") return result;
-    await sleep(pollMs, undefined, { signal }).catch(error => { signal?.throwIfAborted(); throw error; });
+    if (result !== "locked" && result !== "busy") {
+      if (IMPORT_SETTLED.has(result)) {
+        await prisma.culinaryMemory.updateMany({ where: { restaurantId, importTicket: ticket }, data: { importPendingAt: null } });
+      }
+      return result;
+    }
+    if (await replaced()) return "debounced";
+    await wait(pollMs);
   }
 }
 
