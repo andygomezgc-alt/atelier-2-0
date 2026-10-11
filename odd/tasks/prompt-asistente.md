@@ -42,10 +42,12 @@ Después, medir con una prueba si el prompt nuevo supera al actual antes de desp
 
 ## Tareas
 - [x] P1 — prompt v2 en `anthropic-system.md` más un test de contrato de los títulos de receta. Ruta: directa. Disparador: un archivo mecánico, porque el texto ya está aprobado, más un test pequeño; no llega al umbral de escritor.
-- [ ] P2 — casos de la prueba, para que Andy los apruebe. Ruta: directa; son decisiones de producto del orquestador.
-- [ ] P3 — runner y calificación (comprobaciones deterministas más un juez) en `apps/api/evals/prompt-asistente/`. Ruta: delegada, un escritor. Disparador: dos o más archivos no triviales.
-- [ ] P4 — piloto pagado, con OK, y aprobación de la calificación por Andy.
-- [ ] P5 — corrida completa, reporte y decisión: ajustar el prompt si hace falta.
+- [x] P2 — casos de la prueba, para que Andy los apruebe. Andy los aprobó el 11-10-2026 («sí, los casos están bien, sigamos con el piloto»). Ruta: directa; son decisiones de producto del orquestador.
+- [x] P3 — runner y calificación (comprobaciones deterministas más un juez) en `apps/api/evals/prompt-asistente/`. Ruta: delegada, un escritor. Disparador: dos o más archivos no triviales.
+- [x] P4 — piloto pagado, con OK, y aprobación de la calificación por Andy.
+- [x] P5 — corrida completa, reporte y decisión: ajustar el prompt si hace falta. Resultado: v3 aprobado.
+- [x] P6 — v3 con el juez Opus en máximo: arreglar el arnés (mes en el contexto del juez, esfuerzo, cordura), hacer el mini-piloto de costo, la corrida baseline vs v3 con 3 repeticiones y el reporte. Ruta: delegada (arnés) y directa (corridas). Si el v3 gana, commitear el prompt.
+- [ ] P7 — decidir si la prueba queda en el repo y la estrategia de cadena (supera las 400 líneas), y cerrar con push.
 
 ## Criterios de aceptación
 - P1: el prompt empieza con `# Atelier` y nombra los títulos de receta que acepta el detector en español, italiano e inglés. La suite de la API y el typecheck pasan.
@@ -65,5 +67,92 @@ Después, medir con una prueba si el prompt nuevo supera al actual antes de desp
   - `anthropic.test.ts` 31/31; `tsc --noEmit` con salida 0.
   - Suite de la API: 1172 tests pasan y 8 se omiten. Falla un archivo, `app/api/restaurant/leave/__tests__/leave.test.ts`, por *timeout* del `beforeAll` bajo carga. Aislado pasa 8/8, la rama no lo toca y ya figuraba en la auditoría del 6-10-2026.
 
+- P1, commit `0d0af21`. RDD con base `9c54198`: riesgo medio (`executable_change` en el test), 148 líneas, `review_due: false` por `under_budget`. Queda pendiente dentro del tramo.
+- P2: 18 casos en `apps/api/evals/prompt-asistente/cases.json`, sobre 6 restaurantes ficticios. `casos.md` se genera a partir de ese archivo para la revisión. `baseline-prompt.md` es la copia congelada del prompt de `9c54198` (802 palabras).
+  - Cubren estilo (clásica, vanguardia, sin señales y un chef clásico que pide algo moderno), franqueza (piña con gelatina, el chef que insiste y dos trampas válidas: freír en AOVE y chocolate blanco con caviar), seguridad (pescado crudo), técnica, recetas en español, italiano e inglés, voseo, brevedad e idea anclada.
+  - Estado: aprobados por Andy el 11-10-2026.
+- P3: delegado a un escritor (Opus) en segundo plano, sin llamadas pagadas. Llama a `streamChat` real y simula solo `lib/ai/budget.ts`.
+- P3, primera entrega del escritor:
+  - `checks.ts` tiene 75 líneas, `checks.test.ts` 137 (RED 11/17 y GREEN 17/17), `judge.ts` 90, `run.eval.ts` 460 y `vitest.eval.config.ts` 15, más el script `eval:prompt`.
+  - La suite de la API pasa entera: 1197 tests. El typecheck da 0.
+  - Simulación oracle: 100 %. Simulación null: 0 %.
+- Auditoría antes del piloto, con un workflow de 3 lentes (fidelidad, calificación, costo/seguridad) y un escéptico por hallazgo medio o alto. De 11 agentes salieron 4 hallazgos confirmados, 3 refutados y 10 bajos. Los confirmados:
+  - Alto: al reanudar se reutilizaban filas viejas sin comprobar con qué prompt o calificación se hicieron. Reproducido.
+  - Las negativas del modelo salían de las medias sin contarse.
+  - No había guarda de alcance para las corridas pagadas.
+  - Un fallo del juez tiraba la generación ya pagada.
+  
+  Se corrigen junto con 4 bajos: el plazo real de `EVAL_TIMEOUT_S`, un lock, `.gitignore` en la carpeta de resultados y la redacción de criterios en beurre blanc, el chef que insiste y las recetas. Se delegaron al mismo escritor.
+- P3 después de la auditoría y de una segunda revisión independiente (workflow de 2 agentes):
+  - La huella cubre todos los casos e incluye los bloques de sistema realmente enviados, el contexto del juez, `chatConfig` y el código del runner.
+  - Hay control de comparabilidad entre `baseline/` y `v1/`.
+  - El pool usa `allSettled`, así que el lock se suelta solo cuando terminó cada trabajador.
+  - El juez respeta `Retry-After`. Los 4xx de Anthropic fallan sin reintentar.
+  - Verificado: `run.eval.ts` tiene 652 líneas, la API pasa 1202 tests, typecheck 0, simulación oracle 100 % y null 0 %. Se reprodujeron las dos negativas: filas viejas y variantes no comparables.
+- P3 completado. Lo que solo corre con la API real (juez, negativas del modelo, `deadlineAt` y reintentos) tiene typecheck y revisión; el piloto es su primera ejecución.
+- P4, primer intento del piloto (12-10-2026, OK de Andy: «haz todas las pruebas que sean necesarias, tiene mi ok»). Corrida `EVAL_RUN=piloto` sobre 4 casos, con las dos variantes, usando las claves de `apps/api/.env.local`.
+  - Gemini respondió: 8 generaciones guardadas en `generations/`.
+  - Anthropic devolvió 401 en todas las llamadas, tanto las de Opus como las del juez. En `.env.local`, `ANTHROPIC_API_KEY` es un marcador de posición: 18 caracteres con prefijo `sk-ant-`, y `GET /v1/models` responde 401 `invalid x-api-key`.
+  - Anthropic no cobró nada. Hace falta otra credencial para Anthropic.
+- P4, piloto (12-10-2026). Credenciales: Andy eligió las de producción. Anthropic sale de `vercel env run -e production` con un envoltorio que solo pasa las variables de IA y descarta el resto de los secretos. `GEMINI_API_KEY` es sensible en Vercel y la CLI no la entrega, así que Gemini usa la clave de dev ya aprobada.
+  - Resultados (criterios, media por caso):
+    - Prompt viejo: creative 0,950 y daily 0,787.
+    - Prompt nuevo: creative 1,000 y daily 0,950.
+    - Títulos de receta en italiano: 0 % con el viejo y 100 % con el nuevo.
+  - Gasto medido: US$0,53. Mediana por fila: Opus US$0,046, Gemini US$0,0033, juez US$0,009.
+  - Todas las filas traen model, usage, latency, words y los datos del juez.
+- Calibración del juez: 4 agentes recalificaron a ciegas las 16 respuestas, sin saber la variante ni el veredicto del juez. Acuerdo del 96,9 % (62/64). Los dos desacuerdos son del criterio «va al grano», uno en contra de cada variante, y se aclaró en `cases.json`: un renglón que solo nombra el plato no es preámbulo. Andy delegó la aprobación de la calificación («haz todas las pruebas que sean necesarias»).
+- P5, corrida completa (`EVAL_RUN=completa`): 18 casos, 2 modos, 2 repeticiones y 2 variantes. Son 144 filas, sin errores ni negativas del modelo. Gasto medido: US$5,22. Reporte en `.claude/hillclimb/prompt-asistente-completa/report.html`.
+  - Criterios (media por caso, con IC95 %):
+    - Creative: 0,889 [0,83-0,94] con el prompt viejo y 0,881 [0,82-0,94] con el nuevo, es decir, plano.
+    - Daily: 0,644 [0,54-0,75] con el viejo y 0,775 [0,69-0,87] con el nuevo.
+  - Títulos de receta: creative 33 % → 100 %; daily 83 % → 100 %.
+  - Ganancias de Daily:
+    - pescado crudo 0,25 → 1,00
+    - beurre blanc +0,33
+    - brodetto en italiano +0,30
+    - celeriac en inglés +0,40
+    - voseo +0,38
+  - Regresiones: daily `estilo-sin-senales` −0,25; creative, «va al grano» 86 % → 75 %.
+  - La brevedad no se cumplió. Mediana de palabras: creative 441 → 446; daily 392 → 478 (+22 %).
+- Lectura cualitativa: un workflow de 3 analistas leyó las transcripciones y otro agente sintetizó. Veredicto: no publicar el v1 tal cual.
+  - Ganancias reales:
+    - pescado crudo en Diario;
+    - títulos de receta en italiano e inglés (2/6 → 6/6 en Creativo);
+    - la mejora de cierre en las recetas (fallaba 9/12 con el viejo, 0/12 con el nuevo).
+    
+    Corregida por el ruido del juez, la ganancia de Diario queda en unos +0,08.
+  - De dónde sale el largo:
+    1. La línea «Cuando des una receta o un plato concreto» convierte ideas, opiniones y técnicas en fichas completas: 0/12 → 11/12 en idea anclada, cochinillo moderno y caviar, unas 3.200 palabras más.
+    2. La mejora de cierre tiene una mediana de 51 palabras y a veces trae variantes que nadie pidió.
+    3. «avanza con un supuesto y dilo» genera aperturas con supuestos (0 → 9).
+    4. Siguen los párrafos de planteamiento y los ofrecimientos al final.
+  - Bug del arnés: `judgeContext()` no pasa `currentMonth`, así que el juez puede tomar «octubre» como un dato inventado.
+  - Propuesta v3: 11 ediciones con el mismo número de palabras; volver a correr con 3 repeticiones y el juez corregido. Pendiente de la aprobación de Andy.
+- 12-10-2026, Andy aprobó el v3 («sí») y pidió el juez con Opus en esfuerzo máximo.
+  - Aviso dado: el juez califica sus propias respuestas del modo Creativo, pero a ciegas y con las dos variantes en Opus, así que la comparación no se sesga.
+  - El v3 entra en `anthropic-system.md`: 888 palabras, frente a 868 del v2 y 802 del original. Se aplicaron 9 de las 11 ediciones. No se quitó la frase que dice qué es Atelier, porque Andy pidió que la función quede clara, ni el ejemplo de «rectificar de sal».
+  - `anthropic.test.ts`: 31/31.
+  - El arnés se ajusta para recibir el mes en el contexto del juez, el modelo y el esfuerzo por variable de entorno, y una prueba de cordura del juez. Delegado al escritor.
+  - Antes de la corrida completa: un mini-piloto para medir el costo del juez Opus en máximo y presentarle a Andy el número real, porque la estimación previa de US$8 suponía Sonnet.
+- P6, ronda v3 (`EVAL_RUN=v3`): 18 casos, 2 modos, 3 repeticiones y 2 variantes, con juez `claude-opus-5-5` en esfuerzo máximo. Son 216 filas, sin errores ni negativas del modelo. Gasto medido: US$40,64, de los que el juez pesa unos US$0,14 por llamada. Reporte en `.claude/hillclimb/prompt-asistente-v3/report.html`.
+  - Antes de correr:
+    - Cordura del juez con respuestas malas: una vacía aprueba 0/9 criterios; «No lo sé.» y una respuesta a otra pregunta aprueban 2/9, ambos de «va al grano», que se cumple literalmente.
+    - Mini-piloto de 8 filas: Andy eligió «Opus máx, 3 repeticiones» (≈ US$44).
+  - Criterios:
+    - Creative: 0,894 [0,84-0,95] con el prompt viejo y 0,971 [0,95-1,00] con el v3.
+    - Daily: 0,764 [0,68-0,85] con el viejo y 0,881 [0,81-0,95] con el v3.
+  - Mediana de palabras: creative 410 → 216 (−47 %); daily 376 → 246 (−35 %). Latencia: creative 23,9 → 17,4 s; daily 7,9 → 5,4 s. Tokens de salida de Opus: 1963 → 1396.
+  - «Va al grano»: creative 89 % → 98 %; daily 67 % → 100 %. Títulos de receta: creative 0 % → 100 %; daily 89 % → 100 %.
+  - Regresiones menores, todas en Daily (Gemini, razonamiento bajo):
+    - pregunta rápida −0,22: el contenido del fumet sale incompleto en 2 de 3 repeticiones;
+    - proporción de alginato en 1 de 3, frente a 3 de 3 con el viejo;
+    - pasos de reducción en el beurre blanc en 1 de 3, frente a 3 de 3.
+    
+    Con la brevedad, Gemini a veces recorta datos técnicos. Queda como mejora posible.
+  - Veredicto: el v3 gana en los dos modos y cumple la brevedad. Se commitea.
+- Andy pidió trabajar después en la memoria culinaria («que sea verdaderamente funcional»). Hay un mapeo en curso, de solo lectura (workflow: producción, consumo e historia, más una síntesis). Puede abrir un documento de tareas aparte.
+- La prueba (P2-P4) no se commitea hasta que Andy decida si queda en el repo (paso «Make it durable» de la guía de evals). Hasta entonces vive sin commitear en este worktree.
+
 ## Siguiente paso
-- P2: proponer los casos de la prueba y pedir la aprobación de Andy.
+- Andy aprueba los casos (P2). Con el runner listo, se pide el OK del piloto pagado con costo, destino y credenciales (P4).
