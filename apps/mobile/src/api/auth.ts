@@ -1,6 +1,7 @@
 import { apiFetch, BASE, TOKEN_KEY, ApiError, NetworkError } from "./client";
 import * as SecureStore from "@/src/lib/secure-storage";
 import * as FileSystem from "expo-file-system/legacy";
+import { getDeviceLanguage } from "@/src/lib/device-language";
 
 export type MeUser = {
   id: string;
@@ -30,7 +31,7 @@ export function verifyMagicLink(
 ): Promise<{ accessToken: string; user: MeUser }> {
   return apiFetch("/api/mobile/auth/verify", {
     method: "POST",
-    body: JSON.stringify({ token, email }),
+    body: JSON.stringify({ token, email, languagePref: getDeviceLanguage() }),
   });
 }
 
@@ -42,7 +43,7 @@ export function loginWithGoogle(
 ): Promise<{ accessToken: string; user: MeUser }> {
   return apiFetch("/api/mobile/auth/google", {
     method: "POST",
-    body: JSON.stringify({ idToken }),
+    body: JSON.stringify({ idToken, languagePref: getDeviceLanguage() }),
   });
 }
 
@@ -73,7 +74,7 @@ export function loginWithApple(
 ): Promise<{ accessToken: string; user: MeUser }> {
   return apiFetch("/api/mobile/auth/apple", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, languagePref: getDeviceLanguage() }),
   });
 }
 

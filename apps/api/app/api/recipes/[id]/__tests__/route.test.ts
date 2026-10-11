@@ -5,8 +5,8 @@ import type { Role } from "@atelier/db";
 
 const { db, guard } = vi.hoisted(() => {
   const recipe = { findUnique: vi.fn(), updateMany: vi.fn() };
-  const recipeIngredient = { deleteMany: vi.fn(), createMany: vi.fn() };
-  const product = { count: vi.fn() };
+  const recipeIngredient = { findMany: vi.fn(), deleteMany: vi.fn(), createMany: vi.fn() };
+  const product = { count: vi.fn(), findMany: vi.fn(), create: vi.fn() };
   const $transaction = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
     cb({
       recipe: { updateMany: recipe.updateMany, findUnique: recipe.findUnique },
@@ -84,14 +84,82 @@ const APPROVED = { ...DRAFT, state: "approved" };
 beforeEach(() => {
   db.recipe.findUnique.mockReset().mockResolvedValue(DRAFT);
   db.recipe.updateMany.mockReset().mockResolvedValue({ count: 1 });
+  db.recipeIngredient.findMany.mockReset().mockResolvedValue([]);
   db.recipeIngredient.deleteMany.mockReset().mockResolvedValue({ count: 0 });
   db.recipeIngredient.createMany.mockReset().mockResolvedValue({ count: 1 });
   db.product.count.mockReset().mockResolvedValue(0);
+  db.product.findMany.mockReset().mockResolvedValue([]);
+  db.product.create.mockReset();
   db.$transaction.mockClear();
   guard.requireAuth.mockReset();
 });
 
 describe("PATCH /api/recipes/[id]", () => {
+  const storedIngredients = [
+    { id: "row-1", recipeId: "rec-1", productId: null, position: 0, rawText: "200 g potato", qty: 200, unit: "g", pezzatura: null, mermaOverridePct: null, pesoCalculoG: null },
+    { id: "row-2", recipeId: "rec-1", productId: null, position: 1, rawText: "100 g carrot", qty: 100, unit: "g", pezzatura: null, mermaOverridePct: null, pesoCalculoG: null },
+  ];
+  const incomingIngredients = storedIngredients.map(({ id: _id, recipeId: _recipeId, position: _position, ...row }) => row);
+  function withStoredIngredients(rows = storedIngredients) {
+    db.recipeIngredient.findMany.mockResolvedValue(rows);
+    db.recipe.findUnique.mockResolvedValue({ ...DRAFT, recipeIngredients: rows });
+  }
+
+  it("A9 skips deleteMany/createMany for unchanged resolved ingredients during a normal editor save", async () => {
+    authAs("admin");
+    withStoredIngredients();
+    const response = await patch({ salePrice: 2500, recipeIngredients: incomingIngredients });
+    expect(response.status).toBe(200);
+    expect(db.recipe.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ salePrice: 2500 }) }));
+    expect(db.recipeIngredient.deleteMany).not.toHaveBeenCalled();
+    expect(db.recipeIngredient.createMany).not.toHaveBeenCalled();
+  });
+
+  it("A9 compares resolved rows rather than omitted client quantities and units", async () => {
+    authAs("admin");
+    withStoredIngredients();
+    expect((await patch({ recipeIngredients: incomingIngredients.map(({ rawText }) => ({ rawText })) })).status).toBe(200);
+    expect(db.recipeIngredient.deleteMany).not.toHaveBeenCalled();
+    expect(db.recipeIngredient.createMany).not.toHaveBeenCalled();
+  });
+
+  it("A9 does not rewrite an already empty ingredient list", async () => {
+    authAs("admin");
+    withStoredIngredients([]);
+    expect((await patch({ recipeIngredients: [] })).status).toBe(200);
+    expect(db.recipeIngredient.deleteMany).not.toHaveBeenCalled();
+    expect(db.recipeIngredient.createMany).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["quantity", { qty: 201 }], ["unit", { unit: "kg" }], ["ingredient", { rawText: "200 g tomato" }],
+    ["product", { productId: "product-1" }], ["piece size", { pezzatura: "large" }],
+    ["waste override", { mermaOverridePct: 10 }], ["costing weight", { pesoCalculoG: 180 }],
+  ])("A9 still replaces rows for a changed %s", async (_label, change) => {
+    authAs("admin");
+    withStoredIngredients();
+    db.product.count.mockResolvedValue(1);
+    const ingredients = incomingIngredients.map((row, index) => index ? row : { ...row, ...change });
+    expect((await patch({ recipeIngredients: ingredients })).status).toBe(200);
+    expect(db.recipeIngredient.deleteMany).toHaveBeenCalledOnce();
+    expect(db.recipeIngredient.createMany).toHaveBeenCalledWith({
+      data: ingredients.map((row, position) => ({ ...row, position, recipeId: "rec-1" })),
+    });
+  });
+
+  it("A9 preserves a changed ingredient order and removes rows when the list is cleared", async () => {
+    authAs("admin");
+    withStoredIngredients();
+    const reordered = [...incomingIngredients].reverse();
+    expect((await patch({ recipeIngredients: reordered })).status).toBe(200);
+    expect(db.recipeIngredient.createMany).toHaveBeenCalledWith({ data: reordered.map((row, position) => ({ ...row, position, recipeId: "rec-1" })) });
+    db.recipeIngredient.deleteMany.mockClear();
+    db.recipeIngredient.createMany.mockClear();
+    expect((await patch({ recipeIngredients: [] })).status).toBe(200);
+    expect(db.recipeIngredient.deleteMany).toHaveBeenCalledOnce();
+    expect(db.recipeIngredient.createMany).not.toHaveBeenCalled();
+  });
+
   it("preserves explicit costing fields instead of reinterpreting the display text", async () => {
     authAs("admin");
     const ingredient = { rawText: "300 g patata", qty: 250, unit: "g", pezzatura: "mediana", mermaOverridePct: 0, pesoCalculoG: 150 };

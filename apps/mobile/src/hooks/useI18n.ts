@@ -4,8 +4,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { t as translate, type Language, type TranslationKey } from "@atelier/i18n";
+import { getDeviceLanguage } from "@/src/lib/device-language";
 
-let currentLang: Language = "es";
+let currentLang: Language = getDeviceLanguage();
 const listeners = new Set<(lang: Language) => void>();
 
 // Locale para formatear fechas/números en el idioma del chef (no el del

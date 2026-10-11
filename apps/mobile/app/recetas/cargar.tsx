@@ -70,6 +70,7 @@ export default function CargarRecetaScreen() {
         contentJson: extracted.contentJson,
         recipeIngredients: extracted.recipeIngredients,
         pendingMatches: extracted.pendingMatches,
+        origin: "import",
       });
       showToast(t("toast_recipe_uploaded"));
       router.replace("/recetas/nueva");
@@ -149,6 +150,7 @@ export default function CargarRecetaScreen() {
         contentJson: extracted.contentJson,
         recipeIngredients: extracted.recipeIngredients,
         pendingMatches: extracted.pendingMatches,
+        origin: "import",
       });
       showToast(t("toast_recipe_uploaded"));
       router.replace("/recetas/nueva");

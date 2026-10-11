@@ -13,6 +13,7 @@ export type RecipeEditorDraft = {
   portionsText: string;
   editId: string | null;
   sourceConversationId: string | null;
+  origin?: "import" | null;
 };
 
 export function recipeDraftKey(identity: { userId: string; restaurantId: string }, editId: string | null): string {
@@ -39,6 +40,7 @@ export function loadRecipeDraft(key: string): Promise<RecipeEditorDraft | null> 
       || !Array.isArray(draft.ingredients) || !draft.ingredients.every(i => typeof i.rawText === "string")
       || !Array.isArray(draft.method) || !draft.method.every(m => typeof m === "string")
       || !(draft.editId === null || typeof draft.editId === "string")
+      || !(draft.origin === undefined || draft.origin === null || draft.origin === "import")
       || !(draft.sourceConversationId === null || typeof draft.sourceConversationId === "string")) {
       throw new Error("Invalid recipe draft");
     }

@@ -7,6 +7,17 @@ export function relearnCategory(
   return { ...draft, corrections: draft.corrections.filter(correction => correction.key !== key) };
 }
 
+export function memoryPatchBody(data: CulinaryMemoryResponse, draft: CulinaryMemoryResponse) {
+  return {
+    expectedVersion: data.version,
+    enabled: draft.enabled,
+    identityLine: draft.identityLine,
+    city: draft.city?.trim() || null,
+    corrections: draft.corrections,
+    excludedKeys: draft.excludedKeys,
+  };
+}
+
 export function hasUnsavedRelearn(
   saved: CulinaryMemoryResponse | null,
   draft: CulinaryMemoryResponse | null,

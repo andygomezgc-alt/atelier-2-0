@@ -40,6 +40,11 @@ export function setUnauthorizedHandler(fn: (() => void) | null): void {
   onUnauthorized = fn;
 }
 
+// Mismo cierre de sesión para transportes fuera de apiFetch (el stream SSE del chat).
+export function notifyUnauthorized(): void {
+  onUnauthorized?.();
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
@@ -80,7 +85,7 @@ export async function apiFetch<T>(
     }
     // Sesión inválida en un request autenticado → cerrar sesión limpia. Solo si
     // había token (un 401 sin token es esperable en flujos pre-login).
-    if (res.status === 401 && token) onUnauthorized?.();
+    if (res.status === 401 && token) notifyUnauthorized();
     throw new ApiError(res.status, message, code);
   }
 

@@ -82,6 +82,14 @@ describe("culinary memory cron", () => {
     expect(await (await GET(request())).json()).toEqual({ processed: 2, results: ["infrastructure_error", "completed"] });
   });
 
+  it.each(["superseded", "failed"])("A9 does not start a second paid run in the same cron tick after a %s run becomes due again", async status => {
+    db.culinaryMemory.findMany.mockResolvedValue([{ restaurantId: "a" }]);
+    processMemory.mockResolvedValue(status);
+    expect(await (await GET(request())).json()).toEqual({ processed: 1, results: [status] });
+    expect(db.culinaryMemory.findMany).toHaveBeenCalledOnce();
+    expect(processMemory).toHaveBeenCalledOnce();
+  });
+
   it("stops starting rows when the deadline margin is exhausted", async () => {
     db.culinaryMemory.findMany.mockResolvedValue([{ restaurantId: "a" }, { restaurantId: "b" }]);
     processMemory.mockImplementationOnce(async () => {

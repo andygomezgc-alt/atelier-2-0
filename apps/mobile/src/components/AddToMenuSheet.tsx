@@ -5,7 +5,7 @@
 //  2. "create-menu"  — form nombre + season para crear menú nuevo
 //  3. "section-list" — listar secciones del menú elegido + "Sin sección" +
 //                      CTA crear sección nueva
-//  4. "create-section" — preset chips (Antipasti freddi, etc.) o nombre custom
+//  4. "create-section" — preset chips (traducidos con i18n) o nombre custom
 //
 // El item se persiste en el paso 3 o 4, con sectionId apropiado. Si el chef
 // crea un menú nuevo, automáticamente avanza al paso 3 (el menú está vacío).
@@ -34,6 +34,7 @@ import {
 import { showToast } from "./Toast";
 import { Button } from "./Button";
 import { BottomSheet } from "./BottomSheet";
+import { SECTION_PRESETS } from "./SectionPresetSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
 
@@ -46,19 +47,6 @@ type Props = {
 type Step = "menu-list" | "create-menu" | "section-list" | "create-section";
 
 const DEFAULT_PRICE_CENTS = 2800;
-
-// Presets de sección — términos italianos clásicos, no se traducen.
-const SECTION_PRESETS: ReadonlyArray<string> = [
-  "Antipasti freddi",
-  "Antipasti caldi",
-  "Primi piatti",
-  "Secondi di mare",
-  "Secondi di terra",
-  "Contorni",
-  "Pre-dessert",
-  "Dolci",
-  "Piccola pasticceria",
-];
 
 export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
   const { t } = useI18n();
@@ -166,9 +154,11 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
     if (!cleaned) return;
     setCreating(true);
     try {
+      const existingIds = new Set(selectedMenu.sections.map((s) => s.id));
       const updated = await createSection(selectedMenu.id, { name: cleaned });
       // updated.sections incluye la nueva; encontrar su id.
-      const newSection = updated.sections.find((s) => s.name === cleaned);
+      // El nombre puede repetirse: la sección nueva es la que no estaba antes.
+      const newSection = updated.sections.find((s) => !existingIds.has(s.id) && s.name === cleaned);
       const targetSectionId = newSection?.id ?? null;
       await addMenuItem(selectedMenu.id, {
         recipeId,
@@ -179,6 +169,7 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
       onClose();
     } catch (err) {
       showToast(apiErrorMessage(err, t));
+    } finally {
       setCreating(false);
     }
   }
@@ -318,16 +309,19 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
         {step === "create-section" ? (
           <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
             <View style={styles.presetGrid}>
-              {SECTION_PRESETS.map((name) => (
-                <Pressable
-                  key={name}
-                  style={styles.presetChip}
-                  onPress={() => void createSectionAndAdd(name)}
-                  disabled={creating}
-                >
-                  <Text style={styles.presetChipLabel}>{name}</Text>
-                </Pressable>
-              ))}
+              {SECTION_PRESETS.map((key) => {
+                const name = t(key);
+                return (
+                  <Pressable
+                    key={key}
+                    style={styles.presetChip}
+                    onPress={() => void createSectionAndAdd(name)}
+                    disabled={creating}
+                  >
+                    <Text style={styles.presetChipLabel}>{name}</Text>
+                  </Pressable>
+                );
+              })}
             </View>
             <View style={styles.customRow}>
               <TextInput

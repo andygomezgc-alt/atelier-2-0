@@ -26,6 +26,8 @@ const h = vi.hoisted(() => ({
   requestMagicLink: vi.fn(),
   getCredentialStateAsync: vi.fn(),
   addRevokeListener: vi.fn(() => ({ remove: vi.fn() })),
+  setLang: vi.fn(),
+  getDeviceLanguage: vi.fn(() => "it"),
 }));
 
 h.getAllKeys.mockImplementation(async () => [...h.asyncStorage.keys()]);
@@ -66,6 +68,8 @@ vi.mock("expo-apple-authentication", () => ({
     TRANSFERRED: 3,
   },
 }));
+vi.mock("@/src/hooks/useI18n", () => ({ setLang: h.setLang }));
+vi.mock("@/src/lib/device-language", () => ({ getDeviceLanguage: h.getDeviceLanguage }));
 
 import {
   APPLE_USER_ID_KEY,
@@ -99,6 +103,7 @@ describe("useAuth bootstrap (P1-4)", () => {
     h.asyncStorage.clear();
     h.getAllKeys.mockClear();
     h.multiRemove.mockClear();
+    h.setLang.mockClear();
     // Evita que el atajo dev-login se dispare antes de mirar el token.
     delete process.env.EXPO_PUBLIC_DEV_AUTH_EMAIL;
   });
@@ -140,6 +145,7 @@ describe("useAuth bootstrap (P1-4)", () => {
     await bootstrap();
     expect(getAuthState()).toMatchObject({ status: "signed-in" });
     expect(h.deleteItemAsync).not.toHaveBeenCalled();
+    expect(h.setLang).toHaveBeenCalledWith("es");
   });
 
   it("fetchMe ok sin restaurante → needs-restaurant", async () => {
@@ -193,5 +199,6 @@ describe("useAuth bootstrap (P1-4)", () => {
     expect([...h.asyncStorage.entries()]).toEqual([["otro.modulo", "keep"]]);
     expect(getAuthState()).toEqual({ status: "signed-out" });
     expect(h.deleteItemAsync).toHaveBeenCalledWith(APPLE_USER_ID_KEY);
+    expect(h.setLang).toHaveBeenCalledWith("it");
   });
 });
