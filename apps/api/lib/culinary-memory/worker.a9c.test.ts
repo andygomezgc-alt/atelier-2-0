@@ -17,7 +17,7 @@ const { db, loadEvidence, reserveGeneration, logger } = vi.hoisted(() => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("@atelier/db", () => ({ prisma: db, Prisma: { DbNull: "DB_NULL" } }));
-vi.mock("./service", () => ({ loadEvidence, correctionsOf: (value: unknown) => value ?? [] }));
+vi.mock("./service", () => ({ loadEvidence, loadIngredientStats: async () => [], correctionsOf: (value: unknown) => value ?? [] }));
 vi.mock("../ai/budget", () => ({ reserveGeneration, settleGeneration: vi.fn() }));
 vi.mock("../logger", () => ({ logger }));
 

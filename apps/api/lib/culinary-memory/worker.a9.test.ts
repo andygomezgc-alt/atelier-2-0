@@ -14,7 +14,7 @@ const { db, loadEvidence } = vi.hoisted(() => ({
   loadEvidence: vi.fn(),
 }));
 vi.mock("@atelier/db", () => ({ prisma: db, Prisma: { DbNull: "DB_NULL" } }));
-vi.mock("./service", () => ({ loadEvidence, correctionsOf: (value: unknown) => value ?? [] }));
+vi.mock("./service", () => ({ loadEvidence, loadIngredientStats: async () => [], correctionsOf: (value: unknown) => value ?? [] }));
 
 import { maintainMemoryRuns, memoryFailureFingerprint, processMemory } from "./worker";
 

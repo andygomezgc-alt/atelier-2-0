@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { Prisma, prisma } from "@atelier/db";
 import { MemoryKeySchema } from "@atelier/shared";
 import { ZodError } from "zod";
 import { AiBudgetError } from "../ai/budget-policy";
 import { logger } from "../logger";
-import { loadEvidence, correctionsOf } from "./service";
+import { loadEvidence, loadIngredientStats, correctionsOf } from "./service";
 import { evidenceHash, memoryContext, MIN_TREND_SOURCES, type StoredFact } from "./evidence";
 import { generateMemory, MAX_TRENDS, memoryProviderConfig, type MemoryGenerator } from "./provider";
 import {
@@ -24,7 +25,7 @@ class MemoryRunSuperseded extends Error {}
 // Cut-off or unparseable replies are provider faults: they must never count against the input.
 const TRUNCATED_REPLY = /^(?:memory_response_incomplete|ai_response_incomplete|ai_response_invalid)$/;
 
-export type MemoryRunStatus = "unconfigured" | "skipped" | "unchanged" | "suppressed" | "busy" | "completed" | "superseded" | "failed";
+export type MemoryRunStatus = "unconfigured" | "skipped" | "locked" | "unchanged" | "suppressed" | "busy" | "completed" | "superseded" | "failed";
 
 /** Identifies one deterministic input failure: the same input fails again only under the same model and prompt. */
 export function memoryFailureFingerprint(input: { inputHash: string; model: string; promptVersion: string }): string {
@@ -77,7 +78,13 @@ export async function processMemory(
   config = memoryProviderConfig(),
   now = new Date(),
   signal?: AbortSignal,
+  options: { afterImport?: boolean } = {},
 ): Promise<MemoryRunStatus> {
+  // After an import the memory learns right away: no weekly window or retry wait,
+  // only a live lock stops it. It still counts as the regular attempt of a new cycle.
+  // Every other guard still applies, including the failure suppression: an import
+  // that changes the evidence changes the fingerprint, so it is never suppressed.
+  const afterImport = options.afterImport === true;
   if (!config) return "unconfigured";
   signal?.throwIfAborted();
   const memory = await prisma.culinaryMemory.findUnique({
@@ -85,15 +92,15 @@ export async function processMemory(
     include: { restaurant: { select: { identityLine: true, languageDefault: true } } },
   });
   if (!memory?.enabled) return "skipped";
-  if (memory.lockExpiresAt && memory.lockExpiresAt > now) return "skipped";
+  if (memory.lockExpiresAt && memory.lockExpiresAt > now) return afterImport ? "locked" : "skipped";
 
-  const retryDue = !!memory.retryAt && memory.retryAt <= now;
-  if (memory.retryAt && !retryDue) {
+  const retryDue = !afterImport && !!memory.retryAt && memory.retryAt <= now;
+  if (!afterImport && memory.retryAt && !retryDue) {
     await prisma.culinaryMemory.updateMany({ where: { restaurantId, version: memory.version, dirtyRevision: memory.dirtyRevision }, data: { nextCheckAt: memory.retryAt } });
     return "skipped";
   }
   const regularAnchor = later(memory.cycleStartedAt, memory.lastAttemptAt);
-  if (!retryDue && regularAnchor && +now - +regularAnchor < WEEKLY_INTERVAL) {
+  if (!afterImport && !retryDue && regularAnchor && +now - +regularAnchor < WEEKLY_INTERVAL) {
     await prisma.culinaryMemory.updateMany({
       where: { restaurantId, version: memory.version, dirtyRevision: memory.dirtyRevision },
       data: { nextCheckAt: new Date(+regularAnchor + WEEKLY_INTERVAL) },
@@ -141,7 +148,9 @@ export async function processMemory(
   const regularNextAt = new Date(+now + WEEKLY_INTERVAL);
   const oldestRegularAttempt = new Date(+now - WEEKLY_INTERVAL);
   const claimed = await prisma.$transaction(async tx => {
-    const attemptGate = retryDue
+    const attemptGate = afterImport
+      ? {}
+      : retryDue
       ? { retryAt: { lte: now } }
       : {
           retryAt: null,
@@ -264,7 +273,7 @@ export async function processMemory(
     if (evidenceHash(latest, memory.restaurant.identityLine, corrections, excludedKeys) !== hash) throw new Error("memory_sources_changed");
     signal?.throwIfAborted();
 
-    const preparedContext = memoryContext(corrections, learned, excludedKeys);
+    const preparedContext = memoryContext(corrections, learned, excludedKeys, await loadIngredientStats(restaurantId));
     const status = await prisma.$transaction(async (tx): Promise<MemoryRunStatus> => {
       const publish = (revision: number) => tx.culinaryMemory.updateMany({
         where: { ...snapshot, dirtyRevision: revision, lockToken: token },
@@ -349,6 +358,27 @@ export async function processMemory(
       where: { restaurantId, lockToken: token },
       data: { lockToken: null, lockExpiresAt: null },
     });
+  }
+}
+
+/**
+ * Learns right after an imported recipe. While another run holds the lock it waits
+ * and tries again, so two imports close together end up learning from both recipes.
+ * The signal bounds the whole wait.
+ */
+export async function learnAfterImport(
+  restaurantId: string,
+  { generator, config, signal, pollMs = 3000 }: {
+    generator?: MemoryGenerator;
+    config?: ReturnType<typeof memoryProviderConfig>;
+    signal?: AbortSignal;
+    pollMs?: number;
+  } = {},
+): Promise<MemoryRunStatus> {
+  for (;;) {
+    const result = await processMemory(restaurantId, generator, config, new Date(), signal, { afterImport: true });
+    if (result !== "locked" && result !== "busy") return result;
+    await sleep(pollMs, undefined, { signal }).catch(error => { signal?.throwIfAborted(); throw error; });
   }
 }
 
