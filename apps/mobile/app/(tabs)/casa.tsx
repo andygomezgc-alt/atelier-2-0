@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { NetworkError } from "@/src/components/NetworkError";
@@ -25,6 +26,7 @@ import { EditRestaurantNameSheet } from "@/src/components/EditRestaurantNameShee
 import { LeaveRestaurantSheet } from "@/src/components/LeaveRestaurantSheet";
 import { showToast } from "@/src/components/Toast";
 import { apiFetch } from "@/src/api/client";
+import { uploadRestaurantPhoto } from "@/src/api/auth";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import type { Role } from "@atelier/shared";
@@ -40,6 +42,9 @@ export default function CasaScreen() {
   const [leaveOpen, setLeaveOpen] = useState(false);
   // P2-14 (Casa) — guard anti doble-tap del regenerar código.
   const [regenerating, setRegenerating] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const photoUploadLock = useRef(false);
+  const [failedPhotoUrl, setFailedPhotoUrl] = useState<string | null>(null);
   // A-12 — el bloque del código de invitación se muestra colapsado por default
   // cuando el chef todavía cocina solo (staff.length === 1). Discreto sin
   // perder utilidad: tocás para expandir cuando querés invitar a alguien.
@@ -183,6 +188,50 @@ export default function CasaScreen() {
 
   const restaurant = rs.data;
   const restaurantInitial = restaurant.name[0]?.toUpperCase() ?? "R";
+  const visiblePhotoUrl = restaurant.photoUrl !== failedPhotoUrl ? restaurant.photoUrl : null;
+  const photoContent = visiblePhotoUrl ? (
+    <Image
+      source={{ uri: visiblePhotoUrl }}
+      style={styles.heroPhotoImage}
+      onError={() => setFailedPhotoUrl(visiblePhotoUrl)}
+    />
+  ) : (
+    <Text style={styles.heroPhotoText}>{restaurantInitial}</Text>
+  );
+
+  async function handleChangeRestaurantPhoto() {
+    if (!canEditRestaurant || photoUploadLock.current) return;
+    photoUploadLock.current = true;
+    setPhotoUploading(true);
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        showToast(t("cargar_permiso_galeria"));
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 0.6,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset) return;
+      const mimeType = asset.mimeType ?? "image/jpeg";
+      if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
+        showToast(t("casa_photo_unsupported"));
+        return;
+      }
+
+      await uploadRestaurantPhoto(asset.uri, mimeType);
+      await reload();
+    } catch {
+      showToast(t("casa_photo_upload_failed"));
+    } finally {
+      photoUploadLock.current = false;
+      setPhotoUploading(false);
+    }
+  }
   // A-12 — staff = 1 significa "chef solo, todavía no invitó a nadie"; en ese
   // caso el bloque del código arranca colapsado para no robar protagonismo.
   const codeStartsCollapsed = restaurant.staff.length <= 1;
@@ -202,9 +251,38 @@ export default function CasaScreen() {
         }
       >
         <View style={styles.heroRow}>
-          <View style={styles.heroPhoto}>
-            <Text style={styles.heroPhotoText}>{restaurantInitial}</Text>
-          </View>
+          {canEditRestaurant ? (
+            <Pressable
+              style={({ pressed }) => [
+                styles.heroPhoto,
+                pressed && styles.heroPhotoPressed,
+                photoUploading && styles.heroPhotoUploading,
+              ]}
+              onPress={handleChangeRestaurantPhoto}
+              disabled={photoUploading}
+              accessibilityRole="button"
+              accessibilityLabel={t(photoUploading ? "casa_photo_uploading" : "casa_photo_edit")}
+              accessibilityState={{ disabled: photoUploading, busy: photoUploading }}
+            >
+              {photoContent}
+              <View style={styles.heroPhotoBadge}>
+                {photoUploading ? (
+                  <ActivityIndicator size="small" color={colors.paper} />
+                ) : (
+                  <Ionicons name="camera-outline" size={14} color={colors.paper} />
+                )}
+              </View>
+            </Pressable>
+          ) : (
+            <View
+              style={styles.heroPhoto}
+              accessible
+              accessibilityRole="image"
+              accessibilityLabel={t("casa_photo_view", { name: restaurant.name })}
+            >
+              {photoContent}
+            </View>
+          )}
           <View style={styles.heroMeta}>
             <Text style={styles.eyebrow}>{t("eyebrow_casa")}</Text>
             <View style={styles.nameRow}>
@@ -397,6 +475,22 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: radii.lg,
     backgroundColor: colors.teal,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroPhotoImage: { width: 56, height: 56, borderRadius: radii.lg },
+  heroPhotoPressed: { opacity: 0.8 },
+  heroPhotoUploading: { opacity: 0.7 },
+  heroPhotoBadge: {
+    position: "absolute",
+    right: -4,
+    bottom: -4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.teal,
+    borderWidth: 1,
+    borderColor: colors.paper,
     alignItems: "center",
     justifyContent: "center",
   },
