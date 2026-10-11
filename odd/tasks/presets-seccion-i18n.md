@@ -35,7 +35,7 @@ Solo `SectionPresetSheet.tsx`, las claves nuevas de los tres diccionarios y su t
 - Entrega: `ask-on-risk` (por defecto). Previsión de unas 120 líneas en un solo commit, por debajo del presupuesto de 400.
 
 ## Tareas
-- [x] P1 — presets de sección desde i18n. Ruta: delegada, un escritor (Sonnet). Disparador: dos archivos no triviales (el test y el componente).
+- [x] P1 — presets de sección desde i18n (`ce2dc92`). Ruta: delegada, un escritor (Sonnet). Disparador: dos archivos no triviales (el test y el componente).
 
 ## Criterios de aceptación
 - Con la app en español, la hoja muestra, en este orden: Entradas frías, Entradas calientes, Primeros platos, Principales de mar, Principales de tierra, Guarniciones, Prepostre, Postres, Petits fours. En inglés y en italiano, las listas de las decisiones, en el mismo orden.
@@ -53,3 +53,7 @@ Solo `SectionPresetSheet.tsx`, las claves nuevas de los tres diccionarios y su t
 - RED, observado por el supervisor con la producción sin cambios: fallan 3 de 4 por la razón esperada. En `es` y en `en` llegan los rótulos italianos, y el toque llama a `onPick("Primi piatti")`. El caso `it` pasa: es de caracterización y protege a los usuarios en italiano.
 - GREEN, repetido por el supervisor: test nuevo 4/4; móvil 38 archivos y 392 tests; i18n 11 tests; typecheck de móvil e i18n con salida 0. `expo export` de Android: «android bundles (1)».
 - Datos: no hay migración. Las secciones ya guardadas conservan su nombre; solo las nuevas toman el nombre traducido.
+- RDD sobre `ce2dc92` (base `cabc15d`): riesgo medio (`executable_change` en el test), `review_due: false` por `under_budget` (231 líneas). La revisión queda pendiente en el corte.
+
+## Siguiente paso
+Decisión de Andy: abrir PR a `main` y, si quiere, el arreglo aparte de `AddToMenuSheet.tsx`.
