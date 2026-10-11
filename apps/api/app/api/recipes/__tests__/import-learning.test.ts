@@ -21,7 +21,8 @@ const contentJson = { ingredients: ["200 g tomate"], method: ["Asar"], notes: ""
 const create = (body: Record<string, unknown>) => POST(new NextRequest("https://test.local/api/recipes", {
   method: "POST", body: JSON.stringify({ title: "Tomate asado", contentJson, ...body }), headers: { "Content-Type": "application/json" },
 }));
-const saved = (state: string, reused = false) => saveNewRecipe.mockResolvedValue({ recipe: { id: "recipe", state }, reused });
+const saved = (state: string, reused = false, importTicket: number | null = 1) =>
+  saveNewRecipe.mockResolvedValue({ recipe: { id: "recipe", state }, reused, importTicket });
 /** Runs what the route deferred until after the response, as Next does. */
 const runAfter = async () => { for (const [task] of after.mock.calls) await (task as () => Promise<unknown>)(); };
 
@@ -56,6 +57,7 @@ describe("learning right after an imported recipe", () => {
     ["the recipe stays a draft", () => saved("draft"), { origin: "import" }],
     ["the recipe is not an import", () => saved("in_test"), {}],
     ["no provider is configured", () => providerConfig.mockReturnValue(null), { origin: "import" }],
+    ["the save took no import ticket (memory off or no row)", () => saved("in_test", false, null), { origin: "import" }],
   ])("does not learn when %s", async (_label, arrange, body) => {
     arrange();
     expect((await create(body)).status).toBeLessThan(300);

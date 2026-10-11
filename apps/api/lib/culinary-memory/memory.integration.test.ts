@@ -60,12 +60,12 @@ async function seed(name: string, recipes = 3) {
 }
 
 /** Carga una receta como lo hace la app (origen "import"); un admin la deja aprobada. */
+const importSaved = (restaurantId: string, ingredient: string) => saveNewRecipe(restaurantId, `${restaurantId}-user`, {
+  title: ingredient, origin: "import",
+  contentJson: { ingredients: [`200 g ${ingredient}`], method: [`Asar ${ingredient}`], notes: "" },
+}, "admin");
 async function importRecipe(restaurantId: string, ingredient: string) {
-  const { recipe } = await saveNewRecipe(restaurantId, `${restaurantId}-user`, {
-    title: ingredient, origin: "import",
-    contentJson: { ingredients: [`200 g ${ingredient}`], method: [`Asar ${ingredient}`], notes: "" },
-  }, "admin");
-  return recipe;
+  return (await importSaved(restaurantId, ingredient)).recipe;
 }
 const sourceIds = async (restaurantId: string) =>
   ((await memoryOf(restaurantId)).learned as Array<{ sources: { id: string }[] }>).flatMap(fact => fact.sources.map(source => source.id));
@@ -380,6 +380,22 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
     expect(await learnAfterImport(id, { generator: counted, config, pollMs: 10 })).toBe("skipped");
     expect(calls).toBe(0);
     expect(await prisma.culinaryMemoryRun.count({ where: { restaurantId: id } })).toBe(0);
+  });
+
+  it("cada carga nueva toma un ticket y deja la marca; con la memoria apagada no hay ticket", async () => {
+    const id = await seed("import-ticket");
+    const before = Date.now();
+    const first = await importSaved(id, "pimiento");
+    const second = await importSaved(id, "cebolla");
+    expect([first.importTicket, second.importTicket]).toEqual([1, 2]);
+    const marked = await memoryOf(id);
+    expect(marked.importTicket).toBe(2);
+    // La marca se guarda en UTC como el resto de fechas (un segundo de holgura para el reloj).
+    expect(+marked.importPendingAt!).toBeGreaterThanOrEqual(before - 1000);
+    expect(+marked.importPendingAt!).toBeLessThanOrEqual(Date.now() + 1000);
+    await patchCulinaryMemory(id, { expectedVersion: marked.version, enabled: false });
+    expect((await importSaved(id, "calabaza")).importTicket).toBeNull();
+    expect((await memoryOf(id)).importTicket).toBe(2);
   });
 
   it("después de una carga, el cron sigue respetando la semana", async () => {

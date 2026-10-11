@@ -59,9 +59,10 @@ export const POST = withAuth(
   { permission: "edit_recipe", body: CreateRecipeRequestSchema },
   async (ctx, body: CreateRecipeRequest) => {
     try {
-      const { recipe, reused } = await saveNewRecipe(ctx.restaurantId, ctx.userId, body, ctx.role);
+      const { recipe, reused, importTicket } = await saveNewRecipe(ctx.restaurantId, ctx.userId, body, ctx.role);
       logger.info("recipe_saved", { recipeId: recipe.id, restaurantId: ctx.restaurantId, reused });
-      const learns = !reused && body.origin === "import" && (recipe.state === "approved" || recipe.state === "in_test");
+      // No ticket means nothing to learn: the memory is off or has no row.
+      const learns = !reused && importTicket !== null && body.origin === "import" && (recipe.state === "approved" || recipe.state === "in_test");
       const config = learns ? memoryProviderConfig() : null;
       if (config) learnFromImport(ctx.restaurantId, config);
       return NextResponse.json(projectRecipeListItem(recipe), { status: reused ? 200 : 201 });

@@ -524,6 +524,10 @@ model CulinaryMemory {
   updatedAt DateTime?
   lockToken String?
   lockExpiresAt DateTime?
+  /// Bumped by every new import saved in testing or approved; a waiting import run stops when it changes.
+  importTicket Int @default(0)
+  /// Set with importTicket and cleared once that import is learned; an old marker is recovered by the cron.
+  importPendingAt DateTime?
   @@index([enabled, nextCheckAt])
 }
 

@@ -95,6 +95,41 @@ describe("atomic, retryable recipe creation", () => {
     await expect(saveNewRecipe("r1", "u1", { ...request, origin: "import" }, "admin")).rejects.toMatchObject({ code: "recipe_save_conflict", status: 409 });
     expect(db.recipe.create).toHaveBeenCalledOnce();
   });
+  describe("import ticket for the culinary memory", () => {
+    const ticketQueries = () => db.$queryRaw.mock.calls.filter(([sql]) => (sql as string[]).join("?").includes("importTicket"));
+    beforeEach(() => {
+      db.$queryRaw.mockImplementation(async (sql: TemplateStringsArray) => sql.join("?").includes("importTicket") ? [{ importTicket: 7 }] : []);
+    });
+
+    it.each(["admin", "chef_executive"] as const)("a new import by %s takes the next ticket in the recipe's transaction", async role => {
+      const saved = await saveNewRecipe("r1", "u1", { ...request, origin: "import" }, role);
+      expect(saved.importTicket).toBe(7);
+      expect(ticketQueries()).toHaveLength(1);
+      const [sql, ...values] = ticketQueries()[0]!;
+      // Only the restaurant's own row, and only while its memory is on.
+      expect((sql as string[]).join("?")).toMatch(/"importTicket"\s*=\s*"importTicket"\s*\+\s*1[\s\S]*"importPendingAt"[\s\S]*"restaurantId"\s*=\s*\?[\s\S]*enabled/);
+      expect(values).toContain("r1");
+      expect(db.$transaction).toHaveBeenCalledOnce();
+      expect(db.recipe.create.mock.invocationCallOrder[0]).toBeLessThan(db.$queryRaw.mock.invocationCallOrder.at(-1)!);
+    });
+
+    it("a manual recipe takes no ticket", async () => {
+      expect((await saveNewRecipe("r1", "u1", request, "admin")).importTicket).toBeNull();
+      expect(ticketQueries()).toHaveLength(0);
+    });
+
+    it("a reused retry takes no new ticket", async () => {
+      await saveNewRecipe("r1", "u1", { ...request, origin: "import" }, "admin");
+      const retry = await saveNewRecipe("r1", "u1", { ...request, origin: "import" }, "admin");
+      expect(retry).toMatchObject({ reused: true, importTicket: null });
+      expect(ticketQueries()).toHaveLength(1);
+    });
+
+    it("returns no ticket when the memory is off or has no row", async () => {
+      db.$queryRaw.mockResolvedValue([]);
+      expect((await saveNewRecipe("r1", "u1", { ...request, origin: "import" }, "admin")).importTicket).toBeNull();
+    });
+  });
   it("propagates a write failure out of the transaction instead of returning success", async () => {
     db.recipeIngredient.createMany.mockRejectedValue(new Error("write failed"));
     await expect(saveNewRecipe("r1", "u1", request, "admin")).rejects.toThrow("write failed");

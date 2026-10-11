@@ -12,7 +12,7 @@ export async function saveNewRecipe(restaurantId: string, userId: string, body: 
       const prior = await tx.recipe.findUnique({ where: { restaurantId_authorId_clientRequestId: { restaurantId, authorId: userId, clientRequestId: body.clientRequestId } }, include: recipeListInclude });
       if (prior) {
         if (prior.deletedAt || prior.requestHash !== requestHash) throw new RecipeSaveError("recipe_save_conflict", 409);
-        return { recipe: prior, reused: true };
+        return { recipe: prior, reused: true, importTicket: null };
       }
     }
     const source = body.sourceConversationId ? await tx.conversation.findFirst({ where: { id: body.sourceConversationId, restaurantId }, select: { ideaId: true } }) : null;
@@ -28,7 +28,13 @@ export async function saveNewRecipe(restaurantId: string, userId: string, body: 
     } });
     if (rows.length) await tx.recipeIngredient.createMany({ data: rows.map(row => ({ ...row, recipeId: created.id })) });
     if (source?.ideaId) await tx.idea.updateMany({ where: { id: source.ideaId, restaurantId, status: { not: "archived" } }, data: { status: "archived" } });
+    // A new import in testing or approved takes the next import ticket of a memory that is on, in this
+    // same transaction: the import run waits on it, and a later import's ticket makes an earlier run stop.
+    // A raw Date is sent as timestamptz; store it in UTC like Prisma does, whatever the session time zone.
+    const ticket = state === "draft" ? [] : await tx.$queryRaw<{ importTicket: number }[]>`UPDATE "CulinaryMemory"
+      SET "importTicket" = "importTicket" + 1, "importPendingAt" = ${new Date()}::timestamptz AT TIME ZONE 'UTC'
+      WHERE "restaurantId" = ${restaurantId} AND enabled RETURNING "importTicket"`;
     const recipe = await tx.recipe.findUniqueOrThrow({ where: { id: created.id }, include: recipeListInclude });
-    return { recipe, reused: false };
+    return { recipe, reused: false, importTicket: ticket[0]?.importTicket ?? null };
   }, { timeout: 30_000, maxWait: 10_000 });
 }
