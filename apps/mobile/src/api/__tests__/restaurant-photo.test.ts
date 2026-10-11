@@ -7,6 +7,9 @@ vi.mock("expo-file-system/legacy", () => ({
   uploadAsync: h.upload,
   FileSystemUploadType: { MULTIPART: 1 },
 }));
+vi.mock("expo-localization", () => ({
+  getLocales: () => [{ languageCode: "it", languageTag: "it-IT" }],
+}));
 vi.mock("@/src/api/client", async () => {
   const actual = await vi.importActual<typeof import("@/src/api/client")>("@/src/api/client");
   return { ...actual, BASE: "https://api.example.com" };
