@@ -169,6 +169,7 @@ export function AddToMenuSheet({ open, recipeId, onClose }: Props) {
       onClose();
     } catch (err) {
       showToast(apiErrorMessage(err, t));
+    } finally {
       setCreating(false);
     }
   }
