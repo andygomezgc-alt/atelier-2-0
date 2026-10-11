@@ -66,6 +66,16 @@ beforeEach(() => {
 });
 afterEach(async () => { if (screen) await act(async () => { screen.unmount(); }); });
 
+describe("idea card author", () => {
+  it("does not render the author's name on the card", async () => {
+    h.role = "sous_chef";
+    h.listIdeas.mockResolvedValue([{ ...idea, authorName: "Marta Ruiz" }]);
+    await render();
+    expect(visibleText()).not.toContain("Marta Ruiz");
+    expect(visibleText()).toContain("inicio_idea_action");
+  });
+});
+
 describe("idea card chat permission", () => {
   it("does not show the assistant action to a restaurant viewer", async () => {
     await render();

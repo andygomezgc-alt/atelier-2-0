@@ -48,7 +48,12 @@ Orden: P1 → P2 → P3.
   - RED observado por el escritor: módulo inexistente, `where` sin `OR`, `expected 200 to be 404` en GET y POST de mensajes, receta guardada con origen ajeno.
   - GREEN verificado por el padre: 99 archivos / 1210 tests; typecheck exit 0.
   - Sin cambiar (fuera de alcance): `DELETE /api/conversations/[id]`, `messages/stop` y `messages/bulk` siguen con "autor del chat o admin"; a un compañero le responden 403 en vez de 404.
-- [ ] P3 — tarjeta de idea en `apps/mobile/app/(tabs)/inicio.tsx` sin `authorName`.
+  - Commit `8d38df4`.
+- [x] P3 — tarjeta de idea en `apps/mobile/app/(tabs)/inicio.tsx` sin `authorName`.
+  - Ruta: delegada (Sonnet), mecánico (1 componente + test).
+  - RED observado por el escritor: `idea card author > does not render the author's name on the card` (`expected '… Marta Ruiz …' not to contain 'Marta Ruiz'`).
+  - GREEN verificado por el padre: `pnpm --filter mobile test` 445 tests; `pnpm --filter mobile typecheck` exit 0.
+  - Llega a los usuarios con el próximo build móvil; la privacidad ya funciona solo con el despliegue de la API.
 
 ## Criterios de aceptación
 - Un sous-chef no ve, edita, borra ni abre en el chat ideas de otro (404).
@@ -61,7 +66,8 @@ Orden: P1 → P2 → P3.
 - `pnpm --filter mobile test` y typecheck del móvil (P3).
 
 ## Entrega
-- Previsión ≈ 430 líneas (mayoría tests); estrategia `ask-on-risk`, se decide si el conteo real pasa claramente de 400.
+- Previsión ≈ 430 líneas (mayoría tests); estrategia `ask-on-risk`. Tras P2 el conteo llegó a 479: Andy eligió **un solo PR** (`exception-ok`) con los 3 commits.
+- Revisión RDD de P1+P2 (base 3cc6ff2 → 8d38df4): consentida, lente `review-reliability`, **aprobada** y reconocida (linaje `review-02dc3bde22bd54bf`, autoridad quemada). Frontera revisada: `8d38df4`. Observaciones no bloqueantes: chat huérfano tras borrar la idea (no aplica: `Conversation.idea` es `onDelete: Cascade`) y el mock de `create-recipe` que simula el filtro (aceptable a nivel unitario).
 - Un commit por tarea; push de la rama al cerrar. Fusionar a `main` (despliegue a producción) es decisión de Andy.
 
 ## Progreso
@@ -69,6 +75,7 @@ Orden: P1 → P2 → P3.
 
 - P1 hecho (130+/19−).
 - P2 hecho (≈160+/10−).
+- P3 hecho (11+/3−).
 
 ## Siguiente paso
-P3.
+Push de la rama y PR único a `main`. Fusionar (despliega la API a producción) es decisión de Andy.
