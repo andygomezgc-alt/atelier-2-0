@@ -367,6 +367,14 @@ Ventana local, 10-10-2026. Rama `feat/memoria-encendida`, punto de partida `af93
   - Comprobación del padre: api 1177/1177, app 416/416, shared 291/291, i18n 41/41, tsc OK, integración 22/22 en Postgres local, sin marcadores de conflicto; `npx expo export --platform android`: «android bundles (1)» (`dist` borrado).
 - **RDD final** contra `main` (57 archivos, 2.208 líneas): Andy la concedió, pero START devolvió `lens_context_budget_exceeded` y no se creó autoridad de revisión. Revisado: la porción `af93843..5d94a58`. Sin revisar por RDD: E4, E5, E7, E9 y la adaptación.
 
+- **PR encadenados (11-10-2026).** Andy aprobó dividir la rama: #14 (cimientos, contra `main`) → #15 (memoria en el servidor) → #16 (aprendizaje tras carga) → #17 (contexto del asistente) → #18 (app: cargas y ciudad) → #19 (app: botón Memoria) → #20 (documentación). Ramas `feat/memoria-encendida-1` a `-7`; el árbol de `-7` era idéntico al de `feat/memoria-encendida`. Cada corte pasó solo tsc y las suites completas (y la integración donde aplica). CI de #14 verde; los demás no tienen CI hasta apuntar a `main`.
+- **RDD por candidatos** (Andy concedió los cuatro; todos **aprobados** y acusados):
+  - A, cortes 1–2 (610 líneas): avisos: `getCulinaryMemory` informa `enabled: false` si no hay fila, aunque la base cree filas encendidas (tras la migración todos tienen fila); la migración no tiene test automático (se probó a mano en Postgres local).
+  - B, corte 3 (468 líneas, cuatro lentes): avisos a vigilar: cada carga lanza una generación de pago sin límite de frecuencia (muchas cargas seguidas, muchas llamadas); el plazo de 60 s empieza antes de `after()`; `origin` lo manda el cliente, así que cualquiera con `edit_recipe` puede guardar «en prueba» en vez de borrador (un admin ya podía aprobar).
+  - C, cortes 4–5 (414 líneas): avisos menores (recorte de `contentJson`, huella del autoguardado antiguo, lectura del nombre en serie en la vista previa).
+  - D, cortes 6–7 (718 líneas): avisos menores sobre el hook del botón.
+
 ## Siguiente paso
-1. Revisión RDD en candidatos que quepan: dividir lo que la rama añade sobre `main` en PR encadenados (skill `chained-pr`), por ejemplo servidor (E1, E3, E4, E5), asistente (E2) y app (E6, E7, E8) más documentación.
-2. Decisión de Andy sobre la entrega: fusión con `main` (Vercel aplica la migración), después binarios de Android e iPhone.
+1. Andy fusiona #14 → #20 en orden (al fusionar cada uno, reapuntar el siguiente a `main` y cerrarlo y reabrirlo para que corra CI). #14 lleva la migración: Vercel la aplica al fusionar.
+2. Binarios nuevos de Android e iPhone después del servidor.
+3. Seguimiento propuesto: limitar la frecuencia del aprendizaje tras carga (por ejemplo, una generación por restaurante cada X minutos).
