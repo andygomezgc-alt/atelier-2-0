@@ -374,7 +374,9 @@ Ventana local, 10-10-2026. Rama `feat/memoria-encendida`, punto de partida `af93
   - C, cortes 4–5 (414 líneas): avisos menores (recorte de `contentJson`, huella del autoguardado antiguo, lectura del nombre en serie en la vista previa).
   - D, cortes 6–7 (718 líneas): avisos menores sobre el hook del botón.
 
+- **Entrega (11-10-2026, a petición de Andy).** #14 a #20 fusionados en orden en `main` (`fcba0cd`), cada uno con CI verde tras reapuntarlo a `main`; árbol de `main` idéntico al de la rama. Vercel desplegó cada fusión (todas `Ready`) y `prisma migrate status` en producción (solo lectura): 35 migraciones, al día. `rebake-mobile.sh both`: Android versionCode 8 (EAS `4eea4751-36c7-49c1-84cc-e95c1aa7985a`, APK de 111.407.834 bytes, descarga comprobada) e iPhone build 14 (EAS `12689053-3670-4846-9878-5f098b172d2f`). Los tres envíos a TestFlight fallaron (`ERRORED`, sin mensaje); la API de App Store Connect responde `FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED` en todo: falta aceptar un acuerdo de Apple, y eso solo lo puede hacer Andy.
+
 ## Siguiente paso
-1. Andy fusiona #14 → #20 en orden (al fusionar cada uno, reapuntar el siguiente a `main` y cerrarlo y reabrirlo para que corra CI). #14 lleva la migración: Vercel la aplica al fusionar.
-2. Binarios nuevos de Android e iPhone después del servidor.
-3. Seguimiento propuesto: limitar la frecuencia del aprendizaje tras carga (por ejemplo, una generación por restaurante cada X minutos).
+1. Andy acepta el acuerdo pendiente en App Store Connect → Business.
+2. `eas submit --platform ios --profile testflight --id 12689053-3670-4846-9878-5f098b172d2f`, añadir la build 14 al grupo Chefs y pedir la revisión beta.
+3. Seguimiento propuesto: limitar la frecuencia del aprendizaje tras carga.
