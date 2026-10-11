@@ -72,9 +72,16 @@ describe("conversation history and new chats", () => {
     const res = await GET(new NextRequest(url));
     expect(await res.json()).toEqual([{ id: "chat-1", modelUsed: "daily", ideaText: null, title: "Un menú de otoño", createdAt: row.createdAt.toISOString() }]);
     expect(h.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { restaurantId: "restaurant-1" }, take: 50,
+      where: { restaurantId: "restaurant-1", OR: [{ ideaId: null }, { authorId: "chef-1" }, { idea: { authorId: "chef-1" } }] }, take: 50,
       include: expect.objectContaining({ messages: { where: { role: "user" }, orderBy: { createdAt: "asc" }, take: 1, select: { content: true } } }),
     }));
+  });
+
+  it("lists every restaurant chat for an admin, teammates' idea chats included", async () => {
+    h.role = "admin";
+    h.findMany.mockResolvedValue([]);
+    await GET(new NextRequest(url));
+    expect(h.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { restaurantId: "restaurant-1" }, take: 50 }));
   });
 
   it("preserves an anchored idea as the title and returns only a short preview", async () => {

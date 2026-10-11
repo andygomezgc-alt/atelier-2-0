@@ -41,7 +41,13 @@ Orden: P1 → P2 → P3.
   - Ruta: delegada (Opus), disparador de escritor (4 rutas + 5 archivos de test).
   - RED observado por el escritor: 11 fallos por la razón correcta (`expected 200 to be 404`, `where` sin `authorId`).
   - GREEN verificado por el padre: `pnpm --filter api test` 98 archivos / 1192 tests; `pnpm --filter api typecheck` exit 0.
-- [ ] P2 — helper único en `apps/api/lib` (regla + `where` de Prisma); aplicarlo en `GET /api/conversations` (dentro del `where`, antes del `take 50`), `GET /api/conversations/[id]/messages`, `prepareChatTurn` (`chat-turn-service.ts`) y `sourceConversationId` de `create-recipe.ts`.
+  - Commit `b965b97`. RDD assess: medium, `under_budget` (302 líneas), pendiente en el slice.
+- [x] P2 — helper único en `apps/api/lib` (regla + `where` de Prisma); aplicarlo en `GET /api/conversations` (dentro del `where`, antes del `take 50`), `GET /api/conversations/[id]/messages`, `prepareChatTurn` (`chat-turn-service.ts`) y `sourceConversationId` de `create-recipe.ts`.
+  - Ruta: delegada (Opus), disparador de escritor (5 archivos de producción + 5 de test).
+  - `apps/api/lib/conversation-access.ts`: `canAccessConversation` y `accessibleConversationsWhere`. En `create-recipe.ts` el cambio es 1 línea + 1 import (el `findFirst` usa el mismo `where`).
+  - RED observado por el escritor: módulo inexistente, `where` sin `OR`, `expected 200 to be 404` en GET y POST de mensajes, receta guardada con origen ajeno.
+  - GREEN verificado por el padre: 99 archivos / 1210 tests; typecheck exit 0.
+  - Sin cambiar (fuera de alcance): `DELETE /api/conversations/[id]`, `messages/stop` y `messages/bulk` siguen con "autor del chat o admin"; a un compañero le responden 403 en vez de 404.
 - [ ] P3 — tarjeta de idea en `apps/mobile/app/(tabs)/inicio.tsx` sin `authorName`.
 
 ## Criterios de aceptación
@@ -62,6 +68,7 @@ Orden: P1 → P2 → P3.
 - Worktree creado, rama `feat/ideas-privadas` desde `origin/main` 3cc6ff2.
 
 - P1 hecho (130+/19−).
+- P2 hecho (≈160+/10−).
 
 ## Siguiente paso
-P2.
+P3.

@@ -10,6 +10,7 @@ import { recordAiTokens } from "@/lib/ai-quota";
 import { chatMemory } from "@/lib/culinary-memory/service";
 import { logger } from "@/lib/logger";
 import type { AuthedContext } from "@/lib/permissions-guard";
+import { canAccessConversation } from "@/lib/conversation-access";
 import { CHAT_HEARTBEAT_MS, claimChatTurn, saveChatTurn, finishChatTurn, releaseChatTurn, ownsChatTurn, type ChatTurn, type ClaimedChatTurn } from "@/lib/chat-turn";
 
 interface PrepareChatTurnInput {
@@ -80,9 +81,10 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
     if (!isPreview) {
       const conversation = await prisma.conversation.findUnique({
         where: { id: conversationId },
-        include: { idea: { select: { text: true } } },
+        include: { idea: { select: { text: true, authorId: true } } },
       });
-      if (!conversation || conversation.restaurantId !== user.restaurantId) {
+      // A refused chat never reaches the lease, replay or generation below.
+      if (!conversation || conversation.restaurantId !== user.restaurantId || !canAccessConversation(conversation, user)) {
         return Response.json({ error: "Not found" }, { status: 404 });
       }
       pinnedIdeaText = conversation.idea?.text ?? null;

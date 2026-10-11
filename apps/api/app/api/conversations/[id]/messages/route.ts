@@ -4,6 +4,7 @@ import { PostMessageRequestSchema, can } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { prepareChatTurn, runChatTurn } from "@/lib/chat-turn-service";
 import { CHAT_HEARTBEAT_MS } from "@/lib/chat-turn";
+import { canAccessConversation } from "@/lib/conversation-access";
 import { ChatError } from "@/lib/ai/chat";
 import { logger } from "@/lib/logger";
 
@@ -20,8 +21,11 @@ export async function GET(
     return new Response(JSON.stringify({ error: "Not in a restaurant" }), { status: 403 });
   const { id } = await params;
 
-  const conv = await prisma.conversation.findUnique({ where: { id } });
-  if (!conv || conv.restaurantId !== ctx.restaurantId)
+  const conv = await prisma.conversation.findUnique({
+    where: { id },
+    select: { restaurantId: true, authorId: true, ideaId: true, idea: { select: { authorId: true } } },
+  });
+  if (!conv || conv.restaurantId !== ctx.restaurantId || !canAccessConversation(conv, ctx))
     return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
 
   const messages = await prisma.message.findMany({

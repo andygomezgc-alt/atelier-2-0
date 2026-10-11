@@ -3,6 +3,7 @@ import { prisma } from "@atelier/db";
 import { CreateConversationRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
+import { accessibleConversationsWhere } from "@/lib/conversation-access";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +13,9 @@ export async function GET(req: NextRequest) {
   if (!ctx.restaurantId)
     return NextResponse.json({ error: "Not in a restaurant" }, { status: 403 });
 
+  // Teammates' idea chats are filtered in the query, before the 50-chat page.
   const conversations = await prisma.conversation.findMany({
-    where: { restaurantId: ctx.restaurantId },
+    where: accessibleConversationsWhere(ctx.restaurantId, ctx),
     orderBy: { createdAt: "desc" },
     take: 50,
     include: {

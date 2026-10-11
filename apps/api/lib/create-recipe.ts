@@ -3,6 +3,7 @@ import { prisma } from "@atelier/db";
 import { importedRecipeState, type CreateRecipeRequest, type Role } from "@atelier/shared";
 import { recipeListInclude } from "./projections";
 import { lockRecipeSave, resolveIngredientDrafts, RecipeSaveError } from "./products/recipe-save";
+import { accessibleConversationsWhere } from "./conversation-access";
 
 export async function saveNewRecipe(restaurantId: string, userId: string, body: CreateRecipeRequest, role: Role) {
   const requestHash = createHash("sha256").update(JSON.stringify({ ...body, clientRequestId: undefined })).digest("hex");
@@ -15,7 +16,7 @@ export async function saveNewRecipe(restaurantId: string, userId: string, body: 
         return { recipe: prior, reused: true };
       }
     }
-    const source = body.sourceConversationId ? await tx.conversation.findFirst({ where: { id: body.sourceConversationId, restaurantId }, select: { ideaId: true } }) : null;
+    const source = body.sourceConversationId ? await tx.conversation.findFirst({ where: { id: body.sourceConversationId, ...accessibleConversationsWhere(restaurantId, { userId, role }) }, select: { ideaId: true } }) : null;
     if (body.sourceConversationId && !source) throw new RecipeSaveError("invalid_conversation_reference");
     const rows = await resolveIngredientDrafts(tx, restaurantId, body.recipeIngredients ?? []);
     // Imported recipes skip the draft so the culinary memory can learn from them right away.

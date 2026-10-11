@@ -64,6 +64,22 @@ describe("atomic, retryable recipe creation", () => {
     expect(db.product.create).not.toHaveBeenCalled();
     expect(db.recipe.create).not.toHaveBeenCalled();
   });
+  it("treats a chat born from a teammate's idea like an unknown source and leaves the idea alone", async () => {
+    // The chat exists in the restaurant; only the privacy filter of the query excludes it.
+    db.conversation.findFirst.mockImplementation(async ({ where }) => where.OR ? null : { ideaId: "teammate-idea" });
+    await expect(saveNewRecipe("r1", "u1", { ...request, sourceConversationId: "teammate-chat" }, "sous_chef")).rejects.toMatchObject({ code: "invalid_conversation_reference" });
+    expect(db.conversation.findFirst.mock.calls[0]![0].where).toEqual({
+      id: "teammate-chat", restaurantId: "r1", OR: [{ ideaId: null }, { authorId: "u1" }, { idea: { authorId: "u1" } }],
+    });
+    expect(db.recipe.create).not.toHaveBeenCalled();
+    expect(db.idea.updateMany).not.toHaveBeenCalled();
+  });
+  it("lets an admin save from any idea chat of the restaurant and archives that idea", async () => {
+    db.conversation.findFirst.mockImplementation(async ({ where }) => where.OR ? null : { ideaId: "teammate-idea" });
+    await saveNewRecipe("r1", "u1", { ...request, sourceConversationId: "teammate-chat" }, "admin");
+    expect(db.recipe.create.mock.calls[0]![0].data.sourceConversationId).toBe("teammate-chat");
+    expect(db.idea.updateMany).toHaveBeenCalledWith({ where: { id: "teammate-idea", restaurantId: "r1", status: { not: "archived" } }, data: { status: "archived" } });
+  });
   it("rejects invalid product references before creating any draft", async () => {
     await expect(saveNewRecipe("r1", "u1", { ...request, recipeIngredients: [...request.recipeIngredients!, { rawText: "sal", productId: "foreign" }] }, "admin")).rejects.toMatchObject({ code: "invalid_product_reference" });
     expect(db.product.create).not.toHaveBeenCalled();

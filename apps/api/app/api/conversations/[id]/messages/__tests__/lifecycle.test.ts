@@ -49,7 +49,8 @@ interface Conversation {
   authorId: string;
   generationId: string | null;
   generationStartedAt: Date | null;
-  idea: { text: null };
+  ideaId: null;
+  idea: null;
 }
 interface StoredMessage {
   id: string;
@@ -180,7 +181,7 @@ beforeEach(() => {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     return { ...auth };
   });
-  conversation = { id: "conv-1", restaurantId: "r1", authorId: "u1", generationId: null, generationStartedAt: null, idea: { text: null } };
+  conversation = { id: "conv-1", restaurantId: "r1", authorId: "u1", generationId: null, generationStartedAt: null, ideaId: null, idea: null };
   stored = [];
   db.conversation.findUnique.mockReset().mockImplementation(async ({ where }) => where.id === conversation.id ? { ...conversation } : null);
   db.conversation.updateMany.mockReset().mockImplementation(async ({ where, data }: LeaseUpdate) => {
