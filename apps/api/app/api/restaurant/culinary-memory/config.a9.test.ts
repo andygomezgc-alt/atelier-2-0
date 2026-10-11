@@ -34,7 +34,7 @@ beforeEach(() => {
     inputHash: null, lastFailedInputHash: null, failureCount: null, lastFailedAt: null, discardStreak: 0,
     preparedContext: null, preparedRevision: -1, preparedVersion: -1,
     dirtyRevision: 0, checkedRevision: -1, nextCheckAt: new Date(), lastAttemptAt: null,
-    cycleStartedAt: null, retryAt: null, updatedAt: null, lockToken: null, lockExpiresAt: null,
+    cycleStartedAt: null, retryAt: null, updatedAt: null, lockToken: null, lockExpiresAt: null, importTicket: 0, importPendingAt: null,
   };
   db.culinaryMemory.findUnique.mockImplementation(async () => structuredClone(memory));
   db.culinaryMemory.upsert.mockImplementation(async () => structuredClone(memory));

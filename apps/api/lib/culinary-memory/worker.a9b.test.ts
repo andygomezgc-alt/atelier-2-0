@@ -89,7 +89,7 @@ beforeEach(() => {
     inputHash: null, lastFailedInputHash: null, failureCount: null, lastFailedAt: null, discardStreak: 0,
     preparedContext: null, preparedRevision: -1, preparedVersion: -1,
     dirtyRevision: 2, checkedRevision: 1, nextCheckAt: now, lastAttemptAt: null,
-    cycleStartedAt: null, retryAt: null, updatedAt: null, lockToken: null, lockExpiresAt: null,
+    cycleStartedAt: null, retryAt: null, updatedAt: null, lockToken: null, lockExpiresAt: null, importTicket: 0, importPendingAt: null,
     restaurant: { identityLine: null, languageDefault: "en" },
   };
   sources = structuredClone(originalEvidence);

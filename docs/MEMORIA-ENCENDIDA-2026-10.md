@@ -7,7 +7,7 @@ Entrega 3 de la memoria culinaria. Rama `feat/memoria-encendida`. Plan y evidenc
 - **Memoria encendida por defecto.** Los restaurantes nuevos nacen con la memoria encendida. La migración la enciende también en los restaurantes que nunca guardaron una decisión.
 - **Ciudad o zona.** Campo opcional en «Nuestra cocina» y al crear el restaurante. Se guarda en `Restaurant.city` (80 caracteres como máximo).
 - **Nombre y mes para el asistente.** El asistente recibe el nombre de perfil de quien escribe, la ciudad o zona si existe y el mes actual. El nombre y el mes van en un bloque dinámico, fuera del prefijo cacheado que comparte el equipo.
-- **Recetas cargadas.** Las que llegan de PDF, Word, foto o Google Docs quedan **aprobadas si las carga un administrador** y **en prueba si las carga el chef ejecutivo o el sous-chef**. La memoria aprende de la receta en el momento de la carga, sin esperar a la semana.
+- **Recetas cargadas.** Las que llegan de PDF, Word, foto o Google Docs quedan **aprobadas si las carga un administrador** y **en prueba si las carga el chef ejecutivo o el sous-chef**. La memoria aprende de la receta poco después de la carga, sin esperar a la semana: espera unos 3 minutos de calma tras la última carga y aprende una sola vez con todas (ver «Aprendizaje agrupado»).
 - **Ingredientes frecuentes.** La memoria cuenta, sin IA, en cuántas recetas en prueba o aprobadas aparece cada ingrediente, y añade los más repetidos (como máximo 10, presentes en al menos 2 recetas). Se excluyen los básicos (sal, pimienta, agua, aceite).
 - **Botón «Memoria» en el chat.** Botón verde (encendida) o gris (apagada) en la fila de acciones del chat. Abre «Nuestra cocina», donde se enciende o se apaga. Sin restaurante seleccionado no aparece.
 
@@ -25,7 +25,7 @@ Commits de la rama: E1 `7744427` (cimientos), E2 `bf64a66` (nombre, ubicación y
 
 - Nombre y mes: unos **25 tokens más por mensaje**, dentro del prefijo que se cachea con el hilo.
 - Ingredientes frecuentes: **hasta unos 80 tokens** más, dentro del bloque de memoria cacheado.
-- Aprendizaje: **una llamada a GLM por restaurante** en el primer cron después del despliegue (05:00 UTC), con un coste inferior a 1 céntimo. Después, el aprendizaje sigue la cadencia semanal, salvo en las cargas, que aprenden al momento.
+- Aprendizaje: **una llamada a GLM por restaurante** en el primer cron después del despliegue (05:00 UTC), con un coste inferior a 1 céntimo. Después, el aprendizaje sigue la cadencia semanal, salvo en las cargas, que aprenden unos 3 minutos después de la última de una ráfaga, con una sola llamada.
 
 ## Cómo volver atrás
 
@@ -42,6 +42,16 @@ Nada de esto se fusiona ni se despliega sin decisión de Andy.
 
 ## Estado (11-10-2026)
 
-`codex/asistente-arreglos` ya está en `main` (PR #11, #12 y #13) y `main` se fusionó en `feat/memoria-encendida` (`d66c20d`). Se adaptaron E2 (la ciudad va en los datos de identidad cacheados solo si existe; el nombre de quien escribe y el mes van como datos JSON del bloque dinámico, cargados en `chat-turn-service.ts`), E3 y E5 (sobre el `worker.ts` de A9, que conserva su supresión) y E7 (`useMemoryChip` en la pantalla dividida).
+En producción desde el 11-10-2026: servidor (PR #14 a #20), Android versionCode 8 e iPhone build 14 en TestFlight.
 
-Pendiente: la revisión RDD de lo que la rama añade sobre `main` (2.208 líneas) no cabe en el presupuesto de los revisores; hay que revisarla en partes más pequeñas (por ejemplo, PR encadenados). Después, fusión con `main` (Vercel aplica la migración) y binarios nuevos de Android e iPhone, cuando Andy lo decida.
+## Aprendizaje agrupado (12-10-2026)
+
+Antes, cada receta cargada lanzaba su propia llamada de pago a la IA: 20 cargas seguidas eran unas 20 llamadas. Ahora:
+
+- Cada carga recibe un número (ticket) en la misma transacción que la receta y espera unos 170 s; cada 15 s mira si llegó otra carga después. Si llegó, se retira (`debounced`); solo la última aprende, una vez, con todas las recetas nuevas.
+- Si la espera no deja tiempo para una corrida completa dentro del límite de Vercel (300 s), no empieza a pagar (`deferred`) y deja una marca.
+- Si Vercel corta la última espera, la marca queda guardada y el cron diario la aprende una sola vez.
+- Cargas separadas más de unos 3 minutos siguen aprendiendo cada una, como antes.
+- En los registros, una ráfaga se ve como N−1 `debounced` y 1 `completed` en `culinary_memory_import_run`, con `elapsedMs`.
+
+Vuelta atrás: revertir los commits de `feat/aprendizaje-agrupado`; la migración (`importTicket`, `importPendingAt`) es aditiva y puede quedarse.
