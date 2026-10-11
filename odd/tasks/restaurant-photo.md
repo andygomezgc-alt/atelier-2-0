@@ -33,5 +33,11 @@ No production calls, blob uploads to real accounts, push, pull request, merge or
   - Re-verified on 2026-10-11 after merging main: `pnpm --filter mobile test` 443/443, `pnpm --filter @atelier/i18n test` 41/41, both typechecks and `git diff --check` passed.
   - RDD outcome: high risk (auth.ts hot path); user granted consent; four-lens review approved and acknowledged (lineage review-74f5071dd6d68207). Twelve non-blocking advisory findings; the main one, a failed reload after a successful upload reported as a failed save (casa.tsx:226-229), is follow-up work.
 
+- [x] RP2 — A failed refresh after a successful upload no longer reports the photo as not saved.
+  - Route: direct inline; one-line guard in apps/mobile/app/(tabs)/casa.tsx plus one test. Follow-up to the RP1 advisory finding (R2/R3/R4 reload-failure-misreported).
+  - Note: today useRestaurant().reload never rejects (it catches and switches Casa to NetworkError), so the misreport could not happen yet; the guard keeps the save error tied to the upload if that contract changes.
+  - RED: `pnpm --filter mobile exec vitest run src/__tests__/restaurant-photo.test.ts` failed 1/8 (toast called with casa_photo_upload_failed after a rejected reload).
+  - GREEN: same command 8/8; `pnpm --filter mobile test` 444/444; mobile typecheck and `git diff --check` passed.
+
 ## Progress and next step
-RP1 is committed, reviewed and approved. Next: open a pull request to main, merge after CI passes, then consider the reload-failure follow-up.
+RP1 merged in PR #27. RP2 committed on fix/restaurant-photo-reload; next: pull request to main and merge after CI.

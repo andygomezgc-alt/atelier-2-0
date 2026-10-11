@@ -150,6 +150,16 @@ describe("Casa restaurant photo", () => {
     expect(h.toast).toHaveBeenCalledWith("casa_photo_upload_failed");
   });
 
+  it("does not report a saved photo as failed when the refresh afterwards fails", async () => {
+    h.reload.mockRejectedValue(new Error("refresh failed"));
+    await render();
+    await act(async () => { await editPhoto()?.props.onPress(); });
+    expect(h.upload).toHaveBeenCalledOnce();
+    expect(h.reload).toHaveBeenCalledOnce();
+    expect(h.toast).not.toHaveBeenCalledWith("casa_photo_upload_failed");
+    expect(editPhoto()?.props.disabled).toBe(false);
+  });
+
   it("rejects unsupported gallery formats before upload", async () => {
     h.pick.mockResolvedValue({ canceled: false, assets: [{ uri: "file:///restaurant.heic", mimeType: "image/heic" }] });
     await render();

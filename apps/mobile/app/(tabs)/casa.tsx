@@ -203,6 +203,7 @@ export default function CasaScreen() {
     if (!canEditRestaurant || photoUploadLock.current) return;
     photoUploadLock.current = true;
     setPhotoUploading(true);
+    let uploaded = false;
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
@@ -224,9 +225,12 @@ export default function CasaScreen() {
       }
 
       await uploadRestaurantPhoto(asset.uri, mimeType);
+      uploaded = true;
       await reload();
     } catch {
-      showToast(t("casa_photo_upload_failed"));
+      // Si la subida terminó, la foto ya está guardada: un fallo al recargar no
+      // debe decir lo contrario. La recarga muestra su propio error (NetworkError).
+      if (!uploaded) showToast(t("casa_photo_upload_failed"));
     } finally {
       photoUploadLock.current = false;
       setPhotoUploading(false);
