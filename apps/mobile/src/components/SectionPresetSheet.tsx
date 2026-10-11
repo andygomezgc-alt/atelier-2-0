@@ -18,7 +18,7 @@ import { useI18n } from "@/src/hooks/useI18n";
 import { BottomSheet } from "./BottomSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
-const PRESETS: ReadonlyArray<TranslationKey> = [
+export const SECTION_PRESETS: ReadonlyArray<TranslationKey> = [
   "section_preset_cold_starters",
   "section_preset_hot_starters",
   "section_preset_first_courses",
@@ -58,7 +58,7 @@ export function SectionPresetSheet({ open, onClose, onPick }: Props) {
       <Text style={styles.title}>{t("section_add")}</Text>
         <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
           <View style={styles.grid}>
-            {PRESETS.map((key) => {
+            {SECTION_PRESETS.map((key) => {
               const name = t(key);
               return (
                 <Pressable
