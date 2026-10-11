@@ -433,23 +433,50 @@ describe("learnAfterImport", () => {
   });
 
   it("learns once after the quiet window and clears its own marker, fenced by the ticket", async () => {
-    const generate = successful();
-    const startedAt = Date.now();
-    expect(await learnAfterImport("r1", importRun({ generator: generate, quietMs: 40, checkMs: 10 }))).toBe("completed");
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(35);
-    expect(db.culinaryMemory.count.mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(generate).toHaveBeenCalledOnce();
-    expect(db.culinaryMemory.updateMany).toHaveBeenLastCalledWith({ where: { restaurantId: "r1", importTicket: 5 }, data: { importPendingAt: null } });
+    // The worker sleeps with node:timers/promises, which fake timers do not reach. Only the clock is
+    // faked, and it moves one check step per ticket check, so the count does not depend on real timing.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      db.culinaryMemory.count.mockImplementation(async () => { vi.advanceTimersByTime(10); return 1; });
+      const generate = successful();
+      const startedAt = Date.now();
+      expect(await learnAfterImport("r1", importRun({ generator: generate, quietMs: 40, checkMs: 10 }))).toBe("completed");
+      expect(Date.now() - startedAt).toBe(40);
+      // One ticket check after each 10 ms step of the 40 ms quiet window.
+      expect(db.culinaryMemory.count).toHaveBeenCalledTimes(4);
+      expect(generate).toHaveBeenCalledOnce();
+      expect(db.culinaryMemory.updateMany).toHaveBeenLastCalledWith({ where: { restaurantId: "r1", importTicket: 5 }, data: { importPendingAt: null } });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each<[string, () => void, boolean]>([
     ["unchanged", () => db.culinaryMemory.findUnique.mockResolvedValueOnce(memory({ checkedRevision: 2 })), true],
     ["skipped", () => db.culinaryMemory.findUnique.mockResolvedValueOnce(memory({ enabled: false })), true],
+    ["suppressed", () => {
+      const fingerprint = memoryFailureFingerprint({ inputHash: evidenceHash(evidence, null, [], []), model: config.model, promptVersion: MEMORY_PROMPT_VERSION });
+      db.culinaryMemory.findUnique.mockResolvedValueOnce(memory({ lastFailedInputHash: fingerprint,
+        failureCount: MEMORY_FAILURE_SUSPENSION_THRESHOLD, lastFailedAt: new Date(Date.now() - DAY) }));
+    }, true],
     ["failed", () => loadEvidence.mockResolvedValueOnce(evidence).mockResolvedValueOnce([]), false],
+    // The usage write finds the run already closed: a real MemoryRunSuperseded inside processMemory.
+    ["superseded", () => db.culinaryMemoryRun.updateMany.mockImplementation(async ({ data }) => ({ count: "inputTokens" in data ? 0 : 1 })), false],
   ])("on %s it decides whether the marker is cleared", async (result, arrange, cleared) => {
     arrange();
-    expect(await learnAfterImport("r1", importRun({ generator: successful() }))).toBe(result);
+    const generate = vi.fn(async (input, onUsage) => {
+      await onUsage({ inputTokens: 10, outputTokens: 2, reasoningTokens: 0 });
+      return successful()(input, onUsage);
+    });
+    expect(await learnAfterImport("r1", importRun({ generator: generate }))).toBe(result);
     expect(markerCleared()).toBe(cleared);
+  });
+
+  it("keeps the marker when the run throws after the quiet window", async () => {
+    db.culinaryMemory.findUnique.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(learnAfterImport("r1", importRun({ generator: successful(), quietMs: 2, checkMs: 1 }))).rejects.toThrow("database unavailable");
+    expect(db.culinaryMemory.count).toHaveBeenCalled();
+    expect(markerCleared()).toBe(false);
   });
 
   it("defers, without a lock or a payment, when the quiet window leaves no time for a run", async () => {
