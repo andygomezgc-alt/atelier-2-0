@@ -53,7 +53,7 @@ Solo `SectionPresetSheet.tsx`, las claves nuevas de los tres diccionarios y su t
 - RED, observado por el supervisor con la producción sin cambios: fallan 3 de 4 por la razón esperada. En `es` y en `en` llegan los rótulos italianos, y el toque llama a `onPick("Primi piatti")`. El caso `it` pasa: es de caracterización y protege a los usuarios en italiano.
 - GREEN, repetido por el supervisor: test nuevo 4/4; móvil 38 archivos y 392 tests; i18n 11 tests; typecheck de móvil e i18n con salida 0. `expo export` de Android: «android bundles (1)».
 - Datos: no hay migración. Las secciones ya guardadas conservan su nombre; solo las nuevas toman el nombre traducido.
-- RDD sobre `ce2dc92` (base `cabc15d`): riesgo medio (`executable_change` en el test), `review_due: false` por `under_budget` (231 líneas). La revisión queda pendiente en el corte.
+- RDD sobre `ce2dc92` (base `cabc15d`): riesgo medio (`executable_change` en el test), `review_due: false` por `under_budget` (231 líneas). Al cerrar, el preflight pidió consentimiento y Andy lo concedió: la revisión `review-d2fb0e1286527c4a` (lente `review-reliability`, sobre `81bc128`) se aprobó sin hallazgos y quedó acusada.
 
 ## Siguiente paso
 Decisión de Andy: abrir PR a `main` y, si quiere, el arreglo aparte de `AddToMenuSheet.tsx`.
