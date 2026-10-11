@@ -37,7 +37,7 @@ Solo `SectionPresetSheet.tsx`, las claves nuevas de los tres diccionarios y su t
 - Entrega: `ask-on-risk` (por defecto). La previsión era de unas 235 líneas para P1 y unas 120 para P2, pero la rama llegó a 502 contra `main`. El 11-10-2026 Andy eligió dos PR apilados a `main`:
   - PR 1: `fix/presets-seccion-i18n`, con `ce2dc92`, `81bc128` y `6ede5d4` (235 líneas).
   - PR 2: `fix/presets-seccion-i18n-2`, con `70afa99` y este registro (unas 280 líneas), apilado sobre el PR 1.
-  - PR 3: `fix/add-to-menu-creating-reset`, con `e4b5855` y esta actualización del registro (53 líneas), apilado sobre el PR 2.
+  - PR 3: `fix/add-to-menu-creating-reset`, con `e4b5855` (40 líneas). Se abrió contra `main` cuando el PR 1 y el PR 2 ya estaban fusionados. Esta actualización del registro va en un PR aparte, solo de documentación.
 
 ## Tareas
 - [x] P1 — presets de sección desde i18n (`ce2dc92`). Ruta: delegada, un escritor (Sonnet). Disparador: dos archivos no triviales (el test y el componente).
@@ -71,8 +71,8 @@ Solo `SectionPresetSheet.tsx`, las claves nuevas de los tres diccionarios y su t
 - P3, test nuevo en `add-to-menu-sheet-presets.test.ts`: crea la sección y agrega el plato, cierra y reabre la hoja (la ficha la deja montada y solo cambia `open`), vuelve al paso «crear sección» y toca otro preset.
 - P3 RED, observado con la producción sin cambios: falla 1 de 6 por la razón esperada; al reabrir, los nueve chips llegan con `disabled: true`.
 - P3 GREEN: tests de las dos hojas 10/10; móvil 39 archivos y 398 tests; typecheck de móvil con salida 0. No se repitieron i18n ni `expo export`: P3 no toca i18n ni dependencias.
-- RDD sobre `e4b5855` (base `a0c9800`): riesgo medio (`executable_change` en el test), `review_due: false` por `under_budget` (40 líneas). Al cerrar, el preflight pidió consentimiento para toda la rama desde `cabc15d` (545 líneas) y Andy lo concedió: la revisión `review-e41f2faaafe33b63` (lente `review-reliability`) se aprobó y quedó acusada. Su único aviso, no bloqueante, era este registro desactualizado (seguía dando `creating` por pendiente y contaba 9/9 tests); se corrige en este commit.
+- RDD sobre `e4b5855` (base `a0c9800`): riesgo medio (`executable_change` en el test), `review_due: false` por `under_budget` (40 líneas). Al cerrar, el preflight pidió consentimiento para toda la rama desde `cabc15d` (545 líneas) y Andy lo concedió: la revisión `review-e41f2faaafe33b63` (lente `review-reliability`) se aprobó y quedó acusada. Su único aviso, no bloqueante, era este registro desactualizado (seguía dando `creating` por pendiente y contaba 9/9 tests); queda corregido en esta actualización.
 
 ## Siguiente paso
-- PR 1, PR 2 y PR 3, apilados, a `main`; Andy dijo «ok» el 11-10-2026 y ese mismo día pidió abrir el PR 3. La fusión es decisión de Andy. Cuando se fusione el PR 1, el PR 2 se redirige a `main` y se cierra y reabre para que corra la CI, que solo corre en PR contra `main`; lo mismo con el PR 3 cuando se fusione el PR 2.
-- graphify: el grafo no está versionado y vive solo en la carpeta principal, que hoy está en otra rama. Se actualiza allí con `graphify update .` después de fusionar.
+- Entregado: el PR 1 (#21), el PR 2 (#22) y el PR 3 (#23) se fusionaron a `main` el 11-10-2026 (`c416237`, `e41755c` y `6c21079`).
+- graphify: el grafo no está versionado y vive solo en la carpeta principal. Pendiente: traer allí el `main` actual y correr `graphify update .`.
