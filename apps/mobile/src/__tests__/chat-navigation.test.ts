@@ -51,6 +51,8 @@ vi.mock("@/src/components/MarkdownText", () => ({ MarkdownText: "MarkdownText" }
 vi.mock("@/src/components/TypingDots", () => ({ TypingDots: "TypingDots" }));
 vi.mock("@/src/components/SendButton", () => ({ SendButton: "SendButton" }));
 vi.mock("@/src/components/RememberNoteSheet", () => ({ RememberNoteSheet: "RememberNoteSheet" }));
+vi.mock("@/src/components/CulinaryMemorySheet", () => ({ CulinaryMemorySheet: "CulinaryMemorySheet" }));
+vi.mock("@/src/api/culinary-memory", () => ({ getCulinaryMemory: vi.fn(() => new Promise(() => {})) }));
 vi.mock("@/src/lib/keyboard", () => ({ useKeyboardHeight: () => 0 }));
 vi.mock("@/src/lib/haptics", () => ({ selection: vi.fn(), tapLight: vi.fn() }));
 vi.mock("@/src/lib/recipe-draft", () => ({ setRecipeDraft: vi.fn() }));

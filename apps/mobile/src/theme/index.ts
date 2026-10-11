@@ -21,6 +21,7 @@ export const colors = {
   edge: "#e0d8c8",
   edgeSoft: "#ede6d6",
   danger: "#a45a4a",
+  green: "#3f6b4a",
 } as const;
 
 export const fonts = {
