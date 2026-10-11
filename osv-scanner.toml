@@ -1,10 +1,11 @@
 # Avisos de seguridad ACEPTADOS por el job dependency-scan de CI.
 #
-# Revisados el 15-09-2026 con los datos de OSV: ninguno está en código que
-# atienda peticiones en producción y ninguno tiene arreglo sin saltar de
-# versión mayor. Cada excepción caduca sola: al pasar ignoreUntil el aviso
-# vuelve a poner CI en rojo y obliga a revisarlo. Un aviso NUEVO lo pone en
-# rojo desde el primer día. Actualizar vitest a la 3 elimina los dos primeros.
+# Revisados el 15-09-2026 y el 10-10-2026 con los avisos de OSV y GitHub:
+# ninguno está en código que atienda peticiones en producción y ninguno tiene
+# arreglo sin saltar de versión mayor. Cada excepción caduca sola: al pasar
+# ignoreUntil el aviso vuelve a poner CI en rojo y obliga a revisarlo. Un aviso
+# NUEVO lo pone en rojo desde el primer día. Actualizar vitest a la 3 elimina
+# los dos primeros.
 
 [[IgnoredVulns]]
 id = "GHSA-5xrq-8626-4rwp"
@@ -40,3 +41,28 @@ reason = "image-size 1.2.1, lo usa Metro al empaquetar la app móvil con imágen
 id = "GHSA-w3rx-r6r6-pgpr"
 ignoreUntil = 2026-12-15
 reason = "image-size 1.2.1, mismo caso que GHSA-5p2g-fcmc-qvqq. Sin versión corregida."
+
+[[IgnoredVulns]]
+id = "GHSA-5gmw-xhrv-c9v3"
+ignoreUntil = 2026-12-15
+reason = "tinypool 1.1.1, solo lo usa vitest 2 para repartir las pruebas en hilos; no se ejecuta en producción ni recibe datos externos. Arreglo solo en tinypool 2.1.2 (versión mayor), que tiene que adoptar vitest."
+
+[[IgnoredVulns]]
+id = "GHSA-85c8-ppgw-ccpr"
+ignoreUntil = 2026-12-15
+reason = "tinypool 1.1.1, mismo caso que GHSA-5gmw-xhrv-c9v3. Arreglo solo en tinypool 2.1.2 (versión mayor)."
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2026-12-15
+reason = "braces 3.0.3, lo trae Metro (vía micromatch) al empaquetar la app móvil; los patrones salen de la configuración del proyecto, no de usuarios, y no llega al servidor. Sin versión corregida."
+
+[[IgnoredVulns]]
+id = "GHSA-86w9-cpqp-85rv"
+ignoreUntil = 2026-12-15
+reason = "node-forge 1.4.0, solo lo usa la CLI de Expo en el ordenador de desarrollo (certificado para expo run:ios y firma de expo-updates, que el proyecto no usa); no llega al servidor ni a la app. Sin versión corregida."
+
+[[IgnoredVulns]]
+id = "GHSA-c475-qrg2-pj4r"
+ignoreUntil = 2026-12-15
+reason = "basic-ftp 5.3.1, lo trae @puppeteer/browsers (proxy-agent y get-uri) solo para descargar por FTP a través de un proxy; el servidor no lista directorios FTP ni recibe datos de usuarios por esa vía. Arreglo solo en basic-ftp 6.2.1 (versión mayor), que ni la última get-uri (8.0.1) adopta."

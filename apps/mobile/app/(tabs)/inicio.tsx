@@ -28,10 +28,12 @@ import { showToast } from "@/src/components/Toast";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
+import { canShowAssistantTab } from "@/src/lib/assistant-tab";
 
 export default function InicioScreen() {
   const { t } = useI18n();
   const { state } = useAuth();
+  const showAssistant = canShowAssistantTab(state.status === "signed-in" || state.status === "needs-restaurant" ? state.user : null);
   const router = useRouter();
   const { refresh: refreshQueue } = useOfflineQueueSize();
   const kb = useKeyboardHeight();
@@ -133,6 +135,7 @@ export default function InicioScreen() {
   }
 
   async function takeToAssistant(idea: Idea) {
+    if (!showAssistant) return;
     try {
       await patchIdea(idea.id, { status: "in_chat" });
     } catch {
@@ -231,11 +234,12 @@ export default function InicioScreen() {
                   <View key={idea.id} style={styles.ideaCard}>
                     <Pressable
                       style={styles.ideaBody}
-                      onPress={() => takeToAssistant(idea)}
+                      disabled={!showAssistant}
+                      onPress={showAssistant ? () => takeToAssistant(idea) : undefined}
                     >
                       <Text style={styles.ideaText}>{idea.text}</Text>
                       <Text style={styles.ideaMeta}>
-                        {idea.authorName} · {t("inicio_idea_action")}
+                        {idea.authorName}{showAssistant ? ` · ${t("inicio_idea_action")}` : ""}
                       </Text>
                     </Pressable>
                     <Pressable

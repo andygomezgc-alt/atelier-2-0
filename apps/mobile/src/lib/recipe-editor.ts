@@ -1,4 +1,4 @@
-import { parseIngredient, type RecipeIngredientInput } from "@atelier/shared";
+import { parseIngredient, type CreateRecipeRequest, type RecipeIngredientInput } from "@atelier/shared";
 
 export type IngredientValue = RecipeIngredientInput & { productId: string | null };
 
@@ -37,4 +37,36 @@ export function selectIngredientProduct(
 /** Used at the editor/API boundary: keep explicitly supplied costing fields intact. */
 export function recipeIngredientPayload(value: IngredientValue): RecipeIngredientInput {
   return { ...value, rawText: value.rawText.trim() };
+}
+
+type RecipeRequestInput = {
+  title: string;
+  portionsText: string;
+  workingIngredients: IngredientValue[];
+  method: string[];
+  notes: string;
+  clientRequestId: string;
+  sourceConversationId: string | null;
+  origin?: "import" | null;
+  editId: string | null;
+};
+
+/** Import origin belongs only to creation, never to an existing recipe edit. */
+export function buildRecipeRequestBody(input: RecipeRequestInput): CreateRecipeRequest {
+  const { title, portionsText, workingIngredients, method, notes, clientRequestId, sourceConversationId, editId } = input;
+  const origin = editId ? null : input.origin;
+  const recipeIngredients = workingIngredients.map(recipeIngredientPayload);
+  return {
+    title: title.trim(),
+    portions: portionsText.trim() ? Number(portionsText) : null,
+    contentJson: {
+      ingredients: recipeIngredients.map((ingredient) => ingredient.rawText),
+      method: method.map((step) => step.trim()).filter(Boolean),
+      notes: notes.trim(),
+    },
+    recipeIngredients,
+    clientRequestId,
+    ...(sourceConversationId ? { sourceConversationId } : {}),
+    ...(origin ? { origin } : {}),
+  };
 }

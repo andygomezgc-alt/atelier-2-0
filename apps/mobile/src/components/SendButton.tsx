@@ -18,6 +18,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { colors } from "@/src/theme";
+import { useI18n } from "@/src/hooks/useI18n";
 
 const SPRING = { damping: 14, stiffness: 170, mass: 0.8 };
 
@@ -28,6 +29,7 @@ type Props = {
 };
 
 export function SendButton({ disabled, streaming, onPress }: Props) {
+  const { t } = useI18n();
   const flyY = useSharedValue(0);
   const flyOpacity = useSharedValue(1);
   const pulse = useSharedValue(0);
@@ -79,7 +81,7 @@ export function SendButton({ disabled, streaming, onPress }: Props) {
         style={[styles.btn, disabled && styles.btnDisabled]}
         onPress={handlePress}
         disabled={disabled}
-        accessibilityLabel="send"
+        accessibilityLabel={t("chat_send")}
       >
         <Animated.View style={arrowStyle}>
           <Ionicons name="send" size={16} color={colors.paper} />

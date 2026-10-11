@@ -78,7 +78,7 @@ export const MarkdownText = memo(function MarkdownText({ text }: { text: string 
           <View key={i} style={styles.list}>
             {b.items.map((item, j) => (
               <View key={j} style={styles.listItem}>
-                <Text style={styles.bullet}>{b.ordered ? `${j + 1}.` : "•"}</Text>
+                <Text style={styles.bullet}>{b.ordered ? `${(b.start ?? 1) + j}.` : "•"}</Text>
                 <Text style={[styles.body, styles.listText]}>
                   <Spans spans={item} />
                 </Text>

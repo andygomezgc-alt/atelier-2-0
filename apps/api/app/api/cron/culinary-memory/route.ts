@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
-import { maintainMemoryRuns, processMemory } from "@/lib/culinary-memory/worker";
+import { maintainMemoryRuns, processMemory, type MemoryRunStatus } from "@/lib/culinary-memory/worker";
 import { generateMemory, memoryProviderConfig } from "@/lib/culinary-memory/provider";
 import { CRON_DEADLINE_MS, MAINTENANCE_BUDGET_MS, MINIMUM_ROW_TIME_MS } from "@/lib/culinary-memory/scheduling";
 import { logger } from "@/lib/logger";
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   if (!config) return NextResponse.json({ status: "unconfigured", processed: 0 });
   const due = await prisma.culinaryMemory.findMany({ where: { enabled: true, nextCheckAt: { lte: startedAt } },
     orderBy: [{ nextCheckAt: "asc" }, { restaurantId: "asc" }], take: 20, select: { restaurantId: true } });
-  const results: string[] = [];
+  const results: (MemoryRunStatus | "infrastructure_error")[] = [];
   for (const row of due) {
     const remaining = deadline - Date.now();
     if (remaining <= MINIMUM_ROW_TIME_MS) break;

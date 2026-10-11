@@ -7,13 +7,14 @@ export const MemoryVersionSchema = z.object({ expectedVersion: z.number().int().
 export const PatchCulinaryMemorySchema = MemoryVersionSchema.extend({
   enabled: z.boolean().optional(),
   identityLine: z.string().trim().max(1000).nullable().optional(),
+  city: z.string().trim().max(80).nullable().optional(),
   corrections: MemoryPreferencesSchema.optional(),
   excludedKeys: z.array(MemoryKeySchema).max(8).optional(),
 }).strict();
 export type MemoryPreference = z.infer<typeof MemoryPreferenceSchema>;
 export type PatchCulinaryMemory = z.infer<typeof PatchCulinaryMemorySchema>;
 export type CulinaryMemoryResponse = {
-  restaurantId: string; version: number; enabled: boolean; identityLine: string | null;
+  restaurantId: string; version: number; enabled: boolean; identityLine: string | null; city: string | null;
   learned: MemoryPreference[]; corrections: MemoryPreference[];
   excludedKeys: MemoryPreference["key"][]; updatedAt: string | null; canEdit: boolean; learningAvailable: boolean;
 };

@@ -23,6 +23,24 @@ describe("durable recipe drafts", () => {
     await saveRecipeDraft(key, draft);
     expect(await loadRecipeDraft(key)).toEqual(draft);
   });
+  it("round-trips the import origin with the rest of an unfinished draft", async () => {
+    const imported: RecipeEditorDraft = { ...draft, origin: "import" };
+    await saveRecipeDraft(key, imported);
+    expect(await loadRecipeDraft(key)).toEqual(imported);
+  });
+  it("loads legacy drafts without an origin and accepts an explicit null origin", async () => {
+    storage.set(key, JSON.stringify(draft));
+    expect(await loadRecipeDraft(key)).toEqual(draft);
+
+    const manual: RecipeEditorDraft = { ...draft, origin: null };
+    storage.set(key, JSON.stringify(manual));
+    expect(await loadRecipeDraft(key)).toEqual(manual);
+  });
+  it.each(["upload", "Import", "", false, 0, {}])("rejects an invalid origin (%j) without returning a partial draft", async (origin) => {
+    storage.set(key, JSON.stringify({ ...draft, origin }));
+    await expect(loadRecipeDraft(key)).rejects.toThrow("Invalid recipe draft");
+    expect(storage.get(key)).toBe(JSON.stringify({ ...draft, origin }));
+  });
   it("isolates accounts, restaurants and individual recipe edits", async () => {
     await saveRecipeDraft(key, draft);
     for (const other of [recipeDraftKey({ userId: "other", restaurantId: "restaurant" }, null), recipeDraftKey({ userId: "chef", restaurantId: "other" }, null), recipeDraftKey({ userId: "chef", restaurantId: "restaurant" }, "existing")]) {

@@ -7,5 +7,6 @@ export * from "./pezzatura";
 export * from "./parser";
 export * from "./allergens";
 export * from "./culinary-memory";
+export * from "./recipe-import";
 export * from "./chef-notes";
 export * from "./ai-models";

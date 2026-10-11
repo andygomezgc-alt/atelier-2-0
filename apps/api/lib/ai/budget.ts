@@ -48,34 +48,76 @@ export async function reserveGeneration(config: { task: AiTask; model: string; m
   }
 }
 
-/** No final usage = keep the full hold, including after process/network failure. */
-export async function settleGeneration(reservation: Reservation, usage?: AiUsage): Promise<void> {
-  if (!usage) return;
+type GenerationRow = { budgetId: string; status: string; reservedMicros: number; inputCeiling: number; outputCeiling: number };
+/** How a reserved generation closes: `micros` becomes spending; `usage` is recorded when known. */
+type Closing = { status: "settled" | "interrupted" | "released" | "expired"; micros: number; usage?: AiUsage };
+
+/**
+ * One accounting for every way a generation ends, under the budget row lock:
+ * the whole hold goes away and `micros` is spent. Idempotent on status, so a
+ * late settlement never double-counts. Returns false if it was already closed.
+ */
+async function closeGeneration(budgetId: string, id: string, reservedMicros: number | undefined, close: (generation: GenerationRow) => Closing): Promise<boolean> {
+  const result = await prisma.$transaction(async tx => {
+    const [budget] = await tx.$queryRaw<BudgetRow[]>`SELECT * FROM "AiBudget" WHERE "id" = ${budgetId} FOR UPDATE`;
+    if (!budget) throw new Error("missing_budget");
+    const generation = await tx.aiGeneration.findUniqueOrThrow({ where: { id } });
+    if (generation.status !== "reserved") return { closed: false, warn: false };
+    if (generation.budgetId !== budgetId || (reservedMicros !== undefined && generation.reservedMicros !== reservedMicros)) throw new Error("invalid_reservation");
+    const { status, micros, usage } = close(generation);
+    const exceeded = micros > generation.reservedMicros || (!!usage && (usage.inputTokens > generation.inputCeiling || usage.outputTokens > generation.outputCeiling));
+    const total = budget.spentMicros + micros;
+    const warn = !budget.warnedAt && total >= budget.limitMicros * .75;
+    const tokens = usage ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, cachedTokens: usage.cachedTokens, cacheWriteTokens: usage.cacheWriteTokens ?? 0 } : {};
+    await tx.aiGeneration.update({ where: { id }, data: { status, chargedMicros: micros, ...tokens, finishedAt: new Date() } });
+    await tx.aiBudget.update({ where: { id: budgetId }, data: {
+      heldMicros: { decrement: generation.reservedMicros }, spentMicros: { increment: micros },
+      ...(warn ? { warnedAt: new Date() } : {}), ...(exceeded ? { blockedAt: new Date() } : {}),
+    } });
+    if (exceeded) logger.error("ai_budget_estimate_exceeded", { generationId: id });
+    return { closed: true, warn };
+  });
+  if (result.warn) logger.warn("ai_pilot_budget_75_percent", { budgetId });
+  return result.closed;
+}
+
+async function closeReservation(reservation: Reservation, close: (generation: GenerationRow) => Closing): Promise<void> {
   try {
-    const micros = usageMicros(reservation.rate, usage);
-    const warning = await prisma.$transaction(async tx => {
-      const [budget] = await tx.$queryRaw<BudgetRow[]>`SELECT * FROM "AiBudget" WHERE "id" = ${reservation.budgetId} FOR UPDATE`;
-      if (!budget) throw new Error("missing_budget");
-      const generation = await tx.aiGeneration.findUniqueOrThrow({ where: { id: reservation.id } });
-      if (generation.status !== "reserved") return false; // Idempotent settlement.
-      if (generation.budgetId !== reservation.budgetId || generation.reservedMicros !== reservation.micros) throw new Error("invalid_reservation");
-      const exceeded = micros > generation.reservedMicros || usage.inputTokens > generation.inputCeiling || usage.outputTokens > generation.outputCeiling;
-      const total = budget.spentMicros + micros;
-      const warn = !budget.warnedAt && total >= budget.limitMicros * .75;
-      await tx.aiGeneration.update({ where: { id: reservation.id }, data: { status: "settled", chargedMicros: micros, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, cachedTokens: usage.cachedTokens, cacheWriteTokens: usage.cacheWriteTokens ?? 0, finishedAt: new Date() } });
-      await tx.aiBudget.update({ where: { id: reservation.budgetId }, data: {
-        heldMicros: { decrement: generation.reservedMicros }, spentMicros: { increment: micros },
-        ...(warn ? { warnedAt: new Date() } : {}), ...(exceeded ? { blockedAt: new Date() } : {}),
-      } });
-      if (exceeded) logger.error("ai_budget_estimate_exceeded", { generationId: reservation.id });
-      return warn;
-    });
-    if (warning) logger.warn("ai_pilot_budget_75_percent", { budgetId: reservation.budgetId });
+    await closeGeneration(reservation.budgetId, reservation.id, reservation.micros, close);
   } catch {
     // Preserve the hold on any uncertainty; never refund a paid generation
     // because telemetry failed, nor discard a valid recipe because of logging.
     logger.error("ai_budget_settlement_failed", { generationId: reservation.id });
   }
+}
+
+/** Exact final usage. No usage = keep the full hold, including after process/network failure (see reconcile-ai-holds). */
+export async function settleGeneration(reservation: Reservation, usage?: AiUsage): Promise<void> {
+  if (!usage) return;
+  await closeReservation(reservation, () => ({ status: "settled", micros: usageMicros(reservation.rate, usage), usage }));
+}
+
+/** A4 — the provider answered with an HTTP error status before any stream event: nothing billable, release the whole hold. */
+export async function releaseGeneration(reservation: Reservation): Promise<void> {
+  await closeReservation(reservation, () => ({ status: "released", micros: 0 }));
+}
+
+/**
+ * A4 — the stream started and was cut: the input (and cache) usage is exact,
+ * but thinking is hidden, so the output is charged at its full ceiling and is
+ * never under-counted.
+ */
+export async function settleInterruptedGeneration(reservation: Reservation, known: AiUsage): Promise<void> {
+  await closeReservation(reservation, generation => {
+    const usage = { ...known, outputTokens: generation.outputCeiling };
+    return { status: "interrupted", micros: usageMicros(reservation.rate, usage), usage };
+  });
+}
+
+/** A4 — reconciliation of a hold nobody closed (e.g. the process died). Throws on failure; the caller reports it. */
+export async function expireGeneration(budgetId: string, id: string, chargeMicros: number): Promise<boolean> {
+  if (!Number.isSafeInteger(chargeMicros) || chargeMicros < 0) throw new Error("invalid_charge");
+  return closeGeneration(budgetId, id, undefined, generation => ({ status: "expired", micros: Math.min(chargeMicros, generation.reservedMicros) }));
 }
 
 export async function ownerBudgetStatus(userId: string) {
