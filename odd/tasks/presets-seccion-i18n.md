@@ -29,7 +29,7 @@ El comentario de cabecera del componente daba por hecho que la app era solo para
 - `AddToMenuSheet` creaba la sección y después la buscaba por nombre. Si el menú ya tenía otra con ese nombre, el plato iba a la vieja y la nueva quedaba vacía. Con los presets traducidos el choque es más probable, porque un chef en español pudo haber escrito «Postres» a mano. Ahora toma la sección que no estaba antes y tiene ese nombre.
 
 ## Alcance autorizado
-Solo `SectionPresetSheet.tsx`, las claves nuevas de los tres diccionarios y su test. Fuera de alcance: otras pantallas y `section_name_placeholder` («Antipasti, Primi, Secondi…» en los tres idiomas, compartido con otras pantallas). Ampliación del 11-10-2026 (Andy: «termina las tareas pendientes»): `AddToMenuSheet.tsx`, cuyo paso «crear sección» (desde la ficha de receta) tenía una copia idéntica de los presets en italiano, y su test.
+Solo `SectionPresetSheet.tsx`, las claves nuevas de los tres diccionarios y su test. Fuera de alcance: otras pantallas y `section_name_placeholder` («Antipasti, Primi, Secondi…» en los tres idiomas, compartido con otras pantallas). Ampliación del 11-10-2026 (Andy: «termina las tareas pendientes»): `AddToMenuSheet.tsx`, cuyo paso «crear sección» (desde la ficha de receta) tenía una copia idéntica de los presets en italiano, y su test. Seguimiento del 11-10-2026, pedido aparte: que `createSectionAndAdd` (`AddToMenuSheet.tsx`) devuelva `creating` a `false` también tras crear con éxito, con su test, en la rama `fix/add-to-menu-creating-reset`.
 
 ## Restricciones
 - TDD estricto (fuente: `~/.claude/CLAUDE.md` y el pedido de Andy). Runner: `vitest run` (`pnpm -C apps/mobile test`).
@@ -37,16 +37,19 @@ Solo `SectionPresetSheet.tsx`, las claves nuevas de los tres diccionarios y su t
 - Entrega: `ask-on-risk` (por defecto). La previsión era de unas 235 líneas para P1 y unas 120 para P2, pero la rama llegó a 502 contra `main`. El 11-10-2026 Andy eligió dos PR apilados a `main`:
   - PR 1: `fix/presets-seccion-i18n`, con `ce2dc92`, `81bc128` y `6ede5d4` (235 líneas).
   - PR 2: `fix/presets-seccion-i18n-2`, con `70afa99` y este registro (unas 280 líneas), apilado sobre el PR 1.
+  - PR 3: `fix/add-to-menu-creating-reset`, con `e4b5855` (40 líneas). Se abrió contra `main` cuando el PR 1 y el PR 2 ya estaban fusionados. Esta actualización del registro va en un PR aparte, solo de documentación.
 
 ## Tareas
 - [x] P1 — presets de sección desde i18n (`ce2dc92`). Ruta: delegada, un escritor (Sonnet). Disparador: dos archivos no triviales (el test y el componente).
 - [x] P2 — presets de `AddToMenuSheet` desde las mismas claves (`70afa99`). Ruta: delegada, el mismo escritor. Disparador: dos archivos no triviales (el test y el componente).
+- [x] P3 — `creating` vuelve a `false` tras crear con éxito (`e4b5855`). Ruta: directa, en línea. Sin disparador de delegación: un solo archivo no trivial (el test) y un cambio mecánico de una línea en el componente.
 
 ## Criterios de aceptación
 - Con la app en español, la hoja muestra, en este orden: Entradas frías, Entradas calientes, Primeros platos, Principales de mar, Principales de tierra, Guarniciones, Prepostre, Postres, Petits fours. En inglés y en italiano, las listas de las decisiones, en el mismo orden.
 - Tocar un preset llama a `onPick` con el nombre traducido y cierra la hoja.
 - El nombre personalizado sigue funcionando como hoy.
 - En el paso «crear sección» de `AddToMenuSheet`, los presets salen en el idioma de la app y en el mismo orden. Tocar uno crea la sección con el nombre traducido y agrega el plato a esa sección.
+- Tras crear una sección y agregar el plato desde la ficha de receta, al cerrar y reabrir la hoja, los presets y el botón del nombre propio vuelven a estar habilitados, y tocar otro preset crea otra sección y agrega el plato.
 
 ## Comprobaciones
 - `pnpm -C apps/mobile test`, `pnpm -C apps/mobile typecheck`
@@ -64,8 +67,12 @@ Solo `SectionPresetSheet.tsx`, las claves nuevas de los tres diccionarios y su t
 - P2 RED, observado por el supervisor: fallan 4 de 5 por la razón esperada. En `es` y en `en` llegan los rótulos italianos y el toque crea «Primi piatti». Con una sección «Postres» previa, el plato va a `section-old`. El caso `it` pasa (caracterización).
 - P2 GREEN, repetido por el supervisor: tests de las dos hojas 9/9; móvil 39 archivos y 397 tests; i18n 11 tests; typecheck de móvil e i18n con salida 0. `expo export` de Android: «android bundles (1)».
 - RDD sobre `70afa99` (base `6ede5d4`): riesgo medio (`executable_change` en el test), `review_due: false` por `under_budget` (277 líneas). La revisión final se registra en Engram (`odd/presets-seccion-i18n/tasks`) y en el PR, porque anotarla aquí crearía otro candidato.
-- Fuera de alcance, encontrado en P2: tras crear con éxito, `creating` nunca vuelve a `false` (solo se resetea en el `catch`). Al reabrir la hoja en la misma ficha, los chips quedan deshabilitados. Queda como tarea aparte.
+- Encontrado en P2 y fuera de su alcance: tras crear con éxito, `creating` nunca volvía a `false` (solo se reseteaba en el `catch`). Al reabrir la hoja en la misma ficha, los chips quedaban deshabilitados. Se arregló después, en P3.
+- P3, test nuevo en `add-to-menu-sheet-presets.test.ts`: crea la sección y agrega el plato, cierra y reabre la hoja (la ficha la deja montada y solo cambia `open`), vuelve al paso «crear sección» y toca otro preset.
+- P3 RED, observado con la producción sin cambios: falla 1 de 6 por la razón esperada; al reabrir, los nueve chips llegan con `disabled: true`.
+- P3 GREEN: tests de las dos hojas 10/10; móvil 39 archivos y 398 tests; typecheck de móvil con salida 0. No se repitieron i18n ni `expo export`: P3 no toca i18n ni dependencias.
+- RDD sobre `e4b5855` (base `a0c9800`): riesgo medio (`executable_change` en el test), `review_due: false` por `under_budget` (40 líneas). Al cerrar, el preflight pidió consentimiento para toda la rama desde `cabc15d` (545 líneas) y Andy lo concedió: la revisión `review-e41f2faaafe33b63` (lente `review-reliability`) se aprobó y quedó acusada. Su único aviso, no bloqueante, era este registro desactualizado (seguía dando `creating` por pendiente y contaba 9/9 tests); queda corregido en esta actualización.
 
 ## Siguiente paso
-- PR 1 y PR 2 (apilado) a `main`; Andy dijo «ok» el 11-10-2026. La fusión es decisión de Andy. Cuando se fusione el PR 1, el PR 2 se redirige a `main` y se cierra y reabre para que corra la CI, que solo corre en PR contra `main`.
-- graphify: el grafo no está versionado y vive solo en la carpeta principal, que hoy está en otra rama. Se actualiza allí con `graphify update .` después de fusionar.
+- Entregado: el PR 1 (#21), el PR 2 (#22) y el PR 3 (#23) se fusionaron a `main` el 11-10-2026 (`c416237`, `e41755c` y `6c21079`).
+- graphify: el grafo no está versionado y vive solo en la carpeta principal. Pendiente: traer allí el `main` actual y correr `graphify update .`.
