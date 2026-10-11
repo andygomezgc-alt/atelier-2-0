@@ -124,6 +124,39 @@ export async function uploadMePhoto(
   return JSON.parse(res.body) as { photoUrl: string };
 }
 
+// Use native multipart upload here as well: fetch with a React Native file URI
+// fails in standalone builds. The server expects the same `photo` field.
+export async function uploadRestaurantPhoto(
+  uri: string,
+  mimeType: string,
+): Promise<{ photoUrl: string }> {
+  const token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
+
+  let res: FileSystem.FileSystemUploadResult;
+  try {
+    res = await FileSystem.uploadAsync(`${BASE}/api/restaurant/photo`, uri, {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "photo",
+      mimeType,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  } catch {
+    throw new NetworkError();
+  }
+
+  if (res.status < 200 || res.status >= 300) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const json = JSON.parse(res.body);
+      message = json?.error ?? message;
+    } catch {}
+    throw new ApiError(res.status, message);
+  }
+
+  return JSON.parse(res.body) as { photoUrl: string };
+}
+
 export function patchMe(data: {
   name?: string;
   bio?: string;
