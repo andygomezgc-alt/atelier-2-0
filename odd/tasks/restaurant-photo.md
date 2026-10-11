@@ -18,7 +18,7 @@ No production calls, blob uploads to real accounts, push, pull request, merge or
 - Task mirror: odd/restaurant-photo/tasks, project atelier-2-0.
 
 ## Work unit
-- [ ] RP1 — Connect Casa restaurant photo display and administrator gallery upload, with translations and regression tests.
+- [x] RP1 — Connect Casa restaurant photo display and administrator gallery upload, with translations and regression tests.
   - Route: delegated; target UI, upload helper and three translation dictionaries plus tests.
   - Expected files: apps/mobile/app/(tabs)/casa.tsx, apps/mobile/src/api/auth.ts, packages/i18n/src/es.ts, it.ts, en.ts, and focused mobile tests; a small isolated component/helper is allowed only if it improves testability without unrelated refactoring.
   - Acceptance: stored photo is shown; missing/unloadable photo falls back to initial; only administrators can edit; tap target and labels are accessible; loading prevents duplicate uploads; cancellation does not upload; successful save refreshes visible data; errors preserve existing image and show localized feedback.
@@ -29,7 +29,9 @@ No production calls, blob uploads to real accounts, push, pull request, merge or
   - Native runtime harness: rendered Casa interactions and mocked gallery, auth token and multipart upload passed. Real Android/iOS gallery and Blob upload remain untested without an authorized device and account.
   - Graph and hygiene: `graphify update .` passed (3390 nodes, 7559 edges); `git diff --check` passed. Existing backend/schema and dependencies were not changed.
   - Rollback boundary: revert Casa avatar interaction, the mobile upload helper, five translation keys in each dictionary, and their two focused tests; the pre-existing backend and saved photos remain intact.
-  - Commit identity and RDD outcome: pending parent spot-check and user consent.
+  - Commit identity: 8159490 (feature), 849c581 (merge of main), 702e3c5 (test fix: mock expo-localization, needed after device-language-default landed on main).
+  - Re-verified on 2026-10-11 after merging main: `pnpm --filter mobile test` 443/443, `pnpm --filter @atelier/i18n test` 41/41, both typechecks and `git diff --check` passed.
+  - RDD outcome: high risk (auth.ts hot path); user granted consent; four-lens review approved and acknowledged (lineage review-74f5071dd6d68207). Twelve non-blocking advisory findings; the main one, a failed reload after a successful upload reported as a failed save (casa.tsx:226-229), is follow-up work.
 
 ## Progress and next step
-RP1 code and checks are ready for parent spot-check. Keep the checkbox open until the parent commits the reviewed work unit and records its commit and RDD outcome.
+RP1 is committed, reviewed and approved. Next: open a pull request to main, merge after CI passes, then consider the reload-failure follow-up.
