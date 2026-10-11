@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
+import { canAccessConversation } from "@/lib/conversation-access";
 
 export async function POST(
   req: NextRequest,
@@ -12,12 +13,11 @@ export async function POST(
     return NextResponse.json({ error: "Not in a restaurant" }, { status: 403 });
   const { id } = await params;
   const conversation = await prisma.conversation.findUnique({
-    where: { id }, select: { restaurantId: true, authorId: true, generationId: true },
+    where: { id },
+    select: { restaurantId: true, authorId: true, ideaId: true, idea: { select: { authorId: true } }, generationId: true },
   });
-  if (!conversation || conversation.restaurantId !== ctx.restaurantId)
+  if (!conversation || conversation.restaurantId !== ctx.restaurantId || !canAccessConversation(conversation, ctx))
     return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (conversation.authorId !== ctx.userId && ctx.role !== "admin")
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   if (conversation.generationId) await prisma.conversation.updateMany({
     // A delayed Stop must not clear a replacement turn that started after lookup.

@@ -49,8 +49,8 @@ interface Conversation {
   authorId: string;
   generationId: string | null;
   generationStartedAt: Date | null;
-  ideaId: null;
-  idea: null;
+  ideaId: string | null;
+  idea: { authorId: string } | null;
 }
 interface StoredMessage {
   id: string;
@@ -432,16 +432,23 @@ describe("A6 server-side Stop", () => {
     expectClosedExactlyOnce("settleInterruptedGeneration");
   });
 
+  // ideaAuthorId null = shared chat (no idea); otherwise the chat was born from an idea by that author.
   it.each([
-    { role: "viewer", authorId: "u1", restaurantId: "r1", status: 403 },
-    { role: "admin", authorId: "u1", restaurantId: "other", status: 404 },
-    { role: "chef_executive", authorId: "other-author", restaurantId: "r1", status: 403 },
-    { role: "sous_chef", authorId: "other-author", restaurantId: "r1", status: 403 },
-    { role: "sous_chef", authorId: "u1", restaurantId: "r1", status: 204 },
-    { role: "chef_executive", authorId: "u1", restaurantId: "r1", status: 204 },
-    { role: "admin", authorId: "other-author", restaurantId: "r1", status: 204 },
-  ] as const)("$role / author=$authorId / restaurant=$restaurantId returns $status", async ({ role, authorId, restaurantId, status }) => {
+    { role: "viewer", authorId: "u1", ideaAuthorId: null, restaurantId: "r1", status: 403 },
+    { role: "admin", authorId: "u1", ideaAuthorId: null, restaurantId: "other", status: 404 },
+    { role: "chef_executive", authorId: "other-author", ideaAuthorId: null, restaurantId: "r1", status: 204 },
+    { role: "sous_chef", authorId: "other-author", ideaAuthorId: null, restaurantId: "r1", status: 204 },
+    { role: "sous_chef", authorId: "u1", ideaAuthorId: null, restaurantId: "r1", status: 204 },
+    { role: "chef_executive", authorId: "u1", ideaAuthorId: null, restaurantId: "r1", status: 204 },
+    { role: "admin", authorId: "other-author", ideaAuthorId: null, restaurantId: "r1", status: 204 },
+    { role: "sous_chef", authorId: "other-author", ideaAuthorId: "other-author", restaurantId: "r1", status: 404 },
+    { role: "sous_chef", authorId: "u1", ideaAuthorId: "other-author", restaurantId: "r1", status: 204 },
+    { role: "sous_chef", authorId: "other-author", ideaAuthorId: "u1", restaurantId: "r1", status: 204 },
+    { role: "admin", authorId: "other-author", ideaAuthorId: "other-author", restaurantId: "r1", status: 204 },
+  ] as const)("$role / author=$authorId / idea author=$ideaAuthorId / restaurant=$restaurantId returns $status", async ({ role, authorId, ideaAuthorId, restaurantId, status }) => {
     auth.role = role; conversation.authorId = authorId; conversation.restaurantId = restaurantId;
+    conversation.ideaId = ideaAuthorId ? "idea-1" : null;
+    conversation.idea = ideaAuthorId ? { authorId: ideaAuthorId } : null;
     conversation.generationId = "running"; conversation.generationStartedAt = new Date();
     const response = await stop();
     expect(response.status).toBe(status); expect(guard).toHaveBeenCalledWith(expect.any(NextRequest), "capture_idea");
@@ -450,6 +457,7 @@ describe("A6 server-side Stop", () => {
       expect(conversation.generationStartedAt).toBeNull();
     } else {
       expect(db.conversation.updateMany).not.toHaveBeenCalled(); expect(conversation.generationId).toBe("running");
+      if (status === 404) expect(await response.json()).toEqual({ error: "Not found" });
       if (role === "viewer") expect(db.conversation.findUnique).not.toHaveBeenCalled();
     }
     expect(budget.reserveGeneration).not.toHaveBeenCalled(); expect(db.message.create).not.toHaveBeenCalled();
