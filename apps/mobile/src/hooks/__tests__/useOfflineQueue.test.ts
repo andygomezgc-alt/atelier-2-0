@@ -3,6 +3,9 @@ import { ApiError } from "@/src/api/client";
 
 // useAuth importa Platform de react-native; el paquete real no carga en Node.
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+vi.mock("expo-localization", () => ({
+  getLocales: () => [{ languageCode: "it", languageTag: "it-IT" }],
+}));
 
 const h = vi.hoisted(() => {
   const storage = new Map<string, string>();

@@ -26,6 +26,9 @@ vi.mock("react-native", () => ({
   Platform: { OS: "android", select: (items: Record<string, unknown>) => items.android ?? items.default },
 }));
 vi.mock("@expo/vector-icons", () => ({ Ionicons: "Ionicons" }));
+vi.mock("expo-localization", () => ({
+  getLocales: () => [{ languageCode: "it", languageTag: "it-IT" }],
+}));
 vi.mock("@/src/components/BottomSheet", () => ({ BottomSheet: "BottomSheet" }));
 vi.mock("@/src/components/Toast", () => ({ showToast: h.showToast }));
 vi.mock("@/src/lib/api-error", () => ({ apiErrorMessage: () => "error" }));
