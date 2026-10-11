@@ -34,11 +34,11 @@ export const exclusionsOf = (value: string[]) => value.flatMap(key => { const p 
 
 export async function getCulinaryMemory(restaurantId: string, canEdit: boolean): Promise<CulinaryMemoryResponse> {
   const [restaurant, memory] = await Promise.all([
-    prisma.restaurant.findUniqueOrThrow({ where: { id: restaurantId }, select: { identityLine: true } }),
+    prisma.restaurant.findUniqueOrThrow({ where: { id: restaurantId }, select: { identityLine: true, city: true } }),
     prisma.culinaryMemory.findUnique({ where: { restaurantId } }),
   ]);
   const learned = memory ? await supportedFacts(restaurantId, memory.learned) : [];
-  return { restaurantId, identityLine: restaurant.identityLine, version: memory?.version ?? 0, enabled: memory?.enabled ?? false,
+  return { restaurantId, identityLine: restaurant.identityLine, city: restaurant.city ?? null, version: memory?.version ?? 0, enabled: memory?.enabled ?? false,
     learned: learned.map(({ key, text }) => ({ key, text })), corrections: correctionsOf(memory?.corrections),
     excludedKeys: exclusionsOf(memory?.excludedKeys ?? []), updatedAt: memory?.updatedAt?.toISOString() ?? null, canEdit, learningAvailable: !!memoryProviderConfig() };
 }

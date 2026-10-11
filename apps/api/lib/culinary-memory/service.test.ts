@@ -12,7 +12,7 @@ const { db } = vi.hoisted(() => ({
 vi.mock("@atelier/db", () => ({ prisma: db, Prisma: { DbNull: "DB_NULL" } }));
 
 import { recipeEvidence } from "./evidence";
-import { chatMemory, patchCulinaryMemory } from "./service";
+import { chatMemory, getCulinaryMemory, patchCulinaryMemory } from "./service";
 
 const recipe = (id: string) => ({ id, title: id, state: "approved", updatedAt: new Date(),
   contentJson: { ingredients: [`200 g ${id}`], method: [`Asar ${id}`] }, recipeIngredients: [] });
@@ -79,6 +79,18 @@ describe("prepared culinary memory", () => {
     expect(db.culinaryMemory.updateMany.mock.calls[0]![0].data.learned).toEqual(learned);
     expect(await chatMemory("r1")).toContain("Predominan asados");
     expect(db.culinaryMemory.updateMany).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("culinary memory city", () => {
+  it("returns the restaurant city", async () => {
+    db.restaurant.findUniqueOrThrow.mockResolvedValue({ identityLine: "Cocina de mercado", city: "Ancona" });
+    expect(await getCulinaryMemory("r1", true)).toMatchObject({
+      restaurantId: "r1", identityLine: "Cocina de mercado", city: "Ancona",
+    });
+    expect(db.restaurant.findUniqueOrThrow).toHaveBeenCalledWith({
+      where: { id: "r1" }, select: { identityLine: true, city: true },
+    });
   });
 });
 
