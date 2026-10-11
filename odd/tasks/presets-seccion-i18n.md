@@ -34,11 +34,13 @@ Solo `SectionPresetSheet.tsx`, las claves nuevas de los tres diccionarios y su t
 ## Restricciones
 - TDD estricto (fuente: `~/.claude/CLAUDE.md` y el pedido de Andy). Runner: `vitest run` (`pnpm -C apps/mobile test`).
 - Conventional Commits sin atribución de IA.
-- Entrega: `ask-on-risk` (por defecto). Previsión: unas 235 líneas para P1 (con este documento) y unas 120 para P2, en una sola PR, por debajo del presupuesto de 400.
+- Entrega: `ask-on-risk` (por defecto). La previsión era de unas 235 líneas para P1 y unas 120 para P2, pero la rama llegó a 502 contra `main`. El 11-10-2026 Andy eligió dos PR apilados a `main`:
+  - PR 1: `fix/presets-seccion-i18n`, con `ce2dc92`, `81bc128` y `6ede5d4` (235 líneas).
+  - PR 2: `fix/presets-seccion-i18n-2`, con `70afa99` y este registro (unas 280 líneas), apilado sobre el PR 1.
 
 ## Tareas
 - [x] P1 — presets de sección desde i18n (`ce2dc92`). Ruta: delegada, un escritor (Sonnet). Disparador: dos archivos no triviales (el test y el componente).
-- [x] P2 — presets de `AddToMenuSheet` desde las mismas claves. Ruta: delegada, el mismo escritor. Disparador: dos archivos no triviales (el test y el componente).
+- [x] P2 — presets de `AddToMenuSheet` desde las mismas claves (`70afa99`). Ruta: delegada, el mismo escritor. Disparador: dos archivos no triviales (el test y el componente).
 
 ## Criterios de aceptación
 - Con la app en español, la hoja muestra, en este orden: Entradas frías, Entradas calientes, Primeros platos, Principales de mar, Principales de tierra, Guarniciones, Prepostre, Postres, Petits fours. En inglés y en italiano, las listas de las decisiones, en el mismo orden.
@@ -61,8 +63,9 @@ Solo `SectionPresetSheet.tsx`, las claves nuevas de los tres diccionarios y su t
 - P2, test nuevo: `apps/mobile/src/__tests__/add-to-menu-sheet-presets.test.ts`. Llega al paso «crear sección» como un chef: elige el menú y toca «Agregar sección».
 - P2 RED, observado por el supervisor: fallan 4 de 5 por la razón esperada. En `es` y en `en` llegan los rótulos italianos y el toque crea «Primi piatti». Con una sección «Postres» previa, el plato va a `section-old`. El caso `it` pasa (caracterización).
 - P2 GREEN, repetido por el supervisor: tests de las dos hojas 9/9; móvil 39 archivos y 397 tests; i18n 11 tests; typecheck de móvil e i18n con salida 0. `expo export` de Android: «android bundles (1)».
+- RDD sobre `70afa99` (base `6ede5d4`): riesgo medio (`executable_change` en el test), `review_due: false` por `under_budget` (277 líneas). La revisión final se registra en Engram (`odd/presets-seccion-i18n/tasks`) y en el PR, porque anotarla aquí crearía otro candidato.
 - Fuera de alcance, encontrado en P2: tras crear con éxito, `creating` nunca vuelve a `false` (solo se resetea en el `catch`). Al reabrir la hoja en la misma ficha, los chips quedan deshabilitados. Queda como tarea aparte.
 
 ## Siguiente paso
-- PR a `main` al cerrar P2 (Andy dijo «ok» el 11-10-2026). La fusión es decisión de Andy.
+- PR 1 y PR 2 (apilado) a `main`; Andy dijo «ok» el 11-10-2026. La fusión es decisión de Andy. Cuando se fusione el PR 1, el PR 2 se redirige a `main` y se cierra y reabre para que corra la CI, que solo corre en PR contra `main`.
 - graphify: el grafo no está versionado y vive solo en la carpeta principal, que hoy está en otra rama. Se actualiza allí con `graphify update .` después de fusionar.
