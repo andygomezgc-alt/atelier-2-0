@@ -1,6 +1,5 @@
-// Sheet de presets para crear una sección. Los presets son convención
-// italiana clásica (la app es de un restaurant italiano), así que viven
-// hardcoded en español/italiano y no necesitan traducción.
+// Sheet de presets para crear una sección. Los presets salen de i18n: cada
+// chef los ve en el idioma de la app y la sección se crea con ese nombre.
 //
 // "Personalizada" abre un TextInput para nombre custom.
 
@@ -14,20 +13,21 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import type { TranslationKey } from "@atelier/i18n";
 import { useI18n } from "@/src/hooks/useI18n";
 import { BottomSheet } from "./BottomSheet";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
-const PRESETS: ReadonlyArray<string> = [
-  "Antipasti freddi",
-  "Antipasti caldi",
-  "Primi piatti",
-  "Secondi di mare",
-  "Secondi di terra",
-  "Contorni",
-  "Pre-dessert",
-  "Dolci",
-  "Piccola pasticceria",
+const PRESETS: ReadonlyArray<TranslationKey> = [
+  "section_preset_cold_starters",
+  "section_preset_hot_starters",
+  "section_preset_first_courses",
+  "section_preset_sea_mains",
+  "section_preset_land_mains",
+  "section_preset_sides",
+  "section_preset_pre_dessert",
+  "section_preset_desserts",
+  "section_preset_petits_fours",
 ];
 
 type Props = {
@@ -58,15 +58,18 @@ export function SectionPresetSheet({ open, onClose, onPick }: Props) {
       <Text style={styles.title}>{t("section_add")}</Text>
         <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
           <View style={styles.grid}>
-            {PRESETS.map((name) => (
-              <Pressable
-                key={name}
-                style={styles.chip}
-                onPress={() => handlePreset(name)}
-              >
-                <Text style={styles.chipLabel}>{name}</Text>
-              </Pressable>
-            ))}
+            {PRESETS.map((key) => {
+              const name = t(key);
+              return (
+                <Pressable
+                  key={key}
+                  style={styles.chip}
+                  onPress={() => handlePreset(name)}
+                >
+                  <Text style={styles.chipLabel}>{name}</Text>
+                </Pressable>
+              );
+            })}
           </View>
 
           <View style={styles.customRow}>
