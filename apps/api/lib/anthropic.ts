@@ -25,6 +25,7 @@ type RestaurantContext = {
   name: string;
   identityLine: string | null;
   chefNotes?: string[];
+  city?: string | null;
 };
 
 type RecentRecipe = {
@@ -33,11 +34,18 @@ type RecentRecipe = {
 
 export type Msg = { role: "user" | "assistant"; content: string };
 
+// Fixed Spanish month names: no Intl, so the text never varies between runtimes.
+const MONTHS_ES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
 export function buildSystemBlocks(
   restaurant: RestaurantContext,
   recentRecipes: RecentRecipe[],
   pinnedIdea: string | null,
   culinaryMemory?: string | null,
+  conversation?: { speakerName?: string | null; now?: Date },
 ) {
   const principles = loadSystemPrompt();
 
@@ -51,8 +59,11 @@ export function buildSystemBlocks(
   // Restaurant identity — also stable per session, cached.
   // Explicit key order and preserved note order keep the JSON cache-stable.
   // Normalize legacy stored notes here as well as new notes in the schema.
+  // The city is added only when present, so the cached text stays byte-identical without it.
+  const city = restaurant.city ? normalizeWhitespace(restaurant.city) : "";
   const identityData = {
     name: restaurant.name,
+    ...(city ? { city } : {}),
     ...(restaurant.identityLine ? { identityLine: normalizeWhitespace(restaurant.identityLine) } : {}),
     ...(restaurant.chefNotes?.length ? { chefNotes: restaurant.chefNotes.map(normalizeWhitespace) } : {}),
   };
@@ -77,12 +88,18 @@ export function buildSystemBlocks(
   // created, deleted, or renamed, so the cached prefix survives edits and state
   // changes. The titles remain useful live context even when memory exists.
   // The pinned idea remains after the stable memory and is intentionally live.
-  if (recentRecipes.length > 0 || pinnedIdea) {
+  // Who writes and the current month change per person and per month, so they
+  // stay in this live block after the last system breakpoint, as data.
+  const speakerName = conversation?.speakerName ? normalizeWhitespace(conversation.speakerName) : "";
+  const now = conversation?.now ?? new Date();
+  if (recentRecipes.length > 0 || pinnedIdea || conversation) {
     const liveData = {
       ...(recentRecipes.length > 0
         ? { recentRecipeTitles: recentRecipes.slice(0, 8).map(recipe => normalizeWhitespace(recipe.title)) }
         : {}),
       ...(pinnedIdea ? { pinnedIdea: normalizeWhitespace(pinnedIdea) } : {}),
+      ...(speakerName ? { speakerName } : {}),
+      ...(conversation ? { currentMonth: `${MONTHS_ES[now.getUTCMonth()]} de ${now.getUTCFullYear()}` } : {}),
     };
     blocks.push({ type: "text", text: formatRestaurantData(liveData) });
   }

@@ -96,9 +96,14 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
     let recentRecipes: { title: string }[] = [];
     let culinaryMemory: string | null = null;
     let messages: Msg[];
+    let speakerName: string | null;
+    // The speaker's profile name is optional context: a failed read never blocks the turn.
+    const loadSpeakerName = () => prisma.user.findUnique({ where: { id: user.userId }, select: { name: true } })
+      .then(speaker => speaker?.name ?? null, () => null);
 
     if (isPreview) {
       restaurant = { name: "Tu cocina", identityLine: null };
+      speakerName = await loadSpeakerName();
       const rawHistory = message.history ?? [];
       const history: Msg[] = rawHistory.slice(-20);
       let total = rawHistory.length;
@@ -110,10 +115,10 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
       // Count after appending, so each client window shares the saved-chat alignment.
       messages = stableHistoryWindow(history, total);
     } else {
-      const [r, history, total, recent, notes, preparedMemory] = await Promise.all([
+      const [r, history, total, recent, notes, preparedMemory, speaker] = await Promise.all([
         prisma.restaurant.findUnique({
           where: { id: user.restaurantId },
-          select: { name: true, identityLine: true },
+          select: { name: true, identityLine: true, city: true },
         }),
         prisma.message.findMany({
           where: { conversationId }, orderBy: { createdAt: "desc" }, take: 20,
@@ -129,9 +134,11 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
           orderBy: { createdAt: "asc" }, take: 10, select: { text: true },
         }),
         chatMemory(user.restaurantId).catch(() => null),
+        loadSpeakerName(),
       ]);
       if (!r) throw new Error("Restaurant not found");
       restaurant = { ...r, chefNotes: notes.map(note => note.text) };
+      speakerName = speaker;
       recentRecipes = recent;
       culinaryMemory = preparedMemory || null;
       const historyWithCurrent: Msg[] = history.slice().reverse()
@@ -144,7 +151,7 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
       messages = stableHistoryWindow(historyWithCurrent, total + (isNewMessage ? 1 : 0));
     }
 
-    const system = buildSystemBlocks(restaurant, recentRecipes, pinnedIdeaText, culinaryMemory);
+    const system = buildSystemBlocks(restaurant, recentRecipes, pinnedIdeaText, culinaryMemory, { speakerName });
     signal.throwIfAborted();
     checkDeadline();
     // Estimate the exact prepared payload, but never persist a refused turn.
