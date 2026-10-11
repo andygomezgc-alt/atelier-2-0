@@ -14,11 +14,22 @@
 // producción: crea y borra restaurantes.
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 import { Prisma, prisma } from "@atelier/db";
 import { saveNewRecipe } from "../create-recipe";
 import { chatMemory, patchCulinaryMemory } from "./service";
 import { learnAfterImport, maintainMemoryRuns, processMemory } from "./worker";
+import { IMPORT_ORPHAN_MS } from "./scheduling";
+import { GET as cronGet } from "@/app/api/cron/culinary-memory/route";
 import type { MemoryGenerator } from "./provider";
+
+// The cron route uses the configured provider: here it is a fixture too, so it pays nothing.
+const cronGenerator = vi.hoisted(() => vi.fn());
+vi.mock("./provider", async importOriginal => ({
+  ...(await importOriginal<typeof import("./provider")>()),
+  generateMemory: cronGenerator,
+  memoryProviderConfig: () => ({ provider: "fixture", model: "fixture" }),
+}));
 
 const enabled = process.env.CULINARY_MEMORY_IT === "1";
 const DAY = 24 * 60 * 60 * 1000;
@@ -27,6 +38,9 @@ const SLACK = 2 * 60 * 60 * 1000;
 const WEEKLY = 7 * DAY - SLACK;
 const config = { provider: "fixture", model: "fixture" };
 const run = `it-${randomUUID().slice(0, 8)}`;
+/** An import run right away: a full deadline, no quiet wait and a short poll. */
+const importRun = (ticket: number | null, generator: MemoryGenerator, extra = {}) =>
+  ({ generator, config, ticket: ticket!, deadline: Date.now() + 270_000, quietMs: 0, pollMs: 10, ...extra });
 
 const roasted: MemoryGenerator = async (input, onUsage) => {
   await onUsage({ inputTokens: 30, outputTokens: 10, reasoningTokens: 0 });
@@ -60,13 +74,10 @@ async function seed(name: string, recipes = 3) {
 }
 
 /** Carga una receta como lo hace la app (origen "import"); un admin la deja aprobada. */
-async function importRecipe(restaurantId: string, ingredient: string) {
-  const { recipe } = await saveNewRecipe(restaurantId, `${restaurantId}-user`, {
-    title: ingredient, origin: "import",
-    contentJson: { ingredients: [`200 g ${ingredient}`], method: [`Asar ${ingredient}`], notes: "" },
-  }, "admin");
-  return recipe;
-}
+const importSaved = (restaurantId: string, ingredient: string) => saveNewRecipe(restaurantId, `${restaurantId}-user`, {
+  title: ingredient, origin: "import",
+  contentJson: { ingredients: [`200 g ${ingredient}`], method: [`Asar ${ingredient}`], notes: "" },
+}, "admin");
 const sourceIds = async (restaurantId: string) =>
   ((await memoryOf(restaurantId)).learned as Array<{ sources: { id: string }[] }>).flatMap(fact => fact.sources.map(source => source.id));
 
@@ -329,11 +340,12 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
   it("con la memoria ya aprendida esta semana, una carga vuelve a aprender al momento", async () => {
     const id = await seed("import-relearn");
     expect(await processMemory(id, roasted, config, new Date())).toBe("completed");
-    const recipe = await importRecipe(id, "pimiento");
+    const { recipe, importTicket } = await importSaved(id, "pimiento");
     expect(recipe.state).toBe("approved");
     // El cron sigue esperando a la semana; la carga no.
     expect(await processMemory(id, roasted, config, new Date())).toBe("skipped");
-    expect(await learnAfterImport(id, { generator: roasted, config, pollMs: 10 })).toBe("completed");
+    expect(await learnAfterImport(id, importRun(importTicket, roasted))).toBe("completed");
+    expect((await memoryOf(id)).importPendingAt).toBeNull();
     expect(await sourceIds(id)).toContain(recipe.id);
     expect(await publishedRuns(id)).toBe(2);
     expect((await prisma.culinaryMemoryRun.findFirstOrThrow({ where: { restaurantId: id }, orderBy: { createdAt: "desc" } })).isRetry).toBe(false);
@@ -349,11 +361,11 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
     let secondCalls = 0;
     const second: MemoryGenerator = async (input, onUsage) => { secondCalls++; return roasted(input, onUsage); };
 
-    const first = await importRecipe(id, "pimiento");
-    const firstRun = learnAfterImport(id, { generator: slow, config, pollMs: 20 });
+    const { recipe: first, importTicket: firstTicket } = await importSaved(id, "pimiento");
+    const firstRun = learnAfterImport(id, importRun(firstTicket, slow, { pollMs: 20 }));
     await ready;
-    const other = await importRecipe(id, "cebolla");
-    const secondRun = learnAfterImport(id, { generator: second, config, pollMs: 20 });
+    const { recipe: other, importTicket: otherTicket } = await importSaved(id, "cebolla");
+    const secondRun = learnAfterImport(id, importRun(otherTicket, second, { pollMs: 20 }));
     try {
       // La segunda corrida encuentra el bloqueo y espera.
       await new Promise(resolve => setTimeout(resolve, 150));
@@ -376,16 +388,88 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
     await patchCulinaryMemory(id, { expectedVersion: version, enabled: false });
     let calls = 0;
     const counted: MemoryGenerator = async (input, onUsage) => { calls++; return roasted(input, onUsage); };
-    await importRecipe(id, "pimiento");
-    expect(await learnAfterImport(id, { generator: counted, config, pollMs: 10 })).toBe("skipped");
+    // Sin ticket la ruta no programa nada; si la memoria se apaga durante la espera, la corrida tampoco paga.
+    expect((await importSaved(id, "pimiento")).importTicket).toBeNull();
+    expect(await learnAfterImport(id, importRun(0, counted))).toBe("skipped");
     expect(calls).toBe(0);
     expect(await prisma.culinaryMemoryRun.count({ where: { restaurantId: id } })).toBe(0);
   });
 
+  it("veinte cargas seguidas pagan una sola llamada: las demás se apartan sin escribir", async () => {
+    const id = await seed("import-burst");
+    let calls = 0;
+    const counted: MemoryGenerator = async (input, onUsage) => { calls++; return roasted(input, onUsage); };
+    const runs: Promise<string>[] = [];
+    const recipes: string[] = [];
+    for (let index = 0; index < 20; index++) {
+      const { recipe, importTicket } = await importSaved(id, `verdura ${index}`);
+      recipes.push(recipe.id);
+      runs.push(learnAfterImport(id, importRun(importTicket, counted, { quietMs: 1_000, checkMs: 50, pollMs: 20 })));
+      await new Promise(resolve => setTimeout(resolve, 30));
+    }
+    const results = await Promise.all(runs);
+    expect(calls).toBe(1);
+    expect(results.filter(result => result === "debounced")).toHaveLength(19);
+    expect(results.at(-1)).toBe("completed");
+    // La evidencia llega a 20 recetas: la última carga entra seguro.
+    expect(await sourceIds(id)).toContain(recipes.at(-1));
+    expect(await prisma.culinaryMemoryRun.count({ where: { restaurantId: id } })).toBe(1);
+    expect((await memoryOf(id)).importPendingAt).toBeNull();
+  });
+
+  it("dos cargas más separadas que la ventana de silencio pagan dos llamadas", async () => {
+    const id = await seed("import-apart");
+    let calls = 0;
+    const counted: MemoryGenerator = async (input, onUsage) => { calls++; return roasted(input, onUsage); };
+    for (const ingredient of ["pimiento", "cebolla"]) {
+      const { importTicket } = await importSaved(id, ingredient);
+      expect(await learnAfterImport(id, importRun(importTicket, counted, { quietMs: 150, checkMs: 50 }))).toBe("completed");
+    }
+    expect(calls).toBe(2);
+  });
+
+  it("cada carga nueva toma un ticket y deja la marca; con la memoria apagada no hay ticket", async () => {
+    const id = await seed("import-ticket");
+    const before = Date.now();
+    const first = await importSaved(id, "pimiento");
+    const second = await importSaved(id, "cebolla");
+    expect([first.importTicket, second.importTicket]).toEqual([1, 2]);
+    const marked = await memoryOf(id);
+    expect(marked.importTicket).toBe(2);
+    // La marca se guarda en UTC como el resto de fechas (un segundo de holgura para el reloj).
+    expect(+marked.importPendingAt!).toBeGreaterThanOrEqual(before - 1000);
+    expect(+marked.importPendingAt!).toBeLessThanOrEqual(Date.now() + 1000);
+    await patchCulinaryMemory(id, { expectedVersion: marked.version, enabled: false });
+    expect((await importSaved(id, "calabaza")).importTicket).toBeNull();
+    expect((await memoryOf(id)).importTicket).toBe(2);
+  });
+
+  it("una carga cuya corrida se cortó se aprende una vez en el cron y no se repite", async () => {
+    const id = await seed("import-orphan");
+    const { recipe } = await importSaved(id, "pimiento");
+    // Su corrida no terminó: la marca lleva más de diez minutos y la fila no toca hasta mañana.
+    await prisma.culinaryMemory.update({ where: { restaurantId: id },
+      data: { importPendingAt: new Date(Date.now() - IMPORT_ORPHAN_MS - 1_000), nextCheckAt: new Date(Date.now() + DAY) } });
+    cronGenerator.mockImplementation(roasted);
+    vi.stubEnv("CRON_SECRET", "it-secret");
+    const cron = () => cronGet(new NextRequest("https://local/api/cron/culinary-memory", { headers: { authorization: "Bearer it-secret" } }));
+    try {
+      expect((await cron()).status).toBe(200);
+      const runs = await prisma.culinaryMemoryRun.findMany({ where: { restaurantId: id } });
+      expect(runs.map(r => r.status)).toEqual(["completed"]);
+      expect(await sourceIds(id)).toContain(recipe.id);
+      expect((await memoryOf(id)).importPendingAt).toBeNull();
+      await cron();
+      expect(await prisma.culinaryMemoryRun.count({ where: { restaurantId: id } })).toBe(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("después de una carga, el cron sigue respetando la semana", async () => {
     const id = await seed("import-cadence");
-    await importRecipe(id, "pimiento");
-    expect(await learnAfterImport(id, { generator: roasted, config, pollMs: 10 })).toBe("completed");
+    const { importTicket } = await importSaved(id, "pimiento");
+    expect(await learnAfterImport(id, importRun(importTicket, roasted))).toBe("completed");
     const learned = await memoryOf(id);
     const anchor = learned.lastAttemptAt!;
     expect(learned.cycleStartedAt).toEqual(anchor);

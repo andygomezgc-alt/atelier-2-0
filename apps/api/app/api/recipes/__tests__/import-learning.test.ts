@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const { auth, saveNewRecipe, after, learnAfterImport, providerConfig, generateMemory, logger } = vi.hoisted(() => ({
@@ -14,24 +14,29 @@ vi.mock("@/lib/culinary-memory/worker", () => ({ learnAfterImport }));
 vi.mock("@/lib/culinary-memory/provider", () => ({ memoryProviderConfig: providerConfig, generateMemory }));
 vi.mock("@/lib/logger", () => ({ logger }));
 import { POST, maxDuration } from "../route";
-import { MINIMUM_ROW_TIME_MS } from "@/lib/culinary-memory/scheduling";
+import { IMPORT_DEADLINE_MS, IMPORT_QUIET_MS, MINIMUM_ROW_TIME_MS } from "@/lib/culinary-memory/scheduling";
 
 const config = { provider: "fixture", model: "test" };
+const t0 = new Date("2026-10-12T09:00:00Z");
 const contentJson = { ingredients: ["200 g tomate"], method: ["Asar"], notes: "" };
 const create = (body: Record<string, unknown>) => POST(new NextRequest("https://test.local/api/recipes", {
   method: "POST", body: JSON.stringify({ title: "Tomate asado", contentJson, ...body }), headers: { "Content-Type": "application/json" },
 }));
-const saved = (state: string, reused = false) => saveNewRecipe.mockResolvedValue({ recipe: { id: "recipe", state }, reused });
+const saved = (state: string, reused = false, importTicket: number | null = 1) =>
+  saveNewRecipe.mockResolvedValue({ recipe: { id: "recipe", state }, reused, importTicket });
 /** Runs what the route deferred until after the response, as Next does. */
 const runAfter = async () => { for (const [task] of after.mock.calls) await (task as () => Promise<unknown>)(); };
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(t0);
   vi.clearAllMocks();
   auth.mockResolvedValue({ userId: "u1", restaurantId: "r1", role: "chef_executive" });
   providerConfig.mockReturnValue(config);
   learnAfterImport.mockResolvedValue("completed");
   saved("in_test");
 });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("learning right after an imported recipe", () => {
   it("passes the saver's role so the state can be decided", async () => {
@@ -45,10 +50,27 @@ describe("learning right after an imported recipe", () => {
     expect(response.status).toBe(201);
     expect(after).toHaveBeenCalledOnce();
     expect(learnAfterImport).not.toHaveBeenCalled();
+    vi.setSystemTime(+t0 + 5_000);
     await runAfter();
-    expect(learnAfterImport).toHaveBeenCalledWith("r1", { generator: generateMemory, config, signal: expect.any(AbortSignal) });
-    expect((learnAfterImport.mock.calls[0]![1].signal as AbortSignal).aborted).toBe(false);
-    expect(logger.info).toHaveBeenCalledWith("culinary_memory_import_run", expect.objectContaining({ restaurantId: "r1", result: "completed" }));
+    expect(learnAfterImport).toHaveBeenCalledWith("r1", { generator: generateMemory, config, ticket: 1, deadline: +t0 + IMPORT_DEADLINE_MS });
+    expect(logger.info).toHaveBeenCalledWith("culinary_memory_import_run", { restaurantId: "r1", result: "completed", elapsedMs: 5_000 });
+  });
+
+  it("anchors the deadline at the start of the request, not at the end of a slow save", async () => {
+    saveNewRecipe.mockImplementation(async () => {
+      vi.setSystemTime(+t0 + 40_000);
+      return { recipe: { id: "recipe", state: "in_test" }, reused: false, importTicket: 3 };
+    });
+    await create({ origin: "import" });
+    await runAfter();
+    expect(learnAfterImport.mock.calls[0]![1]).toMatchObject({ ticket: 3, deadline: +t0 + IMPORT_DEADLINE_MS });
+  });
+
+  it("creates no timeout signal while handling the request", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    await create({ origin: "import" });
+    expect(after).toHaveBeenCalledOnce();
+    expect(timeout).not.toHaveBeenCalled();
   });
 
   it.each<[string, () => void, Record<string, unknown>]>([
@@ -56,6 +78,7 @@ describe("learning right after an imported recipe", () => {
     ["the recipe stays a draft", () => saved("draft"), { origin: "import" }],
     ["the recipe is not an import", () => saved("in_test"), {}],
     ["no provider is configured", () => providerConfig.mockReturnValue(null), { origin: "import" }],
+    ["the save took no import ticket (memory off or no row)", () => saved("in_test", false, null), { origin: "import" }],
   ])("does not learn when %s", async (_label, arrange, body) => {
     arrange();
     expect((await create(body)).status).toBeLessThan(300);
@@ -72,8 +95,10 @@ describe("learning right after an imported recipe", () => {
     expect(logger.error).toHaveBeenCalledWith("culinary_memory_import_run_failed", expect.objectContaining({ restaurantId: "r1", error: failure }));
   });
 
-  it("the function lasts long enough for one run and its final margin", () => {
-    expect(maxDuration * 1000).toBeGreaterThanOrEqual(MINIMUM_ROW_TIME_MS + 30_000);
+  it("the quiet wait, the worst save and one run fit the deadline, and the deadline fits the function", () => {
+    // Worst save handler: the transaction's maxWait (10 s) plus its timeout (30 s).
+    expect(IMPORT_QUIET_MS + 40_000 + MINIMUM_ROW_TIME_MS).toBeLessThanOrEqual(IMPORT_DEADLINE_MS);
+    expect(IMPORT_DEADLINE_MS + 30_000).toBeLessThanOrEqual(maxDuration * 1000);
     expect(maxDuration).toBeLessThanOrEqual(300);
   });
 });
