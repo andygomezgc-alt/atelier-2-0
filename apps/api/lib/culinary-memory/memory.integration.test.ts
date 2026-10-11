@@ -14,11 +14,22 @@
 // producción: crea y borra restaurantes.
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 import { Prisma, prisma } from "@atelier/db";
 import { saveNewRecipe } from "../create-recipe";
 import { chatMemory, patchCulinaryMemory } from "./service";
 import { learnAfterImport, maintainMemoryRuns, processMemory } from "./worker";
+import { IMPORT_ORPHAN_MS } from "./scheduling";
+import { GET as cronGet } from "@/app/api/cron/culinary-memory/route";
 import type { MemoryGenerator } from "./provider";
+
+// The cron route uses the configured provider: here it is a fixture too, so it pays nothing.
+const cronGenerator = vi.hoisted(() => vi.fn());
+vi.mock("./provider", async importOriginal => ({
+  ...(await importOriginal<typeof import("./provider")>()),
+  generateMemory: cronGenerator,
+  memoryProviderConfig: () => ({ provider: "fixture", model: "fixture" }),
+}));
 
 const enabled = process.env.CULINARY_MEMORY_IT === "1";
 const DAY = 24 * 60 * 60 * 1000;
@@ -431,6 +442,28 @@ describe.runIf(enabled)("memoria culinaria sobre PostgreSQL", () => {
     await patchCulinaryMemory(id, { expectedVersion: marked.version, enabled: false });
     expect((await importSaved(id, "calabaza")).importTicket).toBeNull();
     expect((await memoryOf(id)).importTicket).toBe(2);
+  });
+
+  it("una carga cuya corrida se cortó se aprende una vez en el cron y no se repite", async () => {
+    const id = await seed("import-orphan");
+    const { recipe } = await importSaved(id, "pimiento");
+    // Su corrida no terminó: la marca lleva más de diez minutos y la fila no toca hasta mañana.
+    await prisma.culinaryMemory.update({ where: { restaurantId: id },
+      data: { importPendingAt: new Date(Date.now() - IMPORT_ORPHAN_MS - 1_000), nextCheckAt: new Date(Date.now() + DAY) } });
+    cronGenerator.mockImplementation(roasted);
+    vi.stubEnv("CRON_SECRET", "it-secret");
+    const cron = () => cronGet(new NextRequest("https://local/api/cron/culinary-memory", { headers: { authorization: "Bearer it-secret" } }));
+    try {
+      expect((await cron()).status).toBe(200);
+      const runs = await prisma.culinaryMemoryRun.findMany({ where: { restaurantId: id } });
+      expect(runs.map(r => r.status)).toEqual(["completed"]);
+      expect(await sourceIds(id)).toContain(recipe.id);
+      expect((await memoryOf(id)).importPendingAt).toBeNull();
+      await cron();
+      expect(await prisma.culinaryMemoryRun.count({ where: { restaurantId: id } })).toBe(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("después de una carga, el cron sigue respetando la semana", async () => {

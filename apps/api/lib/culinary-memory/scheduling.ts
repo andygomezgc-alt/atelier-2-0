@@ -12,3 +12,5 @@ export const IMPORT_DEADLINE_MS = 270_000;
 // It must leave the worst save (40 s) plus one row (MINIMUM_ROW_TIME_MS) inside IMPORT_DEADLINE_MS.
 export const IMPORT_QUIET_MS = 170_000;
 export const IMPORT_QUIET_CHECK_MS = 15_000;
+// A marker this old belongs to an import run that ended without learning: the cron learns it once.
+export const IMPORT_ORPHAN_MS = 600_000;
