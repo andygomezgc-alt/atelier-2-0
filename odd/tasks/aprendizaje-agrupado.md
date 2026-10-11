@@ -68,5 +68,8 @@ Que una ráfaga de recetas cargadas cueste una sola llamada de pago a la IA en v
 - **Revisión adversarial** (workflow de 32 agentes: 5 revisores y 3 escépticos por hallazgo): 9 hallazgos, 2 confirmados, ambos de tests: TQ3 (faltaban casos de la regla de la marca: `suppressed` borra, `superseded` y excepción mantienen) y TQ4 (aserción dependiente del reloj real). Arreglados en `0b32b37`; las mutaciones de `IMPORT_SETTLED` y un borrado en `finally` hacen fallar los tests nuevos. `worker.ts` sin cambios desde T3; `worker.test.ts` 49/49 tres veces; api 1200/1200.
 - Riesgo anotado fuera de alcance: `apps/api/lib/ai/budget.ts` también escribe `Date` crudos en SQL; en Neon la sesión es UTC, pero se desplazaría si no lo fuera.
 
+- **RDD:** Andy concedió la revisión (582 líneas, riesgo alto); cuatro lentes, **aprobada** y acusada. 7 avisos informativos ya contemplados en el diseño (el cron borra la marca antes de correr para recuperar como máximo una vez; el presupuesto 170 + 40 + 60 = 270 s está justo a propósito y su peor caso queda `deferred`).
+- **Entrega (12-10-2026, autorizada por Andy):** PR #30 con CI verde, fusionado en `main` (`1e26219`). Vercel desplegó en `Ready`; `prisma migrate status` en producción (solo lectura): 36 migraciones, al día. Sin binario nuevo.
+
 ## Siguiente paso
-Revisión RDD de la rama y entrega (fusión con `main`; Vercel aplica la migración; no hace falta binario).
+Entregado. Para comprobarlo en producción: cargar 3 recetas seguidas y ver en los registros de Vercel (se guardan 1 h) 2 `debounced` y 1 `completed` en `culinary_memory_import_run`, y una sola fila nueva en `CulinaryMemoryRun`.
