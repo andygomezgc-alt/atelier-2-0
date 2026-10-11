@@ -49,7 +49,7 @@ const ctx = { userId: "user-1", role: "admin" as const, restaurantId: "rest-1" }
 describe("DELETE /api/ideas/[id]", () => {
   it("returns 200 and deletes when idea exists in restaurant", async () => {
     requireAuth.mockResolvedValue(ctx);
-    idea.findUnique.mockResolvedValue({ id: "idea-1", restaurantId: "rest-1" });
+    idea.findUnique.mockResolvedValue({ id: "idea-1", restaurantId: "rest-1", authorId: "user-1" });
     idea.delete.mockResolvedValue({ id: "idea-1" });
 
     const res = await route.DELETE(fakeReq(), { params });
@@ -71,13 +71,27 @@ describe("DELETE /api/ideas/[id]", () => {
 
   it("returns 404 when idea belongs to a different restaurant (cross-tenant guard)", async () => {
     requireAuth.mockResolvedValue(ctx);
-    idea.findUnique.mockResolvedValue({ id: "idea-1", restaurantId: "rest-OTHER" });
+    idea.findUnique.mockResolvedValue({ id: "idea-1", restaurantId: "rest-OTHER", authorId: "user-1" });
 
     const res = await route.DELETE(fakeReq(), { params });
 
     expect(res.status).toBe(404);
     expect(idea.delete).not.toHaveBeenCalled();
   });
+
+  it.each(["sous_chef", "admin"] as const)(
+    "returns 404 for a teammate's idea in the same restaurant (%s)",
+    async (role) => {
+      requireAuth.mockResolvedValue({ ...ctx, role });
+      idea.findUnique.mockResolvedValue({ id: "idea-1", restaurantId: "rest-1", authorId: "user-2" });
+
+      const res = await route.DELETE(fakeReq(), { params });
+
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "Not found" });
+      expect(idea.delete).not.toHaveBeenCalled();
+    },
+  );
 
   it("propagates auth response when requireAuth denies", async () => {
     const denied = new Response(JSON.stringify({ error: "unauthorized" }), {

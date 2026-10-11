@@ -13,7 +13,10 @@ export const dynamic = "force-dynamic";
  * first time the idea is opened in the assistant.
  *
  * IDOR-guarded: only conversations belonging to the caller's restaurant are
- * returned. The idea itself is also scoped to the same restaurant.
+ * returned. The idea itself is also scoped to the same restaurant, and ideas
+ * are private: only the idea's author can open it (admins included). An
+ * existing conversation may have another author (legacy rows where a
+ * teammate opened the idea); the idea's author still gets it back.
  */
 export async function GET(
   req: NextRequest,
@@ -31,14 +34,14 @@ export async function GET(
   const [idea, me] = await Promise.all([
     prisma.idea.findUnique({
       where: { id: ideaId },
-      select: { id: true, restaurantId: true },
+      select: { id: true, restaurantId: true, authorId: true },
     }),
     prisma.user.findUnique({
       where: { id: ctx.userId },
       select: { defaultModel: true },
     }),
   ]);
-  if (!idea || idea.restaurantId !== ctx.restaurantId)
+  if (!idea || idea.restaurantId !== ctx.restaurantId || idea.authorId !== ctx.userId)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const defaultModel = me?.defaultModel ?? "sonnet";

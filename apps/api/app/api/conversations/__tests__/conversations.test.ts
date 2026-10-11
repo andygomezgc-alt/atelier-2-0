@@ -3,10 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { can, type Permission } from "@atelier/shared";
 
 const h = vi.hoisted(() => ({
-  findMany: vi.fn(), create: vi.fn(), restaurantId: "restaurant-1" as string | null,
+  findMany: vi.fn(), create: vi.fn(), findConversation: vi.fn(), findIdea: vi.fn(), updateIdeas: vi.fn(),
+  restaurantId: "restaurant-1" as string | null,
   role: "chef_executive" as Parameters<typeof can>[0],
 }));
-vi.mock("@atelier/db", () => ({ prisma: { conversation: { findMany: h.findMany, create: h.create } } }));
+vi.mock("@atelier/db", () => ({ prisma: {
+  conversation: { findMany: h.findMany, create: h.create, findUnique: h.findConversation },
+  idea: { findUnique: h.findIdea, updateMany: h.updateIdeas },
+} }));
 vi.mock("@/lib/permissions-guard", () => ({
   requireAuth: vi.fn(async (_req: NextRequest, permission?: Permission) => {
     if (permission && !h.restaurantId)
@@ -29,6 +33,9 @@ beforeEach(() => {
   h.role = "chef_executive";
   h.findMany.mockReset();
   h.create.mockReset();
+  h.findConversation.mockReset();
+  h.findIdea.mockReset();
+  h.updateIdeas.mockReset();
 });
 
 describe("conversation history and new chats", () => {
@@ -100,5 +107,42 @@ describe("conversation history and new chats", () => {
     expect(await second.json()).toEqual({ id: "chat-2" });
     expect(h.create).toHaveBeenCalledTimes(2);
     expect(h.create).toHaveBeenLastCalledWith({ data: { restaurantId: "restaurant-1", authorId: "chef-1", modelUsed: "daily", ideaId: null } });
+  });
+
+  const ideaChat = () => new NextRequest(url, { method: "POST", body: JSON.stringify({ ideaId: "idea-1", modelUsed: "daily" }), headers: { "Content-Type": "application/json" } });
+
+  it.each(["sous_chef", "admin"] as const)("does not open a chat on a teammate's idea (%s)", async (role) => {
+    h.role = role;
+    h.findIdea.mockResolvedValue({ id: "idea-1", restaurantId: "restaurant-1", authorId: "chef-2" });
+    h.findConversation.mockResolvedValue({ id: "chat-of-teammate" });
+    const res = await POST(ideaChat());
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Idea not found" });
+    expect(h.findConversation).not.toHaveBeenCalled();
+    expect(h.create).not.toHaveBeenCalled();
+    expect(h.updateIdeas).not.toHaveBeenCalled();
+  });
+
+  it("does not start a chat or move a teammate's idea to in_chat when it has none yet", async () => {
+    h.findIdea.mockResolvedValue({ id: "idea-1", restaurantId: "restaurant-1", authorId: "chef-2" });
+    h.findConversation.mockResolvedValue(null);
+    h.create.mockResolvedValue({ id: "chat-new" });
+    const res = await POST(ideaChat());
+    expect(res.status).toBe(404);
+    expect(h.create).not.toHaveBeenCalled();
+    expect(h.updateIdeas).not.toHaveBeenCalled();
+  });
+
+  it("returns the existing chat of the caller's own idea, or creates it and marks the idea in_chat", async () => {
+    h.findIdea.mockResolvedValue({ id: "idea-1", restaurantId: "restaurant-1", authorId: "chef-1" });
+    h.findConversation.mockResolvedValueOnce({ id: "chat-existing" }).mockResolvedValueOnce(null);
+    h.create.mockResolvedValue({ id: "chat-new" });
+    const existing = await POST(ideaChat());
+    expect(existing.status).toBe(200);
+    expect(await existing.json()).toEqual({ id: "chat-existing" });
+    const created = await POST(ideaChat());
+    expect(created.status).toBe(201);
+    expect(await created.json()).toEqual({ id: "chat-new" });
+    expect(h.updateIdeas).toHaveBeenCalledWith({ where: { id: "idea-1", restaurantId: "restaurant-1" }, data: { status: "in_chat" } });
   });
 });

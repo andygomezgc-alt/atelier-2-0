@@ -20,7 +20,8 @@ export async function PATCH(
     return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
 
   const existing = await prisma.idea.findUnique({ where: { id } });
-  if (!existing || existing.restaurantId !== ctx.restaurantId)
+  // Las ideas son privadas: la ajena (incluso para el admin) responde 404.
+  if (!existing || existing.restaurantId !== ctx.restaurantId || existing.authorId !== ctx.userId)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const data: { text?: string; status?: "open" | "in_chat" | "archived" } = {};
@@ -40,7 +41,8 @@ export async function DELETE(
   const { id } = await params;
 
   const existing = await prisma.idea.findUnique({ where: { id } });
-  if (!existing || existing.restaurantId !== ctx.restaurantId)
+  // Las ideas son privadas: la ajena (incluso para el admin) responde 404.
+  if (!existing || existing.restaurantId !== ctx.restaurantId || existing.authorId !== ctx.userId)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.idea.delete({ where: { id } });
