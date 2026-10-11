@@ -11,7 +11,8 @@ export const dynamic = "force-dynamic";
 export const GET = withAuth({}, async (ctx) => {
   const ideas = await prisma.idea.findMany({
     // archived = nota ya consumida (volvió receta): no aparece en Inicio.
-    where: { restaurantId: ctx.restaurantId, status: { not: "archived" } },
+    // Las ideas son privadas: cada uno ve solo las suyas (admin incluido).
+    where: { restaurantId: ctx.restaurantId, authorId: ctx.userId, status: { not: "archived" } },
     orderBy: { createdAt: "desc" },
     include: ideaInclude,
     take: 100,

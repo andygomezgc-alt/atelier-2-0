@@ -100,7 +100,7 @@ describe("GET /api/ideas/:id/conversation", () => {
 
   it("returns 404 when idea belongs to another restaurant (IDOR guard)", async () => {
     mockAuthedUser({ userId: "u1", restaurantId: "r1" });
-    idea.findUnique.mockResolvedValue({ id: "idea-X", restaurantId: "r2" });
+    idea.findUnique.mockResolvedValue({ id: "idea-X", restaurantId: "r2", authorId: "u1" });
 
     const token = await makeToken("u1");
     const res = await route.GET(
@@ -111,9 +111,55 @@ describe("GET /api/ideas/:id/conversation", () => {
     expect(conversation.findUnique).not.toHaveBeenCalled();
   });
 
+  it.each(["sous_chef", "admin"])(
+    "returns 404 for a teammate's idea in the same restaurant without opening its chat (%s)",
+    async (role) => {
+      mockAuthedUser({ userId: "u1", restaurantId: "r1", role });
+      idea.findUnique.mockResolvedValue({ id: "idea-T", restaurantId: "r1", authorId: "u2" });
+      conversation.findUnique.mockResolvedValue(null);
+      conversation.create.mockResolvedValue({
+        id: "conv-T",
+        modelUsed: "sonnet",
+        createdAt: new Date("2026-05-10T00:00:00Z"),
+        messages: [],
+      });
+
+      const token = await makeToken("u1");
+      const res = await route.GET(
+        makeReq("https://test.local/api/ideas/idea-T/conversation", token),
+        { params: Promise.resolve({ id: "idea-T" }) },
+      );
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "Not found" });
+      expect(conversation.findUnique).not.toHaveBeenCalled();
+      expect(conversation.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it("returns the idea's chat to its author even when a teammate started it", async () => {
+    mockAuthedUser({ userId: "u1", restaurantId: "r1" });
+    idea.findUnique.mockResolvedValue({ id: "idea-A", restaurantId: "r1", authorId: "u1" });
+    conversation.findUnique.mockResolvedValue({
+      id: "conv-A",
+      authorId: "u2",
+      modelUsed: "sonnet",
+      createdAt: new Date("2026-05-10T00:00:00Z"),
+      messages: [],
+    });
+
+    const token = await makeToken("u1");
+    const res = await route.GET(
+      makeReq("https://test.local/api/ideas/idea-A/conversation", token),
+      { params: Promise.resolve({ id: "idea-A" }) },
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()).id).toBe("conv-A");
+    expect(conversation.create).not.toHaveBeenCalled();
+  });
+
   it("creates a conversation on first open and returns empty messages", async () => {
     mockAuthedUser({ userId: "u1", restaurantId: "r1" });
-    idea.findUnique.mockResolvedValue({ id: "idea-A", restaurantId: "r1" });
+    idea.findUnique.mockResolvedValue({ id: "idea-A", restaurantId: "r1", authorId: "u1" });
     conversation.findUnique.mockResolvedValue(null);
     conversation.create.mockResolvedValue({
       id: "conv-A",
@@ -144,7 +190,7 @@ describe("GET /api/ideas/:id/conversation", () => {
 
   it("returns ONLY messages of the requested idea (isolation between ideas)", async () => {
     mockAuthedUser({ userId: "u1", restaurantId: "r1" });
-    idea.findUnique.mockResolvedValue({ id: "idea-A", restaurantId: "r1" });
+    idea.findUnique.mockResolvedValue({ id: "idea-A", restaurantId: "r1", authorId: "u1" });
     conversation.findUnique.mockResolvedValue({
       id: "conv-A",
       modelUsed: "sonnet",
@@ -173,7 +219,7 @@ describe("GET /api/ideas/:id/conversation", () => {
 
   it("returns existing conversation on subsequent opens (1:1 idea→conversation)", async () => {
     mockAuthedUser({ userId: "u1", restaurantId: "r1" });
-    idea.findUnique.mockResolvedValue({ id: "idea-A", restaurantId: "r1" });
+    idea.findUnique.mockResolvedValue({ id: "idea-A", restaurantId: "r1", authorId: "u1" });
     conversation.findUnique.mockResolvedValue({
       id: "conv-A",
       modelUsed: "sonnet",
@@ -199,7 +245,7 @@ describe("GET /api/ideas/:id/conversation", () => {
 
     // --- Call 1: idea A ---
     mockAuthedUser({ userId: "u1", restaurantId: "r1" });
-    idea.findUnique.mockResolvedValueOnce({ id: "idea-A", restaurantId: "r1" });
+    idea.findUnique.mockResolvedValueOnce({ id: "idea-A", restaurantId: "r1", authorId: "u1" });
     conversation.findUnique.mockResolvedValueOnce({
       id: "conv-A",
       modelUsed: "sonnet",
@@ -218,7 +264,7 @@ describe("GET /api/ideas/:id/conversation", () => {
 
     // --- Call 2: idea B ---
     mockAuthedUser({ userId: "u1", restaurantId: "r1" });
-    idea.findUnique.mockResolvedValueOnce({ id: "idea-B", restaurantId: "r1" });
+    idea.findUnique.mockResolvedValueOnce({ id: "idea-B", restaurantId: "r1", authorId: "u1" });
     conversation.findUnique.mockResolvedValueOnce({
       id: "conv-B",
       modelUsed: "sonnet",

@@ -238,9 +238,7 @@ export default function InicioScreen() {
                       onPress={showAssistant ? () => takeToAssistant(idea) : undefined}
                     >
                       <Text style={styles.ideaText}>{idea.text}</Text>
-                      <Text style={styles.ideaMeta}>
-                        {idea.authorName}{showAssistant ? ` · ${t("inicio_idea_action")}` : ""}
-                      </Text>
+                      {showAssistant && <Text style={styles.ideaMeta}>{t("inicio_idea_action")}</Text>}
                     </Pressable>
                     <Pressable
                       hitSlop={10}

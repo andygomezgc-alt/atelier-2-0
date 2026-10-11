@@ -198,7 +198,7 @@ beforeEach(async () => {
     id: "conv-1",
     restaurantId: "r1",
     authorId: "u1", generationId,
-    idea: { text: null },
+    ideaId: null, idea: null,
   }));
 });
 
@@ -219,6 +219,33 @@ describe("GET chat permissions", () => {
     const res = await route.GET(new NextRequest("https://t.local/api/conversations/conv-1/messages"), { params: Promise.resolve({ id: "conv-1" }) });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual([{ id: "m1", role: "user", content: "recipe", clientMessageId: null, createdAt: "2026-10-06T10:00:00.000Z" }]);
+  });
+
+  const read = () => route.GET(new NextRequest("https://t.local/api/conversations/conv-1/messages"), { params: Promise.resolve({ id: "conv-1" }) });
+  const teammateIdeaChat = { id: "conv-1", restaurantId: "r1", authorId: "u2", ideaId: "idea-1", idea: { authorId: "u2" } };
+
+  it("hides a chat born from a teammate's idea", async () => {
+    authContext.role = "sous_chef";
+    db.conversation.findUnique.mockResolvedValueOnce(teammateIdeaChat);
+    db.message.findMany.mockResolvedValue([]);
+    const res = await read();
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Not found" });
+    expect(db.conversation.findUnique.mock.calls[0]![0]).toMatchObject({ select: { authorId: true, ideaId: true, idea: { select: { authorId: true } } } });
+    expect(db.message.findMany).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { who: "an admin", role: "admin", conversation: teammateIdeaChat },
+    { who: "the idea's author on a chat a teammate opened", role: "sous_chef", conversation: { ...teammateIdeaChat, idea: { authorId: "u1" } } },
+    { who: "a teammate on a chat without an idea", role: "sous_chef", conversation: { ...teammateIdeaChat, ideaId: null, idea: null } },
+  ] as const)("lets $who read the chat", async ({ role, conversation }) => {
+    authContext.role = role;
+    db.conversation.findUnique.mockResolvedValueOnce(conversation);
+    db.message.findMany.mockResolvedValue([]);
+    const res = await read();
+    expect(res.status).toBe(200);
+    expect(db.message.findMany).toHaveBeenCalledOnce();
   });
 });
 
@@ -728,6 +755,34 @@ describe("A5 pre-stream preparation", () => {
       expect(streamMock).not.toHaveBeenCalled();
     },
   );
+
+  const teammateIdeaChat = { id: "conv-1", restaurantId: "r1", authorId: "u2", ideaId: "idea-1", idea: { text: "Berenjena", authorId: "u2" } };
+
+  it("returns 404 on a chat born from a teammate's idea before taking a lease or starting generation", async () => {
+    authContext.role = "sous_chef";
+    db.conversation.findUnique.mockResolvedValueOnce(teammateIdeaChat);
+    const res = await post({ content: "recipe", clientMessageId: "teammate-idea-chat" });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Not found" });
+    expect(db.conversation.findUnique.mock.calls[0]![0]).toMatchObject({ include: { idea: { select: { text: true, authorId: true } } } });
+    expect(db.conversation.updateMany).not.toHaveBeenCalled();
+    expect(db.message.findUnique).not.toHaveBeenCalled();
+    expect(budget.reserveGeneration).not.toHaveBeenCalled();
+    expect(db.message.create).not.toHaveBeenCalled();
+    expect(streamMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { who: "an admin", role: "admin", conversation: teammateIdeaChat },
+    { who: "the idea's author on a chat a teammate opened", role: "sous_chef", conversation: { ...teammateIdeaChat, idea: { text: "Berenjena", authorId: "u1" } } },
+  ] as const)("lets $who write in a chat born from an idea", async ({ role, conversation }) => {
+    authContext.role = role;
+    db.conversation.findUnique.mockResolvedValueOnce(conversation);
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    const res = await post({ content: "recipe", model: "daily" });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('"type":"done"');
+  });
 
   it.each([
     { role: "admin", model: "creative" },
