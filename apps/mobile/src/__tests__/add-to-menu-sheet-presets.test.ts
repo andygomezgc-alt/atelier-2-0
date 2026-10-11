@@ -212,4 +212,43 @@ describe("AddToMenuSheet create-section", () => {
       expect.objectContaining({ recipeId: RECIPE_ID, sectionId: NEW_SECTION_ID }),
     );
   });
+
+  it("lets the chef add the recipe to a new section again after closing and reopening the sheet", async () => {
+    await openCreateSectionStep("es");
+    await act(async () => {
+      chips()[2]!.props.onPress();
+    });
+    expect(h.createSection).toHaveBeenCalledTimes(1);
+    expect(h.addMenuItem).toHaveBeenCalledTimes(1);
+    expect(h.onClose).toHaveBeenCalledTimes(1);
+
+    // The recipe screen keeps the sheet mounted and only toggles `open`.
+    const sheet = (open: boolean) => createElement(AddToMenuSheet, { open, recipeId: RECIPE_ID, onClose: h.onClose });
+    await act(async () => {
+      screen.update(sheet(false));
+    });
+    await act(async () => {
+      screen.update(sheet(true));
+    });
+    await press(MENU.name);
+    await press(t("section_add", "es"));
+    expect(screen.root.findAllByType("TextInput" as never)).toHaveLength(1);
+
+    expect(chips().map((chip) => chip.props.disabled)).toEqual(Array(9).fill(false));
+    await act(async () => {
+      screen.root.findByType("TextInput" as never).props.onChangeText("Sugerencias");
+    });
+    expect(customAddButton().props.disabled).toBe(false);
+
+    await act(async () => {
+      chips()[7]!.props.onPress();
+    });
+    expect(h.createSection).toHaveBeenCalledTimes(2);
+    expect(h.createSection).toHaveBeenLastCalledWith(MENU_ID, { name: "Postres" });
+    expect(h.addMenuItem).toHaveBeenCalledTimes(2);
+    expect(h.addMenuItem).toHaveBeenLastCalledWith(
+      MENU_ID,
+      expect.objectContaining({ recipeId: RECIPE_ID, sectionId: NEW_SECTION_ID }),
+    );
+  });
 });
