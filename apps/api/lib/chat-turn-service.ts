@@ -8,6 +8,7 @@ import { releaseGeneration, reserveGeneration, type Reservation } from "@/lib/ai
 import { budgetErrorResponse, textInputCeiling } from "@/lib/ai/budget-policy";
 import { recordAiTokens } from "@/lib/ai-quota";
 import { chatMemory } from "@/lib/culinary-memory/service";
+import { loadChatSummary } from "@/lib/chat-summary";
 import { logger } from "@/lib/logger";
 import type { AuthedContext } from "@/lib/permissions-guard";
 import { canAccessConversation } from "@/lib/conversation-access";
@@ -32,6 +33,8 @@ export interface PreparedChatTurn {
   messages: Msg[];
   reservation: Reservation;
   turn?: ChatTurn;
+  /** Saved messages including this turn's user message; absent in preview. */
+  messageCount?: number;
   userId: string;
   startedAt: number;
   deadlineAt?: number;
@@ -99,6 +102,8 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
     let culinaryMemory: string | null = null;
     let messages: Msg[];
     let speakerName: string | null;
+    let messageCount: number | undefined;
+    let summary: string | null = null;
     // The speaker's profile name is optional context: a failed read never blocks the turn.
     const loadSpeakerName = () => prisma.user.findUnique({ where: { id: user.userId }, select: { name: true } })
       .then(speaker => speaker?.name ?? null, () => null);
@@ -123,7 +128,7 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
           select: { name: true, identityLine: true, city: true },
         }),
         prisma.message.findMany({
-          where: { conversationId }, orderBy: { createdAt: "desc" }, take: 20,
+          where: { conversationId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 20,
           select: { role: true, content: true },
         }),
         prisma.message.count({ where: { conversationId } }),
@@ -150,10 +155,14 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
       // even when its content repeats the previous user message.
       const isNewMessage = !lease?.userMessageId;
       if (isNewMessage) historyWithCurrent.push({ role: "user", content: message.content });
-      messages = stableHistoryWindow(historyWithCurrent, total + (isNewMessage ? 1 : 0));
+      messageCount = total + (isNewMessage ? 1 : 0);
+      messages = stableHistoryWindow(historyWithCurrent, messageCount);
+      // What already left the window, as data: the newest summary ending at its absolute start.
+      summary = await loadChatSummary(conversationId, Math.max(messageCount, historyWithCurrent.length) - messages.length);
     }
 
-    const system = buildSystemBlocks(restaurant, recentRecipes, pinnedIdeaText, culinaryMemory, { speakerName });
+    const system = buildSystemBlocks(restaurant, recentRecipes, pinnedIdeaText, culinaryMemory,
+      { speakerName, ...(summary ? { summary } : {}) });
     signal.throwIfAborted();
     checkDeadline();
     // Estimate the exact prepared payload, but never persist a refused turn.
@@ -164,7 +173,7 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
     const turn = lease ? await saveChatTurn(lease, message.content, message.clientMessageId) : undefined;
     checkDeadline();
     return { conversationId, restaurantId: user.restaurantId || null,
-      model, config, system, messages, reservation, turn, userId: user.userId, startedAt, deadlineAt: input.deadlineAt };
+      model, config, system, messages, reservation, turn, messageCount, userId: user.userId, startedAt, deadlineAt: input.deadlineAt };
   } catch (error) {
     // Independent cleanup: a failed refund must not strand the conversation lease.
     if (reservation) await releaseGeneration(reservation).catch(() => undefined);

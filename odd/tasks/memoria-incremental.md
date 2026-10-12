@@ -47,7 +47,23 @@
 ## Tareas
 - [x] T1 — aprendizaje incremental: hechos vigentes al extractor, texto estable y versión del prompt en la huella. Ruta: delegada, un escritor (Opus). Disparador: dos o más archivos no triviales (`provider.ts`, `worker.ts` y la huella, más los tests).
 - [x] T1b — hallazgo R3-legacy-hash-bypass, no bloqueante: si una memoria con huella anterior termina en la salida temprana (menos de 2 fuentes o todas las categorías excluidas), nunca reescribe la huella con prefijo. Por eso evita el atajo diario y vuelve a cargar evidencia cada día. Andy pidió hacerla el 12-10-2026. Ruta: inline, porque es un cambio de una sola condición en `worker.ts` más su test. Va en el PR 1, que es donde nació el problema.
-- [ ] T2 — resumen del chat: el modelo del turno y la ventana sin cambios. Va en su propia rama y PR, después de T1.
+- [x] T2 — resumen del chat: el modelo del turno y la ventana sin cambios. Va en su propia rama y PR, después de T1. Ruta: delegada, un escritor (Opus). Disparador: dos o más archivos no triviales (esquema, módulo nuevo, servicio del turno y ruta).
+- [x] T2b — hallazgo R3-truncated-summary-rolled-forward, no bloqueante: si el proveedor corta por el límite de salida (`max_tokens` en Haiku, o `MAX_TOKENS` en Gemini, donde el pensamiento cuenta dentro de las 2048), se guarda un resumen sin las últimas secciones. Como cada resumen se arma sobre el anterior, lo perdido no se recupera. Andy lo autorizó el 12-10-2026. Ruta: inline, porque es un solo archivo más su test.
+  - Arreglo:
+    - solo se guarda el resumen, ya recortado, si tiene los cuatro encabezados al inicio de una línea; si no, se registra `chat_summary_incomplete` y el turno siguiente lo vuelve a intentar;
+    - Gemini pasa de 2048 a 4096 tokens de salida.
+  - RED: 4 fallan y 29 pasan, por aserciones.
+  - GREEN: 106 archivos y 1387 tests; typecheck 0.
+  - RDD: commit `9223a7f`, `under_budget`. Después, revisión consolidada de toda la rama desde `main` (`review-f8ae594916a9a991`, 1128 líneas), con consentimiento de Andy: **aprobada con acuse de recibo**. Dejó los avisos T2c y T2d.
+  - Hueco aceptado: si un resumen que falla de forma persistente no se guarda, cada turno vuelve a pagar un intento, que es barato, hasta que salga uno completo.
+- [x] T2c — hallazgo R3-skipped-step-erases-rolling-summary (WARNING, revisión consolidada `review-f8ae594916a9a991`): si falla el resumen de un paso, el siguiente ignora el resumen más antiguo que sigue existiendo, arranca desde los últimos 40 mensajes y `deleteMany` borra ese resumen viejo, con lo que se pierde contexto para siempre. Arreglo propuesto: partir del resumen más reciente con `through` menor que el actual y no podar hasta tener uno nuevo encadenado. Autorizada por Andy el 12-10-2026 y hecha.
+- [x] T2d — hallazgo R3-offtemplate-summary-repaid-every-turn (SUGGESTION): un resumen fuera de plantilla se paga de nuevo en cada turno, sin límite. Arreglo propuesto: anotar los intentos fallidos por paso y limitar los reintentos. Autorizada por Andy el 12-10-2026 y hecha.
+- [x] T2e — hallazgo R3-maxtokens-midline-summary-stored (WARNING, revisión consolidada `review-390d2e2f4758c0fa`): una respuesta cortada por el límite de salida a mitad de una línea, por debajo de 1200 caracteres, se guarda con un dato a medias (por ejemplo, una temperatura) y se arrastra a los resúmenes siguientes. Arreglo propuesto: si el proveedor cortó por límite, descartar la última línea incompleta o el resumen entero. Autorizada por Andy el 12-10-2026 y hecha.
+- [x] T2f — hallazgo R3-skipped-step-input-cap-drops-oldest (SUGGESTION): al saltar un paso, el tope de 48.000 caracteres puede dejar fuera los mensajes más viejos posteriores al resumen base, sin dejar registro. Arreglo propuesto: registrarlo en el log o recortar cada mensaje antes que descartar los más viejos. Autorizada por Andy el 12-10-2026 y hecha.
+- [x] T2g — hallazgo R3-long-summary-cap-drops-last-section (WARNING, `review-4969a6c931896907`): el tope de 1200 caracteres se aplica antes de comprobar las secciones. Un resumen completo pero largo pierde «Datos del plato», cuenta como fallo y, tras 2 intentos, el paso se abandona. Arreglo propuesto: comprobar las secciones antes de recortar y recortar dentro de cada sección. Autorizada por Andy el 12-10-2026 y hecha.
+- [ ] T2h — hallazgo R3-stale-summary-injected-with-gap (WARNING): si un paso falló, se inyecta un resumen más viejo que el inicio de la ventana y faltan los mensajes intermedios. Además, si se saltan muchos pasos queda un hueco entre el resumen base y el tramo de 40 mensajes (R3-skipped-steps-slice-gap, SUGGESTION). Es una degradación aceptada en el diseño: solo pasa tras fallos. Arreglo posible: marcar el hueco en el texto inyectado. Andy la deja para cuando haya datos de uso real (12-10-2026).
+- [x] T2i — hallazgo R3-provider-error-retried-unbounded (SUGGESTION, revisión `review-0e7fd0a84262962a`, aprobada con acuse): los errores HTTP, de red o de timeout del proveedor no contaban como intento, así que un paso que siempre fallaba se reintentaba y reservaba presupuesto en cada turno. Autorizada por Andy el 12-10-2026 y hecha.
+- [x] R3-001 — sugerencia de `review-d3e15143a914c9f7`: con fechas de creación iguales, el orden de los mensajes no estaba garantizado y el resumen y la ventana podían verlos distinto. Ahora los dos ordenan por `createdAt` y desempatan por `id`. Autorizada por Andy el 12-10-2026.
 - [ ] T3 — entrega: PR de T1 y, después, de T2.
 
 ## Criterios de aceptación (T1)
@@ -91,3 +107,53 @@
   - El caso de fallo de generación no cambia: lo limitan la puerta semanal y la supresión de fallos, igual que a cualquier memoria que falla.
   - RED: 2 fallan y 48 pasan (`expected [false, false] to have a length of 1`), es decir, la evidencia se vuelve a leer.
   - GREEN: 105 archivos y 1340 tests; typecheck 0.
+  - Commit `10bba84`, subido a `feat/memoria-incremental` (PR 1).
+  - RDD assess desde `8b146db`, el último límite revisado: riesgo medio, 35 líneas, `under_budget`, así que queda pendiente dentro del tramo.
+- T2, delegada a un escritor Opus, commit `3d91b13` en `feat/resumen-chat` y reapilada sobre `10bba84`:
+  - Cambios:
+    - `ConversationSummary`, con clave `(conversationId, through)`, borrado en cascada y migración `20261012200000_conversation_summaries` generada sin base de datos.
+    - `apps/api/lib/chat-summary.ts`:
+      - `nextSummaryThrough = ceil(max(0, n+1−20)/10)·10`, probado contra `stableHistoryWindow` entre 0 y 55 mensajes;
+      - el tope de 1200 caracteres;
+      - `loadChatSummary` y `refreshChatSummary`, que nunca lanza error;
+      - las llamadas a Gemini y Haiku.
+    - La tarea `chatSummary` (`claude-haiku-5-5`, `AI_CHAT_SUMMARY_MODEL`) y la tarifa de Haiku.
+    - En `anthropic.ts`, la clave `earlierMessagesSummary` al final del bloque vivo.
+    - En `chat-turn-service.ts`, la lectura en el inicio absoluto de la ventana.
+    - En la ruta de mensajes, la actualización dentro del `after(completion)` existente, después de `done`.
+    - Una frase nueva en la página de privacidad.
+  - Presupuesto: sigue el patrón de `glm.ts` (`reserveGeneration`, luego `settleGeneration` o `releaseGeneration`). No consume `AiChatQuota`.
+  - RED: 33 fallan y 188 pasan en 5 archivos, todas con `AssertionError`.
+  - GREEN del escritor: 106 archivos y 1381 tests; typecheck 0; `prisma validate` válido, con un `DATABASE_URL` de relleno y sin conexión.
+  - Supervisor, tras reapilar sobre T1b: 1383 tests y typecheck 0.
+  - Huecos aceptados:
+    - Si el chef responde mientras se genera el resumen (2-5 s), ese turno sale sin él y el siguiente pierde la caché una vez.
+    - Si el tope de 40.000 caracteres adelanta el inicio de la ventana, queda un tramo sin cubrir hasta el siguiente resumen.
+    - Una conversación sin resumen previo se resume a partir de hasta 40 mensajes.
+    - Los encabezados del resumen van fijos en español.
+  - Despliegue: la migración se aplica sola con el build de Vercel (`db:migrate:deploy`). No hace falta ninguna variable nueva mientras se use el modelo por defecto.
+  - Tamaño: 726 líneas añadidas y 9 borradas, de las cuales unas 445 son tests.
+    - Se hizo una sola pasada de corte. Separar la escritura del resumen de su lectura deja la mitad del módulo y sus tests por encima de 400 (`chat-summary.ts` y su test suman 516) y entrega código muerto hasta la segunda mitad.
+    - Se mantiene un solo PR 2 y se recomienda `size:exception`.
+  - RDD: riesgo medio, 765 líneas, `slice_budget_reached`, con consentimiento de Andy. La revisión `review-3e232c05f779a7e1` (lente de fiabilidad) quedó **aprobada con acuse de recibo** y la autoridad consumida. Dejó un aviso no bloqueante, R3-truncated-summary-rolled-forward, que pasa a la tarea T2b.
+- T2c y T2d, inline (la ruta se eligió porque el contexto ya estaba cargado y el diseño, entendido):
+  - T2c: se parte del resumen más reciente con `through` menor que el actual (`findMany` con `lte`, `orderBy desc`, `take 2`) más los mensajes posteriores, como máximo 40. Solo se poda por debajo del resumen base, nunca el resumen sobre el que se construyó.
+  - T2d: `Conversation.summaryFailedThrough` y `summaryFailures` cuentan las respuestas pagadas inservibles (rechazadas, cortadas o fuera de plantilla) por paso. Desde 2, ese paso deja de reintentarse. La migración `20261012200000_conversation_summaries`, todavía sin aplicar, se regeneró sin base de datos y ahora incluye el `ALTER TABLE "Conversation"`.
+  - RED: 4 fallan y 33 pasan, por aserciones.
+  - GREEN: 106 archivos y 1391 tests; typecheck 0; `prisma validate` válido.
+- Revisión consolidada `review-390d2e2f4758c0fa` (toda la rama con T2c y T2d, 1195 líneas), con consentimiento de Andy: **aprobada con acuse de recibo**. Dejó los avisos T2e y T2f.
+- T2e y T2f, inline:
+  - T2e: si Haiku corta por `max_tokens` o Gemini por `MAX_TOKENS`, se descarta la última línea, que puede estar a medias (`withoutCutLine`), antes de comprobar los encabezados.
+  - T2f: cada mensaje del tramo comparte el tope de entrada (`min(4000, floor(48000 / n) − 1)`), así se conservan todos acortados en lugar de descartar los más viejos.
+  - RED: 3 fallan y 36 pasan, por aserciones.
+  - GREEN: 106 archivos y 1393 tests; typecheck 0.
+- T2e y T2f: commit `904de2c`, `under_budget` (44 líneas). La tercera revisión consolidada, `review-4969a6c931896907` (1226 líneas), con consentimiento de Andy: **aprobada con acuse de recibo**. Dejó los avisos T2g y T2h.
+- T2g y T2i, inline:
+  - T2g: `fitSections` comprueba las cuatro secciones sobre el texto completo y, si excede 1200 caracteres, recorta dentro de cada sección. Reparte el espacio y las secciones cortas ceden el sobrante, así «Datos del plato» nunca desaparece.
+  - T2i: cualquier error del proveedor, salvo el rechazo del presupuesto, cuenta como intento del paso.
+  - RED: 3 fallan y 39 pasan, por aserciones.
+  - GREEN: 106 archivos y 1396 tests; typecheck 0.
+- Entrega:
+  - #44 fusionado en `main` (`67e0e9f`) por pedido de Andy, con el CI en verde (`verify`, `dependency-scan`).
+  - #45 redirigido a `main`; muestra 15 archivos.
+- R3-001, inline: `orderBy: [{ createdAt }, { id }]` en `chat-summary.ts` (asc) y en `chat-turn-service.ts` (desc). RED: 1 falla en cada archivo. GREEN: 106 archivos y 1397 tests; typecheck 0.

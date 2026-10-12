@@ -14,6 +14,13 @@ describe("AI routing configuration", () => {
       expect(aiConfig(task).maxTokens).toBeLessThanOrEqual(16384);
     }
   });
+  it("routes Creativo chat summaries to Haiku 5.5 with a small output budget and an env override", () => {
+    expect(() => aiConfig("chatSummary")).not.toThrow();
+    expect(aiConfig("chatSummary")).toMatchObject({ task: "chatSummary", provider: "anthropic", model: "claude-haiku-5-5" });
+    expect(aiConfig("chatSummary").maxTokens).toBeLessThanOrEqual(1024);
+    vi.stubEnv("AI_CHAT_SUMMARY_MODEL", "claude-haiku-next");
+    expect(aiConfig("chatSummary").model).toBe("claude-haiku-next");
+  });
   it("upgrades models through server configuration without changing mobile mode IDs", () => {
     vi.stubEnv("AI_CHAT_DAILY_MODEL", "gemini-next");
     vi.stubEnv("AI_GLM_MODEL", "glm-next");

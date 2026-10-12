@@ -45,7 +45,7 @@ export function buildSystemBlocks(
   recentRecipes: RecentRecipe[],
   pinnedIdea: string | null,
   culinaryMemory?: string | null,
-  conversation?: { speakerName?: string | null; now?: Date },
+  conversation?: { speakerName?: string | null; now?: Date; summary?: string | null },
 ) {
   const principles = loadSystemPrompt();
 
@@ -91,6 +91,9 @@ export function buildSystemBlocks(
   // Who writes and the current month change per person and per month, so they
   // stay in this live block after the last system breakpoint, as data.
   const speakerName = conversation?.speakerName ? normalizeWhitespace(conversation.speakerName) : "";
+  // The summary of the messages that left the history window changes only when
+  // the window start moves, which already changes the thread prefix.
+  const summary = conversation?.summary?.trim() ?? "";
   const now = conversation?.now ?? new Date();
   if (recentRecipes.length > 0 || pinnedIdea || conversation) {
     const liveData = {
@@ -100,6 +103,7 @@ export function buildSystemBlocks(
       ...(pinnedIdea ? { pinnedIdea: normalizeWhitespace(pinnedIdea) } : {}),
       ...(speakerName ? { speakerName } : {}),
       ...(conversation ? { currentMonth: `${MONTHS_ES[now.getUTCMonth()]} de ${now.getUTCFullYear()}` } : {}),
+      ...(summary ? { earlierMessagesSummary: summary } : {}),
     };
     blocks.push({ type: "text", text: formatRestaurantData(liveData) });
   }

@@ -49,7 +49,10 @@ export default function PrivacidadPage() {
         Anthropic Claude. Enviamos el mensaje, una parte acotada de la conversación
         y el contexto culinario necesario para responder. Ese contexto incluye el
         nombre de perfil de quien escribe, la ciudad o zona si se indicó y el mes
-        actual, para proponer producto de temporada. Z.AI (GLM) procesa las
+        actual, para proponer producto de temporada. Para seguir el hilo de las
+        conversaciones largas guardamos un resumen breve de los mensajes más
+        antiguos: lo redacta el mismo proveedor que responde en ese turno y se
+        borra junto con la conversación. Z.AI (GLM) procesa las
         recetas y los documentos o imágenes que elegís analizar, los estilos de
         menú y el aprendizaje de preferencias culinarias. Los costes de recetas
         se calculan con reglas, sin enviar el banco de precios a la IA para ese cálculo.

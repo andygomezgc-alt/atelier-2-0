@@ -28,6 +28,9 @@ export function modelRate(model: string, now = new Date()): Rate {
   // Opus 5.5 lee la caché a 0,05× la entrada; los demás modelos a 0,1×.
   if (model === "claude-opus-5-5") return { input: 4, output: 20, cached: .2, cacheWrite: 5 };
   if (model === "claude-opus-5") return { input: 5, output: 25, cached: .5, cacheWrite: 6.25 };
+  // Chat summaries send no cache_control: cached and cacheWrite are conservative
+  // placeholders (never below the input price), not the published cache tariff.
+  if (model === "claude-haiku-5-5") return { input: .1, output: .5, cached: .1, cacheWrite: .125 };
   if (model === "gemini-3.8-flash") {
     const factor = now < new Date("2027-01-01T00:00:00Z") ? 1 : 2;
     return { input: .75 * factor, output: 3.75 * factor, cached: .075 * factor, cacheWrite: .75 * factor };
