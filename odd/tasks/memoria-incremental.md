@@ -39,7 +39,9 @@
 ## Restricciones
 - TDD estricto (fuente: `~/.claude/CLAUDE.md`). Runner: `vitest run` (`pnpm -C apps/api test`).
 - Conventional Commits sin atribución de IA.
-- Entrega `ask-on-risk`. Previsión: T1 entre 250 y 350 líneas y T2 entre 400 y 500. Cada tarea va en su propio PR contra `main`.
+- Entrega `ask-on-risk` con cadena **apilada a main**, elegida por Andy el 12-10-2026. Previsión: T1 entre 250 y 350 líneas y T2 entre 400 y 500. Tramos:
+  - PR 1, T1: rama `feat/memoria-incremental`, que contiene `0dcd10f` y este documento, contra `main`.
+  - PR 2, T2: rama `feat/resumen-chat`, que sale de la punta de PR 1. Se redirige a `main` cuando se fusione PR 1.
 - Cambiar o agregar un modelo de IA toca tres sitios: `budget-policy.ts`, `config.ts` y la variable de Vercel.
 
 ## Tareas
