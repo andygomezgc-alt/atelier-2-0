@@ -1,0 +1,388 @@
+{
+  "currentMonth": "2026-10-15T12:00:00Z",
+  "globalCriteria": [
+    "Va al grano: no empieza con elogios, saludos ni un párrafo introductorio, ni termina con fórmulas de cortesía. Un renglón que solo nombra el plato o la receta no cuenta como preámbulo."
+  ],
+  "restaurants": {
+    "clasica_es": {
+      "name": "Mesón del Arco",
+      "city": "Segovia",
+      "identityLine": "Cocina castellana de siempre: asados en horno de leña, guisos de cuchara y producto de la sierra.",
+      "chefNotes": ["El cochinillo se asa solo con agua, sal y manteca", "En la carta no hay espumas ni esferificaciones"],
+      "memory": {
+        "tendencias": [
+          { "key": "cuisine", "text": "Cocina castellana tradicional" },
+          { "key": "techniques", "text": "Asados en horno de leña y guisos lentos" },
+          { "key": "complexity", "text": "Platos sencillos de dos o tres elementos" }
+        ],
+        "frecuentes": [{ "name": "ajo", "recipes": 9 }, { "name": "pimentón de la Vera", "recipes": 6 }, { "name": "cordero lechal", "recipes": 4 }]
+      },
+      "recentRecipes": ["Cochinillo asado", "Judiones de La Granja", "Sopa castellana", "Cordero lechal asado", "Ponche segoviano"],
+      "speakerName": "Julián"
+    },
+    "vanguardia_es": {
+      "name": "Brasa y Koji",
+      "city": "Valencia",
+      "identityLine": "Cocina de autor: fermentaciones propias, brasa y técnica moderna al servicio del producto valenciano. Menú degustación de 14 pases.",
+      "chefNotes": ["Hacemos koji y garum propios", "Cada pase lleva al menos un elemento fermentado"],
+      "memory": {
+        "tendencias": [
+          { "key": "cuisine", "text": "Vanguardia mediterránea" },
+          { "key": "techniques", "text": "Fermentación con koji, brasa, esferificación y deshidratados" },
+          { "key": "complexity", "text": "Platos de seis o más elementos" }
+        ],
+        "frecuentes": [{ "name": "garum de gamba", "recipes": 7 }, { "name": "koji de arroz", "recipes": 6 }, { "name": "cítricos", "recipes": 5 }]
+      },
+      "recentRecipes": ["Gamba roja, garum de sus cabezas y koji", "Esfera de horchata y chufa tostada", "Alcachofa a la brasa con miso de garrofó", "Granizado de limón fermentado"],
+      "speakerName": "Marta"
+    },
+    "nueva": {
+      "name": "Casa Nueva",
+      "city": null,
+      "identityLine": null,
+      "chefNotes": [],
+      "memory": null,
+      "recentRecipes": [],
+      "speakerName": "Leo"
+    },
+    "clasica_it": {
+      "name": "Trattoria da Nella",
+      "city": "Ancona",
+      "identityLine": "Cucina marchigiana di tradizione: brodetto, vincisgrassi e pesce dell'Adriatico.",
+      "chefNotes": ["Il brodetto segue la ricetta anconetana con tredici tipi di pesce"],
+      "memory": {
+        "tendencias": [
+          { "key": "cuisine", "text": "Cucina marchigiana tradizionale" },
+          { "key": "techniques", "text": "Umidi lunghi e pasta fresca tirata a mano" }
+        ],
+        "frecuentes": [{ "name": "pomodoro", "recipes": 8 }, { "name": "pesce di scoglio", "recipes": 5 }]
+      },
+      "recentRecipes": ["Vincisgrassi", "Brodetto all'anconetana", "Stoccafisso all'anconetana", "Olive all'ascolana"],
+      "speakerName": "Nella"
+    },
+    "moderna_en": {
+      "name": "Hearth & Field",
+      "city": "London",
+      "identityLine": "Modern British seasonal cooking: wood fire, whole-animal butchery and British produce.",
+      "chefNotes": ["We cook everything over wood or in the bread oven"],
+      "memory": {
+        "tendencias": [
+          { "key": "cuisine", "text": "Modern British" },
+          { "key": "techniques", "text": "Wood-fire roasting and brown butter" }
+        ],
+        "frecuentes": [{ "name": "celeriac", "recipes": 4 }]
+      },
+      "recentRecipes": ["Wood-roasted beetroot, smoked curd", "Lamb neck, anchovy and turnip", "Brown butter tart"],
+      "speakerName": "Tom"
+    },
+    "parrilla_ar": {
+      "name": "Fuegos del Sur",
+      "city": "Buenos Aires",
+      "identityLine": "Cocina argentina de fuegos: parrilla, chapa y producto de estación.",
+      "chefNotes": ["Las achuras se hacen a fuego bajo y con paciencia"],
+      "memory": {
+        "tendencias": [
+          { "key": "cuisine", "text": "Parrilla argentina" },
+          { "key": "techniques", "text": "Parrilla a leña, chapa y rescoldo" }
+        ],
+        "frecuentes": []
+      },
+      "recentRecipes": ["Mollejas a la parrilla con limón", "Provoleta con orégano", "Asado de tira"],
+      "speakerName": "Facundo"
+    }
+  },
+  "cases": [
+    {
+      "id": "estilo-clasica-mejorar",
+      "restaurant": "clasica_es",
+      "tags": ["estilo"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Esta es mi sopa castellana: 2 l de caldo de jamón, 200 g de pan del día anterior, 6 dientes de ajo, 15 g de pimentón de la Vera, 4 huevos y 40 ml de aceite de oliva. ¿Cómo la mejoro sin que deje de ser lo que es?" }
+      ],
+      "criteria": [
+        "Las mejoras respetan el canon de la sopa castellana (pan, ajo, pimentón, caldo y huevo) y no proponen espumas, esferificaciones, aires ni otras técnicas de vanguardia.",
+        "Las mejoras son concretas y ejecutables, con alguna cantidad, temperatura o tiempo (por ejemplo, el tipo de pan, el punto del ajo, cuándo añadir el pimentón para que no se queme o el punto del huevo).",
+        "Explica el porqué técnico de al menos una mejora."
+      ]
+    },
+    {
+      "id": "estilo-vanguardia-remolacha",
+      "restaurant": "vanguardia_es",
+      "tags": ["estilo"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Quiero un pase de prepostre con remolacha para el menú de otoño. Dame direcciones." }
+      ],
+      "criteria": [
+        "Propone como mucho tres direcciones.",
+        "Al menos una dirección usa técnicas o combinaciones poco obvias y coherentes con el restaurante (fermentación, koji, brasa u otra técnica moderna), con base técnica.",
+        "Las direcciones son ejecutables en una cocina profesional: nombran la técnica y los elementos principales, no solo conceptos vagos."
+      ]
+    },
+    {
+      "id": "estilo-clasica-remolacha",
+      "restaurant": "clasica_es",
+      "tags": ["estilo"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Quiero un postre con remolacha para la carta de otoño. Dame direcciones." }
+      ],
+      "criteria": [
+        "Propone como mucho tres direcciones.",
+        "Las direcciones encajan con una cocina castellana tradicional (horno, compotas, bizcochos, natillas, helados clásicos u otros postres de tradición) y no usan espumas, esferificaciones, koji ni otras técnicas de vanguardia.",
+        "Cada dirección es concreta: nombra la preparación y sus elementos principales."
+      ]
+    },
+    {
+      "id": "estilo-sin-senales",
+      "restaurant": "nueva",
+      "tags": ["estilo"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Necesito un entrante con calabaza para el menú del mediodía." }
+      ],
+      "criteria": [
+        "Propone algo concreto en la misma respuesta, sin limitarse a hacer preguntas.",
+        "No atribuye al restaurante una tradición, un equipo o una despensa que no aparecen en los datos.",
+        "Si deja abierta alguna decisión, lo hace en una línea breve al final (por ejemplo, ofrecer una versión más clásica o más moderna) y no como un interrogatorio."
+      ]
+    },
+    {
+      "id": "estilo-clasica-pide-moderno",
+      "restaurant": "clasica_es",
+      "tags": ["estilo"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Para Navidad quiero sorprender: algo moderno con el cochinillo, aunque no sea lo nuestro." }
+      ],
+      "criteria": [
+        "Atiende la petición: propone un enfoque moderno y no se limita a la versión tradicional del cochinillo.",
+        "Lo que propone se puede hacer en un asador con horno de leña, o dice claramente qué equipo extra haría falta."
+      ]
+    },
+    {
+      "id": "franqueza-pina-gelatina",
+      "restaurant": "clasica_es",
+      "tags": ["franqueza"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Voy a hacer una gelatina de piña natural, con el zumo de piña fresca y hojas de gelatina. ¿Cuántas hojas pongo por litro?" }
+      ],
+      "criteria": [
+        "Avisa al principio de la respuesta, antes de dar cantidades, de que el zumo de piña fresca no cuaja con gelatina.",
+        "Explica el porqué: la bromelina de la piña fresca degrada la gelatina.",
+        "Da una alternativa que funciona: calentar el zumo para inactivar la enzima, usar piña en conserva o gelificar con agar."
+      ]
+    },
+    {
+      "id": "franqueza-aove-freir",
+      "restaurant": "clasica_es",
+      "tags": ["franqueza", "falso-positivo"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "¿Puedo freír las croquetas en aceite de oliva virgen extra a 180 °C o se me estropea?" }
+      ],
+      "criteria": [
+        "Responde que sí se puede freír en aceite de oliva virgen extra a 180 °C; no lo desaconseja como si fuera un error técnico.",
+        "Si menciona límites (punto de humo, coste, sabor o reutilización), los presenta como matices y no como prohibiciones."
+      ]
+    },
+    {
+      "id": "franqueza-chocolate-caviar",
+      "restaurant": "vanguardia_es",
+      "tags": ["franqueza", "falso-positivo"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Estoy pensando en un snack de chocolate blanco con caviar. ¿Tiene sentido o es una locura?" }
+      ],
+      "criteria": [
+        "No descarta la combinación: reconoce que puede funcionar.",
+        "Da al menos un fundamento de por qué funciona (salinidad frente a dulzor, grasa, umami o compuestos aromáticos compartidos).",
+        "Indica cómo ejecutarlo o equilibrarlo: proporciones, temperatura, textura o formato del snack."
+      ]
+    },
+    {
+      "id": "seguridad-pescado-crudo",
+      "restaurant": "vanguardia_es",
+      "tags": ["seguridad"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Hoy me llegó una ricciola fresquísima y esta noche la quiero servir cruda en un tiradito, sin congelarla para no romper la textura." }
+      ],
+      "criteria": [
+        "Avisa del riesgo de anisakis al servir pescado crudo sin congelar.",
+        "Da la alternativa segura con parámetros: congelar a -20 °C o menos durante al menos 24 horas (o un tratamiento equivalente) antes de servirlo crudo.",
+        "Ayuda a conservar la textura dentro de esa alternativa (por ejemplo, abatidor o ultracongelación, y descongelado lento en cámara)."
+      ]
+    },
+    {
+      "id": "tecnica-beurre-blanc",
+      "restaurant": "nueva",
+      "tags": ["tecnica"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "¿Cómo monto una beurre blanc que no se me corte en pleno servicio?" }
+      ],
+      "criteria": [
+        "Reduce el vino o el vinagre con chalota y monta con mantequilla fría en dados, añadida poco a poco.",
+        "La mantiene templada (aproximadamente 50-65 °C) y advierte que el exceso de calor la corta.",
+        "Indica la señal del punto: emulsión brillante y napante.",
+        "Explica el porqué en pocas palabras (es una emulsión de grasa sobre una base reducida) y cómo mantenerla durante el servicio (baño maría, termo o recipiente templado).",
+        "Es breve: no se extiende en historia ni en variantes que no se pidieron."
+      ]
+    },
+    {
+      "id": "tecnica-esferificacion-inversa",
+      "restaurant": "vanguardia_es",
+      "tags": ["tecnica"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Explícame la esferificación inversa para unas esferas de yogur." }
+      ],
+      "criteria": [
+        "Da la proporción del baño de alginato (alrededor del 0,5 %) y aclara el calcio: el yogur ya lo aporta y se puede reforzar con gluconolactato cálcico.",
+        "Da los pasos clave con tiempos: reposar el baño para quitar burbujas, unos minutos en el baño y enjuague en agua limpia.",
+        "Indica el error típico o la señal del punto (membrana demasiado fina que se rompe, o burbujas que la debilitan) y el porqué (el alginato gelifica al contacto con el calcio)."
+      ]
+    },
+    {
+      "id": "receta-judiones-es",
+      "restaurant": "clasica_es",
+      "tags": ["receta"],
+      "lang": "es",
+      "recipe": true,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Pásame la receta de unos judiones de La Granja para 10 raciones." }
+      ],
+      "criteria": [
+        "Indica el rendimiento (10 raciones) y da cantidades métricas para ese total.",
+        "El método va en pasos numerados y los tiempos de cocción llevan la señal para reconocer el punto.",
+        "Cierra con una mejora concreta del plato.",
+        "Respeta la receta tradicional de La Granja, sin técnicas de vanguardia."
+      ]
+    },
+    {
+      "id": "receta-brodetto-it",
+      "restaurant": "clasica_it",
+      "tags": ["receta", "idioma"],
+      "lang": "it",
+      "recipe": true,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Mi scrivi la ricetta del brodetto all'anconetana per 6 persone?" }
+      ],
+      "criteria": [
+        "Responde en italiano.",
+        "Indica el rendimiento (6 raciones) y da cantidades métricas para ese total.",
+        "El método va en pasos numerados y los tiempos de cocción llevan la señal para reconocer el punto.",
+        "Cierra con una mejora concreta del plato."
+      ]
+    },
+    {
+      "id": "receta-celeriac-en",
+      "restaurant": "moderna_en",
+      "tags": ["receta", "idioma"],
+      "lang": "en",
+      "recipe": true,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Can you give me a recipe for a celeriac and brown butter soup for 8?" }
+      ],
+      "criteria": [
+        "Responde en inglés.",
+        "Indica el rendimiento (8 raciones) y da cantidades métricas para ese total.",
+        "El método va en pasos numerados y los tiempos de cocción llevan la señal para reconocer el punto.",
+        "Cierra con una mejora concreta del plato."
+      ]
+    },
+    {
+      "id": "registro-voseo",
+      "restaurant": "parrilla_ar",
+      "tags": ["idioma", "tecnica"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Che, ¿cómo hago para que la molleja me quede crocante por fuera y cremosa por dentro en la parrilla? Contame paso a paso." }
+      ],
+      "criteria": [
+        "Trata al chef de vos, como él (por ejemplo «blanqueá», «dejala», «fijate»), sin pasarse a tú ni a usted.",
+        "Da pasos concretos con tiempos o temperaturas y la señal del punto (por ejemplo, blanqueado o cocción previa, limpieza de la membrana, intensidad del fuego).",
+        "Explica el porqué de al menos un paso."
+      ]
+    },
+    {
+      "id": "brevedad-pregunta-rapida",
+      "restaurant": "nueva",
+      "tags": ["brevedad"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "¿Qué diferencia hay entre un fumet y un caldo de pescado? Rápido." }
+      ],
+      "criteria": [
+        "Responde en pocas líneas: unas 120 palabras como mucho.",
+        "La diferencia que da es razonable y no contradice el uso profesional (por ejemplo, que el fumet es más corto y concentrado)."
+      ]
+    },
+    {
+      "id": "idea-anclada",
+      "restaurant": "vanguardia_es",
+      "tags": ["idea-anclada"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": "Ricciola con cítricos y algo ahumado",
+      "messages": [
+        { "role": "user", "content": "Desarrollemos esta idea." }
+      ],
+      "criteria": [
+        "Desarrolla la idea anclada (ricciola, cítricos y algo ahumado) sin desviarse a otro plato.",
+        "Avanza con una propuesta concreta en esta misma respuesta, aunque termine con una pregunta.",
+        "Si propone servir la ricciola cruda o marinada, avisa de la congelación previa por el anisakis."
+      ]
+    },
+    {
+      "id": "franqueza-chef-insiste",
+      "restaurant": "vanguardia_es",
+      "tags": ["franqueza"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Quiero una gelatina de piña fresca, sin cocer el zumo." },
+        { "role": "assistant", "content": "La piña fresca no cuaja con gelatina: su bromelina rompe las proteínas de la gelatina. Puedes calentar el zumo a 85 °C unos minutos para inactivarla, o gelificar con agar, que no es una proteína y no le afecta." },
+        { "role": "user", "content": "Lo quiero igual con el zumo crudo, sin calentarlo. ¿Cómo lo hago lo mejor posible?" }
+      ],
+      "criteria": [
+        "Acepta la decisión del chef y no vuelve a discutirla más allá de una mención breve.",
+        "Propone una solución que funciona con el zumo crudo (gelificar con agar u otro gelificante no proteico), con cantidades concretas.",
+        "Explica cómo gelificar sin calentar el zumo: por ejemplo, hervir el agar en agua y mezclarlo rápido con el zumo a temperatura ambiente, u otro método equivalente."
+      ]
+    }
+  ]
+}

@@ -47,7 +47,7 @@ Después, medir con una prueba si el prompt nuevo supera al actual antes de desp
 - [x] P4 — piloto pagado, con OK, y aprobación de la calificación por Andy.
 - [x] P5 — corrida completa, reporte y decisión: ajustar el prompt si hace falta. Resultado: v3 aprobado.
 - [x] P6 — v3 con el juez Opus en máximo: arreglar el arnés (mes en el contexto del juez, esfuerzo, cordura), hacer el mini-piloto de costo, la corrida baseline vs v3 con 3 repeticiones y el reporte. Ruta: delegada (arnés) y directa (corridas). Si el v3 gana, commitear el prompt.
-- [ ] P7 — decidir si la prueba queda en el repo y la estrategia de cadena (supera las 400 líneas), y cerrar con push.
+- [x] P7 — decidir si la prueba queda en el repo y la estrategia de cadena (supera las 400 líneas), y cerrar con push.
 
 ## Criterios de aceptación
 - P1: el prompt empieza con `# Atelier` y nombra los títulos de receta que acepta el detector en español, italiano e inglés. La suite de la API y el typecheck pasan.
@@ -151,6 +151,11 @@ Después, medir con una prueba si el prompt nuevo supera al actual antes de desp
     
     Con la brevedad, Gemini a veces recorta datos técnicos. Queda como mejora posible.
   - Veredicto: el v3 gana en los dos modos y cumple la brevedad. Se commitea.
+- P7, entrega. Andy eligió PR apilados contra `main` («apilados contra main, dale»):
+  - PR 1: `feat/prompt-asistente`, con `0d0af21` y `4a791d6` (237 líneas). El prompt.
+  - PR 2: `feat/prompt-asistente-2`, con los chequeos automáticos y el juez, más sus tests (unas 430 líneas).
+  - PR 3: `feat/prompt-asistente-3`, con el runner, los casos, la configuración y este registro (unas 1.570 líneas, el 40 % datos de casos). Va con `size:exception`, porque el runner no corre sin los casos y no se puede partir con sentido.
+  - Los resultados quedan fuera del repo, en `.claude/hillclimb/`, con un `.gitignore` propio.
 - Andy pidió trabajar después en la memoria culinaria («que sea verdaderamente funcional»). Hay un mapeo en curso, de solo lectura (workflow: producción, consumo e historia, más una síntesis). Puede abrir un documento de tareas aparte.
 - La prueba (P2-P4) no se commitea hasta que Andy decida si queda en el repo (paso «Make it durable» de la guía de evals). Hasta entonces vive sin commitear en este worktree.
 
