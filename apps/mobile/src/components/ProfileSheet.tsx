@@ -69,7 +69,7 @@ export function ProfileSheet({ open, onClose }: Props) {
         : null;
     return status ? `${tier} · ${status}` : tier;
   })();
-  // CTA "Hacete Pro": el checkout Stripe vive en la web. Solo Android (Apple
+  // CTA "Hazte Pro": el checkout Stripe vive en la web. Solo Android (Apple
   // prohíbe linkear a compras externas), solo admin, y no para quien ya paga.
   const showGoPro =
     Platform.OS === "android" &&
@@ -552,7 +552,7 @@ const styles = StyleSheet.create({
   modelOptionActive: { borderColor: colors.terracota, backgroundColor: colors.paperWarm },
   modelOptionText: { fontFamily: fonts.sans, fontSize: fontSizes.bodySm, color: colors.inkSoft },
   modelOptionTextActive: { color: colors.terracota, fontWeight: "600" },
-  // CTA "Hacete Pro" — outline terracota pill (mismo look que el viejo
+  // CTA "Hazte Pro" — outline terracota pill (mismo look que el viejo
   // byokReturnBtn: acción secundaria destacada, no grita como el editSave).
   goProBtn: {
     borderWidth: 1,
