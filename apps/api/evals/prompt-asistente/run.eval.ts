@@ -19,7 +19,8 @@
 // Sin EVAL_DRY_RUN cada corrida hace llamadas pagadas a Anthropic y a Gemini; antes de empezar dice cuántas.
 // Reanudar: las filas calificadas se saltan y una generación guardada en generations/ se vuelve a juzgar sin
 // regenerarla. Si cambia el prompt, un caso, el juez o las comprobaciones, la huella de las filas deja de
-// coincidir y la corrida se niega a seguir en esa carpeta. Un .lock impide dos corridas de la misma variante.
+// coincidir y la corrida se niega a seguir en esa carpeta. Un .lock impide dos corridas de la misma variante, y
+// _manifest.json (manifest.ts) impide que dos variantes con distinta configuración compartan carpeta, aunque arranquen a la vez.
 import { createHash } from "node:crypto";
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -43,6 +44,7 @@ import { emptyUsage, type AiUsage } from "../../lib/ai/types";
 import { buildSystemBlocks } from "../../lib/anthropic";
 import { memoryContext } from "../../lib/culinary-memory/evidence";
 import { deterministicGrades, wordCount, type Lang } from "./checks";
+import { ensureRunManifest } from "./manifest";
 import {
   JUDGE_SYSTEM, JudgeError, judge, judgeEffort, judgeModel, judgeRequest,
   type CriterionResult, type JudgeEffort, type JudgeInput, type JudgeResult, type JudgeUsage,
@@ -541,6 +543,7 @@ describe("prueba del prompt del asistente", () => {
 
     const prompt = readFileSync(PROMPTS[config.variant], "utf8");
     const judgeName = config.dryRun ? `stub-${config.dryRun}` : judgeModel();
+    // manifest.ts no entra: solo decide qué corridas comparten carpeta, no cómo se genera ni se califica una fila.
     const harness = ["run.eval.ts", "judge.ts", "checks.ts"].map(file => readFileSync(join(HERE, file), "utf8"));
     const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16);
     // Huella de todo lo que decide una fila: si cambia, sus calificaciones ya no son comparables. La
@@ -621,6 +624,10 @@ describe("prueba del prompt del asistente", () => {
         throw new Error(`${config.variant} no sería comparable con lo que ya hay en ${flow}: ${incomparable.length} filas de otra variante se calificaron con otros casos, modelos, juez o comprobaciones `
           + `(por ejemplo ${incomparable.slice(0, 3).join(", ")}). Corre las variantes con la misma configuración, o usa otro EVAL_RUN.`);
       }
+      // Las filas de las hermanas no bastan si dos variantes arrancan a la vez: el manifiesto de la carpeta fija
+      // la configuración compartida de todos los casos y modos, y la variante que lo crea primero manda. Va después
+      // de las comprobaciones de filas para que una corrida rechazada no deje su huella en una carpeta sin manifiesto.
+      ensureRunManifest(flow, hash([...allPrints].map(([id, prints]) => `${id}:${prints.shared}`).sort()));
 
       // Intentos del juez que ya fallaron con esta misma huella, para meta.judge_attempts.
       const priorJudgeAttempts = new Map<string, number>();
