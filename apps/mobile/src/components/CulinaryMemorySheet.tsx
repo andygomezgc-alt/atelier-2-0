@@ -7,13 +7,18 @@ import { deleteChefNote, getChefNotes } from "@/src/api/chef-notes";
 import { ApiError } from "@/src/api/client";
 import { useI18n } from "@/src/hooks/useI18n";
 import { apiErrorMessage } from "@/src/lib/api-error";
-import { hasUnsavedRelearn, memoryPatchBody, relearnCategory } from "@/src/lib/culinary-memory-draft";
+import type { TranslationKey } from "@atelier/i18n";
+import {
+  applyCuisineRegister, hasUnsavedRelearn, hideCategory, MEMORY_CATEGORY_KEYS, memoryCategory, memoryPatchBody, relearnCategory,
+  setCorrection, showCategory,
+} from "@/src/lib/culinary-memory-draft";
 import { BottomSheet } from "./BottomSheet";
 import { ConfirmSheet } from "./ConfirmSheet";
 import { Button } from "./Button";
 import { showToast } from "./Toast";
-import { colors, fonts, fontSizes, spacing } from "@/src/theme";
+import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
+const REGISTER_KEYS = ["memory_register_classic", "memory_register_contemporary", "memory_register_avantgarde"] as const;
 type Props = { restaurantId: string; onClose: () => void };
 export function CulinaryMemorySheet({ restaurantId, onClose }: Props) {
   const { t } = useI18n();
@@ -79,10 +84,10 @@ export function CulinaryMemorySheet({ restaurantId, onClose }: Props) {
       else showToast(apiErrorMessage(e, t));
     } finally { if (alive.current) setBusy(false); }
   }
-  const trends = draft ? [...draft.corrections, ...draft.learned.filter(f => !draft.excludedKeys.includes(f.key) && !draft.corrections.some(c => c.key === f.key))] : [];
-  function correct(item: MemoryPreference, text: string) {
-    setDraft(prev => prev ? { ...prev, corrections: [...prev.corrections.filter(c => c.key !== item.key), { key: item.key, text }] } : prev);
+  function correct(key: MemoryPreference["key"], text: string) {
+    setDraft(prev => prev ? setCorrection(prev, key, text) : prev);
   }
+  const registers = REGISTER_KEYS.map(register => t(register));
   return <>
     <BottomSheet open onClose={close} testID="culinary-memory-sheet">
       <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -102,28 +107,51 @@ export function CulinaryMemorySheet({ restaurantId, onClose }: Props) {
           <Text style={styles.note}>{t(draft.enabled ? "memory_note" : "memory_off")}</Text>
           {!draft.learningAvailable && <Text style={styles.note}>{t("memory_unavailable")}</Text>}
           <Text style={styles.label}>{t("memory_learned")}</Text>
-          {!trends.length && <Text style={styles.note}>{t("memory_empty")}</Text>}
-          {trends.map(item => <View key={item.key} style={styles.trend}>
-            {editing === item.key ? <TextInput autoFocus accessibilityLabel={t("memory_edit")} style={styles.input} multiline maxLength={160}
-              editable={!busy} value={item.text} onChangeText={text => correct(item, text)} /> : <Text style={styles.note}>{item.text}</Text>}
-            {draft.canEdit && <View style={styles.row}>
-              <Pressable accessibilityRole="button" accessibilityLabel={t("memory_edit")} disabled={busy} style={styles.action} onPress={() => setEditing(item.key)}>
-                <Ionicons name="pencil-outline" size={18} color={colors.inkSoft} /><Text style={styles.actionText}>{t("memory_edit")}</Text>
-              </Pressable>
-              {draft.corrections.some(c => c.key === item.key) && <Pressable accessibilityRole="button" accessibilityLabel={t("memory_relearn")} disabled={busy} style={styles.action}
-                onPress={() => { setDraft(relearnCategory(draft, item.key)); setEditing(null); }}>
-                <Ionicons name="refresh-outline" size={18} color={colors.inkSoft} /><Text style={styles.actionText}>{t("memory_relearn")}</Text>
-              </Pressable>}
-              <Pressable accessibilityRole="button" accessibilityLabel={t("memory_hide")} disabled={busy} style={styles.action}
-                onPress={() => setDraft({ ...draft, corrections: draft.corrections.filter(c => c.key !== item.key), excludedKeys: [...new Set([...draft.excludedKeys, item.key])] })}>
-                <Ionicons name="close-outline" size={22} color={colors.inkSoft} />
-              </Pressable>
-            </View>}
-          </View>)}
-          {!!draft.excludedKeys.length && <>
-            <Text style={styles.note}>{t("memory_hidden_note")}</Text>
-            {draft.canEdit && <Button label={t("memory_restore")} variant="secondary" disabled={busy} onPress={() => setDraft({ ...draft, excludedKeys: [] })} />}
-          </>}
+          {!draft.learned.length && <Text style={styles.note}>{t("memory_empty")}</Text>}
+          {MEMORY_CATEGORY_KEYS.map(key => {
+            const { state, text } = memoryCategory(draft, key);
+            const label = t(`memory_cat_${key}`);
+            const named = (action: TranslationKey) => `${t(action)}: ${label}`;
+            const filled = state === "declared" || state === "learned";
+            return <View key={key} style={styles.trend}>
+              <View style={styles.row}>
+                <Text style={[styles.label, { flex: 1 }]}>{label}</Text>
+                {filled && <Text style={styles.tag}>{t(state === "declared" ? "memory_tag_declared" : "memory_tag_learned")}</Text>}
+              </View>
+              {filled && draft.canEdit && editing === key ? <>
+                <TextInput autoFocus accessibilityLabel={named("memory_edit")} style={styles.input} multiline maxLength={160}
+                  editable={!busy} value={text} onChangeText={value => correct(key, value)} />
+                {key === "cuisine" && <View style={styles.chips}>
+                  {REGISTER_KEYS.map((register, i) => <Pressable key={register} accessibilityRole="button" accessibilityLabel={registers[i]} disabled={busy}
+                    style={styles.chip} onPress={() => correct(key, applyCuisineRegister(text, registers[i]!, registers))}>
+                    <Text style={styles.actionText}>{registers[i]}</Text>
+                  </Pressable>)}
+                </View>}
+              </> : state === "hidden" ? <Text style={styles.note}>{t("memory_hidden")}</Text> : filled && <Text style={styles.note}>{text}</Text>}
+              {draft.canEdit && <View style={styles.actions}>
+                {filled && <Pressable accessibilityRole="button" accessibilityLabel={named("memory_edit")} disabled={busy} style={styles.action} onPress={() => setEditing(key)}>
+                  <Ionicons name="pencil-outline" size={18} color={colors.inkSoft} /><Text style={styles.actionText}>{t("memory_edit")}</Text>
+                </Pressable>}
+                {state === "declared" && <Pressable accessibilityRole="button" accessibilityLabel={named("memory_relearn")} disabled={busy} style={styles.action}
+                  onPress={() => { setDraft(relearnCategory(draft, key)); setEditing(null); }}>
+                  <Ionicons name="refresh-outline" size={18} color={colors.inkSoft} /><Text style={styles.actionText}>{t("memory_relearn")}</Text>
+                </Pressable>}
+                {state === "learned" && <Pressable accessibilityRole="button" accessibilityLabel={named("memory_hide")} disabled={busy} style={styles.action}
+                  onPress={() => { setDraft(hideCategory(draft, key)); setEditing(null); }}>
+                  <Ionicons name="close-outline" size={22} color={colors.inkSoft} />
+                </Pressable>}
+                {state === "hidden" && <Pressable accessibilityRole="button" accessibilityLabel={named("memory_show")} disabled={busy} style={styles.action}
+                  onPress={() => setDraft(showCategory(draft, key))}>
+                  <Ionicons name="eye-outline" size={18} color={colors.inkSoft} /><Text style={styles.actionText}>{t("memory_show")}</Text>
+                </Pressable>}
+                {state === "empty" && <Pressable accessibilityRole="button" accessibilityLabel={named("memory_declare")} disabled={busy} style={styles.action}
+                  onPress={() => { correct(key, ""); setEditing(key); }}>
+                  <Ionicons name="add-outline" size={20} color={colors.inkSoft} /><Text style={styles.actionText}>{t("memory_declare")}</Text>
+                </Pressable>}
+              </View>}
+            </View>;
+          })}
+          {!!draft.excludedKeys.length && <Text style={styles.note}>{t("memory_hidden_note")}</Text>}
           {conflict && <><Text style={styles.note}>{t("memory_conflict")}</Text><Button label={t("memory_retry")} onPress={reload} disabled={busy} /></>}
           {draft.canEdit && <>
             {relearnPending && <Text style={styles.note}>{t("memory_relearn_hint")}</Text>}
@@ -162,4 +190,8 @@ const styles = StyleSheet.create({
   trend: { borderBottomWidth: 0.5, borderBottomColor: colors.edge, paddingBottom: spacing.sm },
   action: { minWidth: 48, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm },
   actionText: { fontFamily: fonts.sans, color: colors.inkSoft },
+  actions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm },
+  tag: { fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.mute, borderWidth: 0.5, borderColor: colors.edge, borderRadius: radii.pill, paddingHorizontal: spacing.sm, paddingVertical: 2 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  chip: { minHeight: 48, justifyContent: "center", paddingHorizontal: spacing.md, borderWidth: 1, borderColor: colors.edge, borderRadius: radii.pill },
 });
