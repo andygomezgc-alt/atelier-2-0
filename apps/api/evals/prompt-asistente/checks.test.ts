@@ -116,6 +116,16 @@ describe("quantityFirstShare", () => {
     ].join("\n");
     expect(quantityFirstShare(text)).toEqual({ lines: 5, share: 0.8 });
   });
+
+  it("las comillas de código no ocultan la cantidad, ni alrededor del ingrediente ni solo de la cantidad", () => {
+    const text = ["**Ingredients**", "- `1400 g celeriac` (pelado)", "- `8 g` sal fina", "* **`150 g`** unsalted butter", "**Method**", "1. Peel."].join("\n");
+    expect(quantityFirstShare(text)).toEqual({ lines: 3, share: 1 });
+  });
+
+  it("un ingrediente entre comillas de código sin la cantidad delante sigue sin contar", () => {
+    const text = ["Ingredientes", "- `1 kg judiones`", "- `Sal fina`, 8 g", "- `Pimentón` al gusto", "- `200 g` chorizo", "Método", "1. Remojar."].join("\n");
+    expect(quantityFirstShare(text)).toEqual({ lines: 4, share: 0.5 });
+  });
 });
 
 describe("deterministicGrades", () => {

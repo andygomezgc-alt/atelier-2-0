@@ -49,7 +49,8 @@ export function quantityFirstShare(text: string): { lines: number; share: number
   body.forEach((line, index) => {
     const raw = LIST_ITEM.exec(line)?.[1]?.trim();
     if (!raw) return;
-    const item = raw.replace(/^[*_\s]+|[*_\s]+$/g, "");
+    // Fuera la negrita y las comillas de código («`8 g` sal fina»), que no ocultan la cantidad.
+    const item = raw.replace(/^[*_`\s]+|[*_`\s]+$/g, "");
     const next = body.slice(index + 1).find(candidate => candidate.trim());
     const hasSubItems = next !== undefined && LIST_ITEM.test(next) && indent(next) > indent(line);
     // Las etiquetas de grupo («Para el caldo:», en negrita entera o con subítems) no son ingredientes.
