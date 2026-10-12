@@ -260,6 +260,10 @@ model Conversation {
   messages Message[]
   recipes  Recipe[]
   summaries ConversationSummary[]
+  /// Step (`through`) whose paid summaries came back unusable, and how many times;
+  /// after a bounded number the step is no longer retried.
+  summaryFailedThrough Int?
+  summaryFailures      Int     @default(0)
 
   @@index([restaurantId, createdAt])
   @@index([authorId, createdAt])

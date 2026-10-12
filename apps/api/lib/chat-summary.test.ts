@@ -4,6 +4,7 @@ const { db, budget, haikuCreate, haikuClient } = vi.hoisted(() => ({
   db: {
     conversationSummary: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
     message: { findMany: vi.fn() },
+    conversation: { findUnique: vi.fn(), update: vi.fn() },
   },
   budget: { reserveGeneration: vi.fn(), settleGeneration: vi.fn(), releaseGeneration: vi.fn(), settleInterruptedGeneration: vi.fn() },
   haikuCreate: vi.fn(), haikuClient: vi.fn(),
@@ -63,6 +64,8 @@ beforeEach(() => {
   db.conversationSummary.findMany.mockReset().mockResolvedValue([]);
   db.conversationSummary.create.mockReset().mockImplementation(async ({ data }) => data);
   db.conversationSummary.deleteMany.mockReset().mockResolvedValue({ count: 0 });
+  db.conversation.findUnique.mockReset().mockResolvedValue({ summaryFailedThrough: null, summaryFailures: 0 });
+  db.conversation.update.mockReset().mockResolvedValue({});
   db.message.findMany.mockReset().mockImplementation(async ({ skip = 0, take }: { skip?: number; take: number }) =>
     chat.slice(skip, skip + take).map(({ role, content }) => ({ role, content })));
   budget.reserveGeneration.mockReset().mockResolvedValue(reservation);
@@ -170,6 +173,42 @@ describe("refreshChatSummary", () => {
     expect(payload.messages.slice(0, 2).map(m => m.role)).toEqual(["chef", "assistant"]);
     expect(stored()).toMatchObject({ through: 20, text: SUMMARY });
     expect(db.conversationSummary.deleteMany).toHaveBeenCalledWith({ where: { conversationId: "conv-1", through: { lt: 10 } } });
+  });
+
+  it("rolls forward from an older summary when a step was skipped, and keeps it until the new one exists", async () => {
+    conversation(40);
+    db.conversationSummary.findMany.mockResolvedValue([{ through: 10, text: "Decidido: base de tomate" }]);
+    await refreshChatSummary(input({ persistedCount: 40 }));
+    expect(messageQuery()).toMatchObject({ skip: 10, take: 20 });
+    expect(geminiPayload().previousSummary).toBe("Decidido: base de tomate");
+    expect(stored().through).toBe(30);
+    expect(db.conversationSummary.deleteMany).toHaveBeenCalledWith({ where: { conversationId: "conv-1", through: { lt: 10 } } });
+  });
+
+  it("keeps the older summary and a bounded slice when many steps were skipped", async () => {
+    conversation(80);
+    db.conversationSummary.findMany.mockResolvedValue([{ through: 10, text: "Decidido: base de tomate" }]);
+    await refreshChatSummary(input({ persistedCount: 80 }));
+    expect(messageQuery()).toMatchObject({ skip: 30, take: 40 });
+    expect(geminiPayload().previousSummary).toBe("Decidido: base de tomate");
+    expect(db.conversationSummary.deleteMany).toHaveBeenCalledWith({ where: { conversationId: "conv-1", through: { lt: 10 } } });
+  });
+
+  it("records an unusable paid answer for its step", async () => {
+    vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    fetcher.mockImplementation(async () => geminiReply("**Decidido:** nada"));
+    await refreshChatSummary(input());
+    expect(db.conversation.update).toHaveBeenCalledWith({ where: { id: "conv-1" }, data: { summaryFailedThrough: 20, summaryFailures: 1 } });
+    db.conversation.findUnique.mockResolvedValue({ summaryFailedThrough: 20, summaryFailures: 1 });
+    await refreshChatSummary(input());
+    expect(db.conversation.update).toHaveBeenLastCalledWith({ where: { id: "conv-1" }, data: { summaryFailedThrough: 20, summaryFailures: 2 } });
+  });
+
+  it("stops paying for a step after two unusable answers", async () => {
+    db.conversation.findUnique.mockResolvedValue({ summaryFailedThrough: 20, summaryFailures: 2 });
+    await refreshChatSummary(input());
+    expect(budget.reserveGeneration).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("bootstraps an older chat without a previous summary from a bounded, size-capped slice", async () => {

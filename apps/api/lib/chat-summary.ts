@@ -20,6 +20,8 @@ const INPUT_MAX_CHARS = 48_000;
 const GEMINI_MAX_TOKENS = 4_096;
 // Each summary is built on the previous one, so a summary missing a section would lose it for good.
 const SECTIONS = ["Decidido:", "Descartado:", "Pendiente:", "Datos del plato:"];
+// Paid answers that cannot be stored stop being retried for their step after this many.
+const MAX_UNUSABLE_ATTEMPTS = 2;
 const GEMINI_TIMEOUT_MS = 30_000;
 const MIN_REMAINING_MS = 5_000;
 
@@ -85,14 +87,21 @@ export async function refreshChatSummary(input: {
   const through = nextSummaryThrough(input.persistedCount);
   if (!(through >= STEP)) return;
   try {
+    const failures = await prisma.conversation.findUnique({
+      where: { id: conversationId }, select: { summaryFailedThrough: true, summaryFailures: true },
+    });
+    const failedHere = failures?.summaryFailedThrough === through ? failures.summaryFailures : 0;
+    if (failedHere >= MAX_UNUSABLE_ATTEMPTS) return;
     const rows = await prisma.conversationSummary.findMany({
-      where: { conversationId, through: { in: [through - STEP, through] } }, select: { through: true, text: true },
+      where: { conversationId, through: { lte: through } }, orderBy: { through: "desc" }, take: 2,
+      select: { through: true, text: true },
     });
     if (rows.some(row => row.through === through)) return;
-    const previous = rows.find(row => row.through === through - STEP)?.text;
-    // Rolling: the previous summary plus the block that leaves. Without it
-    // (older chats), a bounded slice that ends at `through`.
-    const from = previous ? through - STEP : Math.max(0, through - SLICE_MESSAGES);
+    // Rolling: the newest earlier summary plus the messages after it. A skipped
+    // step still builds on the older summary; the slice stays bounded.
+    const base = rows.filter(row => row.through < through).sort((a, b) => b.through - a.through)[0];
+    const previous = base?.text;
+    const from = Math.max(base?.through ?? 0, through - SLICE_MESSAGES);
     const messages = await prisma.message.findMany({
       where: { conversationId }, orderBy: { createdAt: "asc" }, skip: from, take: through - from,
       select: { role: true, content: true },
@@ -104,12 +113,14 @@ export async function refreshChatSummary(input: {
     const timeoutMs = Math.min(config.timeoutMs, (input.deadlineAt ?? Infinity) - Date.now());
     if (timeoutMs < MIN_REMAINING_MS) return;
     const text = await generateSummary(config, summaryInput(previous, messages), timeoutMs, input.userId);
-    if (!text?.trim()) return;
-    const summary = capSummary(text);
+    const summary = capSummary(text ?? "");
     const lines = summary.split("\n");
     if (!SECTIONS.every(section => lines.some(line => line.startsWith(section)))) {
-      // Cut by the output limit or off-template: the next turn tries again.
+      // Refused, cut by the output limit or off-template: a later turn tries again, a bounded number of times.
       logger.warn("chat_summary_incomplete", { conversationId, through, model: config.model });
+      await prisma.conversation.update({
+        where: { id: conversationId }, data: { summaryFailedThrough: through, summaryFailures: failedHere + 1 },
+      });
       return;
     }
     try {
@@ -118,8 +129,8 @@ export async function refreshChatSummary(input: {
       // A concurrent turn already wrote this summary.
       if ((error as { code?: unknown } | null)?.code !== "P2002") throw error;
     }
-    // Later turns only need this summary and the one before it.
-    await prisma.conversationSummary.deleteMany({ where: { conversationId, through: { lt: through - STEP } } });
+    // Later turns only need this summary and the one it was built on.
+    if (base) await prisma.conversationSummary.deleteMany({ where: { conversationId, through: { lt: base.through } } });
   } catch (error) {
     logger.warn("chat_summary_failed", {
       conversationId, through, code: error instanceof AiBudgetError ? error.code : undefined, error,
