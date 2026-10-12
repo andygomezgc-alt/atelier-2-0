@@ -60,6 +60,8 @@
 - [x] T2d — hallazgo R3-offtemplate-summary-repaid-every-turn (SUGGESTION): un resumen fuera de plantilla se paga de nuevo en cada turno, sin límite. Arreglo propuesto: anotar los intentos fallidos por paso y limitar los reintentos. Autorizada por Andy el 12-10-2026 y hecha.
 - [x] T2e — hallazgo R3-maxtokens-midline-summary-stored (WARNING, revisión consolidada `review-390d2e2f4758c0fa`): una respuesta cortada por el límite de salida a mitad de una línea, por debajo de 1200 caracteres, se guarda con un dato a medias (por ejemplo, una temperatura) y se arrastra a los resúmenes siguientes. Arreglo propuesto: si el proveedor cortó por límite, descartar la última línea incompleta o el resumen entero. Autorizada por Andy el 12-10-2026 y hecha.
 - [x] T2f — hallazgo R3-skipped-step-input-cap-drops-oldest (SUGGESTION): al saltar un paso, el tope de 48.000 caracteres puede dejar fuera los mensajes más viejos posteriores al resumen base, sin dejar registro. Arreglo propuesto: registrarlo en el log o recortar cada mensaje antes que descartar los más viejos. Autorizada por Andy el 12-10-2026 y hecha.
+- [ ] T2g — hallazgo R3-long-summary-cap-drops-last-section (WARNING, `review-4969a6c931896907`): el tope de 1200 caracteres se aplica antes de comprobar las secciones. Un resumen completo pero largo pierde «Datos del plato», cuenta como fallo y, tras 2 intentos, el paso se abandona. Arreglo propuesto: comprobar las secciones antes de recortar y recortar dentro de cada sección. Pendiente de decisión.
+- [ ] T2h — hallazgo R3-stale-summary-injected-with-gap (WARNING): si un paso falló, se inyecta un resumen más viejo que el inicio de la ventana y faltan los mensajes intermedios. Además, si se saltan muchos pasos queda un hueco entre el resumen base y el tramo de 40 mensajes (R3-skipped-steps-slice-gap, SUGGESTION). Es una degradación aceptada en el diseño: solo pasa tras fallos. Arreglo posible: marcar el hueco en el texto inyectado. Pendiente de decisión.
 - [ ] T3 — entrega: PR de T1 y, después, de T2.
 
 ## Criterios de aceptación (T1)
@@ -143,3 +145,4 @@
   - T2f: cada mensaje del tramo comparte el tope de entrada (`min(4000, floor(48000 / n) − 1)`), así se conservan todos acortados en lugar de descartar los más viejos.
   - RED: 3 fallan y 36 pasan, por aserciones.
   - GREEN: 106 archivos y 1393 tests; typecheck 0.
+- T2e y T2f: commit `904de2c`, `under_budget` (44 líneas). La tercera revisión consolidada, `review-4969a6c931896907` (1226 líneas), con consentimiento de Andy: **aprobada con acuse de recibo**. Dejó los avisos T2g y T2h.
