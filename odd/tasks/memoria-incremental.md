@@ -46,6 +46,7 @@
 
 ## Tareas
 - [x] T1 — aprendizaje incremental: hechos vigentes al extractor, texto estable y versión del prompt en la huella. Ruta: delegada, un escritor (Opus). Disparador: dos o más archivos no triviales (`provider.ts`, `worker.ts` y la huella, más los tests).
+- [ ] T1b — hallazgo R3-legacy-hash-bypass, no bloqueante: si una memoria con huella anterior termina en la salida temprana (menos de 2 fuentes o todas las categorías excluidas) o falla la generación, nunca reescribe la huella con prefijo. Por eso evita el atajo diario y vuelve a cargar evidencia cada día. Las llamadas pagadas siguen limitadas por la puerta semanal y la supresión de fallos. Se hace aparte.
 - [ ] T2 — resumen del chat: el modelo del turno y la ventana sin cambios. Va en su propia rama y PR, después de T1.
 - [ ] T3 — entrega: PR de T1 y, después, de T2.
 
@@ -83,3 +84,5 @@
     - Cada memoria elegible hace una corrida pagada en la semana siguiente.
     - Esa corrida sube `version`, así que un teléfono con el `expectedVersion` anterior recibe un conflicto, como tras cualquier publicación.
     - Una memoria con huella antigua y menos de 2 recetas vuelve a cargar evidencia en cada revisión diaria, sin llamada pagada, hasta que publique.
+  - Commit `0dcd10f`, más el documento en `8b146db`. PR 1: https://github.com/andygomezgc-alt/atelier-2-0/pull/44.
+  - RDD: riesgo medio, 288 líneas, con consentimiento de Andy. La revisión `review-d71d4e4dde9415d2` (lente de fiabilidad) quedó **aprobada con acuse de recibo** y la autoridad consumida. Dejó un aviso no bloqueante, R3-legacy-hash-bypass, que pasa a la tarea T1b.
