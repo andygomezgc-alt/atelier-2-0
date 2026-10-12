@@ -82,8 +82,25 @@ Orden: A1 → A2.
   - Comprobación del padre: las 2 pruebas nuevas dan 53/53.
   - Hueco detectado: el PATCH solo guarda el peso por pieza en categorías con modo de pezzatura (pescado, carne en pieza, fruta, panadería). En «otro», «verdura», «lácteo», etc., la hoja oculta el campo y pide cambiar la unidad. Se reabre como A3.
 
+  - Commit `200d516`.
+  - RDD: riesgo medio, consentimiento `granted`, revisión aprobada y confirmada (linaje `review-eea268a7b23395bb`, compara contra main).
+  - Sugerencias no bloqueantes:
+    - R3-fix-sheet-wiring-untested: falta probar el guardado de la hoja. Se agregó al alcance de A3.
+    - R3-lines-max-50-contract: el mismo seguimiento que en A1.
+
 ## Tareas añadidas
-- [ ] A3 — `parsePezzatura` acepta un peso explícito por pieza («X g/pz», «X kg/pz») en categorías sin modo, como `g_per_piece`; la hoja de la app muestra el campo para cualquier categoría. Motivo: sin esto, «tentáculos» (categoría «otro», g contra unidad) no se puede arreglar desde la receta. Ruta: delegada (shared + mobile).
+- [x] A3 — `parsePezzatura` acepta un peso explícito por pieza («X g/pz», «X kg/pz») en categorías sin modo, como `g_per_piece`; la hoja de la app muestra el campo para cualquier categoría. Motivo: sin esto, «tentáculos» (categoría «otro», g contra unidad) no se puede arreglar desde la receta. Ruta: delegada (shared + mobile).
+
+- A3 (writer Opus, delegado):
+  - RED observado: shared 7, api 2 (400 en vez de 201/200), mobile 5; en la prueba de la hoja, los 2 casos de A3. Los casos 1-4 de la hoja describen comportamiento que ya existía, así que no tuvieron RED.
+  - GREEN: shared 311/311; api tsc y 1445 pruebas (`leave` cae por el timeout de arranque y aislada pasa 8/8); i18n 91/91; mobile typecheck y 520/520.
+  - Comprobación del padre: `pezzatura.test.ts` 79/79 y las pruebas de la hoja y de `ingredient-cost` 56/56.
+  - Auditoría de quién llama al parser:
+    - los formularios de pezzatura siguen cerrados cuando la categoría no tiene modo;
+    - POST y PATCH ahora aceptan un peso único explícito en cualquier categoría.
+  - Seguimientos:
+    - en la ficha, el peso por pieza de un producto «otro» no se ve;
+    - el aviso «anti_typo» de `recetas/nueva.tsx:227` sigue apareciendo aunque el producto ya tenga peso.
 
 ## Siguiente paso
-A3.
+Commit de A3, revisión RDD y entrega (estrategia pendiente: unas 1.900 líneas en total).

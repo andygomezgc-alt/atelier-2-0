@@ -136,7 +136,7 @@ export function IngredientFixSheet({ target, onClose, onSaved }: Props) {
     }
   }
 
-  const fields = product && target ? fixFields(target.recipeUnit, unit, product) : null;
+  const fields = product && target ? fixFields(target.recipeUnit, unit) : null;
 
   return (
     <BottomSheet open={target !== null} onClose={close} testID="ingredient-fix-sheet">
@@ -221,9 +221,6 @@ export function IngredientFixSheet({ target, onClose, onSaved }: Props) {
             </>
           ) : null}
 
-          {fields.pieceWeightUnsupported ? (
-            <Text style={styles.note}>{t("fix_sheet_piece_weight_unsupported")}</Text>
-          ) : null}
           {fields.incompatible ? <Text style={styles.note}>{t("fix_sheet_incompatible")}</Text> : null}
 
           {error ? (

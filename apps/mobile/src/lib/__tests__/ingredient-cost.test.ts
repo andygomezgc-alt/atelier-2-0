@@ -142,40 +142,28 @@ describe("unitPairNeed", () => {
 });
 
 describe("fixFields", () => {
-  const oil = { name: "Aceite de oliva", category: "vinagre_aceite" as const };
-  const fish = { name: "Lubina", category: "pescado" as const };
-  const pepper = { name: "Pimiento rojo", category: "verdura" as const };
-
   it("asks for the weight of one litre only for weight against volume", () => {
-    expect(fixFields("g", "l", oil)).toEqual({
+    expect(fixFields("g", "l")).toEqual({
       density: true,
       pieceWeight: false,
-      pieceWeightUnsupported: false,
       incompatible: false,
     });
-    expect(fixFields("g", "kg", oil).density).toBe(false);
+    expect(fixFields("g", "kg").density).toBe(false);
   });
 
-  it("asks for the weight of one piece when the product admits a piece size", () => {
-    expect(fixFields("g", "unidad", fish)).toEqual({
+  // Any category can store it: products without a piece size of their own
+  // (a pepper, tentacles in «otro») take it as grams per piece.
+  it("asks for the weight of one piece between pieces and weight, for any product", () => {
+    expect(fixFields("g", "unidad")).toEqual({
       density: false,
       pieceWeight: true,
-      pieceWeightUnsupported: false,
       incompatible: false,
     });
-  });
-
-  it("says when the product cannot store a piece weight", () => {
-    expect(fixFields("piezas", "kg", pepper)).toEqual({
-      density: false,
-      pieceWeight: false,
-      pieceWeightUnsupported: true,
-      incompatible: false,
-    });
+    expect(fixFields("piezas", "kg").pieceWeight).toBe(true);
   });
 
   it("flags a pair that stays without cost", () => {
-    expect(fixFields("piezas", "l", oil).incompatible).toBe(true);
+    expect(fixFields("piezas", "l").incompatible).toBe(true);
   });
 });
 
@@ -223,6 +211,12 @@ describe("piece weight", () => {
   it("writes pieces per kilo for shellfish, so the piece still weighs the same", () => {
     const input = pieceWeightInput(50, "pz_per_kg");
     expect(parsePezzatura(input, "pescado", "Gamberi rossi")).toEqual({ mode: "pz_per_kg", min: 20, max: 20 });
+  });
+
+  it("writes grams per piece for a category without a piece size", () => {
+    const input = pieceWeightInput(120, null);
+    expect(input).toBe("120 g/pz");
+    expect(parsePezzatura(input, "otro", "Tentáculos")).toEqual({ mode: "g_per_piece", min: 120, max: 120 });
   });
 
   it("reads the current piece weight from the product size", () => {
@@ -313,6 +307,35 @@ describe("buildFixPatch", () => {
       ok: true,
       patch: {},
     });
+  });
+
+  it("saves the weight of one piece for a category without a piece size", () => {
+    const tentacles: FixProduct = {
+      ...oilByLitre,
+      name: "Tentáculos",
+      category: "otro",
+      unidadCompra: "unidad",
+      precioCompra: 300,
+    };
+    expect(
+      buildFixPatch(tentacles, "g", { unit: "unidad", price: "3", gramsPerLitre: "", pieceWeight: "120" }),
+    ).toEqual({ ok: true, patch: { pezzaturaInput: "120 g/pz" } });
+    expect(
+      buildFixPatch(tentacles, "g", { unit: "unidad", price: "3", gramsPerLitre: "", pieceWeight: "0" }),
+    ).toEqual({ ok: false, error: "piece_weight" });
+  });
+
+  it("keeps pieces per kilo for shellfish", () => {
+    const prawns: FixProduct = {
+      ...oilByLitre,
+      name: "Gamberi rossi",
+      category: "pescado",
+      unidadCompra: "unidad",
+      precioCompra: 300,
+    };
+    expect(
+      buildFixPatch(prawns, "g", { unit: "unidad", price: "3", gramsPerLitre: "", pieceWeight: "50" }),
+    ).toEqual({ ok: true, patch: { pezzaturaInput: "20/20" } });
   });
 });
 

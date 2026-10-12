@@ -251,7 +251,6 @@ describe("per-ingredient cost copy", () => {
     "gramos_por_litro_suggested",
     "grams_invalid",
     "fix_sheet_price_label",
-    "fix_sheet_piece_weight_unsupported",
     "fix_sheet_incompatible",
     "fix_sheet_error_price",
   ];

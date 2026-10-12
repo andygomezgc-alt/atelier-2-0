@@ -684,7 +684,6 @@ export const it: EsDict = {
   peso_por_unidad_label: "1 pezzo pesa (g)",
   grams_invalid: "Inserisci un peso in grammi maggiore di 0.",
   fix_sheet_price_label: "Prezzo per {unit} (€)",
-  fix_sheet_piece_weight_unsupported: "Questo prodotto non salva il peso di 1 pezzo. Cambia l'unità d'acquisto.",
   fix_sheet_incompatible: "Con questa unità, l'ingrediente resta senza costo.",
   fix_sheet_error_price: "Inserisci un prezzo maggiore di 0.",
   ajustes_section_criticidad: "Criticità",

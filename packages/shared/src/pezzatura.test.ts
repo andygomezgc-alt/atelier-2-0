@@ -326,6 +326,49 @@ describe("parsePezzatura — casos negativos", () => {
   });
 });
 
+// Costes por ingrediente (A3): a product whose category has no piece size
+// (tentacles in «otro», a pepper, a cut of meat) can still store the weight
+// of one piece when the chef types it explicitly with a weight unit.
+describe("parsePezzatura — explicit piece weight without a category mode", () => {
+  it.each([
+    ["120 g/pz", "otro", "Tentáculos", 120],
+    ["120 g", "otro", "Tentáculos", 120],
+    ["0,5 kg/pz", "verdura", "Pimiento rojo", 500],
+    ["1.2 kg", "lacteo", "Burrata", 1200],
+    ["300 gr/pz", "carne", "Lomo de ternera", 300],
+    ["60.5 g/pz", "otro", "Tentáculos", 60.5],
+  ] as const)("'%s' on %s (%s) → g_per_piece %s g", (input, category, name, grams) => {
+    expect(parsePezzatura(input, category, name)).toEqual({
+      mode: "g_per_piece", min: grams, max: grams,
+    });
+  });
+
+  it("ranges, unit-less numbers, piece units and U/X stay null", () => {
+    for (const input of ["10/12", "400/500 g", "2-4 kg", "120", "60 pz", "u/8", "0 g", "abc", ""]) {
+      expect(parsePezzatura(input, "otro", "Tentáculos"), input).toBe(null);
+    }
+  });
+
+  it("round-trips through formatPezzatura", () => {
+    for (const grams of [120, 1200]) {
+      const rendered = formatPezzatura({ mode: "g_per_piece", min: grams, max: grams });
+      expect(parsePezzatura(rendered, "otro", "Tentáculos")).toEqual({
+        mode: "g_per_piece", min: grams, max: grams,
+      });
+    }
+  });
+
+  it("never detects a piece weight from the name for those categories", () => {
+    expect(detectPezzaturaFromName("Tentáculos 120 g", "otro")).toBe(null);
+    expect(detectPezzaturaFromName("Burrata 125 g", "lacteo")).toBe(null);
+  });
+
+  it("does not change the categories that have a mode", () => {
+    expect(parsePezzatura("10/12", "pescado", "Gamberi")).toEqual({ mode: "pz_per_kg", min: 10, max: 12 });
+    expect(parsePezzatura("120 g/pz", "pescado", "Gamberi")).toBe(null);
+  });
+});
+
 // ─────────── formatPezzatura ───────────
 
 describe("formatPezzatura", () => {

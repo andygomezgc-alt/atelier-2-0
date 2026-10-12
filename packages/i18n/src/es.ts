@@ -714,7 +714,6 @@ export const es = {
   peso_por_unidad_label: "1 unidad pesa (g)",
   grams_invalid: "Escribe un peso en gramos mayor que 0.",
   fix_sheet_price_label: "Precio por {unit} (€)",
-  fix_sheet_piece_weight_unsupported: "Este producto no guarda el peso de 1 unidad. Cambia la unidad de compra.",
   fix_sheet_incompatible: "Con esta unidad, el ingrediente sigue sin coste.",
   fix_sheet_error_price: "Escribe un precio mayor que 0.",
   ajustes_section_criticidad: "Criticidad",

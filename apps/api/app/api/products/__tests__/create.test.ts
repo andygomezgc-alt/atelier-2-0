@@ -133,4 +133,31 @@ describe("POST /api/products", () => {
       expect(db.product.create).not.toHaveBeenCalled();
     });
   });
+
+  // A category without a piece size («otro») still stores an explicit weight
+  // of one piece, so a recipe in grams can cost a product bought by unit.
+  describe("piece weight on a category without a piece size", () => {
+    const tentacles = { name: "Tentáculos", category: "otro", unidadCompra: "unidad", precioCompra: 300 };
+
+    beforeEach(() => {
+      db.product.create.mockImplementation(async ({ data }) => ({ id: "p-tentacles", ...data }));
+    });
+
+    it("persists '120 g/pz' as g_per_piece 120/120", async () => {
+      const res = await create({ ...tentacles, pezzaturaInput: "120 g/pz" });
+      expect(res.status).toBe(201);
+      expect(db.product.create.mock.calls[0]![0].data).toMatchObject({
+        pezzaturaMode: "g_per_piece",
+        pezzaturaMin: 120,
+        pezzaturaMax: 120,
+      });
+    });
+
+    it("rejects a range with 400 invalid_pezzatura before writing", async () => {
+      const res = await create({ ...tentacles, pezzaturaInput: "10/12" });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: "invalid_pezzatura" });
+      expect(db.product.create).not.toHaveBeenCalled();
+    });
+  });
 });

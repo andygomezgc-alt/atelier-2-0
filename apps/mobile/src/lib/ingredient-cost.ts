@@ -120,25 +120,18 @@ export function unitPairNeed(recipeUnit: string | null, purchaseUnit: string): U
 
 export type FixFields = {
   density: boolean;
+  // Any category can store the weight of one piece (as grams per piece when
+  // it has no piece size of its own).
   pieceWeight: boolean;
-  // The pair needs a piece weight, but the product category has no piece
-  // size the API can store (resolvePezzaturaMode is null).
-  pieceWeightUnsupported: boolean;
   incompatible: boolean;
 };
 
 // Which fields the fix sheet shows for a recipe unit and the chosen purchase unit.
-export function fixFields(
-  recipeUnit: string | null,
-  purchaseUnit: ProductUnit,
-  product: Pick<ProductListItem, "name" | "category">,
-): FixFields {
+export function fixFields(recipeUnit: string | null, purchaseUnit: ProductUnit): FixFields {
   const need = unitPairNeed(recipeUnit, purchaseUnit);
-  const pieceMode = need === "piece_weight" ? resolvePezzaturaMode(product.name, product.category) : null;
   return {
     density: need === "density",
-    pieceWeight: need === "piece_weight" && pieceMode !== null,
-    pieceWeightUnsupported: need === "piece_weight" && pieceMode === null,
+    pieceWeight: need === "piece_weight",
     incompatible: need === "incompatible",
   };
 }
@@ -184,8 +177,10 @@ export function formatGrams(grams: number): string {
 }
 
 // Piece weight as the free-text pezzatura the API parses. Shellfish is sized
-// in pieces per kilo, so the weight is stored as its inverse.
-export function pieceWeightInput(grams: number, mode: PezzaturaMode): string {
+// in pieces per kilo, so the weight is stored as its inverse. Every other
+// product, with or without a category piece size (mode null), takes grams
+// per piece.
+export function pieceWeightInput(grams: number, mode: PezzaturaMode | null): string {
   if (mode === "pz_per_kg") {
     const perKg = Math.round((1000 / grams) * 100) / 100;
     return `${perKg}/${perKg}`;
@@ -242,7 +237,7 @@ export function buildFixPatch(
   if (cents === null || cents <= 0) return { ok: false, error: "price" };
   if (cents !== product.precioCompra) patch.precioCompra = cents;
 
-  const fields = fixFields(recipeUnit, form.unit, product);
+  const fields = fixFields(recipeUnit, form.unit);
   if (fields.density) {
     const grams = parseGrams(form.gramsPerLitre);
     if (grams === null) return { ok: false, error: "density" };
@@ -251,8 +246,8 @@ export function buildFixPatch(
   if (fields.pieceWeight) {
     const grams = parseGrams(form.pieceWeight);
     if (grams === null) return { ok: false, error: "piece_weight" };
-    const mode = resolvePezzaturaMode(product.name, product.category);
-    if (mode !== null && grams !== currentPieceWeightG(product)) {
+    if (grams !== currentPieceWeightG(product)) {
+      const mode = resolvePezzaturaMode(product.name, product.category);
       patch.pezzaturaInput = pieceWeightInput(grams, mode);
     }
   }
