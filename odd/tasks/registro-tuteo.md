@@ -16,7 +16,7 @@ El mercado hispanohablante puede ser España, donde el voseo suena ajeno. La lan
 ## Decisiones
 - Tuteo en toda la app (Andy, 12-10-2026).
 - Solo cambia el tratamiento: vos → tú y usted → tú. Se conservan las claves, el significado, las variables de interpolación y el vocabulario.
-- `chat_greet` («Buongiorno, Chef.») no cambia hasta que Andy confirme si el saludo en italiano es de marca.
+- `chat_greet` («Buongiorno, Chef.») queda en italiano porque es de marca (Andy lo confirmó el 12-10-2026). El test lo fija.
 - `memory_unavailable` y `memory_identity_hint` usan vosotros («vuestra cocina», «os gustaría»), que es el plural del tú en España. No son vos ni usted, así que quedan igual.
 - `delete_account_typing_hint` pasa a «tipea» y conserva el verbo, aunque en España sería más común «escribe»: la regla es no cambiar el vocabulario.
 
@@ -26,7 +26,7 @@ El mercado hispanohablante puede ser España, donde el voseo suena ajeno. La lan
 ## Restricciones
 - TDD estricto (fuente: `~/.claude/CLAUDE.md`). Runner: `vitest run` (`pnpm -C packages/i18n test`, `pnpm -C apps/mobile test`).
 - Conventional Commits sin atribución de IA.
-- Entrega: `ask-on-risk` (por defecto). Previsión: unas 150 líneas en un solo PR.
+- Entrega: `ask-on-risk` (por defecto). La previsión era de unas 150 líneas en un solo PR, y fueron 217 en el PR #42. Esta actualización del registro va en un PR aparte, solo de documentación.
 
 ## Tareas
 - [x] T1 — `es.ts` en tuteo, con su test. Ruta: delegada, un escritor (Opus). Disparadores: escritura en dos archivos no triviales (`es.ts` y el test) y lectura de preparación de `es.ts` entero.
@@ -49,10 +49,12 @@ El mercado hispanohablante puede ser España, donde el voseo suena ajeno. La lan
 - Diff: `es.ts` cambia 46 líneas, una por clave. Un script del escritor confirmó que nada cambia fuera de esos 46 valores: ni claves, ni comentarios, ni los saltos de línea CRLF. En `ProfileSheet.tsx` solo cambian los dos comentarios.
 - Barrido del supervisor en `es.ts`: no quedan «vos», «sos» ni verbos en voseo con tilde final. Los imperativos con pronombre llevan la tilde del tuteo (Actívalo, trabájalas, Pídele).
 - Commit de T1: `1269616` (216 líneas). RDD sobre `1269616` (base `c7aa8cf`): riesgo medio por `executable_change` en `ProfileSheet.tsx`, aunque solo cambian comentarios. `review_due: false` por `under_budget`.
+- Al cerrar, el preflight de RDD pidió consentimiento para toda la rama desde `c7aa8cf` (217 líneas) y Andy lo concedió. La revisión `review-58d73255705cd3a7` (lente `review-reliability`) se aprobó y quedó acusada. Dejó una sugerencia no bloqueante (R3-001): un test que revise todo `es.ts` contra una lista de formas de voseo.
 
 ## Siguiente paso
-- Preflight de RDD al cerrar. Después, el PR a `main`, que decide Andy.
-- Pendiente de Andy: si «Buongiorno, Chef.» es de marca.
+- Entregado: el PR #42 se fusionó a `main` el 12-10-2026 (`8497335`).
+- graphify: el grafo vive solo en la carpeta principal. Pendiente: llevar allí el `main` actual y correr `graphify update .`.
 - Seguimiento, fuera de alcance:
   - Voseo fuera de `es.ts`: las páginas web de privacidad, términos y borrar cuenta (`apps/api/app`) y textos que se envían a la IA. Está propuesto como tarea aparte.
   - Vocabulario regional en `es.ts`, que no es cuestión de tratamiento: «acá», «tipear», «agregar» junto a «añadir», «costo» junto a «coste», «sacar foto», «en promedio». Si el mercado es España, conviene revisarlo en otro pase.
+  - El test de R3-001, si se quiere evitar que el voseo vuelva a entrar.
