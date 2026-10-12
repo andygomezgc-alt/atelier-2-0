@@ -9,7 +9,9 @@
 //   - Food cost % solo si hay salePrice cargado.
 //   - portions=null → muestra el total de la elaboración, sin inventar porciones.
 //   - Si missingPriceCount + unmeasuredCount + unlinkedCount > 0 → aviso
-//     "N ingredientes sin costo" con tap → /productos?filter=sin-precio.
+//     "N ingredientes sin costo". El tap lo decide el padre (`onWarningPress`:
+//     con líneas por ingrediente baja a la lista de ingredientes); sin él,
+//     abre /productos?filter=sin-precio como antes.
 //   - Inputs de portions / salePrice editables tap-to-edit (Modal con
 //     TextInput numérico). PATCH al recipe → revalidar.
 
@@ -36,6 +38,8 @@ type Props = {
   canEdit: boolean;
   onPatchPortions: (portions: number | null) => Promise<void>;
   onPatchSalePrice: (salePriceCents: number | null) => Promise<void>;
+  // Tap on the "N ingredients without cost" row. Omitted → products filter.
+  onWarningPress?: () => void;
 };
 
 // Formato monetario simple en euros (sub-paso 6: hardcoded EUR; selector
@@ -50,6 +54,7 @@ function RecipeCostCardImpl({
   canEdit,
   onPatchPortions,
   onPatchSalePrice,
+  onWarningPress: onWarningPressProp,
 }: Props) {
   const { t } = useI18n();
   const router = useRouter();
@@ -125,8 +130,12 @@ function RecipeCostCardImpl({
   }, [editing, editValue, onPatchPortions, onPatchSalePrice, saving]);
 
   const onWarningPress = useCallback(() => {
+    if (onWarningPressProp) {
+      onWarningPressProp();
+      return;
+    }
     router.push("/productos?filter=sin-precio" as never);
-  }, [router]);
+  }, [router, onWarningPressProp]);
 
   if (recipe.recipeIngredients.length === 0) return null;
 

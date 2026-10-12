@@ -374,3 +374,269 @@ describe("computeRecipeCost — buckets", () => {
     expect(r.foodCostPct).toBe(71);
   });
 });
+
+describe("computeRecipeCost — weight ↔ volume with gramosPorLitro", () => {
+  it("40 g against a product bought by the litre uses the declared weight per litre", () => {
+    const r = computeRecipeCost({
+      ingredients: [
+        ing({
+          id: "ri-oil",
+          position: 0,
+          qty: 40,
+          unit: "g",
+          productOverrides: { id: "p-oil", unidadCompra: "l", precioCompra: 500, gramosPorLitro: 920 },
+        }),
+      ],
+      portions: null,
+      salePriceCents: null,
+    });
+    // 40 g / 920 g per litre = 0.0434… l × 500 cents/l ≈ 21.74 cents (unrounded).
+    expect(r.costsByIdx.get(0)).toBeCloseTo((40 / 920) * 500, 9);
+    expect(r.totalCents).toBe(22);
+    expect(r.status).toBe("complete");
+    expect(r.unmeasuredCount).toBe(0);
+    expect(r.lines).toEqual([
+      {
+        ingredientId: "ri-oil",
+        position: 0,
+        status: "ok",
+        costCents: 22,
+        productId: "p-oil",
+        recipeUnit: "g",
+        purchaseUnit: "l",
+      },
+    ]);
+  });
+
+  it("applies merma the same way as the weight/volume branch", () => {
+    const r = computeRecipeCost({
+      ingredients: [
+        ing({
+          qty: 40,
+          unit: "g",
+          productOverrides: { unidadCompra: "l", precioCompra: 500, mermaPct: 10, gramosPorLitro: 920 },
+        }),
+      ],
+      portions: null,
+      salePriceCents: null,
+    });
+    expect(r.costsByIdx.get(0)).toBeCloseTo(((40 / 920) * 500) / 0.9, 9);
+    expect(r.totalCents).toBe(24);
+  });
+
+  it("0.5 l against a product bought by kg is worth 0.5 kg when 1 l weighs 1000 g", () => {
+    const r = computeRecipeCost({
+      ingredients: [
+        ing({
+          qty: 0.5,
+          unit: "l",
+          productOverrides: { unidadCompra: "kg", precioCompra: 1000, gramosPorLitro: 1000 },
+        }),
+      ],
+      portions: null,
+      salePriceCents: null,
+    });
+    expect(r.costsByIdx.get(0)).toBeCloseTo(500, 9);
+    expect(r.totalCents).toBe(500);
+    expect(r.lines[0]?.status).toBe("ok");
+  });
+
+  it.each([
+    { qty: 40, unit: "g", unidadCompra: "l" as const, gramosPorLitro: 920, purchaseQty: 40 / 920 },
+    { qty: 0.04, unit: "kg", unidadCompra: "ml" as const, gramosPorLitro: 920, purchaseQty: (40 / 920) * 1000 },
+    { qty: 0.5, unit: "l", unidadCompra: "kg" as const, gramosPorLitro: 1000, purchaseQty: 0.5 },
+    { qty: 250, unit: "ml", unidadCompra: "g" as const, gramosPorLitro: 1030, purchaseQty: 257.5 },
+  ])("converts $qty $unit into $unidadCompra", ({ qty, unit, unidadCompra, gramosPorLitro, purchaseQty }) => {
+    const r = computeRecipeCost({
+      ingredients: [ing({ qty, unit, productOverrides: { unidadCompra, precioCompra: 100, gramosPorLitro } })],
+      portions: null,
+      salePriceCents: null,
+    });
+    expect(r.costsByIdx.get(0)).toBeCloseTo(purchaseQty * 100, 9);
+  });
+
+  it("g against a product by litre without gramosPorLitro → needs_density, unmeasured, contributes nothing", () => {
+    const r = computeRecipeCost({
+      ingredients: [
+        ing({ id: "ri-flour", position: 0, qty: 1, unit: "kg" }),
+        ing({
+          id: "ri-oil",
+          position: 1,
+          qty: 40,
+          unit: "g",
+          productOverrides: { id: "p-oil", unidadCompra: "l", precioCompra: 500, gramosPorLitro: null },
+        }),
+      ],
+      portions: null,
+      salePriceCents: null,
+    });
+    expect(r.totalCents).toBe(1000);
+    expect(r.status).toBe("partial");
+    expect(r.computableCount).toBe(1);
+    expect(r.unmeasuredCount).toBe(1);
+    expect(r.costsByIdx.has(1)).toBe(false);
+    expect(r.lines[1]).toEqual({
+      ingredientId: "ri-oil",
+      position: 1,
+      status: "needs_density",
+      costCents: null,
+      productId: "p-oil",
+      recipeUnit: "g",
+      purchaseUnit: "l",
+    });
+  });
+
+  it("l against a product by kg without gramosPorLitro → needs_density", () => {
+    const r = computeRecipeCost({
+      ingredients: [ing({ qty: 0.5, unit: "l", productOverrides: { unidadCompra: "kg" } })],
+      portions: null,
+      salePriceCents: null,
+    });
+    expect(r.lines[0]?.status).toBe("needs_density");
+    expect(r.unmeasuredCount).toBe(1);
+    expect(r.totalCents).toBeNull();
+  });
+});
+
+describe("computeRecipeCost — per-ingredient lines", () => {
+  function statusOf(ingredient: RecipeIngredientForCost) {
+    const r = computeRecipeCost({ ingredients: [ingredient], portions: null, salePriceCents: null });
+    expect(r.lines).toHaveLength(1);
+    return r.lines[0]!.status;
+  }
+
+  it("unlinked ingredient → no_product", () => {
+    const r = computeRecipeCost({
+      ingredients: [{ id: "ri-1", position: 0, qty: 1, unit: "kg", mermaOverridePct: null, pesoCalculoG: null, product: null }],
+      portions: null,
+      salePriceCents: null,
+    });
+    expect(r.lines).toEqual([
+      { ingredientId: "ri-1", position: 0, status: "no_product", costCents: null, productId: null, recipeUnit: "kg", purchaseUnit: null },
+    ]);
+    expect(r.unlinkedCount).toBe(1);
+  });
+
+  it("price 0 → no_price", () => {
+    expect(statusOf(ing({ productOverrides: { precioCompra: 0 } }))).toBe("no_price");
+  });
+
+  it.each([
+    { qty: null, unit: "kg" },
+    { qty: 0, unit: "kg" },
+    { qty: 2, unit: null },
+    { qty: 2, unit: "cucharada" },
+  ])("qty $qty / unit $unit → no_quantity", ({ qty, unit }) => {
+    expect(statusOf(ing({ qty, unit }))).toBe("no_quantity");
+  });
+
+  it.each([
+    { qty: 3, unit: "unidad", unidadCompra: "l" as const },
+    { qty: 3, unit: "piezas", unidadCompra: "ml" as const },
+    { qty: 200, unit: "ml", unidadCompra: "unidad" as const },
+    { qty: 100, unit: "g", unidadCompra: "caja" as const },
+    { qty: 1, unit: "caja", unidadCompra: "kg" as const },
+    { qty: 1, unit: "unidad", unidadCompra: "caja" as const },
+  ])("$qty $unit against a product by $unidadCompra → incompatible_unit", ({ qty, unit, unidadCompra }) => {
+    expect(statusOf(ing({ qty, unit, pesoCalculoG: 100, productOverrides: { unidadCompra, gramosPorLitro: 1000 } }))).toBe(
+      "incompatible_unit",
+    );
+  });
+
+  it("caja against a product by caja is still priced", () => {
+    const r = computeRecipeCost({
+      ingredients: [ing({ qty: 2, unit: "caja", productOverrides: { unidadCompra: "caja", precioCompra: 1500 } })],
+      portions: null,
+      salePriceCents: null,
+    });
+    expect(r.lines[0]?.status).toBe("ok");
+    expect(r.totalCents).toBe(3000);
+  });
+
+  it("120 g against a product by unidad without piece weight → needs_piece_weight", () => {
+    expect(statusOf(ing({ qty: 120, unit: "g", productOverrides: { unidadCompra: "unidad" } }))).toBe("needs_piece_weight");
+  });
+
+  it("2 piezas against a product by kg without piece weight → needs_piece_weight", () => {
+    expect(statusOf(ing({ qty: 2, unit: "piezas", productOverrides: { unidadCompra: "kg" } }))).toBe("needs_piece_weight");
+  });
+
+  it.each([
+    { mermaPct: 100, mermaOverridePct: null },
+    { mermaPct: 0, mermaOverridePct: 100 },
+    { mermaPct: 0, mermaOverridePct: -1 },
+  ])("merma $mermaPct / override $mermaOverridePct → invalid_merma", ({ mermaPct, mermaOverridePct }) => {
+    expect(statusOf(ing({ mermaOverridePct, productOverrides: { mermaPct } }))).toBe("invalid_merma");
+  });
+
+  it("lines follow position order and there is one per ingredient", () => {
+    const r = computeRecipeCost({
+      ingredients: [
+        ing({ id: "ri-c", position: 2 }),
+        ing({ id: "ri-a", position: 0, product: null }),
+        ing({ id: "ri-b", position: 1, productOverrides: { precioCompra: 0 } }),
+      ],
+      portions: null,
+      salePriceCents: null,
+    });
+    expect(r.lines).toHaveLength(3);
+    expect(r.lines.map((l) => [l.position, l.ingredientId, l.status])).toEqual([
+      [0, "ri-a", "no_product"],
+      [1, "ri-b", "no_price"],
+      [2, "ri-c", "ok"],
+    ]);
+  });
+
+  it("keeps the aggregate counters for every bucket", () => {
+    const r = computeRecipeCost({
+      ingredients: [
+        ing({}),
+        ing({ product: null }),
+        ing({ productOverrides: { precioCompra: 0 } }),
+        ing({ qty: null }),
+        ing({ qty: 100, unit: "g", productOverrides: { unidadCompra: "caja" } }),
+        ing({ qty: 40, unit: "g", productOverrides: { unidadCompra: "l" } }),
+        ing({ qty: 120, unit: "g", productOverrides: { unidadCompra: "unidad" } }),
+        ing({ productOverrides: { mermaPct: 100 } }),
+      ],
+      portions: null,
+      salePriceCents: null,
+    });
+    expect(r.lines.map((l) => l.status)).toEqual([
+      "ok",
+      "no_product",
+      "no_price",
+      "no_quantity",
+      "incompatible_unit",
+      "needs_density",
+      "needs_piece_weight",
+      "invalid_merma",
+    ]);
+    expect(r.totalIngredients).toBe(8);
+    expect(r.computableCount).toBe(1);
+    expect(r.unlinkedCount).toBe(1);
+    expect(r.missingPriceCount).toBe(1);
+    expect(r.unmeasuredCount).toBe(5);
+  });
+
+  it("rounds each line for display but sums the unrounded costs for the total", () => {
+    // 3 × (1 g at 400 cents/kg) = 3 × 0.4 cents → each line shows 0, total is round(1.2) = 1.
+    const r = computeRecipeCost({
+      ingredients: [0, 1, 2].map((position) =>
+        ing({ id: `ri-${position}`, position, qty: 1, unit: "g", productOverrides: { precioCompra: 400 } }),
+      ),
+      portions: null,
+      salePriceCents: null,
+    });
+    expect(r.lines.map((l) => l.costCents)).toEqual([0, 0, 0]);
+    expect(r.totalCents).toBe(1);
+  });
+
+  it("falls back to the input index when a caller passes no ids or positions", () => {
+    const r = computeRecipeCost({ ingredients: [ing({}), ing({})], portions: null, salePriceCents: null });
+    expect(r.lines.map((l) => [l.ingredientId, l.position])).toEqual([
+      ["0", 0],
+      ["1", 1],
+    ]);
+  });
+});

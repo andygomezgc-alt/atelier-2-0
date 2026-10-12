@@ -103,6 +103,9 @@ export type ProductListItem = {
   realCost: number | null; // centavos; null sin rendimiento útil
   mermaPct: number;     // 0-100 (con decimales)
   mermaOrigen: MermaOrigin;
+  // Weight in grams of 1 litre; null = unknown. Optional so clients built
+  // before this field keep compiling and parsing.
+  gramosPorLitro?: number | null;
   criticality: Criticality;
   estado: ProductState;
   precioActualizadoAt: string; // ISO

@@ -32,8 +32,25 @@
 // Si el rango del banco es ancho (max/min > 2, ej. 2-8 kg), el cálculo se
 // hace igual con punto medio pero se reporta un warning ("wide_range") para
 // que la UI avise al chef que el costo es aproximado.
+//
+// ──── Weight ↔ volume (gramosPorLitro) ────
+// A recipe in g/kg against a product bought in l/ml (or the reverse) is
+// converted with the product's declared weight of one litre. It follows the
+// weight/volume branch, so merma applies. Without that value the ingredient
+// is `needs_density`: the engine never guesses a density.
+//
+// ──── Per-ingredient lines ────
+// Every ingredient gets one line with a CostLineStatus explaining whether
+// (and why not) it adds to the total. The aggregate counters keep their
+// historical meaning: needs_*, incompatible_unit and invalid_merma count as
+// unmeasured, like before.
 
-import type { ProductUnit, PezzaturaMode } from "@atelier/shared";
+import type {
+  CostLineStatus,
+  ProductUnit,
+  PezzaturaMode,
+  RecipeCostLine,
+} from "@atelier/shared";
 
 // Conserva fracciones de centavo: redondeamos solo al sumar la receta.
 // Rendimiento cero o datos inválidos no tienen un precio útil calculable.
@@ -67,6 +84,11 @@ function isPieceUnit(u: string): boolean {
 
 // Tipos de input/output del cálculo.
 export type RecipeIngredientForCost = {
+  // RecipeIngredient id and position, used only to label `lines`. Callers
+  // that only need totals (recalc, scripts) may omit them; lines then fall
+  // back to the input index.
+  id?: string;
+  position?: number;
   qty: number | null;
   unit: string | null;
   mermaOverridePct: number | null;
@@ -74,9 +96,12 @@ export type RecipeIngredientForCost = {
   // Null = usar el punto medio del rango del banco (si hay).
   pesoCalculoG: number | null;
   product: {
+    id?: string;
     precioCompra: number; // centavos
     mermaPct: number;     // 0-100
     unidadCompra: ProductUnit;
+    // Weight in grams of 1 litre; null/undefined = unknown (never guessed).
+    gramosPorLitro?: number | null;
     // Entrega A.5: campos canónicos de pezzatura.
     pezzaturaMode: PezzaturaMode | null;
     pezzaturaMin: number | null;
@@ -104,6 +129,8 @@ export type RecipeCostBreakdown = {
   warningsByIdx: Map<number, IngredientCostWarning>;
   // Importes sin redondear para la criticidad económica; no se exponen en API.
   costsByIdx: Map<number, number>;
+  // One line per ingredient, sorted by position.
+  lines: RecipeCostLine[];
 };
 
 export type RecipeCostInput = {
@@ -149,6 +176,103 @@ function hasWideRange(p: {
   return p.pezzaturaMax / p.pezzaturaMin > 2;
 }
 
+// Unit families. "piezas"/"unidad" in the recipe and "unidad" in the product
+// are pieces; "caja" only matches "caja". Null = a unit the engine does not
+// know (e.g. "cucharada").
+type UnitKind = "weight" | "volume" | "piece" | "box";
+
+function unitKind(u: string): UnitKind | null {
+  if (u === "kg" || u === "g") return "weight";
+  if (u === "l" || u === "ml") return "volume";
+  if (isPieceUnit(u)) return "piece";
+  if (u === "caja") return "box";
+  return null;
+}
+
+// Weight ↔ volume with the product's weight of one litre. Returns the
+// quantity expressed in `to`, or null when the pair is not weight ↔ volume.
+function convertWithDensity(
+  qty: number,
+  from: ProductUnit,
+  to: ProductUnit,
+  gramosPorLitro: number,
+): number | null {
+  const grams = convertUnit(qty, from, "g");
+  if (grams !== null) return convertUnit(grams / gramosPorLitro, "l", to);
+  const litres = convertUnit(qty, from, "l");
+  if (litres !== null) return convertUnit(litres * gramosPorLitro, "g", to);
+  return null;
+}
+
+type LinkedProduct = NonNullable<RecipeIngredientForCost["product"]>;
+type IngredientPricing =
+  | { cost: number; warning: IngredientCostWarning | null }
+  | { status: Exclude<CostLineStatus, "ok" | "no_product" | "no_price"> };
+
+// Prices one linked ingredient that has a price, a quantity and a unit, in
+// unrounded cents — or says why it cannot be priced.
+function priceIngredient(
+  ing: RecipeIngredientForCost,
+  product: LinkedProduct,
+  qty: number,
+  unit: string,
+): IngredientPricing {
+  const from = unitKind(unit);
+  if (from === null) return { status: "no_quantity" };
+  const to = unitKind(product.unidadCompra);
+  if (to === null) return { status: "incompatible_unit" };
+
+  if (from === "piece" && to === "piece") {
+    // Caso trivial: chef compra unidades, receta cuenta unidades.
+    // Sin merma (la pieza entera ya está pagada).
+    return { cost: qty * product.precioCompra, warning: null };
+  }
+
+  if (from === "piece" || to === "piece") {
+    // Piezas ↔ peso necesita el peso por pieza. Sin merma — el chef compra
+    // piezas enteras y "paga" la merma cuando las desconcha/limpia.
+    // Piezas ↔ volumen o caja no tiene conversión.
+    if ((from === "piece" ? to : from) !== "weight") return { status: "incompatible_unit" };
+    const peso = pesoPorPiezaG(ing);
+    if (peso === null) return { status: "needs_piece_weight" };
+    // Si no hay override y el rango del banco es ancho, warning.
+    const warning = ing.pesoCalculoG === null && hasWideRange(product) ? "wide_range" : null;
+    if (from === "piece") {
+      // Receta cuenta piezas, producto se compra por peso (kg/g).
+      // Precio está en €/unidadCompra. Si compra=kg, convertir gramos a kg.
+      const totalG = qty * peso;
+      const factor = product.unidadCompra === "kg" ? 1 / 1000 : 1;
+      return { cost: totalG * factor * product.precioCompra, warning };
+    }
+    // Receta usa peso (kg/g), producto se compra por unidad: cuántas piezas
+    // representa el peso.
+    const qtyEnG = unit === "kg" ? qty * 1000 : qty;
+    return { cost: (qtyEnG / peso) * product.precioCompra, warning };
+  }
+
+  if ((from === "box" || to === "box") && from !== to) {
+    return { status: "incompatible_unit" };
+  }
+
+  // Peso, volumen o caja en ambos lados — conversión a la unidad de compra
+  // (con gramosPorLitro cuando se cruzan peso y volumen) y merma (chef compra
+  // peso bruto, receta usa peso útil).
+  let qtyInPurchaseUnit: number | null;
+  if (from === to) {
+    qtyInPurchaseUnit = convertUnit(qty, unit as ProductUnit, product.unidadCompra);
+  } else {
+    const gramosPorLitro = product.gramosPorLitro;
+    if (gramosPorLitro == null || !(gramosPorLitro > 0)) return { status: "needs_density" };
+    qtyInPurchaseUnit = convertWithDensity(qty, unit as ProductUnit, product.unidadCompra, gramosPorLitro);
+  }
+  if (qtyInPurchaseUnit === null) return { status: "incompatible_unit" };
+
+  const merma = ing.mermaOverridePct !== null ? ing.mermaOverridePct : product.mermaPct;
+  const realPerPurchaseUnit = realCost(product.precioCompra, merma);
+  if (realPerPurchaseUnit === null) return { status: "invalid_merma" };
+  return { cost: realPerPurchaseUnit * qtyInPurchaseUnit, warning: null };
+}
+
 export function computeRecipeCost(input: RecipeCostInput): RecipeCostBreakdown {
   let computableTotalCents = 0;
   let computableCount = 0;
@@ -158,119 +282,57 @@ export function computeRecipeCost(input: RecipeCostInput): RecipeCostBreakdown {
   let wideRangeCount = 0;
   const warningsByIdx = new Map<number, IngredientCostWarning>();
   const costsByIdx = new Map<number, number>();
+  const lines: RecipeCostLine[] = [];
   const totalIngredients = input.ingredients.length;
-
-  const KNOWN: ReadonlySet<ProductUnit> = new Set([
-    "kg",
-    "g",
-    "l",
-    "ml",
-    "unidad",
-    "caja",
-  ]);
 
   for (let idx = 0; idx < input.ingredients.length; idx++) {
     const ing = input.ingredients[idx]!;
-
-    if (!ing.product) {
-      unlinkedCount++;
-      continue;
-    }
-    if (ing.product.precioCompra <= 0) {
-      missingPriceCount++;
-      continue;
-    }
-    if (ing.qty === null || ing.qty <= 0 || !ing.unit) {
-      unmeasuredCount++;
-      continue;
-    }
-
-    const recipeUnitRaw = ing.unit;
-    const isRecipePiece = isPieceUnit(recipeUnitRaw);
-    const isCompraPiece = ing.product.unidadCompra === "unidad";
-
+    const product = ing.product;
+    let status: CostLineStatus;
     let ingCost: number | null = null;
-    let warning: IngredientCostWarning | null = null;
 
-    if (isRecipePiece && isCompraPiece) {
-      // Caso trivial: chef compra unidades, receta cuenta unidades.
-      // Sin merma (la pieza entera ya está pagada).
-      ingCost = ing.qty * ing.product.precioCompra;
-    } else if (isRecipePiece && (ing.product.unidadCompra === "kg" || ing.product.unidadCompra === "g")) {
-      // Receta cuenta piezas, producto se compra por peso (kg/g).
-      // Necesita pezzatura. Sin merma — el chef compra piezas enteras
-      // y "paga" la merma cuando las desconcha/limpia.
-      const peso = pesoPorPiezaG(ing);
-      if (peso === null) {
-        unmeasuredCount++;
-        continue;
-      }
-      const totalG = ing.qty * peso;
-      // Precio está en €/unidadCompra. Si compra=kg, convertir gramos a kg.
-      const factor = ing.product.unidadCompra === "kg" ? 1 / 1000 : 1;
-      ingCost = totalG * factor * ing.product.precioCompra;
-      // Si no hay override y el rango del banco es ancho, warning.
-      if (
-        ing.pesoCalculoG === null &&
-        hasWideRange(ing.product)
-      ) {
-        warning = "wide_range";
-      }
-    } else if ((recipeUnitRaw === "kg" || recipeUnitRaw === "g") && isCompraPiece) {
-      // Receta usa peso (kg/g), producto se compra por unidad.
-      // Necesita pezzatura inversa: cuántas piezas representa el peso.
-      // Sin merma — el chef compra piezas enteras.
-      const peso = pesoPorPiezaG(ing);
-      if (peso === null) {
-        unmeasuredCount++;
-        continue;
-      }
-      const qtyEnG = recipeUnitRaw === "kg" ? ing.qty * 1000 : ing.qty;
-      const piezasNecesarias = qtyEnG / peso;
-      ingCost = piezasNecesarias * ing.product.precioCompra;
-      if (
-        ing.pesoCalculoG === null &&
-        hasWideRange(ing.product)
-      ) {
-        warning = "wide_range";
-      }
-    } else {
-      // Ambos en peso o ambos en volumen — flujo original con conversión
-      // y merma (chef compra peso bruto, receta usa peso útil).
-      const recipeUnit = recipeUnitRaw as ProductUnit;
-      if (!KNOWN.has(recipeUnit)) {
-        unmeasuredCount++;
-        continue;
-      }
-      const qtyInPurchaseUnit = convertUnit(
-        ing.qty,
-        recipeUnit,
-        ing.product.unidadCompra,
-      );
-      if (qtyInPurchaseUnit === null) {
-        unmeasuredCount++;
-        continue;
-      }
-      const merma =
-        ing.mermaOverridePct !== null
-          ? ing.mermaOverridePct
-          : ing.product.mermaPct;
-      const realPerPurchaseUnit = realCost(ing.product.precioCompra, merma);
-      ingCost = realPerPurchaseUnit === null ? null : realPerPurchaseUnit * qtyInPurchaseUnit;
-    }
-
-    if (ingCost === null) {
+    if (!product) {
+      unlinkedCount++;
+      status = "no_product";
+    } else if (product.precioCompra <= 0) {
+      missingPriceCount++;
+      status = "no_price";
+    } else if (ing.qty === null || ing.qty <= 0 || !ing.unit) {
       unmeasuredCount++;
-      continue;
+      status = "no_quantity";
+    } else {
+      const pricing = priceIngredient(ing, product, ing.qty, ing.unit);
+      if ("status" in pricing) {
+        // Unknown units, needs_*, incompatible_unit and invalid_merma all
+        // count as unmeasured, as they did before per-ingredient lines.
+        unmeasuredCount++;
+        status = pricing.status;
+      } else {
+        status = "ok";
+        ingCost = pricing.cost;
+        computableTotalCents += ingCost;
+        costsByIdx.set(idx, ingCost);
+        computableCount++;
+        if (pricing.warning) {
+          warningsByIdx.set(idx, pricing.warning);
+          wideRangeCount++;
+        }
+      }
     }
-    computableTotalCents += ingCost;
-    costsByIdx.set(idx, ingCost);
-    computableCount++;
-    if (warning) {
-      warningsByIdx.set(idx, warning);
-      wideRangeCount++;
-    }
+
+    lines.push({
+      ingredientId: ing.id ?? String(idx),
+      position: ing.position ?? idx,
+      status,
+      // Rounded for display only; totalCents sums the unrounded costs.
+      costCents: ingCost === null ? null : Math.round(ingCost),
+      productId: product?.id ?? null,
+      recipeUnit: ing.unit,
+      purchaseUnit: product?.unidadCompra ?? null,
+    });
   }
+  // Stable sort: ingredients sharing a position keep their input order.
+  lines.sort((a, b) => a.position - b.position);
 
   const totalCents =
     computableCount > 0 ? Math.round(computableTotalCents) : null;
@@ -303,5 +365,6 @@ export function computeRecipeCost(input: RecipeCostInput): RecipeCostBreakdown {
     wideRangeCount,
     warningsByIdx,
     costsByIdx,
+    lines,
   };
 }

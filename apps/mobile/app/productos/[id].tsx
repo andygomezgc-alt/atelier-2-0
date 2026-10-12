@@ -57,6 +57,7 @@ import { can, resolvePezzaturaMode } from "@atelier/shared";
 import type { ProductCategory, ProductUnit } from "@atelier/shared";
 import { getInitialPezzaturaInput } from "@/src/components/PezzaturaField";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
+import { formatGrams, parseGrams } from "@/src/lib/ingredient-cost";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
 
@@ -68,6 +69,9 @@ const UNIT_SHORT: Record<ProductUnit, string> = {
   unidad: "ud",
   caja: "caja",
 };
+
+// Units where "1 litre weighs X g" lets recipes convert weight ↔ volume.
+const WEIGHT_OR_VOLUME: ReadonlySet<ProductUnit> = new Set(["kg", "g", "l", "ml"]);
 
 function parseMermaPct(input: string): number | null {
   if (!input.trim()) return null;
@@ -302,6 +306,25 @@ export default function ProductoDetailScreen() {
       }
     },
     [product, t],
+  );
+
+  // Weight of 1 litre: empty clears it (null = unknown); anything else must
+  // be a positive weight in grams.
+  const handleSaveGramsPerLitre = useCallback(
+    (next: string) => {
+      if (!product) return;
+      const trimmed = next.trim();
+      const value = trimmed === "" ? null : parseGrams(trimmed);
+      if (trimmed !== "" && value === null) {
+        showToast(t("grams_invalid"));
+        return;
+      }
+      if (value === (product.gramosPorLitro ?? null)) return;
+      void handleInlineSave("gramosPorLitro", value).catch((err) => {
+        showToast(apiErrorMessage(err, t));
+      });
+    },
+    [product, handleInlineSave, t],
   );
 
   const handleSaveCategory = useCallback(
@@ -548,6 +571,19 @@ export default function ProductoDetailScreen() {
               editable={canEditFields}
               onTap={() => setUnitSheetOpen(true)}
             />
+            {WEIGHT_OR_VOLUME.has(product.unidadCompra) ? (
+              <View style={styles.fieldWithHint}>
+                <FieldEditable
+                  label={t("gramos_por_litro_label")}
+                  value={product.gramosPorLitro != null ? formatGrams(product.gramosPorLitro) : ""}
+                  onSave={handleSaveGramsPerLitre}
+                  placeholder="—"
+                  editable={canEditFields}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.fieldHint}>{t("gramos_por_litro_hint")}</Text>
+              </View>
+            ) : null}
             {/* Entrega A.5 — campo pezzatura. Solo se muestra si la categoría
                 + nombre admiten pezzatura (gambero/scampi/pichón/ricciola/etc.).
                 value canónico viene de los structured fields del producto;
@@ -761,6 +797,7 @@ function FieldEditable({
   onSave,
   editable,
   multiline,
+  keyboardType,
 }: {
   label: string;
   value: string;
@@ -768,6 +805,7 @@ function FieldEditable({
   onSave: (next: string) => void;
   editable: boolean;
   multiline?: boolean;
+  keyboardType?: "default" | "numeric";
 }) {
   if (!editable) {
     return <FieldReadonly label={label} value={value || "—"} />;
@@ -785,6 +823,7 @@ function FieldEditable({
         ]}
         multiline={multiline}
         maxLength={multiline ? 2000 : 200}
+        keyboardType={keyboardType}
       />
     </View>
   );
@@ -906,6 +945,8 @@ const styles = StyleSheet.create({
   },
 
   fieldBlock: { gap: 4 },
+  fieldWithHint: { gap: 2 },
+  fieldHint: { fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.mute, fontStyle: "italic" },
   fieldBlockLabel: {
     fontFamily: fonts.sans,
     fontSize: fontSizes.eyebrow,

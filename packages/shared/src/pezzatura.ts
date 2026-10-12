@@ -18,7 +18,9 @@
 //   - CARNE + pieza entera/ave    → g_per_piece (pichón 450g, pollo entero)
 //   - CARNE corte                  → null (sin pezzatura)
 //   - FRUTA, PANADERIA            → g_per_piece
-//   - resto                        → null
+//   - resto                        → null (parsePezzatura still accepts an
+//                                    explicit single piece weight, "120 g/pz",
+//                                    as g_per_piece; detection stays off)
 //
 // Canónico interno:
 //   - pz_per_kg: min/max son piezas por kilo (números chicos típicos 5-50)
@@ -286,11 +288,15 @@ export function parsePezzatura(
   category: ProductCategory,
   name: string,
 ): PezzaturaValue | null {
-  const mode = resolvePezzaturaMode(name, category);
-  if (!mode) return null;
-
   const cleaned = input.trim().toLowerCase();
   if (!cleaned) return null;
+
+  const mode = resolvePezzaturaMode(name, category);
+  // Without a category mode only an explicit single piece weight with a weight
+  // unit is accepted ("120 g/pz", "0,5 kg"): the chef states the weight of one
+  // unit so a recipe in grams can cost a product bought by unit. Ranges and
+  // unit-less numbers stay ambiguous for these categories.
+  if (!mode) return trySingleWithUnit(cleaned, "g_per_piece");
 
   // Cascada: más específico primero.
   for (const tryFn of [tryUnderX, tryRangeWithUnit, tryRangeNoUnit, trySingleWithUnit]) {

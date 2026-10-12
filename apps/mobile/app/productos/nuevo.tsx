@@ -31,6 +31,7 @@ import type {
 } from "@atelier/shared";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { parseEurosToCents } from "@/src/lib/money";
+import { parseGrams } from "@/src/lib/ingredient-cost";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
 
@@ -49,6 +50,8 @@ const CATEGORIES: ReadonlyArray<ProductCategory> = [
 ];
 
 const UNITS: ReadonlyArray<ProductUnit> = ["kg", "g", "l", "ml", "unidad", "caja"];
+// Units where "1 litre weighs X g" lets recipes convert weight ↔ volume.
+const WEIGHT_OR_VOLUME: ReadonlySet<ProductUnit> = new Set(["kg", "g", "l", "ml"]);
 
 function parseMermaPct(input: string): number | null {
   if (!input.trim()) return null;
@@ -73,6 +76,7 @@ export default function NuevoProductoScreen() {
   const [unidad, setUnidad] = useState<ProductUnit>("kg");
   const [precioInput, setPrecioInput] = useState("");
   const [mermaInput, setMermaInput] = useState("");
+  const [gramsPerLitreInput, setGramsPerLitreInput] = useState("");
   const [proveedor, setProveedor] = useState("");
   const [notas, setNotas] = useState("");
   const [aliasesInput, setAliasesInput] = useState("");
@@ -93,6 +97,14 @@ export default function NuevoProductoScreen() {
       return;
     }
 
+    // Weight of 1 litre: only for weight/volume units; empty → omitted (unknown).
+    const gramsPerLitreText = WEIGHT_OR_VOLUME.has(unidad) ? gramsPerLitreInput.trim() : "";
+    const gramosPorLitro = gramsPerLitreText ? parseGrams(gramsPerLitreText) : null;
+    if (gramsPerLitreText && gramosPorLitro === null) {
+      showToast(t("grams_invalid"));
+      return;
+    }
+
     const aliases = aliasesInput
       .split(",")
       .map((a) => a.trim())
@@ -109,6 +121,7 @@ export default function NuevoProductoScreen() {
       unidadCompra: unidad,
       precioCompra: cents,
       mermaPct: merma ?? undefined,
+      gramosPorLitro: gramosPorLitro ?? undefined,
       proveedor: proveedor.trim() || undefined,
       notas: notas.trim() || undefined,
       aliases: aliases.length > 0 ? aliases : undefined,
@@ -132,6 +145,7 @@ export default function NuevoProductoScreen() {
     unidad,
     precioInput,
     mermaInput,
+    gramsPerLitreInput,
     proveedor,
     notas,
     aliasesInput,
@@ -243,6 +257,22 @@ export default function NuevoProductoScreen() {
             </View>
           </View>
 
+          {/* Peso de 1 litro — solo para unidades de peso o volumen */}
+          {WEIGHT_OR_VOLUME.has(unidad) ? (
+            <>
+              <Text style={styles.label}>{t("gramos_por_litro_label")}</Text>
+              <TextInput
+                value={gramsPerLitreInput}
+                onChangeText={setGramsPerLitreInput}
+                placeholder="—"
+                placeholderTextColor={colors.mute}
+                style={styles.input}
+                keyboardType="decimal-pad"
+              />
+              <Text style={styles.hint}>{t("gramos_por_litro_hint")}</Text>
+            </>
+          ) : null}
+
           {/* Proveedor */}
           <Text style={styles.label}>{t("producto_form_proveedor_label")}</Text>
           <TextInput
@@ -327,6 +357,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm + 2,
   },
   inputMulti: { minHeight: 80, textAlignVertical: "top" },
+  hint: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    color: colors.mute,
+    fontStyle: "italic",
+    marginTop: -spacing.xs,
+  },
   row2: { flexDirection: "row", gap: spacing.md },
   pillsScroll: { flexGrow: 0, flexShrink: 0 },
   pillsRow: {

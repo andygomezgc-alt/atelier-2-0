@@ -43,6 +43,7 @@ export async function POST(
       precioCompra: source.precioCompra,
       mermaPct: source.mermaPct,
       mermaOrigen: source.mermaOrigen,
+      gramosPorLitro: source.gramosPorLitro,
       proveedor: source.proveedor,
       notas: source.notas,
       allergen: source.allergen,

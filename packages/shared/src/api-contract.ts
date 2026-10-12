@@ -496,6 +496,41 @@ export const RecipeIngredientResponseSchema = z.object({
     .nullable(),
 });
 
+// Why one ingredient does (ok) or does not add to the recipe cost.
+//   no_product          → ingredient not linked to a bank product
+//   no_price            → linked product has price 0
+//   no_quantity         → missing/zero quantity, no unit, or a unit the engine
+//                         does not know
+//   needs_density       → weight ↔ volume without the product's gramosPorLitro
+//   needs_piece_weight  → pieces ↔ weight without a piece weight (pezzatura or
+//                         the recipe's pesoCalculoG override)
+//   incompatible_unit   → pieces ↔ volume, anything ↔ caja (unless both are
+//                         caja), or any other pair that cannot be converted
+//   invalid_merma       → merma < 0 or ≥ 100 (no usable yield)
+export const CostLineStatusSchema = z.enum([
+  "ok",
+  "no_product",
+  "no_price",
+  "no_quantity",
+  "needs_density",
+  "needs_piece_weight",
+  "incompatible_unit",
+  "invalid_merma",
+]);
+
+// One cost line per recipe ingredient, in position order. costCents is
+// rounded to whole cents for display (null unless status is ok); the recipe
+// total sums the unrounded amounts, so lines may not add up to totalCents.
+export const RecipeCostLineSchema = z.object({
+  ingredientId: z.string(),
+  position: z.number().int().nonnegative(),
+  status: CostLineStatusSchema,
+  costCents: z.number().nullable(),
+  productId: z.string().nullable(),
+  recipeUnit: z.string().nullable(),
+  purchaseUnit: z.string().nullable(),
+});
+
 // Cost breakdown computado por el backend a partir de los RecipeIngredient
 // enlazados al banco. Sub-paso 6: la tarjeta de costo en mobile lee de acá.
 // totalCents/perPortionCents/foodCostPct son `null` cuando NO se puede
@@ -513,6 +548,9 @@ export const RecipeCostSchema = z.object({
   // con rango max/min > 2 (sin override pesoCalculoG). La UI muestra el
   // aviso "costo es aproximación" cuando > 0.
   wideRangeCount: z.number().int().nonnegative(),
+  // Per-ingredient lines; only the recipe detail sends them. Optional so
+  // payloads from an API without lines still parse.
+  lines: z.array(RecipeCostLineSchema).max(50).optional(),
 });
 
 export const RecipeDetailSchema = RecipeListItemSchema.extend({
@@ -767,6 +805,15 @@ export const ReorderItemsRequestSchema = z.object({
 // Mermas como número decimal 0-100 (con .nonnegative + .max(100) en runtime).
 const mermaPctSchema = z.number().min(0).max(100);
 const precioSchema = z.number().int().min(0);
+// Weight in grams of 1 litre of the product (Decimal(7,2) in the database):
+// positive, at most 2 decimals. Null = unknown; the server never guesses it.
+const gramosPorLitroSchema = z
+  .number()
+  .positive()
+  .max(99999.99)
+  .refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, {
+    message: "At most 2 decimals",
+  });
 
 export const CreateProductRequestSchema = z.object({
   allergens: z.array(AllergenSchema).max(14).transform(values => [...new Set(values)]).optional(),
@@ -783,6 +830,8 @@ export const CreateProductRequestSchema = z.object({
   precioCompra: precioSchema,
   mermaPct: mermaPctSchema.lt(100).optional(),
   mermaOrigen: MermaOrigenSchema.optional(),
+  // Omitted or null → stored as null (unknown).
+  gramosPorLitro: gramosPorLitroSchema.nullable().optional(),
   proveedor: z.string().max(200).nullable().optional(),
   notas: z.string().max(2000).nullable().optional(),
   estado: ProductStateSchema.optional(),
@@ -805,6 +854,8 @@ export const PatchProductRequestSchema = z.object({
   precioCompra: precioSchema.optional(),
   mermaPct: mermaPctSchema.lt(100).optional(),
   mermaOrigen: MermaOrigenSchema.optional(),
+  // undefined → untouched; null → cleared (unknown).
+  gramosPorLitro: gramosPorLitroSchema.nullable().optional(),
   proveedor: z.string().max(200).nullable().optional(),
   notas: z.string().max(2000).nullable().optional(),
   estado: ProductStateSchema.optional(),
@@ -832,6 +883,8 @@ export const ProductListItemSchema = z.object({
   realCost: z.number().finite().nonnegative().nullable(), // null si no hay rendimiento útil
   mermaPct: mermaPctSchema,
   mermaOrigen: MermaOrigenSchema,
+  // Weight in grams of 1 litre; null = unknown. Optional for older payloads.
+  gramosPorLitro: z.number().positive().nullable().optional(),
   criticality: CriticalitySchema,
   estado: ProductStateSchema,
   precioActualizadoAt: z.string(), // ISO
@@ -895,6 +948,8 @@ export type ScaleRecipeRequest = z.infer<typeof ScaleRecipeRequestSchema>;
 export type RecipeListItem = z.infer<typeof RecipeListItemSchema>;
 export type RecipeDetail = z.infer<typeof RecipeDetailSchema>;
 export type RecipeCost = z.infer<typeof RecipeCostSchema>;
+export type CostLineStatus = z.infer<typeof CostLineStatusSchema>;
+export type RecipeCostLine = z.infer<typeof RecipeCostLineSchema>;
 export type CreateMenuRequest = z.infer<typeof CreateMenuRequestSchema>;
 export type PatchMenuRequest = z.infer<typeof PatchMenuRequestSchema>;
 export type MenuListItem = z.infer<typeof MenuListItemSchema>;

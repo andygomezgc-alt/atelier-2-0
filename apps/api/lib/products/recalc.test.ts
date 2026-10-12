@@ -57,6 +57,22 @@ describe("recalcCriticalityForRestaurant", () => {
     expect(rep.changes.find(c => c.productId === "pepper")).toBeUndefined();
     expect(rep.changes.find(c => c.productId === "rice")?.maxShare).toBeCloseTo(500 / 503);
   });
+  it("counts grams of a product bought by the litre when its weight per litre is declared", async () => {
+    const product = (unidadCompra: string, gramosPorLitro: number | null) => ({ precioCompra: 1000, mermaPct: 0, unidadCompra, pezzaturaMode: null, pezzaturaMin: null, pezzaturaMax: null, gramosPorLitro });
+    db.product.findMany.mockResolvedValue([
+      { id: "oil", name: "aceite", category: "vinagre_aceite", criticality: "baja", criticalityManual: false, recipeIngredients: [{ recipeId: "R1" }] },
+      { id: "rice", name: "arroz", category: "seco", criticality: "media", criticalityManual: false, recipeIngredients: [{ recipeId: "R1" }] },
+    ]);
+    // 920 g of oil at 920 g/l = 1 l = 1000 cents; 1 kg of rice = 1000 cents.
+    db.recipeIngredient.findMany.mockResolvedValue([
+      { recipeId: "R1", productId: "oil", qty: 920, unit: "g", mermaOverridePct: null, pesoCalculoG: null, product: product("l", 920) },
+      { recipeId: "R1", productId: "rice", qty: 1, unit: "kg", mermaOverridePct: null, pesoCalculoG: null, product: product("kg", null) },
+    ]);
+    const rep = await recalcCriticalityForRestaurant("r1", null, { dryRun: true });
+    expect(db.recipeIngredient.findMany.mock.calls[0]![0].select.product.select.gramosPorLitro).toBe(true);
+    expect(rep.changes.find(c => c.productId === "oil")).toMatchObject({ to: "alta", reason: "economic" });
+    expect(rep.changes.find(c => c.productId === "oil")?.maxShare).toBeCloseTo(0.5);
+  });
   // R1: productA (100€, sin merma) + productB (10€) → total 110.
   // share A = 100/110 = 0.909 (>15% → económico → alta)
   // share B = 10/110  = 0.091 (≤15% → default por categoría)

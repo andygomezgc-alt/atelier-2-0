@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -26,8 +26,12 @@ import { showToast } from "@/src/components/Toast";
 import { AddToMenuSheet } from "@/src/components/AddToMenuSheet";
 import { ScaleRecipeSheet } from "@/src/components/ScaleRecipeSheet";
 import { RecipeCostCard } from "@/src/components/RecipeCostCard";
+import { RecipeIngredientList, type IngredientRow } from "@/src/components/RecipeIngredientList";
+import { IngredientFixSheet, type FixTarget } from "@/src/components/IngredientFixSheet";
 import { StatusBadge, type StatusLevel } from "@/src/components/StatusBadge";
 import { setRecipeDraft } from "@/src/lib/recipe-draft";
+import { lineAction } from "@/src/lib/ingredient-cost";
+import { forceRefresh } from "@/src/lib/refresh";
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
@@ -44,6 +48,11 @@ export default function RecipeDetailScreen() {
   const [togglingPriority, setTogglingPriority] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [approving, setApproving] = useState(false);
+  // Costes por ingrediente: the cost card's warning scrolls down to the
+  // ingredient list, and a tap on an ingredient without cost opens its fix.
+  const scrollRef = useRef<ScrollView>(null);
+  const ingredientsY = useRef(0);
+  const [fixTarget, setFixTarget] = useState<FixTarget | null>(null);
 
   const role =
     authState.status === "signed-in" || authState.status === "needs-restaurant"
@@ -89,6 +98,13 @@ export default function RecipeDetailScreen() {
   const silentReload = useCallback(() => reload({ silent: true }), [reload]);
   const refreshPrefixes = id ? [`recipes:detail:${id}`] : [];
   const { refreshing, onRefresh } = useRefresh(refreshPrefixes, silentReload);
+
+  // After the fix sheet saves the product, reload the recipe bypassing the
+  // cache so the backend recomputes its cost.
+  const handleFixSaved = useCallback(() => {
+    setFixTarget(null);
+    if (id) void forceRefresh([`recipes:detail:${id}`], silentReload);
+  }, [id, silentReload]);
 
   async function togglePriority() {
     if (!recipe || togglingPriority) return;
@@ -220,6 +236,29 @@ export default function RecipeDetailScreen() {
     router.push("/recetas/nueva");
   }
 
+  function handleLinePress(row: IngredientRow) {
+    const { line } = row;
+    switch (lineAction(line.status)) {
+      case "edit_recipe":
+        openEditor();
+        break;
+      case "product_detail":
+        if (line.productId) {
+          router.push({ pathname: "/productos/[id]", params: { id: line.productId } });
+        }
+        break;
+      case "fix_sheet":
+        if (line.productId) setFixTarget({ productId: line.productId, recipeUnit: line.recipeUnit });
+        break;
+      default:
+        break;
+    }
+  }
+
+  function scrollToIngredients() {
+    scrollRef.current?.scrollTo({ y: Math.max(0, ingredientsY.current - spacing.md), animated: true });
+  }
+
   if (loading && !recipe) {
     return (
       <Screen title={t("header_receta")} back onBack={() => router.back()}>
@@ -242,6 +281,7 @@ export default function RecipeDetailScreen() {
   // editing the content requires a stricter sign-off than edit_recipe.
   const canModify =
     recipe.state === "approved" ? role === "admin" : canEdit;
+  const hasCostLines = (recipe.cost.lines?.length ?? 0) > 0;
 
   return (
     <Screen
@@ -261,6 +301,7 @@ export default function RecipeDetailScreen() {
       }
     >
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
@@ -306,6 +347,7 @@ export default function RecipeDetailScreen() {
               showToast(apiErrorMessage(err, t));
             }
           }}
+          onWarningPress={hasCostLines ? scrollToIngredients : undefined}
         />
 
         {!recipe.allergensComplete && (
@@ -336,16 +378,16 @@ export default function RecipeDetailScreen() {
           </View>
         ) : null}
 
-        {content.ingredients.length > 0 ? (
-          <View style={styles.section}>
-            <Eyebrow>{t("section_ingredients")}</Eyebrow>
-            {content.ingredients.map((it, idx) => (
-              <Text key={idx} style={styles.bullet}>
-                · {it}
-              </Text>
-            ))}
-          </View>
-        ) : null}
+        <RecipeIngredientList
+          ingredients={content.ingredients}
+          recipeIngredients={recipe.recipeIngredients}
+          lines={recipe.cost.lines}
+          permissions={{ canManageProducts: can(role, "manage_products"), canEditRecipe: canModify }}
+          onLinePress={handleLinePress}
+          onLayout={(e) => {
+            ingredientsY.current = e.nativeEvent.layout.y;
+          }}
+        />
 
         {content.method.length > 0 ? (
           <View style={styles.section}>
@@ -426,6 +468,11 @@ export default function RecipeDetailScreen() {
         recipeId={recipe.id}
         onClose={() => setAddToMenuOpen(false)}
       />
+      <IngredientFixSheet
+        target={fixTarget}
+        onClose={() => setFixTarget(null)}
+        onSaved={handleFixSaved}
+      />
       <ScaleRecipeSheet
         open={scaleOpen}
         currentPortions={recipe.portions ?? 1}
@@ -483,7 +530,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.xs,
   },
-  bullet: { fontFamily: fonts.serif, fontSize: fontSizes.serifBody, color: colors.ink, lineHeight: fontSizes.serifBody * 1.5 },
   numbered: {
     fontFamily: fonts.serif,
     fontSize: fontSizes.serifBody,

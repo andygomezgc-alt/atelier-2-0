@@ -12,11 +12,20 @@ const { db, ctx } = vi.hoisted(() => ({
 }));
 
 vi.mock("@atelier/db", () => ({ prisma: db }));
+// Like the real withAuth: the route's body schema rejects invalid input with
+// 400 invalid_body before the handler runs.
 vi.mock("@/lib/with-auth", () => ({
   withAuth:
-    (_opts: unknown, handler: (c: unknown, b: unknown, req: NextRequest) => unknown) =>
-    (req: NextRequest) =>
-      handler(ctx, JSON.parse(req.headers.get("x-test-body") ?? "{}"), req),
+    (
+      opts: { body?: { safeParse(v: unknown): { success: boolean; data?: unknown } } },
+      handler: (c: unknown, b: unknown, req: NextRequest) => unknown,
+    ) =>
+    (req: NextRequest) => {
+      const raw = JSON.parse(req.headers.get("x-test-body") ?? "{}");
+      const parsed = opts.body ? opts.body.safeParse(raw) : { success: true, data: raw };
+      if (!parsed.success) return Response.json({ error: "invalid_body" }, { status: 400 });
+      return handler(ctx, parsed.data, req);
+    },
 }));
 vi.mock("@/lib/products/projections", () => ({
   projectProductListItem: (p: { id: string }) => ({ id: p.id }),
@@ -96,5 +105,59 @@ describe("POST /api/products", () => {
     expect(res.status).toBe(201);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(db.productPriceHistory.create).not.toHaveBeenCalled();
+  });
+
+  describe("gramosPorLitro (weight of one litre)", () => {
+    const oil = { name: "Aceite de oliva", category: "vinagre_aceite", unidadCompra: "l", precioCompra: 500 };
+
+    beforeEach(() => {
+      db.product.create.mockImplementation(async ({ data }) => ({ id: "p-oil", ...data }));
+    });
+
+    it("persists the declared weight per litre", async () => {
+      const res = await create({ ...oil, gramosPorLitro: 920 });
+      expect(res.status).toBe(201);
+      expect(db.product.create.mock.calls[0]![0].data.gramosPorLitro).toBe(920);
+    });
+
+    it("never invents one when the chef does not declare it", async () => {
+      const res = await create(oil);
+      expect(res.status).toBe(201);
+      expect(db.product.create.mock.calls[0]![0].data.gramosPorLitro).toBeNull();
+    });
+
+    it.each([0, -5, 920.123, 100000])("rejects %s with 400 before writing", async (gramosPorLitro) => {
+      const res = await create({ ...oil, gramosPorLitro });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: "invalid_body" });
+      expect(db.product.create).not.toHaveBeenCalled();
+    });
+  });
+
+  // A category without a piece size («otro») still stores an explicit weight
+  // of one piece, so a recipe in grams can cost a product bought by unit.
+  describe("piece weight on a category without a piece size", () => {
+    const tentacles = { name: "Tentáculos", category: "otro", unidadCompra: "unidad", precioCompra: 300 };
+
+    beforeEach(() => {
+      db.product.create.mockImplementation(async ({ data }) => ({ id: "p-tentacles", ...data }));
+    });
+
+    it("persists '120 g/pz' as g_per_piece 120/120", async () => {
+      const res = await create({ ...tentacles, pezzaturaInput: "120 g/pz" });
+      expect(res.status).toBe(201);
+      expect(db.product.create.mock.calls[0]![0].data).toMatchObject({
+        pezzaturaMode: "g_per_piece",
+        pezzaturaMin: 120,
+        pezzaturaMax: 120,
+      });
+    });
+
+    it("rejects a range with 400 invalid_pezzatura before writing", async () => {
+      const res = await create({ ...tentacles, pezzaturaInput: "10/12" });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: "invalid_pezzatura" });
+      expect(db.product.create).not.toHaveBeenCalled();
+    });
   });
 });
