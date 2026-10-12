@@ -47,7 +47,7 @@
 ## Tareas
 - [x] T1 — aprendizaje incremental: hechos vigentes al extractor, texto estable y versión del prompt en la huella. Ruta: delegada, un escritor (Opus). Disparador: dos o más archivos no triviales (`provider.ts`, `worker.ts` y la huella, más los tests).
 - [x] T1b — hallazgo R3-legacy-hash-bypass, no bloqueante: si una memoria con huella anterior termina en la salida temprana (menos de 2 fuentes o todas las categorías excluidas), nunca reescribe la huella con prefijo. Por eso evita el atajo diario y vuelve a cargar evidencia cada día. Andy pidió hacerla el 12-10-2026. Ruta: inline, porque es un cambio de una sola condición en `worker.ts` más su test. Va en el PR 1, que es donde nació el problema.
-- [ ] T2 — resumen del chat: el modelo del turno y la ventana sin cambios. Va en su propia rama y PR, después de T1.
+- [x] T2 — resumen del chat: el modelo del turno y la ventana sin cambios. Va en su propia rama y PR, después de T1. Ruta: delegada, un escritor (Opus). Disparador: dos o más archivos no triviales (esquema, módulo nuevo, servicio del turno y ruta).
 - [ ] T3 — entrega: PR de T1 y, después, de T2.
 
 ## Criterios de aceptación (T1)
@@ -91,3 +91,31 @@
   - El caso de fallo de generación no cambia: lo limitan la puerta semanal y la supresión de fallos, igual que a cualquier memoria que falla.
   - RED: 2 fallan y 48 pasan (`expected [false, false] to have a length of 1`), es decir, la evidencia se vuelve a leer.
   - GREEN: 105 archivos y 1340 tests; typecheck 0.
+  - Commit `10bba84`, subido a `feat/memoria-incremental` (PR 1).
+  - RDD assess desde `8b146db`, el último límite revisado: riesgo medio, 35 líneas, `under_budget`, así que queda pendiente dentro del tramo.
+- T2, delegada a un escritor Opus, commit `3d91b13` en `feat/resumen-chat` y reapilada sobre `10bba84`:
+  - Cambios:
+    - `ConversationSummary`, con clave `(conversationId, through)`, borrado en cascada y migración `20261012200000_conversation_summaries` generada sin base de datos.
+    - `apps/api/lib/chat-summary.ts`:
+      - `nextSummaryThrough = ceil(max(0, n+1−20)/10)·10`, probado contra `stableHistoryWindow` entre 0 y 55 mensajes;
+      - el tope de 1200 caracteres;
+      - `loadChatSummary` y `refreshChatSummary`, que nunca lanza error;
+      - las llamadas a Gemini y Haiku.
+    - La tarea `chatSummary` (`claude-haiku-5-5`, `AI_CHAT_SUMMARY_MODEL`) y la tarifa de Haiku.
+    - En `anthropic.ts`, la clave `earlierMessagesSummary` al final del bloque vivo.
+    - En `chat-turn-service.ts`, la lectura en el inicio absoluto de la ventana.
+    - En la ruta de mensajes, la actualización dentro del `after(completion)` existente, después de `done`.
+    - Una frase nueva en la página de privacidad.
+  - Presupuesto: sigue el patrón de `glm.ts` (`reserveGeneration`, luego `settleGeneration` o `releaseGeneration`). No consume `AiChatQuota`.
+  - RED: 33 fallan y 188 pasan en 5 archivos, todas con `AssertionError`.
+  - GREEN del escritor: 106 archivos y 1381 tests; typecheck 0; `prisma validate` válido, con un `DATABASE_URL` de relleno y sin conexión.
+  - Supervisor, tras reapilar sobre T1b: 1383 tests y typecheck 0.
+  - Huecos aceptados:
+    - Si el chef responde mientras se genera el resumen (2-5 s), ese turno sale sin él y el siguiente pierde la caché una vez.
+    - Si el tope de 40.000 caracteres adelanta el inicio de la ventana, queda un tramo sin cubrir hasta el siguiente resumen.
+    - Una conversación sin resumen previo se resume a partir de hasta 40 mensajes.
+    - Los encabezados del resumen van fijos en español.
+  - Despliegue: la migración se aplica sola con el build de Vercel (`db:migrate:deploy`). No hace falta ninguna variable nueva mientras se use el modelo por defecto.
+  - Tamaño: 726 líneas añadidas y 9 borradas, de las cuales unas 445 son tests.
+    - Se hizo una sola pasada de corte. Separar la escritura del resumen de su lectura deja la mitad del módulo y sus tests por encima de 400 (`chat-summary.ts` y su test suman 516) y entrega código muerto hasta la segunda mitad.
+    - Se mantiene un solo PR 2 y se recomienda `size:exception`.
