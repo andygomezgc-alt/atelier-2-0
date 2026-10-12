@@ -56,5 +56,8 @@ Las tres rutas y sus pruebas. Fuera de alcance: cambiar `canAccessConversation`,
 - 12-10-2026: preflight RDD del slice (base `505d21a`, linaje `review-b4e85fc811195d80`): START pidió consentimiento (riesgo medio); la pregunta se cortó al terminar la sesión y quedó **sin respuesta** → candidato sin revisar.
 - 12-10-2026: el PR #31 se fusionó en `main` (`15d2c42`, contiene `505d21a`); Andy pidió crear el PR de esta rama contra `main`.
 
+- 12-10-2026: PR #33 abierto contra `main`; CI (`verify`, `dependency-scan`) en verde.
+- 12-10-2026: revisión RDD consentida por Andy (linaje `review-4045951db1301eaf`, lente `review-reliability`). Dos intentos fallaron por el entorno (crash de Bun en `claude.exe`, sesión OAuth vencida); tras el nuevo login, **aprobada sin hallazgos** y reconocida (autoridad quemada). Frontera revisada: `0f8b992` (árbol del candidato).
+
 ## Próximo paso
-Revisión del PR por Andy; la revisión RDD del slice sigue disponible si la quiere.
+Fusionar el PR #33 (decisión de Andy).
