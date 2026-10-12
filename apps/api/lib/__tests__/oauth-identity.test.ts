@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => {
     create: vi.fn(),
     update: vi.fn(),
   };
-  const user = { findUnique: vi.fn(), create: vi.fn() };
+  const user = { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() };
   const tx = { account, user };
   const transaction = vi.fn(
     async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
@@ -148,5 +148,105 @@ describe("resolveOAuthIdentity", () => {
       }),
     ).rejects.toThrow("oauth_provider_conflict");
     expect(account.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveOAuthIdentity — language of new accounts", () => {
+  type CreateArgs = { data: { languagePref?: unknown } };
+
+  function createdUserData() {
+    const args = user.create.mock.calls[0]![0] as CreateArgs;
+    return args.data;
+  }
+
+  beforeEach(() => {
+    // Mirrors the database: an omitted languagePref falls back to the schema default.
+    user.create.mockImplementation(async ({ data }: CreateArgs) => ({
+      ...existingUser,
+      languagePref: typeof data.languagePref === "string" ? data.languagePref : "es",
+    }));
+  });
+
+  it.each(["it", "es", "en"] as const)(
+    "creates a new user in the requested language (%s)",
+    async (languagePref) => {
+      const resolved = await resolveOAuthIdentity({
+        provider: "google",
+        providerAccountId: "stable-google-sub",
+        email: "new@example.com",
+        name: "New Chef",
+        languagePref,
+      });
+
+      expect(createdUserData().languagePref).toBe(languagePref);
+      expect(resolved.languagePref).toBe(languagePref);
+    },
+  );
+
+  it("creates a new Apple user in Italian when requested", async () => {
+    const resolved = await resolveOAuthIdentity({
+      provider: "apple",
+      providerAccountId: "stable-apple-sub",
+      email: "relay@privaterelay.appleid.com",
+      name: null,
+      tokens: { refreshToken: "encrypted-token" },
+      languagePref: "it",
+    });
+
+    expect(createdUserData().languagePref).toBe("it");
+    expect(resolved.languagePref).toBe("it");
+  });
+
+  it("leaves the schema default in place when no language is requested", async () => {
+    const resolved = await resolveOAuthIdentity({
+      provider: "google",
+      providerAccountId: "stable-google-sub",
+      email: "new@example.com",
+      name: "New Chef",
+    });
+
+    expect(createdUserData().languagePref).toBeUndefined();
+    expect(resolved.languagePref).toBe("es");
+  });
+
+  it("never changes the language of a user already linked to the identity", async () => {
+    account.findUnique.mockResolvedValue({ id: "account-1", user: existingUser });
+
+    const resolved = await resolveOAuthIdentity({
+      provider: "apple",
+      providerAccountId: "stable-apple-sub",
+      email: "chef@example.com",
+      name: null,
+      tokens: { refreshToken: "encrypted-token" },
+      languagePref: "it",
+    });
+
+    expect(resolved).toBe(existingUser);
+    expect(resolved.languagePref).toBe("es");
+    expect(user.create).not.toHaveBeenCalled();
+    expect(user.update).not.toHaveBeenCalled();
+    expect(account.update).toHaveBeenCalledWith({
+      where: { id: "account-1" },
+      data: { refresh_token: "encrypted-token" },
+    });
+  });
+
+  it("never changes the language of an existing user when linking by email", async () => {
+    user.findUnique.mockResolvedValue(existingUser);
+
+    const resolved = await resolveOAuthIdentity({
+      provider: "apple",
+      providerAccountId: "stable-apple-sub",
+      email: "chef@example.com",
+      name: null,
+      languagePref: "it",
+    });
+
+    expect(resolved).toBe(existingUser);
+    expect(resolved.languagePref).toBe("es");
+    expect(user.create).not.toHaveBeenCalled();
+    expect(user.update).not.toHaveBeenCalled();
+    expect(account.create).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(account.create.mock.calls[0]![0])).not.toContain("languagePref");
   });
 });

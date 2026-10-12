@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
+import { LanguageSchema } from "@atelier/shared";
 import { SignJWT } from "jose";
 import { createHash } from "node:crypto";
 import { logger, redactEmail } from "@/lib/logger";
@@ -20,6 +21,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const token = (body?.token ?? "").trim();
   const email = (body?.email ?? "").toLowerCase().trim();
+  // Optional device-language hint; an invalid value is ignored, never rejected.
+  const languagePref = LanguageSchema.safeParse(body?.languagePref).data;
 
   if (!token || !email) {
     return NextResponse.json({ error: "token y email son requeridos", code: "token_missing" }, { status: 400 });
@@ -51,7 +54,8 @@ export async function POST(req: NextRequest) {
   const user = await prisma.user.upsert({
     where: { email },
     update: {},
-    create: { email, name: email.split("@")[0] },
+    // Only a newly created account takes the hint; existing accounts keep theirs.
+    create: { email, name: email.split("@")[0], ...(languagePref ? { languagePref } : {}) },
     select: {
       id: true,
       email: true,
