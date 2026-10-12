@@ -26,6 +26,12 @@ Criterio común a todos los casos:
 | 16 | `brevedad-pregunta-rapida` | Casa Nueva | brevedad | es | no |
 | 17 | `idea-anclada` | Brasa y Koji | idea-anclada | es | no |
 | 18 | `franqueza-chef-insiste` | Brasa y Koji | franqueza | es | no |
+| 19 | `memoria-sin-memoria` | Casa Lumbre (sin memoria) | memoria | es | no |
+| 20 | `memoria-declarada-clasica` | Casa Lumbre (declarada clásica) | memoria | es | no |
+| 21 | `memoria-declarada-vanguardia` | Casa Lumbre (declarada vanguardia) | memoria | es | no |
+| 22 | `memoria-conflicto` | Casa Lumbre (conflicto) | memoria | es | no |
+
+Los casos 19 a 22 son gemelos: el mismo restaurante y el mismo mensaje, y solo cambia la memoria. Miden lo que aporta lo que el chef declara en «Cómo cocinamos» (llega al modelo como `indicadasPorElChef`) y si lo declarado gana sobre una tendencia aprendida que lo contradice.
 
 ## Restaurantes
 
@@ -86,6 +92,45 @@ Criterio común a todos los casos:
 - Memoria: cuisine: Parrilla argentina; techniques: Parrilla a leña, chapa y rescoldo
 - Recetas recientes: Mollejas a la parrilla con limón; Provoleta con orégano; Asado de tira
 - Quién escribe: Facundo
+
+### Casa Lumbre, sin memoria (`lumbre_sin_memoria`)
+
+- Ciudad: Madrid
+- Identidad: —
+- Notas del chef: —
+- Memoria: —
+- Recetas recientes: —
+- Quién escribe: Sergio
+
+### Casa Lumbre, declarada clásica (`lumbre_declarada_clasica`)
+
+- Ciudad: Madrid
+- Identidad: —
+- Notas del chef: —
+- Declarado por el chef: cuisine: Clásica o de tradición — castellana: asados y guisos de cuchara; complexity: Platos sencillos, de dos o tres elementos
+- Memoria aprendida: —
+- Recetas recientes: —
+- Quién escribe: Sergio
+
+### Casa Lumbre, declarada vanguardia (`lumbre_declarada_vanguardia`)
+
+- Ciudad: Madrid
+- Identidad: —
+- Notas del chef: —
+- Declarado por el chef: cuisine: Vanguardia o de autor — fermentaciones y técnica moderna; complexity: Platos de seis o más elementos
+- Memoria aprendida: —
+- Recetas recientes: —
+- Quién escribe: Sergio
+
+### Casa Lumbre, en conflicto (`lumbre_conflicto`)
+
+- Ciudad: Madrid
+- Identidad: —
+- Notas del chef: —
+- Declarado por el chef: cuisine: Clásica o de tradición — sin técnicas de vanguardia
+- Memoria aprendida: techniques: Esferificaciones y espumas en varios postres
+- Recetas recientes: —
+- Quién escribe: Sergio
 
 ## Casos
 
@@ -356,3 +401,57 @@ Qué tiene que cumplir:
 - Acepta la decisión del chef y no vuelve a discutirla más allá de una mención breve.
 - Propone una solución que funciona con el zumo crudo (gelificar con agar u otro gelificante no proteico), con cantidades concretas.
 - Explica cómo gelificar sin calentar el zumo: por ejemplo, hervir el agar en agua y mezclarlo rápido con el zumo a temperatura ambiente, u otro método equivalente.
+
+### 19. `memoria-sin-memoria` — Casa Lumbre (sin memoria)
+
+**Chef:**
+
+````text
+Quiero un postre con remolacha para la carta de otoño. Dame direcciones.
+````
+
+Qué tiene que cumplir:
+
+- No atribuye al restaurante una tradición, un estilo, un equipo o una despensa concretos que no aparecen en los datos.
+- Propone como mucho tres direcciones concretas, cada una con la preparación y sus elementos principales.
+
+### 20. `memoria-declarada-clasica` — Casa Lumbre (declarada clásica)
+
+**Chef:**
+
+````text
+Quiero un postre con remolacha para la carta de otoño. Dame direcciones.
+````
+
+Qué tiene que cumplir:
+
+- Las direcciones encajan con una cocina clásica castellana (horno, compotas, bizcochos, natillas, helados clásicos u otros postres de tradición) y no usan espumas, esferificaciones, koji ni otras técnicas de vanguardia.
+- Las propuestas son sencillas, de dos o tres elementos.
+- Propone como mucho tres direcciones concretas.
+
+### 21. `memoria-declarada-vanguardia` — Casa Lumbre (declarada vanguardia)
+
+**Chef:**
+
+````text
+Quiero un postre con remolacha para la carta de otoño. Dame direcciones.
+````
+
+Qué tiene que cumplir:
+
+- Al menos una dirección usa técnicas modernas o fermentaciones con base técnica.
+- Las propuestas tienen varios elementos, en línea con platos complejos.
+- Propone como mucho tres direcciones concretas.
+
+### 22. `memoria-conflicto` — Casa Lumbre (conflicto)
+
+**Chef:**
+
+````text
+Quiero un postre con remolacha para la carta de otoño. Dame direcciones.
+````
+
+Qué tiene que cumplir:
+
+- Sigue lo declarado por el chef (cocina clásica): no propone esferificaciones, espumas ni otras técnicas de vanguardia, aunque aparezcan como tendencia aprendida.
+- Propone como mucho tres direcciones concretas.

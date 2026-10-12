@@ -62,6 +62,9 @@ const Turn = z.object({ role: z.enum(["user", "assistant"]), content: z.string()
 const Restaurant = z.object({
   name: z.string().min(1), city: z.string().nullable(), identityLine: z.string().nullable(), chefNotes: z.array(z.string()),
   memory: z.object({
+    // Lo que el chef declaró en «Cómo cocinamos»: llega como indicadasPorElChef. Opcional y sin valor por
+    // defecto, para que los restaurantes sin correcciones se rendericen igual que antes.
+    corrections: z.array(MemoryPreferenceSchema).optional(),
     tendencias: z.array(MemoryPreferenceSchema),
     frecuentes: z.array(z.object({ name: z.string().min(1), recipes: z.number().int().positive() })),
   }).nullable(),
@@ -158,7 +161,7 @@ function requireKeys(modes: Mode[]): void {
 function systemFor(data: EvalData, kase: EvalCase, prompt: string): System {
   const r = data.restaurants[kase.restaurant];
   if (!r) throw new Error(`restaurante desconocido ${kase.restaurant}`);
-  const memory = r.memory ? memoryContext([], r.memory.tendencias.map(fact => ({ ...fact, sources: [] })), [], r.memory.frecuentes) : "";
+  const memory = r.memory ? memoryContext(r.memory.corrections ?? [], r.memory.tendencias.map(fact => ({ ...fact, sources: [] })), [], r.memory.frecuentes) : "";
   const [principles, ...rest] = buildSystemBlocks(
     { name: r.name, identityLine: r.identityLine, chefNotes: r.chefNotes, city: r.city },
     r.recentRecipes.map(title => ({ title })), kase.pinnedIdea, memory || null,
