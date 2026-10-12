@@ -102,5 +102,22 @@ Orden: A1 → A2.
     - en la ficha, el peso por pieza de un producto «otro» no se ve;
     - el aviso «anti_typo» de `recetas/nueva.tsx:227` sigue apareciendo aunque el producto ya tenga peso.
 
+  - Commit `99247c8`.
+  - RDD: riesgo medio, consentimiento `granted`, revisión aprobada y confirmada (linaje `review-6f8983c700584131`).
+  - Aviso R3-pz-per-kg-roundtrip:
+    - El padre comprobó que `parsePezzatura("33.33/33.33", pescado)` se acepta, así que no hay 400.
+    - El ida y vuelta de 30 g a 30,003 g solo reenvía el mismo valor guardado. Queda como seguimiento.
+
+## Seguimientos (fuera de alcance)
+- `RecipeCostSchema.lines` `.max(50)`: alinearlo con el tope real o quitarlo.
+- La ficha del producto no muestra el peso por pieza en categorías sin modo.
+- El aviso «anti_typo» en `recetas/nueva.tsx:227` aparece aunque ya haya peso por pieza.
+- Ida y vuelta del peso por pieza en marisco (`pz_per_kg`).
+- Propuestas C (nombres limpios) y D (merma de productos limpios).
+
+## Entrega
+- Tres commits: A1 `f027f36`, A2 `200d516`, A3 `99247c8`. Unas 2.780 líneas contra main (más o menos la mitad son pruebas).
+- La API y la migración se publican al fusionar (las aplica el build de Vercel). La parte móvil necesita una build nueva de la app.
+
 ## Siguiente paso
-Commit de A3, revisión RDD y entrega (estrategia pendiente: unas 1.900 líneas en total).
+Andy decide cómo se entrega (PR único o encadenado).
