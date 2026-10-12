@@ -48,9 +48,10 @@ El mercado hispanohablante puede ser España, donde el voseo suena ajeno. La lan
 - GREEN, repetido por el supervisor: i18n 88/88 y typecheck sin errores; móvil 47 archivos y 459/459, typecheck sin errores.
 - Diff: `es.ts` cambia 46 líneas, una por clave. Un script del escritor confirmó que nada cambia fuera de esos 46 valores: ni claves, ni comentarios, ni los saltos de línea CRLF. En `ProfileSheet.tsx` solo cambian los dos comentarios.
 - Barrido del supervisor en `es.ts`: no quedan «vos», «sos» ni verbos en voseo con tilde final. Los imperativos con pronombre llevan la tilde del tuteo (Actívalo, trabájalas, Pídele).
+- Commit de T1: `1269616` (216 líneas). RDD sobre `1269616` (base `c7aa8cf`): riesgo medio por `executable_change` en `ProfileSheet.tsx`, aunque solo cambian comentarios. `review_due: false` por `under_budget`.
 
 ## Siguiente paso
-- Commit de T1 y evaluación RDD.
+- Preflight de RDD al cerrar. Después, el PR a `main`, que decide Andy.
 - Pendiente de Andy: si «Buongiorno, Chef.» es de marca.
 - Seguimiento, fuera de alcance:
   - Voseo fuera de `es.ts`: las páginas web de privacidad, términos y borrar cuenta (`apps/api/app`) y textos que se envían a la IA. Está propuesto como tarea aparte.
