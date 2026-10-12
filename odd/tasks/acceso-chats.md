@@ -53,6 +53,8 @@ Las tres rutas y sus pruebas. Fuera de alcance: cambiar `canAccessConversation`,
 ## Progreso
 - 12-10-2026: decisión de Andy registrada; documento creado.
 - 12-10-2026: A1–A3 hechas (RED → GREEN), tres commits de unidad de trabajo.
+- 12-10-2026: preflight RDD del slice (base `505d21a`, linaje `review-b4e85fc811195d80`): START pidió consentimiento (riesgo medio); la pregunta se cortó al terminar la sesión y quedó **sin respuesta** → candidato sin revisar.
+- 12-10-2026: el PR #31 se fusionó en `main` (`15d2c42`, contiene `505d21a`); Andy pidió crear el PR de esta rama contra `main`.
 
 ## Próximo paso
-Preflight de revisión RDD del slice; después, push y PR apilado sobre `feat/ideas-privadas` (o rebase sobre `main` cuando se fusione el PR #31).
+Revisión del PR por Andy; la revisión RDD del slice sigue disponible si la quiere.
