@@ -63,6 +63,7 @@
 - [x] T2g — hallazgo R3-long-summary-cap-drops-last-section (WARNING, `review-4969a6c931896907`): el tope de 1200 caracteres se aplica antes de comprobar las secciones. Un resumen completo pero largo pierde «Datos del plato», cuenta como fallo y, tras 2 intentos, el paso se abandona. Arreglo propuesto: comprobar las secciones antes de recortar y recortar dentro de cada sección. Autorizada por Andy el 12-10-2026 y hecha.
 - [ ] T2h — hallazgo R3-stale-summary-injected-with-gap (WARNING): si un paso falló, se inyecta un resumen más viejo que el inicio de la ventana y faltan los mensajes intermedios. Además, si se saltan muchos pasos queda un hueco entre el resumen base y el tramo de 40 mensajes (R3-skipped-steps-slice-gap, SUGGESTION). Es una degradación aceptada en el diseño: solo pasa tras fallos. Arreglo posible: marcar el hueco en el texto inyectado. Andy la deja para cuando haya datos de uso real (12-10-2026).
 - [x] T2i — hallazgo R3-provider-error-retried-unbounded (SUGGESTION, revisión `review-0e7fd0a84262962a`, aprobada con acuse): los errores HTTP, de red o de timeout del proveedor no contaban como intento, así que un paso que siempre fallaba se reintentaba y reservaba presupuesto en cada turno. Autorizada por Andy el 12-10-2026 y hecha.
+- [x] R3-001 — sugerencia de `review-d3e15143a914c9f7`: con fechas de creación iguales, el orden de los mensajes no estaba garantizado y el resumen y la ventana podían verlos distinto. Ahora los dos ordenan por `createdAt` y desempatan por `id`. Autorizada por Andy el 12-10-2026.
 - [ ] T3 — entrega: PR de T1 y, después, de T2.
 
 ## Criterios de aceptación (T1)
@@ -152,3 +153,7 @@
   - T2i: cualquier error del proveedor, salvo el rechazo del presupuesto, cuenta como intento del paso.
   - RED: 3 fallan y 39 pasan, por aserciones.
   - GREEN: 106 archivos y 1396 tests; typecheck 0.
+- Entrega:
+  - #44 fusionado en `main` (`67e0e9f`) por pedido de Andy, con el CI en verde (`verify`, `dependency-scan`).
+  - #45 redirigido a `main`; muestra 15 archivos.
+- R3-001, inline: `orderBy: [{ createdAt }, { id }]` en `chat-summary.ts` (asc) y en `chat-turn-service.ts` (desc). RED: 1 falla en cada archivo. GREEN: 106 archivos y 1397 tests; typecheck 0.

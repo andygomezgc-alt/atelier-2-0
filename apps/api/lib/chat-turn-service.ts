@@ -128,7 +128,7 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
           select: { name: true, identityLine: true, city: true },
         }),
         prisma.message.findMany({
-          where: { conversationId }, orderBy: { createdAt: "desc" }, take: 20,
+          where: { conversationId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 20,
           select: { role: true, content: true },
         }),
         prisma.message.count({ where: { conversationId } }),

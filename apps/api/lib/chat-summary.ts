@@ -138,7 +138,7 @@ export async function refreshChatSummary(input: {
     const previous = base?.text;
     const from = Math.max(base?.through ?? 0, through - SLICE_MESSAGES);
     const messages = await prisma.message.findMany({
-      where: { conversationId }, orderBy: { createdAt: "asc" }, skip: from, take: through - from,
+      where: { conversationId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], skip: from, take: through - from,
       select: { role: true, content: true },
     });
     if (messages.length < through - from) return;

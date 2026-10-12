@@ -258,6 +258,11 @@ describe("GET chat permissions", () => {
 });
 
 describe("POST chat — persistencia", () => {
+  it("reads the history window in a deterministic order, like the summary, even for equal timestamps", async () => {
+    streamMock.mockImplementation(() => providerStream(["Hola"], { in: 20, out: 5 }));
+    expect(await (await post({ content: "hola", clientMessageId: "order-check" })).text()).toContain('"type":"done"');
+    expect(db.message.findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: [{ createdAt: "desc" }, { id: "desc" }] }));
+  });
   it("retries a failed assistant save without duplicating the user's message", async () => {
     const create = db.message.create.getMockImplementation()!;
     let fail = true;

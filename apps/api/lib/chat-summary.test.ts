@@ -149,7 +149,7 @@ describe("refreshChatSummary", () => {
   it("summarizes the first block once the window is about to leave it", async () => {
     conversation(20);
     await refreshChatSummary(input({ persistedCount: 20 }));
-    expect(messageQuery()).toMatchObject({ where: { conversationId: "conv-1" }, orderBy: { createdAt: "asc" }, skip: 0, take: 10 });
+    expect(messageQuery()).toMatchObject({ where: { conversationId: "conv-1" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], skip: 0, take: 10 });
     expect(geminiPayload().messages.map(m => m.content)).toEqual(Array.from({ length: 10 }, (_, k) => `m${k}`));
     expect(stored()).toEqual({ conversationId: "conv-1", through: 10, text: SUMMARY, model: "gemini-3.8-flash" });
   });
