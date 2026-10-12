@@ -20,20 +20,20 @@ export default function EliminarCuentaPage() {
         Eliminar tu cuenta de Atelier
       </h1>
 
-      <p style={pStyle}>Tenés dos vías para eliminar tu cuenta:</p>
+      <p style={pStyle}>Tienes dos vías para eliminar tu cuenta:</p>
 
       <h2 style={h2Style}>a) Desde la app</h2>
       <p style={pStyle}>
-        Andá a Perfil → Eliminar cuenta y confirmá la operación. Si sos el
+        Ve a Perfil → Eliminar cuenta y confirma la operación. Si eres el
         último miembro del restaurante, se elimina también el restaurante con
-        todo su contenido. Si sos el último administrador y quedan compañeros,
-        primero asigná otro administrador. La app confirma cuando termina; si
+        todo su contenido. Si eres el último administrador y quedan compañeros,
+        primero asigna otro administrador. La app confirma cuando termina; si
         aparece un error, la eliminación no debe darse por completada.
       </p>
 
       <h2 style={h2Style}>b) Sin acceso a la app</h2>
       <p style={pStyle}>
-        Escribí desde el email de tu cuenta a{" "}
+        Escribe desde el email de tu cuenta a{" "}
         <a
           href="mailto:andygomezgc@gmail.com?subject=Eliminar%20cuenta"
           style={linkStyle}
@@ -51,9 +51,9 @@ export default function EliminarCuentaPage() {
         Las recetas, ideas, menús y conversaciones compartidas con el restaurante
         pueden permanecer para el equipo, con tu identificación de perfil
         sustituida. Si escribiste datos personales dentro de esos contenidos,
-        contactanos para revisarlos. Los registros técnicos y las copias cifradas
+        contáctanos para revisarlos. Los registros técnicos y las copias cifradas
         tienen un tratamiento separado: el borrado no elimina automáticamente
-        las copias ya creadas. Encontrás más información en la{" "}
+        las copias ya creadas. Encuentras más información en la{" "}
         <a href="/privacidad" style={linkStyle}>política de privacidad</a>.
       </p>
     </PageShell>

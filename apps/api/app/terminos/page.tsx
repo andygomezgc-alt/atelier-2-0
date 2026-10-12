@@ -31,7 +31,7 @@ export default function TerminosPage() {
 
       <h2 style={h2Style}>Suscripción</h2>
       <p style={pStyle}>
-        La suscripción es mensual y podés cancelarla cuando quieras; el acceso
+        La suscripción es mensual y puedes cancelarla cuando quieras; el acceso
         se mantiene hasta el final del período ya pagado.
       </p>
 
