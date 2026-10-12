@@ -149,7 +149,10 @@ function summaryInput(previous: string | undefined, messages: { role: string; co
   const kept: { role: string; content: string }[] = [];
   let chars = 0;
   for (const message of [...messages].reverse()) {
-    const content = message.content.length > MESSAGE_MAX_CHARS ? `${message.content.slice(0, MESSAGE_MAX_CHARS)}…` : message.content;
+    // Each message shares the input cap, so a long slice keeps every message
+    // shortened instead of silently dropping the oldest ones.
+    const limit = Math.min(MESSAGE_MAX_CHARS, Math.floor(INPUT_MAX_CHARS / Math.max(1, messages.length)) - 1);
+    const content = message.content.length > limit ? `${message.content.slice(0, limit)}…` : message.content;
     if (chars + content.length > INPUT_MAX_CHARS) break;
     kept.unshift({ role: message.role === "assistant" ? "assistant" : "chef", content });
     chars += content.length;
@@ -201,9 +204,9 @@ async function haikuSummary(config: SummaryConfig, key: string, content: string,
     logger.warn("ai_refusal", { provider: config.provider, modelId: config.model, task: config.task, category: response.stop_details?.category ?? null });
     return null;
   }
-  // max_tokens keeps the text: capSummary cuts it at a safe boundary.
   if (response.stop_reason !== "end_turn" && response.stop_reason !== "max_tokens") return null;
-  return response.content.map(block => block.type === "text" ? block.text : "").join("");
+  const text = response.content.map(block => block.type === "text" ? block.text : "").join("");
+  return response.stop_reason === "max_tokens" ? withoutCutLine(text) : text;
 }
 
 async function geminiSummary(config: SummaryConfig, key: string, content: string, timeoutMs: number, billing: Billing): Promise<string | null> {
@@ -230,5 +233,12 @@ async function geminiSummary(config: SummaryConfig, key: string, content: string
   const candidate = body.candidates?.[0];
   if (candidate?.finishReason !== "STOP" && candidate?.finishReason !== "MAX_TOKENS") return null;
   const parts: { text?: unknown; thought?: unknown }[] = candidate.content?.parts ?? [];
-  return parts.filter(part => typeof part.text === "string" && !part.thought).map(part => part.text).join("");
+  const text = parts.filter(part => typeof part.text === "string" && !part.thought).map(part => part.text).join("");
+  return candidate.finishReason === "MAX_TOKENS" ? withoutCutLine(text) : text;
+}
+
+/** An answer cut by the output limit may end mid-line, e.g. a half-written temperature: drop that line. */
+function withoutCutLine(text: string): string {
+  const trimmed = text.trimEnd();
+  return trimmed.slice(0, Math.max(0, trimmed.lastIndexOf("\n")));
 }

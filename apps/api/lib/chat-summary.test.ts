@@ -219,8 +219,9 @@ describe("refreshChatSummary", () => {
     expect(payload.previousSummary).toBeUndefined();
     const contents = payload.messages.map(m => m.content);
     expect(contents.at(-1)).toMatch(/^m49x/);
-    expect(contents.length).toBeGreaterThan(0);
-    expect(contents.length).toBeLessThan(40);
+    // Every message of the slice is kept, each shortened, so no gap is left before `through`.
+    expect(contents).toHaveLength(40);
+    expect(contents[0]).toMatch(/^m10x/);
     expect(contents.join("").length).toBeLessThanOrEqual(48_000);
     expect(stored().through).toBe(50);
   });
@@ -287,6 +288,18 @@ describe("refreshChatSummary", () => {
     await refreshChatSummary(input({ model }));
     expect(budget.settleGeneration).toHaveBeenCalledTimes(1);
     expect(db.conversationSummary.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Haiku stops at max_tokens", "creative" as const],
+    ["Gemini stops at MAX_TOKENS", "daily" as const],
+  ])("drops the half-written last line when %s", async (_label, model) => {
+    const cut = `${SUMMARY}
+- Reducir a 18`;
+    haikuCreate.mockResolvedValue(haikuReply(cut, "max_tokens"));
+    fetcher.mockImplementation(async () => geminiReply(cut, "MAX_TOKENS"));
+    await refreshChatSummary(input({ model }));
+    expect(stored().text).toBe(SUMMARY);
   });
 
   it("never stores a summary that lacks one of the four sections", async () => {

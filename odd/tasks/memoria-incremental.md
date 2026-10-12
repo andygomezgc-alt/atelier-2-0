@@ -58,8 +58,8 @@
   - Hueco aceptado: si un resumen que falla de forma persistente no se guarda, cada turno vuelve a pagar un intento, que es barato, hasta que salga uno completo.
 - [x] T2c — hallazgo R3-skipped-step-erases-rolling-summary (WARNING, revisión consolidada `review-f8ae594916a9a991`): si falla el resumen de un paso, el siguiente ignora el resumen más antiguo que sigue existiendo, arranca desde los últimos 40 mensajes y `deleteMany` borra ese resumen viejo, con lo que se pierde contexto para siempre. Arreglo propuesto: partir del resumen más reciente con `through` menor que el actual y no podar hasta tener uno nuevo encadenado. Autorizada por Andy el 12-10-2026 y hecha.
 - [x] T2d — hallazgo R3-offtemplate-summary-repaid-every-turn (SUGGESTION): un resumen fuera de plantilla se paga de nuevo en cada turno, sin límite. Arreglo propuesto: anotar los intentos fallidos por paso y limitar los reintentos. Autorizada por Andy el 12-10-2026 y hecha.
-- [ ] T2e — hallazgo R3-maxtokens-midline-summary-stored (WARNING, revisión consolidada `review-390d2e2f4758c0fa`): una respuesta cortada por el límite de salida a mitad de una línea, por debajo de 1200 caracteres, se guarda con un dato a medias (por ejemplo, una temperatura) y se arrastra a los resúmenes siguientes. Arreglo propuesto: si el proveedor cortó por límite, descartar la última línea incompleta o el resumen entero. Pendiente de autorización.
-- [ ] T2f — hallazgo R3-skipped-step-input-cap-drops-oldest (SUGGESTION): al saltar un paso, el tope de 48.000 caracteres puede dejar fuera los mensajes más viejos posteriores al resumen base, sin dejar registro. Arreglo propuesto: registrarlo en el log o recortar cada mensaje antes que descartar los más viejos. Pendiente de autorización.
+- [x] T2e — hallazgo R3-maxtokens-midline-summary-stored (WARNING, revisión consolidada `review-390d2e2f4758c0fa`): una respuesta cortada por el límite de salida a mitad de una línea, por debajo de 1200 caracteres, se guarda con un dato a medias (por ejemplo, una temperatura) y se arrastra a los resúmenes siguientes. Arreglo propuesto: si el proveedor cortó por límite, descartar la última línea incompleta o el resumen entero. Autorizada por Andy el 12-10-2026 y hecha.
+- [x] T2f — hallazgo R3-skipped-step-input-cap-drops-oldest (SUGGESTION): al saltar un paso, el tope de 48.000 caracteres puede dejar fuera los mensajes más viejos posteriores al resumen base, sin dejar registro. Arreglo propuesto: registrarlo en el log o recortar cada mensaje antes que descartar los más viejos. Autorizada por Andy el 12-10-2026 y hecha.
 - [ ] T3 — entrega: PR de T1 y, después, de T2.
 
 ## Criterios de aceptación (T1)
@@ -138,3 +138,8 @@
   - RED: 4 fallan y 33 pasan, por aserciones.
   - GREEN: 106 archivos y 1391 tests; typecheck 0; `prisma validate` válido.
 - Revisión consolidada `review-390d2e2f4758c0fa` (toda la rama con T2c y T2d, 1195 líneas), con consentimiento de Andy: **aprobada con acuse de recibo**. Dejó los avisos T2e y T2f.
+- T2e y T2f, inline:
+  - T2e: si Haiku corta por `max_tokens` o Gemini por `MAX_TOKENS`, se descarta la última línea, que puede estar a medias (`withoutCutLine`), antes de comprobar los encabezados.
+  - T2f: cada mensaje del tramo comparte el tope de entrada (`min(4000, floor(48000 / n) − 1)`), así se conservan todos acortados en lugar de descartar los más viejos.
+  - RED: 3 fallan y 36 pasan, por aserciones.
+  - GREEN: 106 archivos y 1393 tests; typecheck 0.
