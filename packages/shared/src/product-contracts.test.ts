@@ -16,3 +16,25 @@ describe("product editing contracts", () => {
     expect(PatchProductRequestSchema.safeParse({ mermaPct: 99.99 }).success).toBe(true);
   });
 });
+
+describe("gramosPorLitro (weight of one litre) contract", () => {
+  const base = { name: "Aceite de oliva", category: "vinagre_aceite", unidadCompra: "l", precioCompra: 500 } as const;
+
+  it("accepts a positive weight with up to two decimals on create and patch", () => {
+    expect(CreateProductRequestSchema.parse({ ...base, gramosPorLitro: 920 }).gramosPorLitro).toBe(920);
+    expect(PatchProductRequestSchema.parse({ gramosPorLitro: 1030.25 }).gramosPorLitro).toBe(1030.25);
+    expect(PatchProductRequestSchema.parse({ gramosPorLitro: 0.01 }).gramosPorLitro).toBe(0.01);
+    expect(PatchProductRequestSchema.parse({ gramosPorLitro: 99999.99 }).gramosPorLitro).toBe(99999.99);
+  });
+
+  it("null clears it on patch; leaving it out does not touch it", () => {
+    expect(PatchProductRequestSchema.parse({ gramosPorLitro: null }).gramosPorLitro).toBeNull();
+    expect(PatchProductRequestSchema.parse({ precioCompra: 500 })).not.toHaveProperty("gramosPorLitro");
+    expect(CreateProductRequestSchema.parse(base)).not.toHaveProperty("gramosPorLitro");
+  });
+
+  it.each([0, -1, 920.123, 100000, "920"])("rejects %s", (gramosPorLitro) => {
+    expect(CreateProductRequestSchema.safeParse({ ...base, gramosPorLitro }).success).toBe(false);
+    expect(PatchProductRequestSchema.safeParse({ gramosPorLitro }).success).toBe(false);
+  });
+});

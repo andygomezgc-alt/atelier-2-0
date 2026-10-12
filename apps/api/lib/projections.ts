@@ -49,6 +49,8 @@ const recipeIngredientsForCostInclude = {
         precioCompra: true,
         mermaPct: true,
         unidadCompra: true,
+        // Weight of one litre: converts g/kg ↔ l/ml in the cost.
+        gramosPorLitro: true,
         pezzaturaMode: true,
         pezzaturaMin: true,
         pezzaturaMax: true,
@@ -186,6 +188,8 @@ type RecipeIngredientRow = {
         precioCompra: number;
         mermaPct: { toString(): string }; // Prisma.Decimal
         unidadCompra: string;
+        // Weight of one litre (Prisma.Decimal); null = unknown.
+        gramosPorLitro?: { toString(): string } | null;
         // Entrega A.5: pezzatura del banco.
         pezzaturaMode: string | null;
         pezzaturaMin: { toString(): string } | null;
@@ -203,6 +207,9 @@ type RecipeIngredientRow = {
 // products con casts a unions del shared).
 function mapIngredientsForCost(rows: RecipeIngredientRow[]) {
   return rows.map((row) => ({
+    // Labels the per-ingredient cost lines.
+    id: row.id,
+    position: row.position,
     qty: row.qty ? Number(row.qty.toString()) : null,
     unit: row.unit,
     mermaOverridePct: row.mermaOverridePct
@@ -213,9 +220,14 @@ function mapIngredientsForCost(rows: RecipeIngredientRow[]) {
       : null,
     product: row.product
       ? {
+          id: row.product.id,
           precioCompra: row.product.precioCompra,
           mermaPct: Number(row.product.mermaPct.toString()),
           unidadCompra: row.product.unidadCompra as ProductUnit,
+          gramosPorLitro:
+            row.product.gramosPorLitro != null
+              ? Number(row.product.gramosPorLitro.toString())
+              : null,
           pezzaturaMode: row.product.pezzaturaMode as PezzaturaMode | null,
           pezzaturaMin: row.product.pezzaturaMin
             ? Number(row.product.pezzaturaMin.toString())
@@ -361,6 +373,8 @@ export function projectRecipeDetail(r: RecipeDetailRow): RecipeDetail {
       unmeasuredCount: cost.unmeasuredCount,
       unlinkedCount: cost.unlinkedCount,
       wideRangeCount: cost.wideRangeCount,
+      // Per-ingredient status, detail only (keeps the list payload small).
+      lines: cost.lines,
     },
   };
 }

@@ -88,7 +88,7 @@ export async function recalcCriticalityForRestaurant(
             mermaOverridePct: true,
             pesoCalculoG: true,
             product: { select: {
-              precioCompra: true, mermaPct: true, unidadCompra: true,
+              precioCompra: true, mermaPct: true, unidadCompra: true, gramosPorLitro: true,
               pezzaturaMode: true, pezzaturaMin: true, pezzaturaMax: true,
             } },
           },
@@ -110,6 +110,7 @@ export async function recalcCriticalityForRestaurant(
       product: ri.product ? {
         ...ri.product,
         mermaPct: Number(ri.product.mermaPct),
+        gramosPorLitro: ri.product.gramosPorLitro == null ? null : Number(ri.product.gramosPorLitro),
         pezzaturaMin: ri.product.pezzaturaMin == null ? null : Number(ri.product.pezzaturaMin),
         pezzaturaMax: ri.product.pezzaturaMax == null ? null : Number(ri.product.pezzaturaMax),
       } : null,

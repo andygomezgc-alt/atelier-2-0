@@ -95,6 +95,16 @@ describe("POST /api/products/[id]/duplicate", () => {
     expect(createArg.data.restaurantId).toBe("r1");
   });
 
+  it("copies the declared weight per litre (and its absence) from the source", async () => {
+    db.product.findUnique.mockResolvedValueOnce({ ...SOURCE, unidadCompra: "l", gramosPorLitro: 920 });
+    await post("prod-1");
+    expect(db.product.create.mock.calls[0]![0].data.gramosPorLitro).toBe(920);
+
+    db.product.findUnique.mockResolvedValueOnce({ ...SOURCE, gramosPorLitro: null });
+    await post("prod-1");
+    expect(db.product.create.mock.calls[1]![0].data).toHaveProperty("gramosPorLitro", null);
+  });
+
   it("404 si el producto no existe", async () => {
     db.product.findUnique.mockResolvedValueOnce(null);
     const res = await post("nope");

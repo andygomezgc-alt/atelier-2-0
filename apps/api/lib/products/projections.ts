@@ -27,6 +27,7 @@ type ProductListSource = Pick<
   | "precioCompra"
   | "mermaPct"
   | "mermaOrigen"
+  | "gramosPorLitro"
   | "criticality"
   | "estado"
   | "precioActualizadoAt"
@@ -58,6 +59,9 @@ export function projectProductListItem(
     realCost: realCost(p.precioCompra, mermaPctNum),
     mermaPct: mermaPctNum,
     mermaOrigen: p.mermaOrigen,
+    // Decimal → number; `== null` also covers a stale query engine that
+    // omits the column (same reason as the pezzatura fields above).
+    gramosPorLitro: p.gramosPorLitro == null ? null : Number(p.gramosPorLitro),
     criticality: p.criticality,
     estado: p.estado,
     precioActualizadoAt: p.precioActualizadoAt.toISOString(),

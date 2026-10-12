@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { MenuDetailSchema } from "@atelier/shared";
+import { MenuDetailSchema, RecipeDetailSchema } from "@atelier/shared";
 import {
   menuDetailInclude,
   projectMenuDetail,
+  projectRecipeDetail,
+  projectRecipeListItem,
   recipeDetailInclude,
+  recipeListInclude,
 } from "../projections";
 
 // Fixture SPEC válido — copiado de
@@ -87,5 +90,99 @@ describe("etiquetas fantasma — includes filtran soft-deletes cruzados", () => 
     expect(menuDetailInclude.items.where).toEqual({
       recipe: { deletedAt: null },
     });
+  });
+});
+
+describe("recipe cost lines", () => {
+  type RecipeDetailRow = Parameters<typeof projectRecipeDetail>[0];
+  // Prisma.Decimal stand-in: the projection only calls toString().
+  const dec = (v: number) => ({ toString: () => String(v) });
+
+  function product(id: string, unidadCompra: string, precioCompra: number, gramosPorLitro: number | null) {
+    return {
+      id,
+      name: id,
+      criticality: "media",
+      estado: "activo",
+      precioCompra,
+      mermaPct: dec(0),
+      unidadCompra,
+      pezzaturaMode: null,
+      pezzaturaMin: null,
+      pezzaturaMax: null,
+      gramosPorLitro: gramosPorLitro === null ? null : dec(gramosPorLitro),
+      allergen: null,
+      allergens: [],
+      allergensReviewed: true,
+    };
+  }
+
+  function ingredient(
+    id: string,
+    position: number,
+    qty: number | null,
+    unit: string | null,
+    p: ReturnType<typeof product> | null,
+  ) {
+    return {
+      id,
+      position,
+      rawText: id,
+      qty: qty === null ? null : dec(qty),
+      unit,
+      pezzatura: null,
+      mermaOverridePct: null,
+      pesoCalculoG: null,
+      product: p,
+    };
+  }
+
+  function recipeRow(): RecipeDetailRow {
+    return {
+      id: "recipe-1",
+      title: "Calamar embutido al pimentón",
+      state: "approved",
+      priority: false,
+      version: 1,
+      updatedAt: new Date("2026-10-12T10:00:00Z"),
+      author: { name: "Chef", email: null },
+      recipeIngredients: [
+        ingredient("ri-oil", 0, 40, "g", product("p-oil", "l", 500, 920)),
+        ingredient("ri-cream", 1, 100, "g", product("p-cream", "l", 400, null)),
+        ingredient("ri-salt", 2, null, null, null),
+      ],
+      portions: 2,
+      salePrice: null,
+      manualAllergens: [],
+      contentJson: { ingredients: [], method: [], notes: "" },
+      approvedAt: null,
+      sourceConversationId: null,
+      approvedBy: null,
+      menuItems: [],
+    };
+  }
+
+  it("the detail exposes one line per ingredient with its status, in position order", () => {
+    const detail = projectRecipeDetail(recipeRow());
+    expect(detail.cost.lines).toEqual([
+      { ingredientId: "ri-oil", position: 0, status: "ok", costCents: 22, productId: "p-oil", recipeUnit: "g", purchaseUnit: "l" },
+      { ingredientId: "ri-cream", position: 1, status: "needs_density", costCents: null, productId: "p-cream", recipeUnit: "g", purchaseUnit: "l" },
+      { ingredientId: "ri-salt", position: 2, status: "no_product", costCents: null, productId: null, recipeUnit: null, purchaseUnit: null },
+    ]);
+    expect(detail.cost).toMatchObject({ totalCents: 22, computableCount: 1, unmeasuredCount: 1, unlinkedCount: 1 });
+    expect(RecipeDetailSchema.safeParse(detail).success).toBe(true);
+  });
+
+  it("the list item stays small: no lines and no cost object", () => {
+    const item = projectRecipeListItem(recipeRow());
+    expect(item).not.toHaveProperty("cost");
+    expect(JSON.stringify(item)).not.toContain("lines");
+    // The weight-per-litre conversion still reaches the list's per-portion cost.
+    expect(item.perPortionCents).toBe(11);
+  });
+
+  it("list and detail includes select the product's weight per litre", () => {
+    expect(recipeDetailInclude.recipeIngredients.include.product.select.gramosPorLitro).toBe(true);
+    expect(recipeListInclude.recipeIngredients.include.product.select.gramosPorLitro).toBe(true);
   });
 });

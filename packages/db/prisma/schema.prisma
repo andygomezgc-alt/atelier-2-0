@@ -691,6 +691,11 @@ model Product {
   mermaPct    Decimal     @default(0) @db.Decimal(5, 2)
   mermaOrigen MermaOrigin @default(sugerida)
 
+  // Weight in grams of 1 litre of this product; null = unknown, never guessed.
+  // Lets the cost engine convert g/kg ↔ l/ml. Enforced > 0 by CHECK
+  // Product_gramosPorLitro_positive.
+  gramosPorLitro Decimal? @db.Decimal(7, 2)
+
   proveedor           String?
   precioActualizadoAt DateTime @default(now())
   notas               String?  @db.Text
