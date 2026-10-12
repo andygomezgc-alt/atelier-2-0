@@ -4,7 +4,9 @@ import { can, type Permission } from "@atelier/shared";
 import * as route from "../bulk/route";
 
 const h = vi.hoisted(() => ({
-  conversation: null as null | { id: string; restaurantId: string; authorId: string },
+  conversation: null as null | {
+    id: string; restaurantId: string; authorId: string; ideaId: string | null; idea: { authorId: string } | null;
+  },
   rows: [] as Array<Record<string, unknown>>,
   restaurantId: "restaurant-1" as string | null,
   userId: "chef-1",
@@ -63,7 +65,7 @@ const post = (messages: unknown, id = "conv-1") => route.POST(
 );
 
 beforeEach(() => {
-  h.conversation = { id: "conv-1", restaurantId: "restaurant-1", authorId: "chef-1" };
+  h.conversation = { id: "conv-1", restaurantId: "restaurant-1", authorId: "chef-1", ideaId: null, idea: null };
   h.restaurantId = "restaurant-1";
   h.userId = "chef-1";
   h.role = "chef_executive";
@@ -102,19 +104,43 @@ describe("bulk message import (A10)", () => {
     expect(h.rows.map((row) => row.content)).toEqual(batch.map((message) => message.content));
   });
 
-  it("requires the conversation author or an admin, like the stop route", async () => {
-    h.conversation = { id: "conv-1", restaurantId: "restaurant-1", authorId: "chef-2" };
-    const denied = await post(batch);
-    expect(denied.status).toBe(403);
-    expect(h.createMany).not.toHaveBeenCalled();
+  it("lets a teammate import into a shared chat (no idea) they did not open", async () => {
+    h.conversation = { id: "conv-1", restaurantId: "restaurant-1", authorId: "chef-2", ideaId: null, idea: null };
+    h.role = "sous_chef";
+    const res = await post(batch);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ inserted: 4 });
+    expect(h.rows).toHaveLength(4);
+  });
 
+  it("hides a chat born from a teammate's idea with 404 and writes nothing", async () => {
+    h.conversation = { id: "conv-1", restaurantId: "restaurant-1", authorId: "chef-2", ideaId: "idea-1", idea: { authorId: "chef-2" } };
+    h.role = "sous_chef";
+    const denied = await post(batch);
+    expect(denied.status).toBe(404);
+    expect(await denied.json()).toEqual({ error: "Not found" });
+    expect(h.createMany).not.toHaveBeenCalled();
+    expect(h.rows).toHaveLength(0);
+  });
+
+  it("lets the idea's author import into a legacy idea chat a teammate opened", async () => {
+    h.conversation = { id: "conv-1", restaurantId: "restaurant-1", authorId: "chef-2", ideaId: "idea-1", idea: { authorId: "chef-1" } };
+    h.role = "sous_chef";
+    const res = await post(batch);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ inserted: 4 });
+    expect(h.rows).toHaveLength(4);
+  });
+
+  it("lets an admin import into a chat born from someone else's idea", async () => {
+    h.conversation = { id: "conv-1", restaurantId: "restaurant-1", authorId: "chef-2", ideaId: "idea-1", idea: { authorId: "chef-2" } };
     h.role = "admin";
     expect((await post(batch)).status).toBe(200);
     expect(h.rows).toHaveLength(4);
   });
 
   it("rejects another restaurant's conversation without writing", async () => {
-    h.conversation = { id: "conv-1", restaurantId: "restaurant-2", authorId: "chef-1" };
+    h.conversation = { id: "conv-1", restaurantId: "restaurant-2", authorId: "chef-1", ideaId: null, idea: null };
     expect((await post(batch)).status).toBe(404);
     expect(h.createMany).not.toHaveBeenCalled();
   });
