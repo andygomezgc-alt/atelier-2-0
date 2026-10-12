@@ -51,7 +51,8 @@ Las tres páginas y un test nuevo en `apps/api`. Fuera de alcance:
 - RED, observado por el supervisor con las páginas sin cambios: fallan los 3 tests. Encuentran 19 formas en privacidad, 1 en términos y 9 en borrar cuenta.
 - GREEN, repetido por el supervisor: test nuevo 3/3; API, 107 archivos y 1400 tests; typecheck sin errores.
 - Diff: 26 líneas en las tres páginas. Un script del escritor confirmó que solo cambian las 29 formas: ni la puntuación, ni el marcado, ni los enlaces, ni las fechas, ni los saltos de línea.
+- Commit de T1: `993703c` (139 líneas). RDD sobre `993703c` (base `68e3f53`): riesgo medio por `executable_change` en el test nuevo. `review_due: false` por `under_budget`.
 
 ## Siguiente paso
-- Commit de T1 y evaluación RDD. Después, el PR a `main`, que decide Andy.
+- Preflight de RDD al cerrar. Después, el PR a `main`, que decide Andy.
 - Seguimiento, fuera de alcance: el asistente responde con el trato que usa el chef (tú, vos o usted), según `apps/api/lib/anthropic-system.md:25`, y la eval `registro-voseo` lo exige. Si se quiere que responda siempre de tú, es otra decisión.
