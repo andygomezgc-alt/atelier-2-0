@@ -41,7 +41,7 @@ A1, A2. Fuera de alcance (propuestas C y D): limpiar nombres al crear borradores
 Orden: A1 → A2.
 
 - [x] A1 — backend y contrato (migración `20261012230000_product_gramos_por_litro`; commit en «Progreso»)
-- [ ] A2 — app móvil
+- [x] A2 — app móvil (commit en «Progreso»)
 
 ## Criterios de aceptación
 - A1: 40 g de aceite con producto por litro a 5 €/l y `gramosPorLitro` 920 cuesta 40/920 × 5 € (con merma); sin `gramosPorLitro` la línea es `needs_density`. Pieza contra litro o cualquier cosa contra caja → `incompatible_unit`. g contra unidad sin peso → `needs_piece_weight`. Las líneas cubren todas las filas en orden y los contadores agregados no cambian para los casos existentes. POST/PATCH de producto aceptan y validan `gramosPorLitro` (> 0, null para quitarlo).
@@ -70,6 +70,20 @@ Orden: A1 → A2.
     - el recálculo de criticidad incluye la densidad;
     - en las líneas, `id` y `position` son opcionales en la entrada del motor (la proyección siempre los pasa).
   - Contrato: `cost.lines` opcional, solo en el detalle; `gramosPorLitro` opcional en `ProductListItem`.
+  - Commit `f027f36`.
+  - RDD: riesgo medio con consentimiento `granted`, un lente (fiabilidad); revisión aprobada y confirmada (linaje `review-84af2f3126b3b477`).
+  - Aviso informativo R3-lines-max-50:
+    - `RecipeCostSchema.lines` tiene `.max(50)`. Sin efecto práctico, porque al guardar las recetas ya se limitan a 50 ingredientes (`api-contract.ts:105,147`) y el móvil no valida respuestas con zod.
+    - Queda como seguimiento.
+
+- A2 (writer Opus, delegado):
+  - RED observado: i18n 3 fallos por claves ausentes; mobile, los módulos nuevos no existían.
+  - GREEN: i18n tsc y 91/91; mobile typecheck y 512/512; `expo export` android compila.
+  - Comprobación del padre: las 2 pruebas nuevas dan 53/53.
+  - Hueco detectado: el PATCH solo guarda el peso por pieza en categorías con modo de pezzatura (pescado, carne en pieza, fruta, panadería). En «otro», «verdura», «lácteo», etc., la hoja oculta el campo y pide cambiar la unidad. Se reabre como A3.
+
+## Tareas añadidas
+- [ ] A3 — `parsePezzatura` acepta un peso explícito por pieza («X g/pz», «X kg/pz») en categorías sin modo, como `g_per_piece`; la hoja de la app muestra el campo para cualquier categoría. Motivo: sin esto, «tentáculos» (categoría «otro», g contra unidad) no se puede arreglar desde la receta. Ruta: delegada (shared + mobile).
 
 ## Siguiente paso
-A2.
+A3.

@@ -232,3 +232,51 @@ describe("Spanish copy addresses the user as tú", () => {
     expect(es.chat_greet).toBe("Buongiorno, Chef.");
   });
 });
+
+// Costes por ingrediente (A2) — reasons under each ingredient and the fix sheet.
+describe("per-ingredient cost copy", () => {
+  const spanish: Record<string, string> = {
+    cost_line_no_product: "Sin producto del banco",
+    cost_line_no_price: "Falta el precio",
+    cost_line_no_quantity: "Falta la cantidad",
+    cost_line_needs_density: "Falta cuánto pesa 1 litro",
+    cost_line_needs_piece_weight: "Falta cuánto pesa 1 unidad",
+    cost_line_incompatible_unit: "La receta usa {recipeUnit} y el producto se compra por {purchaseUnit}",
+    cost_line_invalid_merma: "Merma no válida",
+    gramos_por_litro_label: "1 litro pesa (g)",
+    gramos_por_litro_hint: "Para pasar de gramos a litros en las recetas",
+    peso_por_unidad_label: "1 unidad pesa (g)",
+  };
+  const otherKeys = [
+    "gramos_por_litro_suggested",
+    "grams_invalid",
+    "fix_sheet_price_label",
+    "fix_sheet_piece_weight_unsupported",
+    "fix_sheet_incompatible",
+    "fix_sheet_error_price",
+  ];
+
+  test("has the exact Spanish copy", () => {
+    for (const [key, expected] of Object.entries(spanish)) {
+      expect((es as Record<string, string>)[key], key).toBe(expected);
+    }
+  });
+
+  test("has every key in each language, with the same placeholders", () => {
+    for (const key of [...Object.keys(spanish), ...otherKeys]) {
+      const placeholders = ((es as Record<string, string>)[key] ?? "").match(/\{\w+\}/g) ?? [];
+      for (const dict of [es, en, itDict]) {
+        const value = (dict as Record<string, string>)[key];
+        expect(value?.trim(), key).toBeTruthy();
+        expect(value, key).not.toContain("_");
+        expect(value?.match(/\{\w+\}/g) ?? [], key).toEqual(placeholders);
+      }
+    }
+  });
+
+  test("interpolates both units of an incompatible pair", () => {
+    expect(t("cost_line_incompatible_unit", "es", { recipeUnit: "unidad", purchaseUnit: "l" })).toBe(
+      "La receta usa unidad y el producto se compra por l",
+    );
+  });
+});
