@@ -549,7 +549,7 @@ Estas son las cuentas de las que depende Atelier. Todas están a nombre de Andy.
   propio; **decisión de marca: NO usar `ristorantemarche.it`**. El reply-to
   apunta al Gmail de Andy. El correo del magic link está **en italiano** a
   propósito para el piloto — no tocar.
-- Restaurant del piloto: **"Kokoo"** (código `KOKOO-3ZUJ5V`), creado por Andy
+- Restaurant del piloto: **"Kokoo"** (código `KOKOO-6APF6G`, comprobado en prod el 12-10-2026), creado por Andy
   desde la app. **NO borrar.** User admin: `andygomezgc@gmail.com`.
 
 </details>
