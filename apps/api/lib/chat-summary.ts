@@ -47,14 +47,49 @@ export function nextSummaryThrough(persistedCount: number): number {
 
 /** Bounded plain text: normalized spacing, cut at a line or word, never half a surrogate pair. */
 export function capSummary(text: string): string {
-  const clean = text.replace(/\r\n?/g, "\n").replace(/[^\S\n]+/g, " ").replace(/ ?\n ?/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-  if (clean.length <= SUMMARY_MAX_CHARS) return clean;
-  let cut = clean.slice(0, SUMMARY_MAX_CHARS);
+  return cutAt(normalize(text), SUMMARY_MAX_CHARS);
+}
+
+const normalize = (text: string) =>
+  text.replace(/\r\n?/g, "\n").replace(/[^\S\n]+/g, " ").replace(/ ?\n ?/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+
+function cutAt(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  let cut = text.slice(0, limit);
   if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
   const line = cut.lastIndexOf("\n");
   const word = cut.lastIndexOf(" ");
-  const end = line >= SUMMARY_MAX_CHARS / 2 ? line : word >= SUMMARY_MAX_CHARS / 2 ? word : cut.length;
+  const end = line >= limit / 2 ? line : word >= limit / 2 ? word : cut.length;
   return cut.slice(0, end).trimEnd();
+}
+
+/**
+ * The four sections within the cap, or null when one is missing. An over-long
+ * summary is cut inside each section, sharing the room, so the last section
+ * (often the dish data) is never the one that disappears.
+ */
+function fitSections(text: string): string | null {
+  const clean = normalize(text);
+  const lines = clean.split("\n");
+  const starts = SECTIONS.map(section => lines.findIndex(line => line.startsWith(section)));
+  if (starts.some(start => start < 0)) return null;
+  if (clean.length <= SUMMARY_MAX_CHARS) return clean;
+  const order = SECTIONS.map((label, k) => ({ label, start: starts[k]! })).sort((a, b) => a.start - b.start);
+  const parts = order.map(({ label, start }, k) => ({
+    label,
+    body: [lines[start]!.slice(label.length), ...lines.slice(start + 1, order[k + 1]?.start ?? lines.length)].join("\n").trim(),
+  }));
+  let room = SUMMARY_MAX_CHARS - parts.reduce((sum, part) => sum + part.label.length + 2, 0);
+  const share = new Map<string, number>();
+  [...parts].sort((a, b) => a.body.length - b.body.length).forEach((part, k, sorted) => {
+    const allotted = Math.min(part.body.length, Math.floor(room / (sorted.length - k)));
+    share.set(part.label, allotted);
+    room -= allotted;
+  });
+  return parts.map(part => {
+    const body = cutAt(part.body, share.get(part.label)!);
+    return body ? `${part.label}\n${body}` : part.label;
+  }).join("\n");
 }
 
 /**
@@ -112,15 +147,23 @@ export async function refreshChatSummary(input: {
     if (!providerConfigured(config.provider)) return;
     const timeoutMs = Math.min(config.timeoutMs, (input.deadlineAt ?? Infinity) - Date.now());
     if (timeoutMs < MIN_REMAINING_MS) return;
-    const text = await generateSummary(config, summaryInput(previous, messages), timeoutMs, input.userId);
-    const summary = capSummary(text ?? "");
-    const lines = summary.split("\n");
-    if (!SECTIONS.every(section => lines.some(line => line.startsWith(section)))) {
+    // Every attempt that may have cost something counts toward the step's retry limit.
+    const countAttempt = () => prisma.conversation.update({
+      where: { id: conversationId }, data: { summaryFailedThrough: through, summaryFailures: failedHere + 1 },
+    });
+    let text: string | null;
+    try {
+      text = await generateSummary(config, summaryInput(previous, messages), timeoutMs, input.userId);
+    } catch (error) {
+      // A budget refusal paid nothing; provider and network failures are attempts.
+      if (!(error instanceof AiBudgetError)) await countAttempt().catch(() => undefined);
+      throw error;
+    }
+    const summary = fitSections(text ?? "");
+    if (!summary) {
       // Refused, cut by the output limit or off-template: a later turn tries again, a bounded number of times.
       logger.warn("chat_summary_incomplete", { conversationId, through, model: config.model });
-      await prisma.conversation.update({
-        where: { id: conversationId }, data: { summaryFailedThrough: through, summaryFailures: failedHere + 1 },
-      });
+      await countAttempt();
       return;
     }
     try {

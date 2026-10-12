@@ -302,6 +302,18 @@ describe("refreshChatSummary", () => {
     expect(stored().text).toBe(SUMMARY);
   });
 
+  it("keeps every section of a complete summary longer than the cap", async () => {
+    const lines = (word: string, count: number) => Array.from({ length: count }, (_, k) => `- ${word} ${k}: reducir a fuego lento`).join("\n");
+    const long = `Decidido:\n${lines("Paso", 40)}\nDescartado:\n${lines("Idea", 30)}\nPendiente:\n- Emplatado\nDatos del plato:\n- Horno a 180 °C, 25 min`;
+    fetcher.mockImplementation(async () => geminiReply(long));
+    await refreshChatSummary(input());
+    const text = stored().text;
+    expect(text.length).toBeLessThanOrEqual(SUMMARY_MAX_CHARS);
+    for (const section of ["Decidido:", "Descartado:", "Pendiente:", "Datos del plato:"]) expect(text.split("\n")).toContain(section);
+    expect(text).toContain("- Horno a 180 °C, 25 min");
+    expect(text).toContain("- Emplatado");
+  });
+
   it("never stores a summary that lacks one of the four sections", async () => {
     fetcher.mockImplementation(async () => geminiReply(SUMMARY.replace("Pendiente:", "Pendientes")));
     await refreshChatSummary(input());
@@ -328,6 +340,18 @@ describe("refreshChatSummary", () => {
     expect(fetcher).not.toHaveBeenCalled();
     expect(db.conversationSummary.create).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith("chat_summary_failed", expect.objectContaining({ conversationId: "conv-1", through: 20, code: "ai_budget_exhausted" }));
+    // Nothing was paid: a budget refusal is not an attempt.
+    expect(db.conversation.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["an HTTP error", () => fetcher.mockImplementation(async () => new Response("overloaded", { status: 503 }))],
+    ["a network failure", () => fetcher.mockRejectedValue(new TypeError("network down"))],
+  ])("counts %s from the provider as an attempt for its step", async (_label, fail) => {
+    vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    fail();
+    await refreshChatSummary(input());
+    expect(db.conversation.update).toHaveBeenCalledWith({ where: { id: "conv-1" }, data: { summaryFailedThrough: 20, summaryFailures: 1 } });
   });
 
   it("releases the hold when the provider answers with an HTTP error, and never throws", async () => {
