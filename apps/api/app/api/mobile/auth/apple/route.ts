@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { LanguageSchema } from "@atelier/shared";
 import {
   AppleAuthError,
   exchangeAppleAuthorizationCode,
@@ -17,6 +18,7 @@ type AppleLoginBody = {
   authorizationCode?: unknown;
   nonce?: unknown;
   name?: unknown;
+  languagePref?: unknown;
 };
 
 function textField(value: unknown, maxLength: number): string {
@@ -38,6 +40,8 @@ export async function POST(req: NextRequest) {
   // Apple only exposes the name on the first authorization. It is display data,
   // never an authorization decision, so it is safe to accept after sanitizing.
   const name = textField(body?.name, 200) || null;
+  // Optional device-language hint; an invalid value is ignored, never rejected.
+  const languagePref = LanguageSchema.safeParse(body?.languagePref).data;
 
   if (!identityToken || !authorizationCode || !nonce) return appleFailure(400);
 
@@ -63,6 +67,7 @@ export async function POST(req: NextRequest) {
       tokens: {
         refreshToken: encryptedRefreshToken,
       },
+      languagePref,
     });
 
     logger.info("mobile_apple_success", {

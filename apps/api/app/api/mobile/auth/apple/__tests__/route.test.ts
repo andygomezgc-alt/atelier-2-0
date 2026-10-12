@@ -193,3 +193,51 @@ describe("POST /api/mobile/auth/apple", () => {
     );
   });
 });
+
+describe("POST /api/mobile/auth/apple — device language hint", () => {
+  const credentials = {
+    identityToken: "native-id-token",
+    authorizationCode: "one-time-code",
+    nonce: "one-time-nonce",
+  };
+
+  function resolvedLanguage() {
+    const input = mocks.resolveOAuthIdentity.mock.calls[0]![0] as { languagePref?: unknown };
+    return input.languagePref;
+  }
+
+  it.each(["it", "es", "en"] as const)(
+    "forwards a supported language (%s) to identity resolution",
+    async (languagePref) => {
+      const response = await POST(request({ ...credentials, languagePref }));
+
+      expect(response.status).toBe(200);
+      expect(mocks.resolveOAuthIdentity).toHaveBeenCalledWith({
+        provider: "apple",
+        providerAccountId: "apple-sub-123",
+        email: "chef@example.com",
+        name: null,
+        tokens: { refreshToken: "encrypted-refresh-token" },
+        languagePref,
+      });
+    },
+  );
+
+  it("forwards no language when a legacy client omits the hint", async () => {
+    const response = await POST(request(credentials));
+
+    expect(response.status).toBe(200);
+    expect(resolvedLanguage()).toBeUndefined();
+  });
+
+  it.each([["fr"], [123], [""], [null], [{ lang: "it" }]])(
+    "ignores an invalid language hint (%j) and still signs in",
+    async (languagePref) => {
+      const response = await POST(request({ ...credentials, languagePref }));
+
+      expect(response.status).toBe(200);
+      expect(mocks.resolveOAuthIdentity).toHaveBeenCalledTimes(1);
+      expect(resolvedLanguage()).toBeUndefined();
+    },
+  );
+});

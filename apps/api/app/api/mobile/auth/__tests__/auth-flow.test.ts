@@ -210,3 +210,94 @@ describe("POST /api/mobile/auth/verify", () => {
     expect(payload.tv).toBe(7);
   });
 });
+
+describe("POST /api/mobile/auth/verify — device language for new accounts", () => {
+  const email = "lang@example.com";
+  const plainToken = "language-token-1234";
+
+  type UpsertArgs = {
+    update: { languagePref?: unknown };
+    create: { languagePref?: unknown };
+  };
+
+  function storedUser(languagePref: string) {
+    return {
+      id: "user-7",
+      email,
+      name: "lang",
+      role: "viewer",
+      restaurantId: null,
+      languagePref,
+      defaultModel: "sonnet",
+      tokenVersion: 0,
+      restaurant: null,
+    };
+  }
+
+  function upsertArgs() {
+    return user.upsert.mock.calls[0]![0] as UpsertArgs;
+  }
+
+  async function verify(body: Record<string, unknown>) {
+    const res = await verifyRoute.POST(
+      makePost("https://test.local/api/mobile/auth/verify", { email, token: plainToken, ...body }),
+    );
+    const json = (await res.json()) as { user?: { languagePref: string } };
+    return { status: res.status, languagePref: json.user?.languagePref };
+  }
+
+  beforeEach(() => {
+    verificationToken.findUnique.mockResolvedValue({
+      identifier: email,
+      token: sha256(plainToken),
+      expires: new Date(Date.now() + 5 * 60 * 1000),
+    });
+    verificationToken.delete.mockResolvedValue({});
+    // Simulates the create branch: an omitted languagePref falls back to the schema default.
+    user.upsert.mockImplementation(async ({ create }: UpsertArgs) =>
+      storedUser(typeof create.languagePref === "string" ? create.languagePref : "es"),
+    );
+  });
+
+  it.each(["it", "es", "en"] as const)(
+    "creates a new account in the requested language (%s) and returns it",
+    async (languagePref) => {
+      const result = await verify({ languagePref });
+
+      expect(result.status).toBe(200);
+      expect(upsertArgs().create.languagePref).toBe(languagePref);
+      expect(result.languagePref).toBe(languagePref);
+    },
+  );
+
+  it("never changes the language of an existing account", async () => {
+    user.upsert.mockResolvedValue(storedUser("it"));
+
+    const result = await verify({ languagePref: "en" });
+
+    expect(result.status).toBe(200);
+    expect(upsertArgs().update.languagePref).toBeUndefined();
+    expect(JSON.stringify(upsertArgs().update)).not.toContain("languagePref");
+    expect(result.languagePref).toBe("it");
+  });
+
+  it("keeps the schema default when a legacy client sends no language", async () => {
+    const result = await verify({});
+
+    expect(result.status).toBe(200);
+    expect(upsertArgs().create.languagePref).toBeUndefined();
+    expect(result.languagePref).toBe("es");
+  });
+
+  it.each([["fr"], [123], [""], [null], [{ lang: "it" }]])(
+    "ignores an invalid language hint (%j) and still signs in",
+    async (languagePref) => {
+      const result = await verify({ languagePref });
+
+      expect(result.status).toBe(200);
+      expect(upsertArgs().create.languagePref).toBeUndefined();
+      expect(upsertArgs().update.languagePref).toBeUndefined();
+      expect(result.languagePref).toBe("es");
+    },
+  );
+});

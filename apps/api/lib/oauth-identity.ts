@@ -25,6 +25,8 @@ type ResolveOAuthIdentityInput = {
   name: string | null;
   photoUrl?: string | null;
   tokens?: OAuthTokens;
+  // Device language hint; only applied when this sign-in creates the user.
+  languagePref?: "it" | "es" | "en";
 };
 
 function accountCreateData(input: ResolveOAuthIdentityInput) {
@@ -107,6 +109,7 @@ async function resolveInTransaction(
       email: input.email,
       name: input.name?.trim() || fallbackName,
       photoUrl: input.photoUrl ?? null,
+      ...(input.languagePref ? { languagePref: input.languagePref } : {}),
       accounts: { create: accountCreateData(input) },
     },
     select: mobileUserSelect,

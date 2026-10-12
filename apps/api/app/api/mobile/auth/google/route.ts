@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { LanguageSchema } from "@atelier/shared";
 import { verifyGoogleIdToken } from "@/lib/google-auth";
 import { logger } from "@/lib/logger";
 import { createMobileSession } from "@/lib/mobile-session";
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const idToken = (body?.idToken ?? "").trim();
+  // Optional device-language hint; an invalid value is ignored, never rejected.
+  const languagePref = LanguageSchema.safeParse(body?.languagePref).data;
 
   if (!idToken) {
     return NextResponse.json(
@@ -39,6 +42,7 @@ export async function POST(req: NextRequest) {
     email: profile.email,
     name: profile.name,
     photoUrl: profile.picture,
+    languagePref,
   });
 
   logger.info("mobile_google_success", { userId: user.id, email: user.email });
