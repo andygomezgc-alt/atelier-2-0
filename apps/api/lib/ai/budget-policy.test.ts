@@ -67,6 +67,11 @@ describe("cost accounting", () => {
     expect(usageMicros(modelRate("claude-opus-5-5", now), { inputTokens: 6000, outputTokens: 6000, cachedTokens: 2000, cacheWriteTokens: 1000, reasoningTokens: 4000 })).toBe(171750);
     expect(reservationMicros("claude-opus-5-5", 10000, 16384, now).micros).toBe(472100);
   });
+  it("prices Haiku 5.5 chat summaries without treating them as free", () => {
+    expect(() => modelRate("claude-haiku-5-5", now)).not.toThrow();
+    expect(modelRate("claude-haiku-5-5", now)).toEqual({ input: .1, output: .5, cached: .1, cacheWrite: .125 });
+    expect(usageMicros(modelRate("claude-haiku-5-5", now), { inputTokens: 10_000, outputTokens: 1_000, cachedTokens: 0, reasoningTokens: 0 })).toBe(1875);
+  });
   it("does not count reasoning twice", () => {
     expect(usageMicros(modelRate("gemini-3.8-flash", now), { inputTokens: 4000, outputTokens: 1500, cachedTokens: 0, reasoningTokens: 1000 })).toBe(10782);
   });

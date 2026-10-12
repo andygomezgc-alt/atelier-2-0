@@ -9,7 +9,7 @@ import { logger } from "@/lib/logger";
 import { inspect } from "node:util";
 
 // Mocks elevados (el factory de vi.mock se iza sobre los consts).
-const { db, guard, authContext, quota, budget, anthro, streamMock, memoryChat, buildSystem, historyWindow, afterMock, PrismaClientKnownRequestError } = vi.hoisted(() => {
+const { db, guard, authContext, quota, budget, anthro, streamMock, memoryChat, buildSystem, historyWindow, afterMock, refreshSummary, PrismaClientKnownRequestError } = vi.hoisted(() => {
   const db = {
     conversation: { findUnique: vi.fn(), updateMany: vi.fn() },
     message: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
@@ -18,6 +18,7 @@ const { db, guard, authContext, quota, budget, anthro, streamMock, memoryChat, b
     recipe: { findMany: vi.fn() },
     chefNote: { findMany: vi.fn() },
     user: { findUnique: vi.fn() },
+    conversationSummary: { findFirst: vi.fn() },
   };
   const authContext = {
     userId: "u1", restaurantId: "r1" as string | null,
@@ -65,7 +66,7 @@ const { db, guard, authContext, quota, budget, anthro, streamMock, memoryChat, b
     streamMock,
     memoryChat: vi.fn(),
     buildSystem: vi.fn(() => [{ type: "text", text: "sys" }]),
-    historyWindow: vi.fn(), afterMock: vi.fn(),
+    historyWindow: vi.fn(), afterMock: vi.fn(), refreshSummary: vi.fn(),
     PrismaClientKnownRequestError,
   };
 });
@@ -104,6 +105,11 @@ vi.mock("@/lib/ai/chat", async () => {
   const actual = await vi.importActual<typeof import("@/lib/ai/chat")>("@/lib/ai/chat");
   return { ...actual, streamChat: streamMock, stableHistoryWindow: historyWindow };
 });
+// The summary read stays real (against the db mock); only the background writer is observed.
+vi.mock("@/lib/chat-summary", async () => ({
+  ...(await vi.importActual<typeof import("@/lib/chat-summary")>("@/lib/chat-summary")),
+  refreshChatSummary: refreshSummary,
+}));
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 
@@ -170,6 +176,8 @@ beforeEach(async () => {
   db.recipe.findMany.mockReset().mockResolvedValue([]);
   db.chefNote.findMany.mockReset().mockResolvedValue([]);
   db.user.findUnique.mockReset().mockResolvedValue({ name: "Andy", languagePref: "es" });
+  db.conversationSummary.findFirst.mockReset().mockResolvedValue(null);
+  refreshSummary.mockReset().mockResolvedValue(undefined);
   memoryChat.mockReset().mockResolvedValue(null);
   buildSystem.mockReset().mockReturnValue([{ type: "text", text: "sys" }]);
   // restoreAllMocks clears implementations installed after vi.fn() creation.
@@ -1305,5 +1313,84 @@ describe("A7 structured ai_turn events", () => {
       latencyMs: 250, partial_chars: answer.length + 1 });
     expect(logs.warn).toHaveBeenCalledWith("ai_turn", expect.any(Object));
     expect(db.message.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST chat — resumen de los mensajes que salieron de la ventana", () => {
+  // Mensaje `i` de la conversación: pares del chef, impares del asistente.
+  const stored = (i: number) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `m${i}` });
+  // `total` counts the new user message `m${total - 1}`, which is not saved yet.
+  const savedChat = (total: number) => {
+    db.message.findMany.mockResolvedValue(Array.from({ length: Math.min(20, total - 1) }, (_, k) => stored(total - 2 - k)));
+    db.message.count.mockResolvedValue(total - 1);
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+  };
+  const systemOptions = () => (buildSystem.mock.calls[0] as unknown[])[4] as Record<string, unknown>;
+
+  it.each([
+    { total: 25, start: 10 },
+    { total: 31, start: 20 },
+  ])("injects the newest summary ending at the window start ($start of $total)", async ({ total, start }) => {
+    savedChat(total);
+    db.conversationSummary.findFirst.mockResolvedValue({ text: "Decidido: base de tomate" });
+    expect(await (await post({ content: `m${total - 1}` })).text()).toContain('"type":"done"');
+    expect((streamMock.mock.calls[0]![0].messages as { content: string }[])[0]!.content).toBe(`m${start}`);
+    expect(db.conversationSummary.findFirst).toHaveBeenCalledWith({
+      where: { conversationId: "conv-1", through: { lte: start } }, orderBy: { through: "desc" }, select: { text: true },
+    });
+    expect(systemOptions()).toEqual({ speakerName: "Andy", summary: "Decidido: base de tomate" });
+    expect(db.conversationSummary.findFirst.mock.invocationCallOrder[0]).toBeLessThan(buildSystem.mock.invocationCallOrder[0]!);
+  });
+
+  it("keeps a short chat's system options unchanged and reads no summary", async () => {
+    savedChat(7);
+    expect(await (await post({ content: "m6" })).text()).toContain('"type":"done"');
+    expect(db.conversationSummary.findFirst).not.toHaveBeenCalled();
+    expect(Object.keys(systemOptions())).toEqual(["speakerName"]);
+  });
+
+  it("answers without the summary when it cannot be read", async () => {
+    vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    savedChat(25);
+    db.conversationSummary.findFirst.mockRejectedValue(new Error("database down"));
+    expect(await (await post({ content: "m24" })).text()).toContain('"type":"done"');
+    expect(db.conversationSummary.findFirst).toHaveBeenCalledTimes(1);
+    expect(Object.keys(systemOptions())).toEqual(["speakerName"]);
+  });
+
+  it.each(["daily", "creative"] as const)("%s refreshes the summary after the saved answer, without holding the response", async model => {
+    savedChat(20);
+    let release!: () => void;
+    refreshSummary.mockReturnValue(new Promise<void>(resolve => { release = resolve; }));
+    // The response ends while the background summary is still pending.
+    expect(await (await post({ content: "m19", model })).text()).toContain('"type":"done"');
+    await vi.waitFor(() => expect(refreshSummary).toHaveBeenCalledTimes(1));
+    expect(refreshSummary).toHaveBeenCalledWith({
+      conversationId: "conv-1", model, userId: "u1", persistedCount: 21, deadlineAt: expect.any(Number),
+    });
+    expect(assistantCreate()).toBeDefined();
+    expect(db.message.create.mock.invocationCallOrder.at(-1)).toBeLessThan(refreshSummary.mock.invocationCallOrder[0]!);
+    release();
+    await afterMock.mock.calls[0]![0];
+  });
+
+  it("does not refresh after a failed turn", async () => {
+    vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    savedChat(20);
+    streamMock.mockReturnValue(providerStream(["Lis"], { in: 10, out: 20 }, true));
+    expect(await (await post({ content: "m19" })).text()).toContain('"type":"error"');
+    await afterMock.mock.calls[0]![0];
+    expect(refreshSummary).not.toHaveBeenCalled();
+  });
+
+  it("never reads or writes summaries in preview", async () => {
+    const history = Array.from({ length: 30 }, (_, k) => stored(k));
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    expect(await (await post({ content: "m30", history }, "preview")).text()).toContain('"type":"done"');
+    await afterMock.mock.calls[0]![0];
+    expect(db.conversationSummary.findFirst).not.toHaveBeenCalled();
+    expect(refreshSummary).not.toHaveBeenCalled();
+    expect(Object.keys(systemOptions())).toEqual(["speakerName"]);
   });
 });

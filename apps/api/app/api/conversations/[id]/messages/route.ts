@@ -6,6 +6,7 @@ import { prepareChatTurn, runChatTurn } from "@/lib/chat-turn-service";
 import { CHAT_HEARTBEAT_MS } from "@/lib/chat-turn";
 import { canAccessConversation } from "@/lib/conversation-access";
 import { ChatError } from "@/lib/ai/chat";
+import { refreshChatSummary } from "@/lib/chat-summary";
 import { logger } from "@/lib/logger";
 
 export const maxDuration = 300;
@@ -105,12 +106,22 @@ export async function POST(
   };
   const heartbeat = setInterval(() => mirror({ type: "heartbeat", ts: Date.now() }), CHAT_HEARTBEAT_MS);
   const completion = (async () => {
+    let answered = false;
     try {
-      for await (const event of runChatTurn(prepared, generation.signal)) mirror(event);
+      for await (const event of runChatTurn(prepared, generation.signal)) {
+        if (event.type === "done") answered = true;
+        mirror(event);
+      }
     } finally {
       clearInterval(heartbeat); clearTimeout(deadline);
       req.signal.removeEventListener("abort", disconnect);
       try { controller?.close(); } catch { /* The response was already cancelled. */ }
+    }
+    // The answer is saved and the response closed: refresh the rolling summary
+    // within this same background task. It never throws.
+    if (answered && prepared.messageCount !== undefined) {
+      await refreshChatSummary({ conversationId, model: prepared.model, userId: prepared.userId,
+        persistedCount: prepared.messageCount + 1, deadlineAt: startedAt + (maxDuration - 5) * 1_000 });
     }
   })();
   try { after(completion); }
