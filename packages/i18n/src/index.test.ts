@@ -169,3 +169,66 @@ describe("A13b chat recovering copy", () => {
     expect((itDict as Record<string, string>)[key], key).not.toBe(spanish);
   });
 });
+
+// Tuteo — the Spanish copy addresses the user as tú, never vos or usted.
+// chat_greet keeps its Italian greeting until that greeting is decided.
+describe("Spanish copy addresses the user as tú", () => {
+  const spanish: Record<string, string> = {
+    casa_photo_unsupported: "Elige una imagen JPG, PNG o WebP.",
+    casa_photo_upload_failed: "No pude guardar la foto. Prueba con otra imagen.",
+    leave_case_a_body: "Vas a perder acceso. Puedes volver con un código nuevo.",
+    leave_case_b_body: "Eres el único administrador. Pasa el rol de administrador a otro miembro antes de salir.",
+    leave_case_c_body: "Eres el último miembro. Salir borra permanentemente el restaurante y todo su contenido: recetas, menús, productos, ideas, conversaciones. Esta acción no se puede deshacer.",
+    leave_case_c_typing_hint: "Para confirmar, escribe el nombre exacto del restaurante ({name}):",
+    delete_account_case_b_body: "Eres el único admin de {name}. Pasa el rol de admin a otro miembro antes de eliminar tu cuenta.",
+    delete_account_case_c_body: "Eres el último miembro: se eliminará TODO el restaurante {name} — recetas, menús, productos y conversaciones — de forma permanente.",
+    delete_account_typing_hint: "Para confirmar, tipea tu email exacto ({email}):",
+    recipe_bank_subtitle: "Elige una receta aprobada para añadir como plato.",
+    recipe_bank_empty_sub: "Aprueba una receta para poder usarla en un menú.",
+    empty_menu_hint: "Tu carta está vacía. Empieza agregando una sección o un plato.",
+    chat_placeholder_voice: "Escribe o dicta…",
+    extract_fail_body: "Puedes guardarla como borrador y editarla a mano.",
+    profile_go_pro: "Hazte Pro",
+    error_recipe_extraction_failed: "No pude leer bien la receta. Prueba con otro texto o archivo.",
+    error_file_invalid: "Ese archivo no sirve: sube un PDF o DOCX válido (máx 10 MB).",
+    error_forbidden: "No tienes permiso para hacer esto.",
+    error_plan_inactive: "Tu plan está inactivo. Actívalo para seguir creando.",
+    recetas_cargar_error: "No se pudo leer el archivo. Prueba con otro.",
+    cargar_foto_hint: "También puedes cargar una foto de la receta y la organizo.",
+    toast_recipe_uploaded: "Receta procesada — revisa y guarda",
+    export_preview_subtitle: "Confirma el estilo antes de exportar",
+    export_preview_hint: "Modifica nombres, descripciones o precios desde la carta antes de descargar.",
+    empty_productos_sub: "Carga tu primer producto desde aquí.",
+    recetas_aviso_no_pezzatura_unit: "Este producto se mide por peso, no por unidad. Cambia la unidad a g/kg o cambia el producto.",
+    confirm_archive_producto_body: "El producto deja de estar disponible para recetas nuevas. Puedes reactivarlo después.",
+    confirm_delete_producto_in_use_body: "Este producto aparece en {count} recetas. ¿Quieres eliminarlo (a la papelera) igual?",
+    yield_pending_high_warning: "Producto crítico con merma sugerida. Registra una prueba para tener costo real preciso.",
+    productos_criticos_pendientes_body: "{count} productos críticos con merma sugerida. Prueba su rendimiento real.",
+    section_explainer_inicio: "Tu bloc de cocina. Anota ideas sueltas y trabájalas con el Asistente cuando estés listo.",
+    section_explainer_asistente: "Convierte ideas en recetas: pide técnicas, ajusta un plato hasta dejarlo afilado.",
+    section_explainer_recetas: "Tu libro de recetas con costo, merma y rendimiento. Importa PDFs o suma nuevas a mano.",
+    section_explainer_menus: "Combina recetas en cartas (degustación, fija, eventos) listas para imprimir.",
+    chat_save_needs_restaurant: "Para guardar, primero crea tu restaurante o proyecto.",
+    lazy_modal_sub: "Restaurante, proyecto, equipo: como lo llames. Después puedes cambiarlo.",
+    error_rate_limited: "Demasiadas solicitudes. Prueba de nuevo en unos minutos.",
+    error_email_send_failed: "No se pudo enviar el correo. Prueba de nuevo.",
+    error_token_invalid: "Código no válido. Pide un enlace nuevo.",
+    error_token_expired: "El código caducó. Pide un enlace nuevo.",
+    error_invite_rate_limited: "Demasiados intentos. Espera unos minutos antes de volver a intentarlo.",
+    error_invite_code_invalid: "Código no válido o expirado. Pídele al admin que genere uno nuevo.",
+    error_last_admin: "Eres el único admin. Pasa el rol de admin a otro miembro primero.",
+    error_case_changed: "La situación cambió mientras confirmabas. Revisa de nuevo antes de seguir.",
+    error_stripe_cancel_failed: "No se pudo cancelar la suscripción. No se borró nada — prueba de nuevo.",
+    casa_lobby_sub: "Empieza creando tu restaurante o proyecto, o pega un código para unirte al equipo de alguien.",
+  };
+
+  for (const [key, expected] of Object.entries(spanish)) {
+    test(`es.${key} addresses the user as tú`, () => {
+      expect((es as Record<string, string>)[key], key).toBe(expected);
+    });
+  }
+
+  test("es.chat_greet keeps its Italian greeting", () => {
+    expect(es.chat_greet).toBe("Buongiorno, Chef.");
+  });
+});

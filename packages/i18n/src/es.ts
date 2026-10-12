@@ -151,20 +151,20 @@ export const es = {
   casa_photo_edit: "Cambiar foto del restaurante",
   casa_photo_uploading: "Guardando foto del restaurante",
   casa_photo_view: "Foto de {name}",
-  casa_photo_unsupported: "Elegí una imagen JPG, PNG o WebP.",
-  casa_photo_upload_failed: "No pude guardar la foto. Probá con otra imagen.",
+  casa_photo_unsupported: "Elige una imagen JPG, PNG o WebP.",
+  casa_photo_upload_failed: "No pude guardar la foto. Prueba con otra imagen.",
   casa_edit_name_placeholder: "Nombre del restaurante",
   staff_remove_title: "¿Eliminar a {name}?",
   staff_remove_body: "Perderá acceso al restaurante. Puedes volver a invitarle con el código.",
   casa_leave_btn: "Salir del restaurante",
   leave_case_a_title: "¿Salir del restaurante?",
-  leave_case_a_body: "Vas a perder acceso. Podés volver con un código nuevo.",
+  leave_case_a_body: "Vas a perder acceso. Puedes volver con un código nuevo.",
   leave_case_a_confirm: "Salir",
   leave_case_b_title: "Acción bloqueada",
-  leave_case_b_body: "Sos el único administrador. Pasá el rol de administrador a otro miembro antes de salir.",
+  leave_case_b_body: "Eres el único administrador. Pasa el rol de administrador a otro miembro antes de salir.",
   leave_case_c_title: "Borrar el restaurante",
-  leave_case_c_body: "Sos el último miembro. Salir borra permanentemente el restaurante y todo su contenido: recetas, menús, productos, ideas, conversaciones. Esta acción no se puede deshacer.",
-  leave_case_c_typing_hint: "Para confirmar, escribí el nombre exacto del restaurante ({name}):",
+  leave_case_c_body: "Eres el último miembro. Salir borra permanentemente el restaurante y todo su contenido: recetas, menús, productos, ideas, conversaciones. Esta acción no se puede deshacer.",
+  leave_case_c_typing_hint: "Para confirmar, escribe el nombre exacto del restaurante ({name}):",
   leave_case_c_confirm: "Eliminar",
   // ─── Perfil · Eliminar cuenta (DELETE /api/me) ───
   profile_delete_account: "Eliminar cuenta",
@@ -177,13 +177,13 @@ export const es = {
   delete_account_authored_conversations: "{count} conversaciones",
   delete_account_authored_yield_tests: "{count} pruebas de rendimiento",
   delete_account_case_b_body:
-    "Sos el único admin de {name}. Pasá el rol de admin a otro miembro antes de eliminar tu cuenta.",
+    "Eres el único admin de {name}. Pasa el rol de admin a otro miembro antes de eliminar tu cuenta.",
   delete_account_case_c_title: "Borrar el restaurante",
   delete_account_case_c_body:
-    "Sos el último miembro: se eliminará TODO el restaurante {name} — recetas, menús, productos y conversaciones — de forma permanente.",
+    "Eres el último miembro: se eliminará TODO el restaurante {name} — recetas, menús, productos y conversaciones — de forma permanente.",
   delete_account_none_body:
     "Tu cuenta se eliminará de forma permanente. Esta acción no se puede deshacer.",
-  delete_account_typing_hint: "Para confirmar, tipeá tu email exacto ({email}):",
+  delete_account_typing_hint: "Para confirmar, tipea tu email exacto ({email}):",
   delete_account_email_placeholder: "tu@email.com",
   delete_account_confirm: "Eliminar cuenta",
   confirm_delete_recipe_title: "¿Eliminar receta?",
@@ -215,9 +215,9 @@ export const es = {
   confirm_delete_dish_body:
     "«{name}» se quitará del menú. Esta acción no se puede deshacer.",
   recipe_bank_title: "Desde el banco",
-  recipe_bank_subtitle: "Elegí una receta aprobada para añadir como plato.",
+  recipe_bank_subtitle: "Elige una receta aprobada para añadir como plato.",
   recipe_bank_empty_title: "Sin recetas aprobadas",
-  recipe_bank_empty_sub: "Aprobá una receta para poder usarla en un menú.",
+  recipe_bank_empty_sub: "Aprueba una receta para poder usarla en un menú.",
   recipe_bank_already: "Ya en la carta",
   recipe_bank_cta: "Añadir plato",
   view_staff_label: "Vista staff",
@@ -225,7 +225,7 @@ export const es = {
   view_client_eyebrow: "Vista cliente",
   dish_custom_name_clear: "Usar título de la receta",
   section_empty_hint: "Sin platos aún",
-  empty_menu_hint: "Tu carta está vacía. Empezá agregando una sección o un plato.",
+  empty_menu_hint: "Tu carta está vacía. Empieza agregando una sección o un plato.",
   add_to_menu_section_step: "¿En qué sección?",
   recetas_filter_all: "Todas",
   recetas_filter_priority: "Prioritarias",
@@ -257,7 +257,7 @@ export const es = {
   btn_export_pdf: "Exportar carta PDF",
   chat_idea_anclada: "Idea anclada",
   chat_placeholder: "Pregúntale al asistente…",
-  chat_placeholder_voice: "Escribí o dictá…",
+  chat_placeholder_voice: "Escribe o dicta…",
   chat_mic_label: "Dictar por voz",
   chat_mic_stop: "Detener dictado",
   chat_send: "Enviar",
@@ -319,7 +319,7 @@ export const es = {
   chat_save_recipe: "Guardar como receta",
   chat_structuring: "Estructurando receta…",
   extract_fail_title: "No pudimos estructurar la receta",
-  extract_fail_body: "Podés guardarla como borrador y editarla a mano.",
+  extract_fail_body: "Puedes guardarla como borrador y editarla a mano.",
   extract_fail_draft: "Guardar como borrador",
   extract_fail_cancel: "Cancelar",
   recipe_untitled: "Receta sin título",
@@ -344,7 +344,7 @@ export const es = {
   plan_status_trial: "Prueba",
   plan_status_past_due: "Pago pendiente",
   plan_status_canceled: "Cancelado",
-  profile_go_pro: "Hacete Pro",
+  profile_go_pro: "Hazte Pro",
   profile_leave_restaurant: "Salir del restaurante",
   profile_support: "Soporte",
   profile_privacy: "Privacidad",
@@ -385,13 +385,13 @@ export const es = {
   error_ai_daily_limit:
     "Llegaste al límite de ayudas de IA por hoy. Vuelve mañana, o usa tu propia clave en Ajustes.",
   error_recipe_extraction_failed:
-    "No pude leer bien la receta. Probá con otro texto o archivo.",
+    "No pude leer bien la receta. Prueba con otro texto o archivo.",
   error_file_invalid:
-    "Ese archivo no sirve: subí un PDF o DOCX válido (máx 10 MB).",
+    "Ese archivo no sirve: sube un PDF o DOCX válido (máx 10 MB).",
   error_gdoc_access_denied:
     'No puedo abrir el documento. En Google Docs: Compartir → "Cualquiera con el enlace".',
-  error_forbidden: "No tenés permiso para hacer esto.",
-  error_plan_inactive: "Tu plan está inactivo. Activalo para seguir creando.",
+  error_forbidden: "No tienes permiso para hacer esto.",
+  error_plan_inactive: "Tu plan está inactivo. Actívalo para seguir creando.",
   error_chef_notes_limit: "Ya hay 10 notas. Borra alguna para añadir otra.",
   onboard_choose_title: "¿Cómo quieres empezar?",
   onboard_create_title: "Crear mi restaurante",
@@ -456,17 +456,17 @@ export const es = {
   recetas_cargar_processing: "Leyendo y estructurando…",
   recetas_cargar_hint: "Hasta 10 MB. Acepta PDF y .docx — también desde Google Drive.",
   recetas_cargar_review: "Revisa y guarda",
-  recetas_cargar_error: "No se pudo leer el archivo. Probá con otro.",
+  recetas_cargar_error: "No se pudo leer el archivo. Prueba con otro.",
   recetas_cargar_gdoc_hint:
     "¿La receta está en Google Docs? Pega el enlace aquí. El doc debe estar compartido como \"cualquier persona con el enlace\".",
   recetas_cargar_gdoc_placeholder: "Pega el enlace de Google Docs",
   recetas_cargar_gdoc_btn: "Importar de Google Docs",
   cargar_foto: "Sacar foto",
   cargar_galeria: "Elegir de galería",
-  cargar_foto_hint: "También podés cargar una foto de la receta y la organizo.",
+  cargar_foto_hint: "También puedes cargar una foto de la receta y la organizo.",
   cargar_permiso_camara: "Necesito permiso de cámara para esto.",
   cargar_permiso_galeria: "Necesito permiso de galería para esto.",
-  toast_recipe_uploaded: "Receta procesada — revisá y guardá",
+  toast_recipe_uploaded: "Receta procesada — revisa y guarda",
   btn_modificar: "Modificar",
   btn_duplicar: "Duplicar",
   toast_recipe_duplicated: "Receta duplicada como borrador",
@@ -503,10 +503,10 @@ export const es = {
   chats_anteriores_empty_sub: "Tus conversaciones con el asistente quedarán acá.",
   chats_anteriores_no_idea: "Sin idea anclada",
   export_preview_title: "Previsualizar carta",
-  export_preview_subtitle: "Confirmá el estilo antes de exportar",
+  export_preview_subtitle: "Confirma el estilo antes de exportar",
   export_preview_dishes: "{count} platos",
   export_preview_download: "Descargar PDF",
-  export_preview_hint: "Modificá nombres, descripciones o precios desde la carta antes de descargar.",
+  export_preview_hint: "Modifica nombres, descripciones o precios desde la carta antes de descargar.",
 
   // ─── Banco de Productos (Fase 1) ───
   header_productos: "Banco de productos",
@@ -514,7 +514,7 @@ export const es = {
   casa_banco_entry_sub: "Anagrafica · costos · mermas",
 
   empty_productos_title: "Banco vacío",
-  empty_productos_sub: "Cargá tu primer producto desde aquí.",
+  empty_productos_sub: "Carga tu primer producto desde aquí.",
   empty_productos_filter: "Sin productos en este filtro.",
   producto_search_placeholder: "Buscar producto…",
   btn_crear_producto: "Crear producto",
@@ -533,7 +533,7 @@ export const es = {
   producto_form_pezzatura_error: "No se pudo interpretar la pezzatura.",
   producto_form_pezzatura_more_options: "Más opciones",
   recetas_aviso_no_pezzatura_unit:
-    "Este producto se mide por peso, no por unidad. Cambiá la unidad a g/kg o cambiá el producto.",
+    "Este producto se mide por peso, no por unidad. Cambia la unidad a g/kg o cambia el producto.",
   recetas_aviso_falta_pezzatura:
     "Falta cargar la pezzatura de este producto para calcular el costo. Cargarla →",
   cost_card_wide_range_n:
@@ -622,7 +622,7 @@ export const es = {
 
   confirm_archive_producto_title: "¿Archivar producto?",
   confirm_archive_producto_body:
-    "El producto deja de estar disponible para recetas nuevas. Podés reactivarlo después.",
+    "El producto deja de estar disponible para recetas nuevas. Puedes reactivarlo después.",
   confirm_archive_producto_body_with_count:
     "Está usado en {count} recetas. Esas recetas no se modifican, pero el producto deja de estar disponible para recetas nuevas. ¿Continuar?",
   confirm_unarchive_producto_title: "¿Desarchivar producto?",
@@ -631,7 +631,7 @@ export const es = {
   archived_banner_label: "Archivado",
   confirm_delete_producto_in_use_title: "Producto en uso",
   confirm_delete_producto_in_use_body:
-    "Este producto aparece en {count} recetas. ¿Querés eliminarlo (a la papelera) igual?",
+    "Este producto aparece en {count} recetas. ¿Quieres eliminarlo (a la papelera) igual?",
   producto_not_found: "Producto no encontrado.",
 
   toast_producto_saved: "Producto guardado",
@@ -654,7 +654,7 @@ export const es = {
   // ─── Yield tests + recalc criticidad (Fase 6) ───
   yield_form_title: "Prueba de rendimiento",
   yield_pending_high_warning:
-    "Producto crítico con merma sugerida. Registrá una prueba para tener costo real preciso.",
+    "Producto crítico con merma sugerida. Registra una prueba para tener costo real preciso.",
   yield_form_peso_bruto_label: "Peso bruto (g)",
   yield_form_peso_util_label: "Peso útil (g)",
   yield_form_notas_label: "Notas",
@@ -668,7 +668,7 @@ export const es = {
   // Widget "productos críticos pendientes" en lista
   productos_criticos_pendientes_title: "Críticos sin medir",
   productos_criticos_pendientes_body:
-    "{count} productos críticos con merma sugerida. Probá su rendimiento real.",
+    "{count} productos críticos con merma sugerida. Prueba su rendimiento real.",
 
   // Recalc criticidad (admin)
   btn_recalc_criticidad: "Recalcular criticidad",
@@ -713,20 +713,20 @@ export const es = {
 
   // ─── A-12 · App autoexplicada (subtítulos permanentes por sección) ───
   section_explainer_inicio:
-    "Tu bloc de cocina. Anotá ideas sueltas y trabajalas con el Asistente cuando estés listo.",
+    "Tu bloc de cocina. Anota ideas sueltas y trabájalas con el Asistente cuando estés listo.",
   section_explainer_asistente:
-    "Convertí ideas en recetas: pedí técnicas, ajustá un plato hasta dejarlo afilado.",
+    "Convierte ideas en recetas: pide técnicas, ajusta un plato hasta dejarlo afilado.",
   section_explainer_recetas:
-    "Tu libro de recetas con costo, merma y rendimiento. Importá PDFs o sumá nuevas a mano.",
+    "Tu libro de recetas con costo, merma y rendimiento. Importa PDFs o suma nuevas a mano.",
   section_explainer_menus:
-    "Combiná recetas en cartas (degustación, fija, eventos) listas para imprimir.",
+    "Combina recetas en cartas (degustación, fija, eventos) listas para imprimir.",
 
   // ─── A-12 · Lazy create del restaurante/proyecto ───
   chat_save_needs_restaurant:
-    "Para guardar, primero creá tu restaurante o proyecto.",
+    "Para guardar, primero crea tu restaurante o proyecto.",
   lazy_modal_title: "Dale un nombre a tu sitio",
   lazy_modal_sub:
-    "Restaurante, proyecto, equipo: como lo llames. Después podés cambiarlo.",
+    "Restaurante, proyecto, equipo: como lo llames. Después puedes cambiarlo.",
   lazy_modal_placeholder: "Ristorante Marche, Mi cocina…",
   lazy_modal_create: "Crear y continuar",
   lazy_modal_cancel: "Cancelar",
@@ -776,23 +776,23 @@ export const es = {
 
   // ─── A-11 · Errores de API localizados (lookup por code) ───
   error_email_invalid: "Email inválido.",
-  error_rate_limited: "Demasiadas solicitudes. Probá de nuevo en unos minutos.",
-  error_email_send_failed: "No se pudo enviar el correo. Probá de nuevo.",
+  error_rate_limited: "Demasiadas solicitudes. Prueba de nuevo en unos minutos.",
+  error_email_send_failed: "No se pudo enviar el correo. Prueba de nuevo.",
   error_token_missing: "Falta el código o el email.",
-  error_token_invalid: "Código no válido. Pedí un enlace nuevo.",
-  error_token_expired: "El código caducó. Pedí un enlace nuevo.",
+  error_token_invalid: "Código no válido. Pide un enlace nuevo.",
+  error_token_expired: "El código caducó. Pide un enlace nuevo.",
   error_invite_rate_limited:
-    "Demasiados intentos. Esperá unos minutos antes de volver a intentarlo.",
+    "Demasiados intentos. Espera unos minutos antes de volver a intentarlo.",
   error_invite_code_invalid:
-    "Código no válido o expirado. Pedile al admin que genere uno nuevo.",
+    "Código no válido o expirado. Pídele al admin que genere uno nuevo.",
   error_already_in_restaurant: "Ya estás en un restaurante.",
   error_confirm_mismatch: "El email no coincide con el de tu cuenta.",
   error_last_admin:
-    "Sos el único admin. Pasá el rol de admin a otro miembro primero.",
+    "Eres el único admin. Pasa el rol de admin a otro miembro primero.",
   error_case_changed:
-    "La situación cambió mientras confirmabas. Revisá de nuevo antes de seguir.",
+    "La situación cambió mientras confirmabas. Revisa de nuevo antes de seguir.",
   error_stripe_cancel_failed:
-    "No se pudo cancelar la suscripción. No se borró nada — probá de nuevo.",
+    "No se pudo cancelar la suscripción. No se borró nada — prueba de nuevo.",
 
   // ─── BP-01 · Labels del Alert de migración legacy ───
   migrate_dryrun_counts: "{recipes} recetas · {ingredients} ingredientes",
@@ -802,7 +802,7 @@ export const es = {
   // ─── A-12 · Casa como lobby cuando aún no hay restaurante ───
   casa_lobby_title: "Todavía no creaste tu sitio",
   casa_lobby_sub:
-    "Empezá creando tu restaurante o proyecto, o pegá un código para unirte al equipo de alguien.",
+    "Empieza creando tu restaurante o proyecto, o pega un código para unirte al equipo de alguien.",
   casa_lobby_btn_create: "Crear mi sitio",
   casa_lobby_btn_join: "Tengo un código",
   casa_invite_collapsed: "Invitar a alguien",
