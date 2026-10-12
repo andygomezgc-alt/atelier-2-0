@@ -369,3 +369,19 @@ describe("buildSystemBlocks — ciudad, nombre y mes", () => {
     expect(JSON.stringify({ blocks, thread }).match(/"cache_control"/g)).toHaveLength(4);
   });
 });
+
+describe("principios — contrato con «Guardar receta»", () => {
+  // apps/mobile/src/lib/recipe-conversation.ts solo recorta la conversación desde
+  // la última respuesta con un apartado de ingredientes y otro de método. Estos
+  // títulos están en su vocabulario; «Metodo» (sin tilde, el rótulo italiano de
+  // la app) no lo está, por eso en italiano se pide «Procedimento».
+  it.each([
+    ["español", "Ingredientes", "Método"],
+    ["italiano", "Ingredienti", "Procedimento"],
+    ["inglés", "Ingredients", "Method"],
+  ])("pide titular la receta en %s con «%s» y «%s»", (_language, ingredients, method) => {
+    const principles = buildSystemBlocks({ name: "Casa", identityLine: null }, [], null)[0]!.text;
+    expect(principles).toContain(ingredients);
+    expect(principles).toContain(method);
+  });
+});
