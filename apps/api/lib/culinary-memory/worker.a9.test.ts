@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CulinaryMemory } from "@atelier/db";
-import type { Evidence } from "./evidence";
-import type { MemoryGenerator } from "./provider";
-import { evidenceHash } from "./evidence";
+import type { Evidence, StoredFact } from "./evidence";
+import type { GeneratedTrend, MemoryGenerator } from "./provider";
+import { evidenceHash, memoryContext } from "./evidence";
 import { MEMORY_PROMPT_VERSION } from "./limits";
 
 const { db, loadEvidence } = vi.hoisted(() => ({
@@ -16,7 +16,7 @@ const { db, loadEvidence } = vi.hoisted(() => ({
 vi.mock("@atelier/db", () => ({ prisma: db, Prisma: { DbNull: "DB_NULL" } }));
 vi.mock("./service", () => ({ loadEvidence, loadIngredientStats: async () => [], correctionsOf: (value: unknown) => value ?? [] }));
 
-import { maintainMemoryRuns, memoryFailureFingerprint, processMemory } from "./worker";
+import { learnedInputHash, maintainMemoryRuns, memoryFailureFingerprint, processMemory } from "./worker";
 
 const DAY = 86_400_000;
 const WEEK = 7 * DAY;
@@ -128,7 +128,7 @@ describe("A9 publication races", () => {
     expect(evidenceReads.at(-1)).toBe(true);
     expect(state).toMatchObject({
       dirtyRevision: 4, checkedRevision: 4, preparedRevision: 4, preparedVersion: 2,
-      inputHash: evidenceHash(originalEvidence, null, [], []),
+      inputHash: learnedInputHash(evidenceHash(originalEvidence, null, [], [])),
       learned: [{ key: "techniques", text: "Roasted vegetables recur", sources: originalEvidence.map(e => ({ id: e.id, hash: e.hash, version: 2 })) }],
       lockToken: null, lockExpiresAt: null,
     });
@@ -225,7 +225,7 @@ describe("A9 slack-aware scheduling", () => {
 
   it.each(["checked revision", "unchanged hash", "insufficient sources"])("schedules the next local check with daily slack for %s", async reason => {
     if (reason === "checked revision") state.checkedRevision = state.dirtyRevision;
-    if (reason === "unchanged hash") state.inputHash = evidenceHash(sources, null, [], []);
+    if (reason === "unchanged hash") state.inputHash = learnedInputHash(evidenceHash(sources, null, [], []));
     if (reason === "insufficient sources") sources = sources.slice(0, 1);
     const generate = paidSuccess();
     expect(await processMemory("r1", generate, config, now)).toBe("unchanged");
@@ -309,5 +309,149 @@ describe("A9 deterministic input failures", () => {
     expect(await processMemory("r1", generate, config, now)).toBe("failed");
     expect(state.lastFailedInputHash).toBeNull();
     expect(state.failureCount ?? 0).toBe(0);
+  });
+});
+
+describe("incremental learning", () => {
+  const refsOf = (evidence: Evidence[]) => evidence.map(e => ({ id: e.id, hash: e.hash, version: 2 as const }));
+  const roasted: StoredFact = { key: "techniques", text: "Roasted vegetables recur.", sources: refsOf(originalEvidence) };
+  const tomato: StoredFact = { key: "ingredients", text: "Tomato appears often.", sources: refsOf(originalEvidence) };
+  // A memory already published and cached for the chat, as a previous successful run leaves it.
+  const publish = (learned: StoredFact[]) => {
+    state.learned = structuredClone(learned) as MemoryState["learned"];
+    state.preparedContext = memoryContext([], learned, [], []);
+    state.preparedRevision = state.dirtyRevision;
+    state.preparedVersion = state.version;
+    return state.preparedContext;
+  };
+  const answer = (...trends: GeneratedTrend[]) => vi.fn<MemoryGenerator>(async (_input, onUsage) => {
+    await onUsage({ inputTokens: 30, outputTokens: 10, reasoningTokens: 0 });
+    return { trends };
+  });
+
+  it("sends the extractor only the published trends that are still valid, uncorrected and not excluded", async () => {
+    publish([
+      roasted,
+      // Sources stored before hash v2 still count when they match the current recipes.
+      { ...tomato, sources: originalEvidence.map(e => ({ id: e.id, hash: e.legacyHashes.approved })) },
+      { key: "cuisine", text: "Corrected by the chef.", sources: refsOf(originalEvidence) },
+      { key: "flavours", text: "Excluded by the chef.", sources: refsOf(originalEvidence) },
+      { key: "textures", text: "No longer supported.", sources: [{ id: "recipe-1", hash: "edited", version: 2 }, { id: "deleted", hash: "gone", version: 2 }] },
+    ]);
+    state.corrections = [{ key: "cuisine", text: "Mediterranean" }];
+    state.excludedKeys = ["flavours"];
+    const generate = answer(
+      { key: "techniques", text: roasted.text, sources: [1, 2, 3] },
+      { key: "cuisine", text: "Corrected by the chef.", sources: [1, 2] },
+    );
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    expect(generate.mock.calls[0]![0].currentTrends).toEqual([
+      { key: "techniques", text: "Roasted vegetables recur." },
+      { key: "ingredients", text: "Tomato appears often." },
+    ]);
+    expect((state.learned as StoredFact[]).map(fact => fact.key)).toEqual(["techniques"]);
+  });
+
+  it("sends no current trends when nothing was published", async () => {
+    const generate = answer({ key: "techniques", text: roasted.text, sources: [1, 2] });
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    expect(generate.mock.calls[0]![0].currentTrends).toEqual([]);
+  });
+
+  it.each([
+    ["changes case and spacing", "  roasted   VEGETABLES\nrecur. "],
+    ["drops the final period", "Roasted vegetables recur"],
+    ["spaces the final period", "roasted vegetables recur ."],
+  ])("keeps the published text byte for byte when the model %s", async (_label, text) => {
+    const context = publish([roasted]);
+    const generate = answer({ key: "techniques", text, sources: [1, 2] });
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    // Sources are refreshed; the rendered memory block is not.
+    expect(state.learned).toEqual([{ ...roasted, sources: refsOf(originalEvidence.slice(0, 2)) }]);
+    expect(state.preparedContext).toBe(context);
+  });
+
+  it("keeps the published order when the model confirms the trends in another order", async () => {
+    const context = publish([roasted, tomato]);
+    const generate = answer(
+      { key: "ingredients", text: tomato.text, sources: [1, 2, 3] },
+      { key: "techniques", text: roasted.text, sources: [1, 2, 3] },
+    );
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    expect(state.learned).toEqual([roasted, tomato]);
+    expect(state.preparedContext).toBe(context);
+  });
+
+  it("publishes adjusted text, drops an omitted current trend and adds new trends after the confirmed ones", async () => {
+    publish([roasted, tomato]);
+    const generate = answer(
+      { key: "flavours", text: "Smoky notes recur.", sources: [2, 3] },
+      { key: "techniques", text: "Roasting and grilling recur.", sources: [1, 2, 3] },
+    );
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    expect((state.learned as StoredFact[]).map(({ key, text }) => ({ key, text }))).toEqual([
+      { key: "techniques", text: "Roasting and grilling recur." },
+      { key: "flavours", text: "Smoky notes recur." },
+    ]);
+  });
+
+  it("drops a confirmed trend without two valid sources and keeps the old memory when nothing survives", async () => {
+    const context = publish([roasted]);
+    const generate = answer({ key: "techniques", text: roasted.text, sources: [1, 99] });
+    expect(await processMemory("r1", generate, config, now)).toBe("failed");
+    expect(state.learned).toEqual([roasted]);
+    expect(state.preparedContext).toBe(context);
+  });
+
+  it.each([
+    ["an unversioned hash from before prompt versions", (hash: string) => hash],
+    ["an earlier prompt", (hash: string) => learnedInputHash(hash, "previous-prompt")],
+  ])("re-learns once after %s even when no recipe changed, then skips the same input", async (_label, stored) => {
+    const hash = evidenceHash(sources, null, [], []);
+    const context = publish([roasted]);
+    const lastWeek = new Date(+now - WEEK);
+    Object.assign(state, { inputHash: stored(hash), checkedRevision: state.dirtyRevision, lastAttemptAt: lastWeek, cycleStartedAt: lastWeek });
+    const generate = answer({ key: "techniques", text: "roasted vegetables recur", sources: [1, 2, 3] });
+    expect(await processMemory("r1", generate, config, now)).toBe("completed");
+    expect(state).toMatchObject({ inputHash: learnedInputHash(hash), dirtyRevision: 2, checkedRevision: 2, learned: [roasted] });
+    expect(state.preparedContext).toBe(context);
+
+    const reads = evidenceReads.length;
+    expect(await processMemory("r1", generate, config, new Date(+now + WEEK))).toBe("unchanged");
+    expect(generate).toHaveBeenCalledOnce();
+    expect(evidenceReads).toHaveLength(reads);
+  });
+
+  it.each(["insufficient sources", "every category excluded"])(
+    "stamps the current prompt on %s so a memory learned by an earlier prompt stops reloading evidence daily",
+    async reason => {
+      publish([roasted]);
+      const lastWeek = new Date(+now - WEEK);
+      Object.assign(state, {
+        inputHash: learnedInputHash(evidenceHash(sources, null, [], []), "previous-prompt"),
+        checkedRevision: state.dirtyRevision, lastAttemptAt: lastWeek, cycleStartedAt: lastWeek,
+      });
+      if (reason === "insufficient sources") sources = sources.slice(0, 1);
+      else state.excludedKeys = ["cuisine", "ingredients", "techniques", "flavours", "textures", "presentation", "complexity"];
+      const generate = paidSuccess();
+      expect(await processMemory("r1", generate, config, now)).toBe("unchanged");
+
+      const reads = evidenceReads.length;
+      expect(await processMemory("r1", generate, config, new Date(+now + DAY))).toBe("unchanged");
+      expect(evidenceReads).toHaveLength(reads);
+      expect(generate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps the weekly gate for a re-learn after a prompt change", async () => {
+    publish([roasted]);
+    const yesterday = new Date(+now - DAY);
+    Object.assign(state, {
+      inputHash: learnedInputHash(evidenceHash(sources, null, [], []), "previous-prompt"),
+      checkedRevision: state.dirtyRevision, lastAttemptAt: yesterday, cycleStartedAt: yesterday,
+    });
+    const generate = paidSuccess();
+    expect(await processMemory("r1", generate, config, now)).toBe("skipped");
+    expect(generate).not.toHaveBeenCalled();
   });
 });

@@ -8,5 +8,5 @@ export const MEMORY_SUPPRESSION_EXPIRY_MS = 28 * DAY;
 export const MEMORY_DISCARD_RETRY_LIMIT = 2;
 /** Maximum serialized provider payload, shared by evidence trimming and the provider guard. */
 export const MEMORY_PAYLOAD_CHAR_LIMIT = 20_000;
-/** Bump when the prompt or parser changes so earlier failures stop suppressing. */
-export const MEMORY_PROMPT_VERSION = "2026-10-07.1";
+/** Bump when the prompt or parser changes: earlier failures stop suppressing and every memory learns once more. */
+export const MEMORY_PROMPT_VERSION = "2026-10-12.1";

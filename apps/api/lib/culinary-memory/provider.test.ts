@@ -68,6 +68,19 @@ describe("memory provider", () => {
     expect(result.trends[0]!.sources).toEqual([1, 2, 99]);
     expect(result.rejected).toBe(0);
   });
+  it("envía las tendencias vigentes como datos y explica cómo revisarlas", async () => {
+    const fetcher = respond({ trends: [] });
+    vi.stubGlobal("fetch", fetcher);
+    const currentTrends = [{ key: "techniques" as const, text: "Predominan los asados." }];
+    await generateMemory({ ...input, currentTrends }, vi.fn());
+    const body = JSON.parse(fetcher.mock.calls[0]![1].body);
+    expect(JSON.parse(body.messages[1].content).currentTrends).toEqual(currentTrends);
+    const system: string = body.messages[0].content;
+    expect(system).toContain("currentTrends");
+    expect(system).toContain("el mismo texto exacto");
+    expect(system).toContain("omítela");
+    expect(system).toContain("al menos 2 recetas DIFERENTES");
+  });
   it.each([["una lista", []], ["sin trends", {}], ["trends que no es una lista", { trends: {} }], ["null", null]])(
     "una respuesta que es %s sigue siendo inválida", async (_label, content) => {
       vi.stubGlobal("fetch", respond(content));

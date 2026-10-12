@@ -26,6 +26,17 @@ describe("A9b shared payload limit", () => {
     expect(payload.recipes.map(recipe => recipe.ref)).toEqual(payload.recipes.map((_, index) => index + 1));
   });
 
+  it("keeps every current trend while trimming evidence to MEMORY_PAYLOAD_CHAR_LIMIT", () => {
+    const evidence = Array.from({ length: 35 }, (_, index) => evidenceOf(index + 1));
+    const currentTrends = (["cuisine", "ingredients", "techniques", "flavours"] as const).map(key => ({ key, text: '"'.repeat(160) }));
+    const serialized = memoryPayload({ ...inputOf(evidence), currentTrends });
+    const payload = JSON.parse(serialized) as { recipes: { ref: number }[]; currentTrends: unknown };
+    expect(serialized.length).toBeLessThanOrEqual(MEMORY_PAYLOAD_CHAR_LIMIT);
+    expect(payload.currentTrends).toEqual(currentTrends);
+    expect(payload.recipes.length).toBeGreaterThanOrEqual(2);
+    expect(payload.recipes.length).toBeLessThan(evidence.length);
+  });
+
   it("refuses input whose two minimum sources still exceed MEMORY_PAYLOAD_CHAR_LIMIT", () => {
     const corrections: MemoryInput["corrections"] = [{ key: "techniques", text: "t".repeat(MEMORY_PAYLOAD_CHAR_LIMIT) }];
     expect(() => memoryPayload(inputOf([evidenceOf(1), evidenceOf(2)], corrections))).toThrow("memory_input_limit");

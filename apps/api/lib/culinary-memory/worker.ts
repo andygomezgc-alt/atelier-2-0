@@ -6,7 +6,7 @@ import { ZodError } from "zod";
 import { AiBudgetError } from "../ai/budget-policy";
 import { logger } from "../logger";
 import { loadEvidence, loadIngredientStats, correctionsOf } from "./service";
-import { evidenceHash, memoryContext, MIN_TREND_SOURCES, type StoredFact } from "./evidence";
+import { evidenceHash, memoryContext, MIN_TREND_SOURCES, StoredFactsSchema, validFacts, type StoredFact } from "./evidence";
 import { generateMemory, MAX_TRENDS, memoryProviderConfig, type MemoryGenerator } from "./provider";
 import {
   MEMORY_DISCARD_RETRY_LIMIT, MEMORY_FAILURE_SUSPENSION_THRESHOLD, MEMORY_PROMPT_VERSION, MEMORY_SUPPRESSION_EXPIRY_MS,
@@ -75,6 +75,17 @@ function classifyFailure(error: unknown, providerResponded: boolean, usagePersis
   return { errorCode: "memory_generation_failed", retryable: false, deterministic: false };
 }
 
+/** The stored input hash names the prompt that learned it, so a new prompt learns once more even when no recipe changed. */
+export function learnedInputHash(inputHash: string, promptVersion = MEMORY_PROMPT_VERSION): string {
+  return `${promptVersion}:${inputHash}`;
+}
+
+// A confirmed trend differs only in spacing, case or a final period: it keeps its published wording.
+const sameTrendText = (a: string, b: string) => {
+  const plain = (text: string) => text.replace(/\s+/g, " ").trim().replace(/\s*\.$/, "").toLowerCase();
+  return plain(a) === plain(b);
+};
+
 const later = (a: Date | null, b: Date | null) => !a ? b : !b ? a : a > b ? a : b;
 
 export async function processMemory(
@@ -112,7 +123,9 @@ export async function processMemory(
     });
     return "skipped";
   }
-  if (memory.checkedRevision === memory.dirtyRevision) {
+  // Memory learned by an earlier prompt is checked again even when no source changed since then.
+  const learnedByEarlierPrompt = !!memory.inputHash && !memory.inputHash.startsWith(learnedInputHash(""));
+  if (memory.checkedRevision === memory.dirtyRevision && !learnedByEarlierPrompt) {
     await prisma.culinaryMemory.updateMany({
       where: { restaurantId, version: memory.version, dirtyRevision: memory.dirtyRevision },
       data: { retryAt: null, nextCheckAt: new Date(+now + DAILY_INTERVAL) },
@@ -130,10 +143,14 @@ export async function processMemory(
   const fingerprint = memoryFailureFingerprint({ inputHash: hash, model: config.model, promptVersion: MEMORY_PROMPT_VERSION });
   const resetFailures = memory.lastFailedInputHash && memory.lastFailedInputHash !== fingerprint
     ? { lastFailedInputHash: null, failureCount: null, lastFailedAt: null } : {};
-  if (evidence.length < MIN_TREND_SOURCES || hash === memory.inputHash || MemoryKeySchema.options.every(key => excluded.has(key))) {
+  if (evidence.length < MIN_TREND_SOURCES || learnedInputHash(hash) === memory.inputHash || MemoryKeySchema.options.every(key => excluded.has(key))) {
     await prisma.culinaryMemory.updateMany({
       where: snapshot,
-      data: { ...resetFailures, checkedRevision: memory.dirtyRevision, retryAt: null, nextCheckAt: new Date(+now + DAILY_INTERVAL) },
+      data: {
+        ...resetFailures, checkedRevision: memory.dirtyRevision, retryAt: null, nextCheckAt: new Date(+now + DAILY_INTERVAL),
+        // The current prompt has now checked this input, so the daily shortcut applies again.
+        ...(learnedByEarlierPrompt ? { inputHash: learnedInputHash(hash) } : {}),
+      },
     });
     return "unchanged";
   }
@@ -236,11 +253,15 @@ export async function processMemory(
 
   try {
     signal?.throwIfAborted();
+    // Published trends the current evidence still supports, so the extractor can confirm, adjust or drop them.
+    const currentTrends = validFacts(StoredFactsSchema.safeParse(memory.learned).data ?? [], evidence)
+      .filter(fact => !excluded.has(fact.key)).map(({ key, text }) => ({ key, text }));
     const result = await generator({
       evidence,
       identity: memory.restaurant.identityLine,
       corrections,
       excluded: excludedKeys,
+      currentTrends,
       language: memory.restaurant.languageDefault,
       signal,
     }, async usage => {
@@ -252,6 +273,7 @@ export async function processMemory(
     signal?.throwIfAborted();
 
     const keys = new Set<string>();
+    const published = new Map(currentTrends.map(trend => [trend.key, trend.text]));
     const learned: StoredFact[] = [];
     let proposed = result.rejected ?? 0;
     for (const trend of result.trends) {
@@ -261,9 +283,11 @@ export async function processMemory(
       const refs = [...new Set(trend.sources)].filter(ref => evidence[ref - 1]);
       if (refs.length < MIN_TREND_SOURCES) continue;
       keys.add(trend.key);
+      const current = published.get(trend.key);
       learned.push({
         key: trend.key,
-        text: trend.text,
+        // A confirmed trend keeps its published text byte for byte, so the memory block and its cache survive.
+        text: current !== undefined && sameTrendText(current, trend.text) ? current : trend.text,
         sources: refs.map(ref => ({ id: evidence[ref - 1]!.id, hash: evidence[ref - 1]!.hash, version: 2 })),
       });
       if (learned.length >= MAX_TRENDS) break;
@@ -271,6 +295,10 @@ export async function processMemory(
     // Si todo lo propuesto era inservible, es una respuesta mal formada: se conserva
     // la memoria anterior en vez de sustituirla por una lista vacía.
     if (proposed && !learned.length) throw new Error("memory_sources_invalid");
+    // Kept trends stay in their published order and new ones follow, so a reordered answer renders the same block.
+    const order: string[] = [...published.keys()];
+    const rank = (key: string) => { const index = order.indexOf(key); return index < 0 ? order.length : index; };
+    learned.sort((a, b) => rank(a.key) - rank(b.key));
 
     // A trigger changes dirtyRevision immediately after culinary source edits.
     // Re-reading also protects deployments where an older trigger is still live.
@@ -284,7 +312,7 @@ export async function processMemory(
         where: { ...snapshot, dirtyRevision: revision, lockToken: token },
         data: {
           learned,
-          inputHash: hash,
+          inputHash: learnedInputHash(hash),
           lastFailedInputHash: null,
           failureCount: null,
           lastFailedAt: null,
