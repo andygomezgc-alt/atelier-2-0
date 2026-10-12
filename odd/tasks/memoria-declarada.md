@@ -32,7 +32,7 @@ Que el chef pueda declarar en «Nuestra cocina» cualquiera de las 7 categorías
 
 ## Tareas
 - [x] M1 — la pantalla «Cómo cocinamos» con declarar, estados, atajos de registro y restauración individual, más i18n y tests. Ruta: delegada, un escritor (Opus). Disparador: dos o más archivos no triviales (componente, i18n y tests).
-- [ ] M2 — casos gemelos en la prueba del prompt (lo declarado frente a sin memoria, y un conflicto). Necesita la prueba en `main` (PR #36).
+- [x] M2 — casos gemelos en la prueba del prompt (lo declarado frente a sin memoria, y un conflicto). Necesita la prueba en `main` (PR #36).
 - [ ] M3 — entrega: commits, PR y build de Android.
 
 ## Criterios de aceptación
@@ -56,5 +56,16 @@ Que el chef pueda declarar en «Nuestra cocina» cualquiera de las 7 categorías
   - Decisiones interpretadas: el título reutiliza `memory_learned`; «Declarar» crea una corrección vacía, y guardar queda bloqueado hasta que haya texto; si una categoría está a la vez corregida y oculta, se muestra como Declarado; los botones accesibles se etiquetan «acción: categoría».
 - Fusionados en `main` (12-10-2026): #34 (prompt), #35 y #36 (prueba, `718d3d0`). M2 queda desbloqueada.
 
+- M2:
+  - La memoria de los fixtures admite `corrections`, que pasan a `memoryContext` real como `indicadasPorElChef`.
+  - Se suman 4 restaurantes «Casa Lumbre», idénticos salvo por la memoria (sin memoria, declarada clásica, declarada vanguardia y conflicto), y 4 casos con la misma petición.
+  - Los 18 casos previos quedan idénticos byte a byte (36 trazas). La API pasa 1281 tests con `--maxWorkers=2`; typecheck 0.
+- M2, corrida pagada (`EVAL_RUN=memoria`): v1, juez Opus en máximo, 3 repeticiones, 24 filas, US$3,73. Criterios: creative 0,979; daily 0,938.
+  - Conflicto: lo declarado («clásica») gana sobre la tendencia aprendida (esferificaciones) en 6/6, en los dos modos.
+  - Declarada clásica: creative 1,00; daily 0,75, porque Gemini propuso alguna dirección de 4 elementos frente a «2-3» y una vez se salió del registro.
+  - Declarada vanguardia: 1,00 y 0,92; el único fallo es de «va al grano».
+  - Sin memoria: 1,00, sin atribuir un estilo.
+  - Conclusión: lo declarado funciona aunque el encabezado de producción diga «Son tendencias, no restricciones». Ajustar ese encabezado para lo declarado queda como mejora opcional, en `evidence.ts`.
+
 ## Siguiente paso
-- M2: casos gemelos en la prueba.
+- M3: PR a `main`.

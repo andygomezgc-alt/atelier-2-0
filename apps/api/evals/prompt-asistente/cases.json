@@ -89,6 +89,64 @@
       },
       "recentRecipes": ["Mollejas a la parrilla con limón", "Provoleta con orégano", "Asado de tira"],
       "speakerName": "Facundo"
+    },
+    "lumbre_sin_memoria": {
+      "name": "Casa Lumbre",
+      "city": "Madrid",
+      "identityLine": null,
+      "chefNotes": [],
+      "memory": null,
+      "recentRecipes": [],
+      "speakerName": "Sergio"
+    },
+    "lumbre_declarada_clasica": {
+      "name": "Casa Lumbre",
+      "city": "Madrid",
+      "identityLine": null,
+      "chefNotes": [],
+      "memory": {
+        "corrections": [
+          { "key": "cuisine", "text": "Clásica o de tradición — castellana: asados y guisos de cuchara" },
+          { "key": "complexity", "text": "Platos sencillos, de dos o tres elementos" }
+        ],
+        "tendencias": [],
+        "frecuentes": []
+      },
+      "recentRecipes": [],
+      "speakerName": "Sergio"
+    },
+    "lumbre_declarada_vanguardia": {
+      "name": "Casa Lumbre",
+      "city": "Madrid",
+      "identityLine": null,
+      "chefNotes": [],
+      "memory": {
+        "corrections": [
+          { "key": "cuisine", "text": "Vanguardia o de autor — fermentaciones y técnica moderna" },
+          { "key": "complexity", "text": "Platos de seis o más elementos" }
+        ],
+        "tendencias": [],
+        "frecuentes": []
+      },
+      "recentRecipes": [],
+      "speakerName": "Sergio"
+    },
+    "lumbre_conflicto": {
+      "name": "Casa Lumbre",
+      "city": "Madrid",
+      "identityLine": null,
+      "chefNotes": [],
+      "memory": {
+        "corrections": [
+          { "key": "cuisine", "text": "Clásica o de tradición — sin técnicas de vanguardia" }
+        ],
+        "tendencias": [
+          { "key": "techniques", "text": "Esferificaciones y espumas en varios postres" }
+        ],
+        "frecuentes": []
+      },
+      "recentRecipes": [],
+      "speakerName": "Sergio"
     }
   },
   "cases": [
@@ -382,6 +440,68 @@
         "Acepta la decisión del chef y no vuelve a discutirla más allá de una mención breve.",
         "Propone una solución que funciona con el zumo crudo (gelificar con agar u otro gelificante no proteico), con cantidades concretas.",
         "Explica cómo gelificar sin calentar el zumo: por ejemplo, hervir el agar en agua y mezclarlo rápido con el zumo a temperatura ambiente, u otro método equivalente."
+      ]
+    },
+    {
+      "id": "memoria-sin-memoria",
+      "restaurant": "lumbre_sin_memoria",
+      "tags": ["memoria"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Quiero un postre con remolacha para la carta de otoño. Dame direcciones." }
+      ],
+      "criteria": [
+        "No atribuye al restaurante una tradición, un estilo, un equipo o una despensa concretos que no aparecen en los datos.",
+        "Propone como mucho tres direcciones concretas, cada una con la preparación y sus elementos principales."
+      ]
+    },
+    {
+      "id": "memoria-declarada-clasica",
+      "restaurant": "lumbre_declarada_clasica",
+      "tags": ["memoria"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Quiero un postre con remolacha para la carta de otoño. Dame direcciones." }
+      ],
+      "criteria": [
+        "Las direcciones encajan con una cocina clásica castellana (horno, compotas, bizcochos, natillas, helados clásicos u otros postres de tradición) y no usan espumas, esferificaciones, koji ni otras técnicas de vanguardia.",
+        "Las propuestas son sencillas, de dos o tres elementos.",
+        "Propone como mucho tres direcciones concretas."
+      ]
+    },
+    {
+      "id": "memoria-declarada-vanguardia",
+      "restaurant": "lumbre_declarada_vanguardia",
+      "tags": ["memoria"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Quiero un postre con remolacha para la carta de otoño. Dame direcciones." }
+      ],
+      "criteria": [
+        "Al menos una dirección usa técnicas modernas o fermentaciones con base técnica.",
+        "Las propuestas tienen varios elementos, en línea con platos complejos.",
+        "Propone como mucho tres direcciones concretas."
+      ]
+    },
+    {
+      "id": "memoria-conflicto",
+      "restaurant": "lumbre_conflicto",
+      "tags": ["memoria"],
+      "lang": "es",
+      "recipe": false,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Quiero un postre con remolacha para la carta de otoño. Dame direcciones." }
+      ],
+      "criteria": [
+        "Sigue lo declarado por el chef (cocina clásica): no propone esferificaciones, espumas ni otras técnicas de vanguardia, aunque aparezcan como tendencia aprendida.",
+        "Propone como mucho tres direcciones concretas."
       ]
     }
   ]
