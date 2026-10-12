@@ -54,7 +54,10 @@
     - Gemini pasa de 2048 a 4096 tokens de salida.
   - RED: 4 fallan y 29 pasan, por aserciones.
   - GREEN: 106 archivos y 1387 tests; typecheck 0.
+  - RDD: commit `9223a7f`, `under_budget`. Después, revisión consolidada de toda la rama desde `main` (`review-f8ae594916a9a991`, 1128 líneas), con consentimiento de Andy: **aprobada con acuse de recibo**. Dejó los avisos T2c y T2d.
   - Hueco aceptado: si un resumen que falla de forma persistente no se guarda, cada turno vuelve a pagar un intento, que es barato, hasta que salga uno completo.
+- [ ] T2c — hallazgo R3-skipped-step-erases-rolling-summary (WARNING, revisión consolidada `review-f8ae594916a9a991`): si falla el resumen de un paso, el siguiente ignora el resumen más antiguo que sigue existiendo, arranca desde los últimos 40 mensajes y `deleteMany` borra ese resumen viejo, con lo que se pierde contexto para siempre. Arreglo propuesto: partir del resumen más reciente con `through` menor que el actual y no podar hasta tener uno nuevo encadenado. Pendiente de autorización.
+- [ ] T2d — hallazgo R3-offtemplate-summary-repaid-every-turn (SUGGESTION): un resumen fuera de plantilla se paga de nuevo en cada turno, sin límite. Arreglo propuesto: anotar los intentos fallidos por paso y limitar los reintentos. Pendiente de autorización.
 - [ ] T3 — entrega: PR de T1 y, después, de T2.
 
 ## Criterios de aceptación (T1)
