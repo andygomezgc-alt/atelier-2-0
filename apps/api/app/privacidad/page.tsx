@@ -30,14 +30,14 @@ export default function PrivacidadPage() {
         <a href="mailto:andygomezgc@gmail.com" style={linkStyle}>
           andygomezgc@gmail.com
         </a>
-        . Para cualquier cuestión sobre tus datos, escribí a ese email.
+        . Para cualquier cuestión sobre tus datos, escribe a ese email.
       </p>
 
       <h2 style={h2Style}>Qué datos tratamos</h2>
       <p style={pStyle}>
         Tu email, nombre, identificador de acceso con Google o Apple, foto y
-        descripción opcionales; el restaurante, su ciudad o zona si la indicás, y tu rol en el equipo; recetas,
-        ideas, menús, productos, conversaciones y archivos que cargás. También
+        descripción opcionales; el restaurante, su ciudad o zona si la indicas, y tu rol en el equipo; recetas,
+        ideas, menús, productos, conversaciones y archivos que cargas. También
         tratamos datos técnicos de sesión, dispositivo, errores y consumo de IA
         para mantener el servicio y controlar las cuotas y el presupuesto.
       </p>
@@ -53,19 +53,19 @@ export default function PrivacidadPage() {
         conversaciones largas guardamos un resumen breve de los mensajes más
         antiguos: lo redacta el mismo proveedor que responde en ese turno y se
         borra junto con la conversación. Z.AI (GLM) procesa las
-        recetas y los documentos o imágenes que elegís analizar, los estilos de
+        recetas y los documentos o imágenes que eliges analizar, los estilos de
         menú y el aprendizaje de preferencias culinarias. Los costes de recetas
         se calculan con reglas, sin enviar el banco de precios a la IA para ese cálculo.
       </p>
       <p style={pStyle}>
-        En Perfil → Nuestra cocina podés indicar el estilo del restaurante, su
+        En Perfil → Nuestra cocina puedes indicar el estilo del restaurante, su
         ciudad o zona y gestionar su memoria. La memoria culinaria viene
         activada en los restaurantes nuevos y en los que todavía no tomaron
-        ninguna decisión; podés apagarla en Perfil → Nuestra cocina o con el botón
+        ninguna decisión; puedes apagarla en Perfil → Nuestra cocina o con el botón
         «Memoria» del chat. Aprende de las recetas en prueba o aprobadas al cargar
         una y una vez por semana: analiza una selección limitada de recetas y
         guarda tendencias breves, compartidas por el equipo. También cuenta, sin
-        IA, los ingredientes que más se repiten en esas recetas. Podés corregir
+        IA, los ingredientes que más se repiten en esas recetas. Puedes corregir
         las tendencias, excluirlas o borrarlas. Apagar la memoria no borra por sí
         solo las preferencias ya guardadas.
         Quienes tienen permiso pueden guardar desde el chat &quot;Notas del chef&quot;
@@ -93,7 +93,7 @@ export default function PrivacidadPage() {
       </p>
       <p style={pStyle}>
         Las condiciones de las API son distintas de las de sus chats para consumidores.
-        Podés consultar las de{" "}
+        Puedes consultar las de{" "}
         <a href="https://privacy.claude.com/en/articles/7996875-can-you-delete-data-that-i-sent-via-api" style={linkStyle}>Anthropic</a>,{" "}
         <a href="https://ai.google.dev/gemini-api/terms" style={linkStyle}>Google Gemini</a> y el{" "}
         <a href="https://docs.z.ai/legal-agreement/privacy-policy#data-processing-addendum-for-api-services" style={linkStyle}>acuerdo para API de Z.AI</a>.
@@ -113,25 +113,25 @@ export default function PrivacidadPage() {
         incluidos Estados Unidos y Singapur; Z.AI identifica Singapur en su acuerdo
         de API. Las transferencias se sujetan a los mecanismos y garantías aplicables
         de los proveedores, como decisiones de adecuación o cláusulas contractuales
-        cuando correspondan. Podés pedirnos información sobre los destinatarios y
+        cuando correspondan. Puedes pedirnos información sobre los destinatarios y
         las garantías aplicables en el email de contacto.
       </p>
 
       <h2 style={h2Style}>Base legal</h2>
       <p style={pStyle}>
-        Tratamos los datos necesarios para prestar las funciones que utilizás
+        Tratamos los datos necesarios para prestar las funciones que utilizas
         (ejecución del contrato). Para proteger cuentas, resolver fallos y prevenir
         abusos nos basamos en el interés legítimo en mantener un servicio seguro;
         también cumplimos las obligaciones legales aplicables. Cuando un tratamiento
         requiera consentimiento, lo solicitaremos y podrás retirarlo. No usamos la
-        IA para tomar decisiones con efectos legales sobre vos.
+        IA para tomar decisiones con efectos legales sobre ti.
       </p>
 
       <h2 style={h2Style}>Permisos y datos en tu teléfono</h2>
       <p style={pStyle}>
-        Cámara, galería y micrófono se usan para las funciones que elegís y requieren
+        Cámara, galería y micrófono se usan para las funciones que eliges y requieren
         los permisos del dispositivo. El dictado puede utilizar los servicios de
-        reconocimiento de voz de tu sistema. Podés revocar estos permisos en sus
+        reconocimiento de voz de tu sistema. Puedes revocar estos permisos en sus
         ajustes. Guardamos la sesión y algunos borradores o acciones pendientes en
         el teléfono para recuperar el trabajo y sincronizarlo al volver a tener
         conexión. No incluyas datos personales sensibles de clientes o compañeros
@@ -140,11 +140,11 @@ export default function PrivacidadPage() {
 
       <h2 style={h2Style}>Tus derechos</h2>
       <p style={pStyle}>
-        Podés solicitar acceso, rectificación, supresión, portabilidad, limitación
+        Puedes solicitar acceso, rectificación, supresión, portabilidad, limitación
         u oposición al tratamiento cuando correspondan, escribiendo al email de
-        arriba. Podés reclamar ante la autoridad de protección de datos de tu país;
+        arriba. Puedes reclamar ante la autoridad de protección de datos de tu país;
         en Italia, el <a href="https://www.garanteprivacy.it/" style={linkStyle}>Garante per la protezione dei dati personali</a>.
-        También podés
+        También puedes
         eliminar tu cuenta directamente en la app (Perfil → Eliminar cuenta) o
         siguiendo las instrucciones de{" "}
         <Link href="/cuenta/eliminar" style={linkStyle}>
@@ -155,12 +155,12 @@ export default function PrivacidadPage() {
 
       <h2 style={h2Style}>Retención</h2>
       <p style={pStyle}>
-        Conservamos los datos de cuenta mientras usás el servicio. Al eliminarla,
+        Conservamos los datos de cuenta mientras usas el servicio. Al eliminarla,
         retiramos los datos de acceso y de perfil; si quedan aportaciones compartidas
         con otros miembros, conservamos el contenido del restaurante y sustituimos
         tu identificación de perfil. Borrar la cuenta no elimina automáticamente
         datos personales que hayas escrito dentro de recetas o conversaciones:
-        contactanos para revisar esos contenidos. Si sos el último miembro, se
+        contáctanos para revisar esos contenidos. Si eres el último miembro, se
         elimina también el restaurante. El último administrador con otros miembros
         debe asignar antes otro administrador.
       </p>
