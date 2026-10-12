@@ -17,7 +17,9 @@ const SLICE_MESSAGES = 40;
 const MESSAGE_MAX_CHARS = 4_000;
 const INPUT_MAX_CHARS = 48_000;
 // Gemini counts its thinking in the output limit, so it gets more room than Haiku.
-const GEMINI_MAX_TOKENS = 2_048;
+const GEMINI_MAX_TOKENS = 4_096;
+// Each summary is built on the previous one, so a summary missing a section would lose it for good.
+const SECTIONS = ["Decidido:", "Descartado:", "Pendiente:", "Datos del plato:"];
 const GEMINI_TIMEOUT_MS = 30_000;
 const MIN_REMAINING_MS = 5_000;
 
@@ -103,8 +105,15 @@ export async function refreshChatSummary(input: {
     if (timeoutMs < MIN_REMAINING_MS) return;
     const text = await generateSummary(config, summaryInput(previous, messages), timeoutMs, input.userId);
     if (!text?.trim()) return;
+    const summary = capSummary(text);
+    const lines = summary.split("\n");
+    if (!SECTIONS.every(section => lines.some(line => line.startsWith(section)))) {
+      // Cut by the output limit or off-template: the next turn tries again.
+      logger.warn("chat_summary_incomplete", { conversationId, through, model: config.model });
+      return;
+    }
     try {
-      await prisma.conversationSummary.create({ data: { conversationId, through, text: capSummary(text), model: config.model } });
+      await prisma.conversationSummary.create({ data: { conversationId, through, text: summary, model: config.model } });
     } catch (error) {
       // A concurrent turn already wrote this summary.
       if ((error as { code?: unknown } | null)?.code !== "P2002") throw error;

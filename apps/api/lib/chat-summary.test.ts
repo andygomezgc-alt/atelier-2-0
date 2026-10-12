@@ -220,20 +220,45 @@ describe("refreshChatSummary", () => {
     expect(stored()).toMatchObject({ through: 20, model: "claude-haiku-5-5", text: SUMMARY });
   });
 
+  const steps = Array.from({ length: 300 }, (_, k) => `- Paso ${k}: reducir 10 min`).join("\n");
+
   it("caps the stored text so the rolling summary stays bounded", async () => {
-    const long = Array.from({ length: 300 }, (_, k) => `- Paso ${k}: reducir 10 min`).join("\n");
+    const long = `${SUMMARY}\n${steps}`;
     fetcher.mockImplementation(async () => geminiReply(long));
     await refreshChatSummary(input());
     expect(stored().text.length).toBeLessThanOrEqual(SUMMARY_MAX_CHARS);
     expect(long.startsWith(stored().text)).toBe(true);
   });
 
-  it("keeps a safely capped text when Haiku stops at max_tokens", async () => {
-    const long = Array.from({ length: 300 }, (_, k) => `- Paso ${k}: reducir 10 min`).join("\n");
-    haikuCreate.mockResolvedValue(haikuReply(long, "max_tokens"));
+  it("keeps a complete summary when Haiku stops at max_tokens after the last section", async () => {
+    haikuCreate.mockResolvedValue(haikuReply(`${SUMMARY}\n${steps}`, "max_tokens"));
     await refreshChatSummary(input({ model: "creative" }));
     expect(stored().text.length).toBeLessThanOrEqual(SUMMARY_MAX_CHARS);
     expect(budget.settleGeneration).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["Haiku stops at max_tokens", "creative" as const],
+    ["Gemini stops at MAX_TOKENS", "daily" as const],
+  ])("bills but never stores a summary cut before its last sections when %s", async (_label, model) => {
+    vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const cut = `Decidido:\n- Base de tomate asado\nDescartado:\n${steps}`;
+    haikuCreate.mockResolvedValue(haikuReply(cut, "max_tokens"));
+    fetcher.mockImplementation(async () => geminiReply(cut, "MAX_TOKENS"));
+    await refreshChatSummary(input({ model }));
+    expect(budget.settleGeneration).toHaveBeenCalledTimes(1);
+    expect(db.conversationSummary.create).not.toHaveBeenCalled();
+  });
+
+  it("never stores a summary that lacks one of the four sections", async () => {
+    fetcher.mockImplementation(async () => geminiReply(SUMMARY.replace("Pendiente:", "Pendientes")));
+    await refreshChatSummary(input());
+    expect(db.conversationSummary.create).not.toHaveBeenCalled();
+  });
+
+  it("gives Gemini room for its thinking inside the output limit", async () => {
+    await refreshChatSummary(input());
+    expect(geminiRequest().generationConfig.maxOutputTokens).toBeGreaterThanOrEqual(4096);
   });
 
   it("bills a refusal but stores nothing", async () => {
