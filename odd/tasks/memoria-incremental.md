@@ -48,6 +48,7 @@
 - [x] T1 — aprendizaje incremental: hechos vigentes al extractor, texto estable y versión del prompt en la huella. Ruta: delegada, un escritor (Opus). Disparador: dos o más archivos no triviales (`provider.ts`, `worker.ts` y la huella, más los tests).
 - [x] T1b — hallazgo R3-legacy-hash-bypass, no bloqueante: si una memoria con huella anterior termina en la salida temprana (menos de 2 fuentes o todas las categorías excluidas), nunca reescribe la huella con prefijo. Por eso evita el atajo diario y vuelve a cargar evidencia cada día. Andy pidió hacerla el 12-10-2026. Ruta: inline, porque es un cambio de una sola condición en `worker.ts` más su test. Va en el PR 1, que es donde nació el problema.
 - [x] T2 — resumen del chat: el modelo del turno y la ventana sin cambios. Va en su propia rama y PR, después de T1. Ruta: delegada, un escritor (Opus). Disparador: dos o más archivos no triviales (esquema, módulo nuevo, servicio del turno y ruta).
+- [ ] T2b — hallazgo R3-truncated-summary-rolled-forward, no bloqueante: si el proveedor corta por el límite de salida (`max_tokens` en Haiku, o `MAX_TOKENS` en Gemini, donde el pensamiento cuenta dentro de las 2048), se guarda un resumen sin las últimas secciones. Como cada resumen se arma sobre el anterior, lo perdido no se recupera. Arreglo propuesto: guardar solo si están los cuatro encabezados y dar más margen de salida a Gemini. Pendiente de que Andy lo autorice.
 - [ ] T3 — entrega: PR de T1 y, después, de T2.
 
 ## Criterios de aceptación (T1)
@@ -119,3 +120,4 @@
   - Tamaño: 726 líneas añadidas y 9 borradas, de las cuales unas 445 son tests.
     - Se hizo una sola pasada de corte. Separar la escritura del resumen de su lectura deja la mitad del módulo y sus tests por encima de 400 (`chat-summary.ts` y su test suman 516) y entrega código muerto hasta la segunda mitad.
     - Se mantiene un solo PR 2 y se recomienda `size:exception`.
+  - RDD: riesgo medio, 765 líneas, `slice_budget_reached`, con consentimiento de Andy. La revisión `review-3e232c05f779a7e1` (lente de fiabilidad) quedó **aprobada con acuse de recibo** y la autoridad consumida. Dejó un aviso no bloqueante, R3-truncated-summary-rolled-forward, que pasa a la tarea T2b.
