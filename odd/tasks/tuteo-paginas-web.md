@@ -32,7 +32,7 @@ Las tres páginas y un test nuevo en `apps/api`. Fuera de alcance:
 ## Restricciones
 - TDD estricto (fuente: `~/.claude/CLAUDE.md`). Runner: `vitest run` (`pnpm -C apps/api test`).
 - Conventional Commits sin atribución de IA.
-- Entrega: `ask-on-risk` (por defecto). Previsión: unas 140 líneas en un solo PR.
+- Entrega: `ask-on-risk` (por defecto). La previsión era de unas 140 líneas en un solo PR, y fueron 139 en el PR #46. Esta actualización del registro va en un PR aparte, solo de documentación.
 
 ## Tareas
 - [x] T1 — las tres páginas en tuteo, con su test. Ruta: delegada, un escritor (Opus). Disparadores: escritura en cuatro archivos (las tres páginas y el test) y lectura de preparación de las páginas.
@@ -52,7 +52,12 @@ Las tres páginas y un test nuevo en `apps/api`. Fuera de alcance:
 - GREEN, repetido por el supervisor: test nuevo 3/3; API, 107 archivos y 1400 tests; typecheck sin errores.
 - Diff: 26 líneas en las tres páginas. Un script del escritor confirmó que solo cambian las 29 formas: ni la puntuación, ni el marcado, ni los enlaces, ni las fechas, ni los saltos de línea.
 - Commit de T1: `993703c` (139 líneas). RDD sobre `993703c` (base `68e3f53`): riesgo medio por `executable_change` en el test nuevo. `review_due: false` por `under_budget`.
+- Al cerrar, el preflight de RDD pidió consentimiento para la rama desde `68e3f53` (140 líneas) y Andy lo concedió. La revisión `review-ef870588805d6ce8` (lente `review-reliability`) se aprobó y quedó acusada. Dejó dos sugerencias no bloqueantes para el test:
+  - R3-001: la lista de 25 formas es fija, así que una forma nueva de voseo podría pasar.
+  - R3-002: conviene normalizar los acentos (NFC) antes de buscar.
 
 ## Siguiente paso
-- Preflight de RDD al cerrar. Después, el PR a `main`, que decide Andy.
+- Entregado: el PR #46 se fusionó a `main` el 13-10-2026 (`fe17eeb`), con el CI en verde.
+- graphify: el grafo vive solo en la carpeta principal. Pendiente: llevar allí el `main` actual y correr `graphify update .`.
+- Seguimiento, fuera de alcance: las sugerencias R3-001 y R3-002 para el test.
 - Seguimiento, fuera de alcance: el asistente responde con el trato que usa el chef (tú, vos o usted), según `apps/api/lib/anthropic-system.md:25`, y la eval `registro-voseo` lo exige. Si se quiere que responda siempre de tú, es otra decisión.
