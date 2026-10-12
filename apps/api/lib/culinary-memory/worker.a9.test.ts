@@ -422,6 +422,27 @@ describe("incremental learning", () => {
     expect(evidenceReads).toHaveLength(reads);
   });
 
+  it.each(["insufficient sources", "every category excluded"])(
+    "stamps the current prompt on %s so a memory learned by an earlier prompt stops reloading evidence daily",
+    async reason => {
+      publish([roasted]);
+      const lastWeek = new Date(+now - WEEK);
+      Object.assign(state, {
+        inputHash: learnedInputHash(evidenceHash(sources, null, [], []), "previous-prompt"),
+        checkedRevision: state.dirtyRevision, lastAttemptAt: lastWeek, cycleStartedAt: lastWeek,
+      });
+      if (reason === "insufficient sources") sources = sources.slice(0, 1);
+      else state.excludedKeys = ["cuisine", "ingredients", "techniques", "flavours", "textures", "presentation", "complexity"];
+      const generate = paidSuccess();
+      expect(await processMemory("r1", generate, config, now)).toBe("unchanged");
+
+      const reads = evidenceReads.length;
+      expect(await processMemory("r1", generate, config, new Date(+now + DAY))).toBe("unchanged");
+      expect(evidenceReads).toHaveLength(reads);
+      expect(generate).not.toHaveBeenCalled();
+    },
+  );
+
   it("keeps the weekly gate for a re-learn after a prompt change", async () => {
     publish([roasted]);
     const yesterday = new Date(+now - DAY);

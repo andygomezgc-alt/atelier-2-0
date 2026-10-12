@@ -46,7 +46,7 @@
 
 ## Tareas
 - [x] T1 — aprendizaje incremental: hechos vigentes al extractor, texto estable y versión del prompt en la huella. Ruta: delegada, un escritor (Opus). Disparador: dos o más archivos no triviales (`provider.ts`, `worker.ts` y la huella, más los tests).
-- [ ] T1b — hallazgo R3-legacy-hash-bypass, no bloqueante: si una memoria con huella anterior termina en la salida temprana (menos de 2 fuentes o todas las categorías excluidas) o falla la generación, nunca reescribe la huella con prefijo. Por eso evita el atajo diario y vuelve a cargar evidencia cada día. Las llamadas pagadas siguen limitadas por la puerta semanal y la supresión de fallos. Se hace aparte.
+- [x] T1b — hallazgo R3-legacy-hash-bypass, no bloqueante: si una memoria con huella anterior termina en la salida temprana (menos de 2 fuentes o todas las categorías excluidas), nunca reescribe la huella con prefijo. Por eso evita el atajo diario y vuelve a cargar evidencia cada día. Andy pidió hacerla el 12-10-2026. Ruta: inline, porque es un cambio de una sola condición en `worker.ts` más su test. Va en el PR 1, que es donde nació el problema.
 - [ ] T2 — resumen del chat: el modelo del turno y la ventana sin cambios. Va en su propia rama y PR, después de T1.
 - [ ] T3 — entrega: PR de T1 y, después, de T2.
 
@@ -86,3 +86,8 @@
     - Una memoria con huella antigua y menos de 2 recetas vuelve a cargar evidencia en cada revisión diaria, sin llamada pagada, hasta que publique.
   - Commit `0dcd10f`, más el documento en `8b146db`. PR 1: https://github.com/andygomezgc-alt/atelier-2-0/pull/44.
   - RDD: riesgo medio, 288 líneas, con consentimiento de Andy. La revisión `review-d71d4e4dde9415d2` (lente de fiabilidad) quedó **aprobada con acuse de recibo** y la autoridad consumida. Dejó un aviso no bloqueante, R3-legacy-hash-bypass, que pasa a la tarea T1b.
+- T1b, en la rama `fix/memoria-huella-legacy`, que sale de `cad4c69`:
+  - En la salida temprana, si la huella es de un prompt anterior, se reescribe con la versión actual. Es seguro porque la `PATCH` de correcciones y exclusiones sube `dirtyRevision` (`service.ts:62`).
+  - El caso de fallo de generación no cambia: lo limitan la puerta semanal y la supresión de fallos, igual que a cualquier memoria que falla.
+  - RED: 2 fallan y 48 pasan (`expected [false, false] to have a length of 1`), es decir, la evidencia se vuelve a leer.
+  - GREEN: 105 archivos y 1340 tests; typecheck 0.

@@ -146,7 +146,11 @@ export async function processMemory(
   if (evidence.length < MIN_TREND_SOURCES || learnedInputHash(hash) === memory.inputHash || MemoryKeySchema.options.every(key => excluded.has(key))) {
     await prisma.culinaryMemory.updateMany({
       where: snapshot,
-      data: { ...resetFailures, checkedRevision: memory.dirtyRevision, retryAt: null, nextCheckAt: new Date(+now + DAILY_INTERVAL) },
+      data: {
+        ...resetFailures, checkedRevision: memory.dirtyRevision, retryAt: null, nextCheckAt: new Date(+now + DAILY_INTERVAL),
+        // The current prompt has now checked this input, so the daily shortcut applies again.
+        ...(learnedByEarlierPrompt ? { inputHash: learnedInputHash(hash) } : {}),
+      },
     });
     return "unchanged";
   }
