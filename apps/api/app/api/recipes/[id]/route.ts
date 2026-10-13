@@ -4,7 +4,7 @@ import { PatchRecipeRequestSchema, can } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 import { projectRecipeDetail, recipeDetailInclude } from "@/lib/projections";
-import { lockRecipeSave, resolveIngredientDrafts, RecipeSaveError } from "@/lib/products/recipe-save";
+import { ingredientDisplayLines, lockRecipeSave, resolveIngredientDrafts, RecipeSaveError } from "@/lib/products/recipe-save";
 import type { Prisma } from "@atelier/db";
 
 // P2-1 (auditoría jul 2026): señal tipada para abortar el PATCH desde dentro
@@ -12,6 +12,9 @@ import type { Prisma } from "@atelier/db";
 // aprobó justo en el medio (TOCTOU sobre el gate de contenido aprobado). El
 // catch del call-site la traduce a 409 approved_conflict.
 class ApprovedConflictError extends Error {}
+// The recipe stopped being mutable (deleted or another restaurant's) inside
+// the ingredients transaction: rolls the transaction back and answers 404.
+class RecipeGoneError extends Error {}
 
 export const dynamic = "force-dynamic";
 
@@ -154,25 +157,36 @@ export async function PATCH(
         // P2-1 (bugs): releer `state` DENTRO de la transacción. El gate de
         // arriba vio el snapshot de antes del parseo; si otra request aprobó
         // la receta en el medio, esta relectura es la vinculante.
-        const fresh = await tx.recipe.findUnique({ where: { id }, select: { state: true } });
+        const fresh = await tx.recipe.findUnique({ where: { id }, select: { state: true, contentJson: true } });
         if (fresh?.state === "approved" && ctx.role !== "admin") {
           throw new ApprovedConflictError();
         }
+
+        // The stored rows feed the comparison below and the section/note an
+        // older app build drops when it re-saves an unchanged line.
+        const currentRows = await tx.recipeIngredient.findMany({
+          where: { recipeId: id }, orderBy: { position: "asc" },
+          select: { productId: true, position: true, rawText: true, qty: true, unit: true,
+            pezzatura: true, mermaOverridePct: true, pesoCalculoG: true, section: true, note: true },
+        });
+        const rows = await resolveIngredientDrafts(tx, ctx.restaurantId, parse.data.recipeIngredients!, currentRows);
+        // contentJson.ingredients always follows the saved rows (display lines).
+        if (rows.length) {
+          const stored = fresh?.contentJson;
+          const base = parse.data.contentJson ?? (stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {});
+          data.contentJson = { ...base, ingredients: ingredientDisplayLines(rows) };
+        }
+
         // limpieza: escritura atómica tenant-scoped (cierra el TOCTOU de
         // borrado/otro restaurante; count===0 => no había receta mutable).
+        // Throwing rolls back any draft product created above.
         const result = await tx.recipe.updateMany({
           where: { id, restaurantId: ctx.restaurantId, deletedAt: null },
           data,
         });
-        if (result.count === 0) return null;
+        if (result.count === 0) throw new RecipeGoneError();
 
-        const rows = await resolveIngredientDrafts(tx, ctx.restaurantId, parse.data.recipeIngredients!);
-        const currentRows = await tx.recipeIngredient.findMany({
-          where: { recipeId: id }, orderBy: { position: "asc" },
-          select: { productId: true, position: true, rawText: true, qty: true, unit: true,
-            pezzatura: true, mermaOverridePct: true, pesoCalculoG: true },
-        });
-        const strictlyComparedFields = ["productId", "position", "rawText", "unit", "pezzatura"] as const;
+        const strictlyComparedFields = ["productId", "position", "rawText", "unit", "pezzatura", "section", "note"] as const;
         const numericFields = ["qty", "mermaOverridePct", "pesoCalculoG"] as const;
         const unchanged = rows.length === currentRows.length && rows.every((row, index) => {
           const current = currentRows[index]!;
@@ -190,6 +204,7 @@ export async function PATCH(
       }, { timeout: 30_000, maxWait: 10_000 });
     } catch (err) {
       if (err instanceof RecipeSaveError) return NextResponse.json({ error: err.code }, { status: err.status });
+      if (err instanceof RecipeGoneError) return NextResponse.json({ error: "Not found" }, { status: 404 });
       if (err instanceof ApprovedConflictError) {
         return NextResponse.json(
           { error: "Solo el admin puede modificar recetas aprobadas", code: "approved_conflict" },

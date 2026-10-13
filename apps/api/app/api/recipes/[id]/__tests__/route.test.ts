@@ -96,11 +96,11 @@ beforeEach(() => {
 
 describe("PATCH /api/recipes/[id]", () => {
   const storedIngredients = [
-    { id: "row-1", recipeId: "rec-1", productId: null, position: 0, rawText: "200 g potato", qty: 200, unit: "g", pezzatura: null, mermaOverridePct: null, pesoCalculoG: null },
-    { id: "row-2", recipeId: "rec-1", productId: null, position: 1, rawText: "100 g carrot", qty: 100, unit: "g", pezzatura: null, mermaOverridePct: null, pesoCalculoG: null },
+    { id: "row-1", recipeId: "rec-1", productId: null, position: 0, rawText: "200 g potato", qty: 200, unit: "g", pezzatura: null, mermaOverridePct: null, pesoCalculoG: null, section: null, note: null },
+    { id: "row-2", recipeId: "rec-1", productId: null, position: 1, rawText: "100 g carrot", qty: 100, unit: "g", pezzatura: null, mermaOverridePct: null, pesoCalculoG: null, section: null, note: null },
   ];
   const incomingIngredients = storedIngredients.map(({ id: _id, recipeId: _recipeId, position: _position, ...row }) => row);
-  function withStoredIngredients(rows = storedIngredients) {
+  function withStoredIngredients(rows: readonly object[] = storedIngredients) {
     db.recipeIngredient.findMany.mockResolvedValue(rows);
     db.recipe.findUnique.mockResolvedValue({ ...DRAFT, recipeIngredients: rows });
   }
@@ -158,6 +158,75 @@ describe("PATCH /api/recipes/[id]", () => {
     expect((await patch({ recipeIngredients: [] })).status).toBe(200);
     expect(db.recipeIngredient.deleteMany).toHaveBeenCalledOnce();
     expect(db.recipeIngredient.createMany).not.toHaveBeenCalled();
+  });
+
+  describe("standard ingredient format", () => {
+    const stored = [
+      { id: "row-1", recipeId: "rec-1", productId: null, position: 0, rawText: "4 ud calamar", qty: 4, unit: "unidad", pezzatura: null, mermaOverridePct: null, pesoCalculoG: 350, section: "Calamar", note: "tubos de 15–18 cm" },
+      { id: "row-2", recipeId: "rec-1", productId: null, position: 1, rawText: "40 g AOVE", qty: 40, unit: "g", pezzatura: null, mermaOverridePct: null, pesoCalculoG: null, section: "Aceite de chorizo", note: "en frío" },
+    ];
+    const newClient = stored.map(({ id: _id, recipeId: _recipeId, position: _position, ...row }) => row);
+    // An older app build drops the fields it does not know when it opens the editor.
+    const oldClient = newClient.map(({ section: _section, note: _note, ...row }) => row);
+    const displayLines = ["4 ud calamar, tubos de 15–18 cm", "40 g AOVE, en frío"];
+
+    it("a PATCH from an older app keeps section and note and writes no rows", async () => {
+      authAs("admin");
+      withStoredIngredients(stored);
+      const contentJson = { ingredients: ["4 ud calamar", "40 g AOVE"], method: ["cocinar"], notes: "" };
+      expect((await patch({ contentJson, recipeIngredients: oldClient })).status).toBe(200);
+      expect(db.recipeIngredient.deleteMany).not.toHaveBeenCalled();
+      expect(db.recipeIngredient.createMany).not.toHaveBeenCalled();
+      expect(db.recipe.updateMany.mock.calls[0]![0].data.contentJson).toEqual({ ...contentJson, ingredients: displayLines });
+    });
+
+    it("an older app that edits one line keeps section and note on every line", async () => {
+      authAs("admin");
+      withStoredIngredients(stored);
+      const edited = oldClient.map((row, index) => index ? { ...row, rawText: "50 g AOVE", qty: 50 } : row);
+      expect((await patch({ recipeIngredients: edited })).status).toBe(200);
+      expect(db.recipeIngredient.createMany.mock.calls[0]![0].data).toMatchObject([
+        { rawText: "4 ud calamar", section: "Calamar", note: "tubos de 15–18 cm", pesoCalculoG: 350 },
+        { rawText: "50 g AOVE", qty: 50, section: "Aceite de chorizo", note: "en frío" },
+      ]);
+    });
+
+    it("a PATCH that changes nothing writes no rows", async () => {
+      authAs("admin");
+      withStoredIngredients(stored);
+      expect((await patch({ recipeIngredients: newClient })).status).toBe(200);
+      expect(db.recipeIngredient.deleteMany).not.toHaveBeenCalled();
+      expect(db.recipeIngredient.createMany).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["note", { note: "limpio" }], ["section", { section: "Relleno" }],
+    ])("a PATCH that only changes the %s writes the rows", async (_label, change) => {
+      authAs("admin");
+      withStoredIngredients(stored);
+      const ingredients = newClient.map((row, index) => index ? row : { ...row, ...change });
+      expect((await patch({ recipeIngredients: ingredients })).status).toBe(200);
+      expect(db.recipeIngredient.deleteMany).toHaveBeenCalledOnce();
+      expect(db.recipeIngredient.createMany.mock.calls[0]![0].data[0]).toMatchObject(change);
+    });
+
+    it("rebuilds contentJson.ingredients from the saved rows and keeps the stored method", async () => {
+      authAs("admin");
+      withStoredIngredients(stored);
+      expect((await patch({ recipeIngredients: oldClient })).status).toBe(200);
+      expect(db.recipe.updateMany.mock.calls[0]![0].data.contentJson).toEqual({
+        ingredients: displayLines, method: ["cocinar"], notes: "",
+      });
+    });
+
+    it("canonicalizes free text on edit", async () => {
+      authAs("admin");
+      expect((await patch({ recipeIngredients: [{ rawText: "4 calamares de 350 g aprox. (tubos de 15–18 cm, sin roturas)" }] })).status).toBe(200);
+      expect(db.recipeIngredient.createMany.mock.calls[0]![0].data[0]).toMatchObject({
+        rawText: "4 ud calamar", qty: 4, unit: "unidad", pesoCalculoG: 350, note: "tubos de 15–18 cm, sin roturas",
+      });
+      expect(db.recipe.updateMany.mock.calls[0]![0].data.contentJson.ingredients).toEqual(["4 ud calamar, tubos de 15–18 cm, sin roturas"]);
+    });
   });
 
   it("preserves explicit costing fields instead of reinterpreting the display text", async () => {

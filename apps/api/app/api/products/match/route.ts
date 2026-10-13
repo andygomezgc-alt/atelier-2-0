@@ -15,12 +15,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import {
   MatchProductsRequestSchema,
+  standardizeIngredientLine,
   type MatchProductsRequest,
   type MatchProductsResponse,
 } from "@atelier/shared";
 import { withAuth } from "@/lib/with-auth";
 import { findMatch, type MatchCandidate } from "@/lib/products/matching";
-import { parseIngredient } from "@/lib/products/parser";
 
 export const dynamic = "force-dynamic";
 
@@ -52,10 +52,12 @@ export const POST = withAuth(
     // y el comportamiento es idéntico al anterior. Sin este fix, editar
     // una receta migrada duplicaba todos los productos cuyo rawText incluía
     // cantidad — el matching no los reconocía y se creaban drafts nuevos.
-    const results = body.queries.map((q) => {
-      const parsed = parseIngredient(q);
-      return findMatch(parsed.name || q, candidates);
-    });
+    // Standard format: the clean name also drops the note and any
+    // parenthetical ("rape limpio, muy frío (o merluza)" → "rape limpio"),
+    // so an alternative in the note never wins the match.
+    const results = body.queries.map((q) =>
+      findMatch(standardizeIngredientLine(q).ingredient.name || q, candidates),
+    );
 
     const response: MatchProductsResponse = { results };
     return NextResponse.json(response);
