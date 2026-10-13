@@ -168,6 +168,34 @@ Después, medir con una prueba si el prompt nuevo supera al actual antes de desp
     - Mediana de palabras: Gemini 236, Haiku 209.
     - Mediana de latencia: Gemini 6,2 s, Haiku 7,6 s. En el brodetto, Haiku tardó 18,9 s y generó 3.358 tokens de salida contando el razonamiento.
     - Seguridad alimentaria (pescado crudo): 4/4 con los dos modelos.
+  - Revisión de Gentle AI (lente de fiabilidad): aprobada y confirmada. Dejó tres avisos que no bloquean:
+    - Faltaba `EVAL_MODES=daily,haiku` en el comando de la corrida completa. Ya está corregido aquí; la corrida lo llevaba.
+    - Nada demuestra que el modo haiku use de verdad Anthropic. Las filas lo prueban: las de `haiku` terminan en `end_turn` y escriben en la caché del prompt, y las de Gemini terminan en `STOP`.
+    - `ALL_MODES` se declara después de `settings()`. Es inofensivo, porque `settings()` solo se llama dentro del test.
+  - Corrida completa (`EVAL_VARIANT=v1 EVAL_MODES=daily,haiku EVAL_ALL=1 EVAL_REPS=3 EVAL_RUN=haiku-completa`, OK de Andy): 22 casos, 2 modos y 3 repeticiones, con juez Opus en esfuerzo máximo. Son 132 filas, sin errores, negativas ni respuestas cortadas. Reporte en `.claude/hillclimb/prompt-asistente-haiku-completa/report.html`.
+    - Gasto medido: US$19,79. La generación con Gemini costó US$0,19, la de Haiku US$0,06 y el juez US$19,54, con una mediana de US$0,13 por llamada.
+    - Criterios (media por caso, con IC95 %): Gemini 0,914 [0,86-0,97] y Haiku 0,859 [0,77-0,95]. La diferencia pareada por caso es −0,055 [−0,155; +0,031], así que no es significativa. Haiku sale mejor en 5 casos, peor en 9 e igual en 8. Criterios aprobados: 237/264 y 225/264.
+    - Dónde pierde Haiku:
+      - esferificación inversa 0,92 → 0,25: confunde la técnica con la directa, añade lactato cálcico y da 30-60 s de baño en vez de minutos;
+      - el chef que insiste 0,92 → 0,42: propone gelatina con zumo de piña crudo, que la bromelina no deja cuajar, y en una repetición vuelve a discutir la decisión;
+      - memoria de vanguardia 1,00 → 0,75: platos de 2-3 elementos frente a los 6 o más de la casa;
+      - piña con gelatina 1,00 → 0,83: da las cantidades antes del aviso;
+      - judiones 0,93 → 0,73 y brodetto 0,73 → 0,60;
+      - idioma 98 %: en el brodetto, una respuesta en italiano lleva partes en español.
+    - Dónde gana Haiku: beurre blanc 0,50 → 0,83, celeriac en inglés 0,80 → 1,00 e idea anclada 0,83 → 1,00.
+    - Por etiqueta (Gemini → Haiku): franqueza 0,98 → 0,78; técnica 0,81 → 0,69; italiano 0,73 → 0,60; inglés 0,80 → 1,00; estilo 0,94 → 0,96; memoria 0,94 → 0,92; seguridad 1,00 → 1,00.
+    - Seguridad alimentaria:
+      - Pescado crudo: 3/3 con los dos modelos.
+      - Idea anclada, al proponer ricciola cruda: Haiku avisa de la congelación por el anisakis en 3/3. Gemini lo omite en 2/3, y ese fallo existe hoy en producción.
+    - Coste mediano por mensaje: Gemini US$0,0026 y Haiku US$0,0009. Con el cupo de 140 Diarios por semana, unos 607 al mes, salen US$1,59 y US$0,53 al mes. Gemini pasa a US$3,19 desde el 1-1-2027, cuando duplica su tarifa.
+      - Haiku se calcula con la tarifa conservadora de `budget-policy.ts`, que cobra la lectura de caché como la entrada.
+      - Son respuestas de un solo turno; con historial, el coste real por mensaje es mayor en los dos modelos.
+    - Mediana de palabras: Gemini 219, Haiku 175.
+    - Latencia: mediana de 5,7 s en Gemini y 7,5 s en Haiku; p90 de 9,1 s y 11,4 s.
+    - Haiku genera unos 1.200 tokens de salida por respuesta, unos 950 de ellos de razonamiento.
 
 ## Siguiente paso
-- Andy decide si se corre la comparación completa del Diario con Gemini frente a Haiku (`EVAL_ALL=1 EVAL_REPS=3 EVAL_RUN=haiku-completa`). Son 132 filas y, con lo medido en el piloto, cuesta unos US$19-23.
+- Andy decide si el Diario pasa a Haiku.
+  - Haiku cuesta un tercio que Gemini y avisa mejor del anisakis.
+  - En calidad queda igual o algo por debajo, con errores técnicos claros en los casos trampa (gelatina con piña, esferificación inversa).
+- Aparte del modelo, que Gemini omita el aviso del anisakis en idea anclada es un fallo de seguridad actual.
