@@ -199,7 +199,19 @@ Orden: F1 → F2 → F3 → F4 → F5 → F7 → F6.
   - Huecos del normalizador que encontró: «q.b.», «al gusto» y «1 sobre»; «Ingredientes» sin dos puntos; plurales italianos -ane/-ova.
 
 ## Tareas añadidas (2)
-- [ ] F2b — corregir los huecos del normalizador: «q.b.», «al gusto», «quanto basta», «a piacere» y «1 sobre» pasan a la nota sin cantidad; «Ingredientes/Ingredienti/Ingredients» sin dos puntos es una cabecera; plurales italianos -ane/-ova. Motivo: Kokoo está en Italia y «q.b.» es muy común.
+- [x] F2b (`3a047cb`) — corregir los huecos del normalizador: «q.b.», «al gusto», «quanto basta», «a piacere» y «1 sobre» pasan a la nota sin cantidad; «Ingredientes/Ingredienti/Ingredients» sin dos puntos es una cabecera; plurales italianos -ane/-ova. Motivo: Kokoo está en Italia y «q.b.» es muy común.
+
+- F2b (writer Opus):
+  - RED: shared 38 fallos esperados; el banco de pruebas con el normalizador viejo fallaba en esos mismos casos.
+  - GREEN: shared 471; api 1577; `eval:extraccion` 13 filas sin fallos; mobile 538.
+  - Comprobación del padre: `ingredient-standard` en verde.
+  - Asserts cambiados:
+    - el ejemplo «Levadura 1 sobre» ahora está bien marcado y se reemplazó por «Levadura fresca»;
+    - «3 ud melanzane» pasa a «3 ud melanzana».
+  - Seguimientos:
+    - el match difuso da «latte» como probable para «Sale»;
+    - el objeto de la IA `{qty:1, unit:unidad, name:"sobre de levadura"}` se lee como 1 ud;
+    - el conteo de flags por línea en el pipeline cuando el método va antes que los ingredientes.
 
 ## Siguiente paso
-F2b, después la revisión RDD de F4b + F5 + F7 + F2b, y después F6 (con el OK de Andy para el gasto).
+Revisión RDD de F4b + F5 + F7 + F2b; después F6, con el OK de Andy para el gasto.
