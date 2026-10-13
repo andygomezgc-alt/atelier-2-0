@@ -93,10 +93,10 @@ const CALAMAR: Fixture = {
         "9 g sal fina (farsa)",
       ],
     },
-    // The model copies the assistant's lines, headers included.
+    // The model copies the assistant's lines, headers and method included.
     markdown: {
       ...CALAMAR_BASE,
-      ingredients: CALAMAR_ASSISTANT.split("\n").slice(3, 21).filter((line) => line.trim()),
+      ingredients: CALAMAR_ASSISTANT.split("\n").slice(3).filter((line) => line.trim()),
     },
     // What the extraction schema asks for.
     objects: {
@@ -166,6 +166,7 @@ const ALBONDIGAS: Fixture = {
     "- 2-3 dientes de ajo, picados",
     "- ½ cebolla",
     "- Sal c/s",
+    "- Pimienta al gusto",
     "",
     "Para la salsa:",
     "- 20 cl de vino blanco",
@@ -181,8 +182,8 @@ const ALBONDIGAS: Fixture = {
     copied: {
       ...ALBONDIGAS_BASE,
       ingredients: [
-        "600 g de carne picada de ternera", "1 huevo", "2 cucharadas de pan rallado", "2-3 dientes de ajo, picados",
-        "½ cebolla", "Sal c/s", "Para la salsa:", "20 cl de vino blanco", "1/2 l de caldo de carne",
+        "Ingredientes", "600 g de carne picada de ternera", "1 huevo", "2 cucharadas de pan rallado",
+        "2-3 dientes de ajo, picados", "½ cebolla", "Sal c/s", "Pimienta al gusto", "Para la salsa:", "20 cl de vino blanco", "1/2 l de caldo de carne",
         "1 cucharada de harina", "200 g de tomate triturado",
       ],
     },
@@ -195,6 +196,7 @@ const ALBONDIGAS: Fixture = {
         { section: null, qty: 3, unit: "unidad", name: "diente de ajo", note: "2-3, picados", pieceWeightG: null },
         { section: null, qty: 0.5, unit: "unidad", name: "cebolla", note: null, pieceWeightG: null },
         { section: null, qty: null, unit: null, name: "sal", note: "c/s", pieceWeightG: null },
+        { section: null, qty: null, unit: null, name: "pimienta", note: "al gusto", pieceWeightG: null },
         { section: "Salsa", qty: 200, unit: "ml", name: "vino blanco", note: null, pieceWeightG: null },
         { section: "Salsa", qty: 0.5, unit: "l", name: "caldo de carne", note: null, pieceWeightG: null },
         { section: "Salsa", qty: null, unit: null, name: "harina", note: "1 cucharada", pieceWeightG: null },
@@ -211,6 +213,7 @@ const ALBONDIGAS: Fixture = {
         { section: null, qty: "2-3", unit: "unidad", name: "dientes de ajo", note: "picados" },
         { section: null, qty: "½", unit: "unidad", name: "cebolla" },
         { section: null, qty: null, unit: "c/s", name: "sal" },
+        { section: null, qty: null, unit: null, name: "pimienta al gusto" },
         { section: "Para la salsa", qty: "20", unit: "cl", name: "vino blanco" },
         { section: "Para la salsa", qty: "1/2", unit: "l", name: "caldo de carne" },
         { section: "Para la salsa", qty: 1, unit: "cucharada", name: "harina" },
@@ -227,6 +230,7 @@ const ALBONDIGAS: Fixture = {
       { display: "3 ud diente de ajo, 2-3, picados", section: null },
       { display: "0,5 ud cebolla", section: null },
       { display: "sal, c/s", section: null },
+      { display: "pimienta, al gusto", section: null },
       { display: "200 ml vino blanco", section: "Salsa", productId: "p-vino" },
       { display: "0,5 l caldo de carne", section: "Salsa" },
       { display: "harina, 1 cucharada", section: "Salsa" },
@@ -385,4 +389,93 @@ const BIZCOCHO: Fixture = {
   },
 };
 
-export const FIXTURES: readonly Fixture[] = [CALAMAR, ALBONDIGAS, ZUCCHINE, BIZCOCHO];
+// ── 5. Italian recipe: q.b., packaging, Italian plurals, headers without colon ──
+
+const TORTA_BASE = {
+  title: "Torta salata di melanzane",
+  portions: 6,
+  method: [
+    "Griglia le melanzane a fette.",
+    "Sbatti le uova con il latte, aggiungi la farina, il lievito, il parmigiano, il sale e il pepe.",
+    "Alterna l'impasto e le melanzane nello stampo e inforna 35 minuti a 180 °C.",
+  ],
+  notes: "",
+};
+const TORTA_STEPS = TORTA_BASE.method.map((step, i) => `${i + 1}. ${step}`);
+
+const TORTA: Fixture = {
+  id: "ricetta-torta-salata",
+  description: "Italian recipe: «Sale q.b.», «a piacere», «1 bustina di lievito», uova/melanzane and headers without a colon.",
+  source: "document",
+  input: [
+    "Torta salata di melanzane",
+    "Per 6 persone",
+    "",
+    "Ingredienti",
+    "- 2 melanzane",
+    "- 2 uova",
+    "- 250 g di farina 00",
+    "- 100 ml di latte",
+    "- 1 bustina di lievito istantaneo",
+    "- 50 g di parmigiano grattugiato",
+    "- Sale q.b.",
+    "- Pepe nero a piacere",
+    "",
+    "Procedimento",
+    ...TORTA_STEPS,
+  ].join("\n"),
+  bank: [product("p-melanzana", "Melanzana"), product("p-uovo", "Uovo")],
+  recorded: {
+    // The model copies the document, headers and method included.
+    copied: {
+      ...TORTA_BASE,
+      ingredients: [
+        "Ingredienti", "- 2 melanzane", "- 2 uova", "- 250 g di farina 00", "- 100 ml di latte",
+        "- 1 bustina di lievito istantaneo", "- 50 g di parmigiano grattugiato", "- Sale q.b.", "- Pepe nero a piacere",
+        "Procedimento", ...TORTA_STEPS,
+      ],
+    },
+    objects: {
+      ...TORTA_BASE,
+      ingredients: [
+        { section: null, qty: 2, unit: "unidad", name: "melanzana", note: null, pieceWeightG: null },
+        { section: null, qty: 2, unit: "unidad", name: "uovo", note: null, pieceWeightG: null },
+        { section: null, qty: 250, unit: "g", name: "farina 00", note: null, pieceWeightG: null },
+        { section: null, qty: 100, unit: "ml", name: "latte", note: null, pieceWeightG: null },
+        { section: null, qty: null, unit: null, name: "lievito istantaneo", note: "1 bustina", pieceWeightG: null },
+        { section: null, qty: 50, unit: "g", name: "parmigiano grattugiato", note: null, pieceWeightG: null },
+        { section: null, qty: null, unit: null, name: "sale", note: "q.b.", pieceWeightG: null },
+        { section: null, qty: null, unit: null, name: "pepe nero", note: "a piacere", pieceWeightG: null },
+      ],
+    },
+    // Objects that keep the plurals and put the packaging or «q.b.» in the unit or the name.
+    looseObjects: {
+      ...TORTA_BASE,
+      ingredients: [
+        { section: null, qty: 2, unit: "unidad", name: "melanzane" },
+        { section: null, qty: 2, unit: null, name: "uova" },
+        { section: null, qty: 250, unit: "g", name: "farina 00" },
+        { section: null, qty: 100, unit: "ml", name: "latte" },
+        { section: null, qty: 1, unit: "bustina", name: "lievito istantaneo" },
+        { section: null, qty: 50, unit: "g", name: "parmigiano grattugiato" },
+        { section: null, qty: null, unit: "q.b.", name: "sale" },
+        { section: null, qty: null, unit: null, name: "pepe nero a piacere" },
+      ],
+    },
+  },
+  expected: {
+    sections: [],
+    lines: [
+      { display: "2 ud melanzana", section: null, productId: "p-melanzana" },
+      { display: "2 ud uovo", section: null, productId: "p-uovo" },
+      { display: "250 g farina 00", section: null },
+      { display: "100 ml latte", section: null },
+      { display: "lievito istantaneo, 1 bustina", section: null },
+      { display: "50 g parmigiano grattugiato", section: null },
+      { display: "sale, q.b.", section: null },
+      { display: "pepe nero, a piacere", section: null },
+    ],
+  },
+};
+
+export const FIXTURES: readonly Fixture[] = [CALAMAR, ALBONDIGAS, ZUCCHINE, BIZCOCHO, TORTA];

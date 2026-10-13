@@ -131,6 +131,53 @@ describe("standardizeIngredientLine", () => {
     expect(result.flags).toEqual(flags);
   });
 
+  // "To taste" expressions: no quantity, the product name clean, the expression in the note.
+  it.each([
+    ["Sale q.b.", "Sale", "q.b."],
+    ["sale qb", "sale", "qb"],
+    ["sale, q.b.", "sale", "q.b."],
+    ["Sale QB", "Sale", "QB"],
+    ["sale quanto basta", "sale", "quanto basta"],
+    ["Pimienta negra al gusto", "Pimienta negra", "al gusto"],
+    ["sal a gusto", "sal", "a gusto"],
+    ["pepe nero a piacere", "pepe nero", "a piacere"],
+    ["sal c.s.", "sal", "c.s."],
+    ["sal cs", "sal", "cs"],
+    ["- Pimienta al gusto, recién molida", "Pimienta", "al gusto, recién molida"],
+  ] as const)("keeps %s unmeasured", (text, name, note) => {
+    const result = line(text);
+    expect(result.ingredient).toEqual(ing({ name, note }));
+    expect(result.flags).toContain("household");
+  });
+
+  // Packaging has no standard weight: the chef completes the quantity.
+  it.each([
+    ["1 sobre de levadura", "levadura", "1 sobre"],
+    ["1 bustina di lievito", "lievito", "1 bustina"],
+    ["2 latas de tomate", "tomate", "2 latas"],
+    ["1 lata tomate triturado", "tomate triturado", "1 lata"],
+    ["1 bote de garbanzos cocidos", "garbanzos cocidos", "1 bote"],
+    ["1 vasetto di yogurt", "yogurt", "1 vasetto"],
+    ["1 rametto di rosmarino", "rosmarino", "1 rametto"],
+    ["1 manojo de perejil", "perejil", "1 manojo"],
+    ["2 mazzetti di basilico", "basilico", "2 mazzetti"],
+    ["Levadura, 1 sobre", "Levadura", "1 sobre"],
+    ["Levadura 1 sobre", "Levadura", "1 sobre"],
+  ] as const)("keeps the packaging in %s as a note", (text, name, note) => {
+    const result = line(text);
+    expect(result.ingredient).toEqual(ing({ name, note }));
+    expect(result.flags).toEqual(["unmeasured"]);
+  });
+
+  it.each([
+    ["4 huevos", 4, "huevo"],
+    ["2 cebollas", 2, "cebolla"],
+    ["3 dientes de ajo", 3, "diente de ajo"],
+  ] as const)("keeps %s as pieces", (text, qty, name) => {
+    expect(line(text).ingredient).toEqual(ing({ qty, unit: "unidad", name }));
+  });
+
+
   it.each([
     ["4 calamares de 350 g aprox. (tubos de 15–18 cm, sin roturas)", 350, "calamar", "tubos de 15–18 cm, sin roturas"],
     ["4 calamares (350 g c/u)", 350, "calamar", null],
@@ -167,7 +214,20 @@ describe("standardizeIngredientLine", () => {
     expect(line(text).ingredient).toMatchObject({ unit: "unidad", name });
   });
 
+  it.each([
+    ["2 melanzane", "melanzana"],
+    ["2 uova", "uovo"],
+    ["3 limoni", "limone"],
+    ["4 pomodori", "pomodoro"],
+    ["2 cipolle", "cipolla"],
+    ["4 zucchine", "zucchina"],
+    ["1 melanzana", "melanzana"],
+  ] as const)("singularizes the Italian pieces in %s", (text, name) => {
+    expect(line(text).ingredient).toMatchObject({ unit: "unidad", name });
+  });
+
   it("does not singularize measured names", () => {
+    expect(line("200 g melanzane").ingredient.name).toBe("melanzane");
     expect(line("200 g tomates cherry").ingredient.name).toBe("tomates cherry");
   });
 
@@ -275,6 +335,10 @@ describe("standardizeIngredient", () => {
     [{ qty: "abc", unit: "g", name: "sal" }, ing({ name: "sal" }), []],
     [{ qty: null, unit: null, name: "sal", note: "al gusto" }, ing({ name: "sal", note: "al gusto" }), []],
     [{ name: "200 g harina" }, ing({ qty: 200, unit: "g", name: "harina" }), []],
+    [{ name: "sale q.b." }, ing({ name: "sale", note: "q.b." }), ["household"]],
+    [{ qty: null, unit: "q.b.", name: "sale" }, ing({ name: "sale", note: "q.b." }), ["household"]],
+    [{ qty: null, unit: null, name: "pimienta al gusto" }, ing({ name: "pimienta", note: "al gusto" }), ["household"]],
+    [{ name: "1 bustina di lievito" }, ing({ name: "lievito", note: "1 bustina" }), ["unmeasured"]],
     [{ qty: 400, unit: "g", name: "rape limpio, muy frío (o merluza)" },
       ing({ qty: 400, unit: "g", name: "rape limpio", note: "muy frío, o merluza" }), ["note_split"]],
     [{ qty: 150, unit: "g", name: "gamba pelada, muy fría", note: "Muy fría" },
@@ -324,6 +388,29 @@ describe("standardizeIngredientLines", () => {
       ["Farsa", "rape"], ["Salsa", "pomodoro"], ["Dough", "flour"], ["Caldo", "agua"], [null, "sal"],
     ]);
     expect(result.flags).toEqual(["markdown", "household"]);
+  });
+
+  it.each(["Ingredientes", "INGREDIENTI", "Ingredients", "**Ingredientes**", "## Ingredienti", "Ingredients:"])(
+    "reads %s as a header that resets the section",
+    (header) => {
+      const result = standardizeIngredientLines(["**Farsa**", "400 g rape", header, "9 g sal"]);
+      expect(result.ingredients.map((i) => [i.section, i.name])).toEqual([["Farsa", "rape"], [null, "sal"]]);
+    },
+  );
+
+  it.each(["Método", "metodo", "**Método**", "## Procedimento", "Procedimiento:", "PREPARAZIONE", "Method"])(
+    "ends the ingredient list at %s",
+    (header) => {
+      const result = standardizeIngredientLines([
+        "Ingredientes", "200 g harina", header, "1. Mezcla la harina con el agua.", "Amasa 10 minutos.",
+      ]);
+      expect(result.ingredients.map((i) => [i.section, i.name])).toEqual([[null, "harina"]]);
+    },
+  );
+
+  it("resumes the list at the next ingredients header", () => {
+    const result = standardizeIngredientLines(["Procedimento", "Mescola tutto.", "Ingredienti", "2 uova"]);
+    expect(result.ingredients.map((i) => [i.section, i.qty, i.name])).toEqual([[null, 2, "uovo"]]);
   });
 
   it("returns no ingredients for headers and blank lines only", () => {

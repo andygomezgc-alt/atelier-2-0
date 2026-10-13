@@ -51,8 +51,8 @@ describe("checkExtraction", () => {
   });
 
   it("flags a line without measure or note", () => {
-    const { response } = runRecorded({ title: "Bizcocho", portions: null, method: [], notes: "", ingredients: ["Levadura 1 sobre"] }, []);
-    expect(checkExtraction(response, { sections: [], lines: [{ display: "Levadura 1 sobre", section: null }] }))
-      .toEqual(["#1 «Levadura 1 sobre»: no measure and no note flagging it"]);
+    const { response } = runRecorded({ title: "Bizcocho", portions: null, method: [], notes: "", ingredients: ["Levadura fresca"] }, []);
+    expect(checkExtraction(response, { sections: [], lines: [{ display: "Levadura fresca", section: null }] }))
+      .toEqual(["#1 «Levadura fresca»: no measure and no note flagging it"]);
   });
 });

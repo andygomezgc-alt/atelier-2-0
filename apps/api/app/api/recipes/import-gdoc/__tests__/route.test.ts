@@ -108,11 +108,11 @@ describe("POST /api/recipes/import-gdoc", () => {
     expect(standardizeExtractedRecipe).toHaveBeenCalledWith(EXTRACTED, [{ id: "p-pan", name: "Pangrattato", aliases: [] }]);
     const body = await res.json();
     expect(body.recipeIngredients).toEqual([
-      { rawText: "3 ud melanzane", productId: null, qty: 3, unit: "unidad", section: null, note: null, pesoCalculoG: 300 },
+      { rawText: "3 ud melanzana", productId: null, qty: 3, unit: "unidad", section: null, note: null, pesoCalculoG: 300 },
       { rawText: "100 g pangrattato", productId: "p-pan", qty: 100, unit: "g", section: "Panatura", note: null, pesoCalculoG: null },
       { rawText: "olio extravergine", productId: null, qty: null, unit: null, section: "Panatura", note: "1 cucchiaio", pesoCalculoG: null },
     ]);
-    expect(body.contentJson.ingredients).toEqual(["3 ud melanzane", "100 g pangrattato", "olio extravergine, 1 cucchiaio"]);
+    expect(body.contentJson.ingredients).toEqual(["3 ud melanzana", "100 g pangrattato", "olio extravergine, 1 cucchiaio"]);
     expect(log.info).toHaveBeenCalledWith("recipe_import_gdoc", expect.objectContaining({ ingredients: 3, exactMatches: 1, section: 2 }));
   });
 });

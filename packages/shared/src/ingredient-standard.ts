@@ -102,8 +102,23 @@ const PIECE_BODY =
 const PIECE_IN_NAME = new RegExp(String.raw`\s+${PIECE_BODY}(?=\s|$)`, "i");
 const PIECE_PART = new RegExp(String.raw`^${PIECE_BODY}\.?$`, "i");
 
+// "To taste" expressions: no measure at all, the cook seasons by eye.
+// "c/s" and "cs" are household measures in the parser.
+const TO_TASTE = String.raw`(?:q\.?\s?b\.?|quanto\s+basta|al?\s+gusto|a\s+piacere|c\.\s?s\.?)`;
+const TO_TASTE_PHRASE = new RegExp(String.raw`^${TO_TASTE}$`, "i");
+const TRAILING_TO_TASTE = new RegExp(String.raw`^(.+?)\s+(${TO_TASTE})$`, "i");
+// Packaging with no standard weight ("1 sobre", "2 latas"): the chef completes the quantity.
+const PACKAGING = String.raw`(?:sobres?|bustin[ae]|latas?|botes?|vasett[oi]|ramett[oi]|manojos?|mazzett[oi])`;
+const PACKAGING_WORD = new RegExp(String.raw`^${PACKAGING}$`, "i");
+const LEADING_PACKAGING = new RegExp(
+  String.raw`^(${Q})\s+(${PACKAGING})\s+(?:(?:de|di|del|della|of)\s+|d['’]\s*)?(?=\S)`, "i",
+);
+
 const SECTION_PREFIX = /^(?:para\s+(?:el|la|los|las)\s+|per\s+(?:il|lo|la|i|gli|le)\s+|per\s+l['’]\s*|for\s+the\s+)/i;
 const GENERIC_HEADERS = new Set(["ingredientes", "ingredients", "ingredienti"]);
+const METHOD_HEADERS = new Set([
+  "metodo", "method", "procedimiento", "procedimento", "preparazione", "preparacion", "elaboracion",
+]);
 
 type Part = { text: string; paren: boolean };
 type Draft = {
@@ -179,7 +194,7 @@ function splitNote(text: string): { main: string; parts: Part[] } {
 
 function parseQuantityPhrase(text: string, allowUnknownUnit: boolean): QtyPhrase | null {
   const t = text.trim();
-  if (isHouseholdMeasure(t)) return { qty: null, unit: null, measureNote: t, flags: ["household"] };
+  if (isHouseholdMeasure(t) || TO_TASTE_PHRASE.test(t)) return { qty: null, unit: null, measureNote: t, flags: ["household"] };
   const m = PHRASE.exec(t);
   if (!m) return null;
   const [, qtyText, low, high, rawWord] = m;
@@ -196,7 +211,7 @@ function parseQuantityPhrase(text: string, allowUnknownUnit: boolean): QtyPhrase
     if (resolved.factor !== 1) flags.push("cl_dl");
     return { qty: value * resolved.factor, unit: resolved.unit, measureNote: high ? qtyText! : null, flags };
   }
-  if (IMPERIAL_UNIT.test(word) || (allowUnknownUnit && /^[a-záéíóúüñ./]+$/i.test(word))) {
+  if (IMPERIAL_UNIT.test(word) || PACKAGING_WORD.test(word) || (allowUnknownUnit && /^[a-záéíóúüñ./]+$/i.test(word))) {
     return { qty: null, unit: null, measureNote: t, flags: ["unmeasured"] };
   }
   return null;
@@ -228,6 +243,13 @@ function draftFromLine(text: string): Draft {
   if (imperial) {
     d.name = quantityFirst.slice(imperial[0].length);
     d.measureNotes.push(`${rangeText ?? imperial[1]!} ${imperial[2]!}`);
+    d.flags.add("unmeasured");
+    return d;
+  }
+  const packaging = LEADING_PACKAGING.exec(quantityFirst);
+  if (packaging) {
+    d.name = quantityFirst.slice(packaging[0].length);
+    d.measureNotes.push(`${rangeText ?? packaging[1]!} ${packaging[2]!}`);
     d.flags.add("unmeasured");
     return d;
   }
@@ -267,6 +289,14 @@ function draftFromLine(text: string): Draft {
   if (trailing && phrase) {
     d.name = trailing[1]!;
     applyPhrase(d, phrase);
+    return d;
+  }
+  // "Sale q.b.", "pimienta al gusto"
+  const toTaste = TRAILING_TO_TASTE.exec(main);
+  if (toTaste) {
+    d.name = toTaste[1]!;
+    d.measureNotes.push(toTaste[2]!);
+    d.flags.add("household");
     return d;
   }
   // "sal c/s"
@@ -318,6 +348,8 @@ const SINGULAR_RULES: ReadonlyArray<readonly [RegExp, string]> = [
   [/ri$/i, "ro"], // pomodori → pomodoro
   [/lle$/i, "lla"], // cipolle → cipolla
   [/ine$/i, "ina"], // zucchine → zucchina
+  [/ane$/i, "ana"], // melanzane → melanzana
+  [/ova$/i, "ovo"], // uova → uovo
 ];
 const NAME_CONNECTORS = new Set([
   "de", "del", "della", "delle", "dei", "degli", "di", "da", "con", "al", "alla", "a", "en", "in",
@@ -457,35 +489,55 @@ function headerOf(line: string): string | null {
   const bold = /^(?:\*\*|__)([^*_]+?)(?:\*\*|__)\s*:?$/.exec(t);
   if (bold) return bold[1]!;
   const plain = t.replace(BULLET, "");
-  return plain.endsWith(":") ? plain.slice(0, -1) : null;
+  if (plain.endsWith(":")) return plain.slice(0, -1);
+  // "Ingredientes" or "Método" without a colon is a header too.
+  const key = normalizeForMatch(plain);
+  return GENERIC_HEADERS.has(key) || METHOD_HEADERS.has(key) ? plain : null;
+}
+
+type Header = { kind: "list" } | { kind: "method" } | { kind: "section"; name: string };
+
+function classifyHeader(line: string): Header | null {
+  const header = headerOf(line);
+  if (header === null) return null;
+  const name = cleanSectionName(header);
+  const key = normalizeForMatch(name);
+  if (METHOD_HEADERS.has(key)) return { kind: "method" };
+  return name && !GENERIC_HEADERS.has(key) ? { kind: "section", name } : { kind: "list" };
 }
 
 /**
  * Normalizes an ingredient list. Bold-only lines (**Farsa**), lines ending
  * in ":" (Para la farsa:) and markdown headings are section headers; the
- * lines below them take that section.
+ * lines below them take that section. "Ingredientes" resets the section; a
+ * method header ("Método", "Procedimento") ends the list until the next
+ * "Ingredientes", so its steps are never ingredients.
  */
 export function standardizeIngredientLines(
   lines: readonly string[],
   opts: StandardizeOptions = {},
 ): { ingredients: StandardIngredient[]; flags: StandardizeFlag[] } {
-  const headers = lines.map((l) => {
-    const header = headerOf(l);
-    if (header === null) return null;
-    const name = cleanSectionName(header);
-    return name && !GENERIC_HEADERS.has(normalizeForMatch(name)) ? name : "";
-  });
-  const knownSections = [...(opts.knownSections ?? []), ...headers.filter((h): h is string => !!h)];
+  const headers = lines.map(classifyHeader);
+  const knownSections = [
+    ...(opts.knownSections ?? []),
+    ...headers.flatMap((h) => (h?.kind === "section" ? [h.name] : [])),
+  ];
   const ingredients: StandardIngredient[] = [];
   const flags = new Set<StandardizeFlag>();
   let section: string | null = null;
+  let inMethod = false;
 
   lines.forEach((text, index) => {
     const header = headers[index];
-    if (header !== null && header !== undefined) {
-      section = header ? clip(header, 80) : null;
+    if (header) {
+      if (header.kind === "method") inMethod = true;
+      else if (header.kind === "list") {
+        inMethod = false;
+        section = null;
+      } else if (!inMethod) section = clip(header.name, 80);
       return;
     }
+    if (inMethod) return;
     const result = standardizeIngredientLine(text, { knownSections });
     if (!result.ingredient.name) return;
     ingredients.push(result.ingredient.section === null ? { ...result.ingredient, section } : result.ingredient);
