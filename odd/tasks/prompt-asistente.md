@@ -158,6 +158,16 @@ Después, medir con una prueba si el prompt nuevo supera al actual antes de desp
   - Los resultados quedan fuera del repo, en `.claude/hillclimb/`, con un `.gitignore` propio.
 - Andy pidió trabajar después en la memoria culinaria («que sea verdaderamente funcional»). Hay un mapeo en curso, de solo lectura (workflow: producción, consumo e historia, más una síntesis). Puede abrir un documento de tareas aparte.
 - La prueba (P2-P4) no se commitea hasta que Andy decida si queda en el repo (paso «Make it durable» de la guía de evals). Hasta entonces vive sin commitear en este worktree.
+- 13-10-2026, Diario con Gemini frente a Haiku. El modo `haiku` de la prueba (commit `6275cfa`) hace que el Diario lo responda `claude-haiku-5-5` en vez de Gemini 3.8 Flash. Usa el prompt v1 actual y la misma rama de Anthropic de `streamChat` (razonamiento adaptativo, esfuerzo medio). Producción no cambia.
+  - Simulaciones sin red: oracle 100 % y null 0 % en los 22 casos de cada modo. Cada fila `haiku` queda registrada con `claude-haiku-5-5`.
+  - Credenciales como en P4. Anthropic sale de `vercel env run -e production` con un envoltorio que solo pasa las variables que ya había antes de Vercel, más `EVAL_*` y `ANTHROPIC_API_KEY`. `GEMINI_API_KEY` es la de dev, y se lee solo esa línea de `.env.local`. No se usa `EVAL_ENV_FILE`, porque cargaría también el `ANTHROPIC_API_KEY` falso de `.env.local` y pisaría la clave real.
+  - Mini-piloto (`EVAL_RUN=haiku-piloto`, OK de Andy por unos US$1,20): 4 casos, 1 repetición, juez Opus en esfuerzo máximo. Son 8 filas, sin errores ni negativas.
+    - Gasto medido: US$1,39. La generación con Gemini costó US$0,013, la de Haiku US$0,004 y el juez US$1,37, unos US$0,17 por llamada.
+    - Coste mediano por respuesta: Gemini US$0,0028 (US$0,0057 desde el 1-1-2027), Haiku US$0,0009.
+    - Criterios aprobados: Gemini 16/19, Haiku 18/19.
+    - Mediana de palabras: Gemini 236, Haiku 209.
+    - Mediana de latencia: Gemini 6,2 s, Haiku 7,6 s. En el brodetto, Haiku tardó 18,9 s y generó 3.358 tokens de salida contando el razonamiento.
+    - Seguridad alimentaria (pescado crudo): 4/4 con los dos modelos.
 
 ## Siguiente paso
-- Andy aprueba los casos (P2). Con el runner listo, se pide el OK del piloto pagado con costo, destino y credenciales (P4).
+- Andy decide si se corre la comparación completa del Diario con Gemini frente a Haiku (`EVAL_ALL=1 EVAL_REPS=3 EVAL_RUN=haiku-completa`). Son 132 filas y, con lo medido en el piloto, cuesta unos US$19-23.
