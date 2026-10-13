@@ -6,7 +6,7 @@ import {
   standardizeIngredientLine,
   type RecipeIngredientInput,
 } from "@atelier/shared";
-import { categorizeFromName, defaultMermaPct } from "./defaults";
+import { categorizeFromName, suggestedMermaPct } from "./defaults";
 import { defaultPurchaseUnit } from "./purchase-unit";
 import { defaultCriticality } from "./criticality";
 import { findMatch } from "./matching";
@@ -136,7 +136,7 @@ export async function resolveIngredientDrafts(
         const pezzatura = detectPezzaturaFromName(name, category);
         const created = await tx.product.create({ data: {
           restaurantId, name, category, unidadCompra: defaultPurchaseUnit(category, name), precioCompra: 0,
-          mermaPct: defaultMermaPct(category), mermaOrigen: "sugerida", estado: "borrador",
+          mermaPct: suggestedMermaPct(name, category), mermaOrigen: "sugerida", estado: "borrador",
           criticality: defaultCriticality(category, name), criticalityManual: false,
           pezzaturaMode: pezzatura?.mode ?? null, pezzaturaMin: pezzatura?.min ?? null, pezzaturaMax: pezzatura?.max ?? null,
         } });

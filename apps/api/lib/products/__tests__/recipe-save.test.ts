@@ -34,6 +34,15 @@ describe("resolveIngredientDrafts — the server canonicalizes every line", () =
     expect(row!.productId).toBe("draft-calamar");
   });
 
+  it("a draft for an already-cleaned product starts at 0 % waste; a whole one keeps the category's", async () => {
+    await resolve([
+      { rawText: "150 g gamba pelada, muy fría", createProductDraft: true },
+      { rawText: "200 g gamba roja", createProductDraft: true },
+    ]);
+    expect(product.create.mock.calls[0]![0].data).toMatchObject({ name: "gamba pelada", category: "pescado", mermaPct: 0 });
+    expect(product.create.mock.calls[1]![0].data).toMatchObject({ name: "gamba roja", category: "pescado", mermaPct: 50 });
+  });
+
   it("reads a parenthetical that names a sibling's section as the section, never as part of the name", async () => {
     const rows = await resolve([
       { rawText: "100 g chorizo", section: "Aceite de chorizo", createProductDraft: true },
