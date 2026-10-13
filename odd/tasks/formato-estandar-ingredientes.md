@@ -83,9 +83,9 @@ Orden: F1 → F2 → F3 → F4 → F5 → F7 → F6.
 - [x] F2 (`289bda0`)
 - [x] F3 (`1b03dc6`, migración `20261013120000_recipe_ingredient_section_note`)
 - [x] F4 (`c7d1721`)
-- [ ] F5
+- [x] F5 (`33681bb`)
 - [ ] F6
-- [ ] F7
+- [x] F7 (`1b7b2f1`)
 - [ ] F8
 
 ## Criterios de aceptación
@@ -162,5 +162,44 @@ Orden: F1 → F2 → F3 → F4 → F5 → F7 → F6.
     - una línea vieja que una app vieja manda con qty/unit contradictorios queda como está hasta que alguien la edite;
     - un PATCH sobre una receta borrada con un `productId` inválido ahora da 400 en vez de 404.
 
+- RDD F1–F4:
+  - Riesgo medio, consentimiento `granted`, revisión aprobada y confirmada (linaje `review-5d15f574a858cbae`).
+  - La revisión anterior de F1–F2 quedó desactualizada porque F3 y F4 se commitearon antes del START, y se rehízo con todo junto.
+  - Avisos que se corrigen en F4b:
+    - R3-plural-match-regression: `stripPluralEs` deja «tomates» en «tomat» y «huevos» en «huev», así que el nombre en singular ya no da exacto contra un producto en plural del banco.
+    - R3-noop-patch-legacy-rewrite: un PATCH sin cambios reescribe las filas de una receta vieja que no está en formato canónico.
+    - R3-scale-leading-zero-token (sugerencia): en «Harina 00, 200 g», el «00» se reformatea.
+
+## Tareas añadidas
+- [x] F4b (`7586fda`) — corregir los tres avisos de la revisión de F1–F4:
+  - `stripPluralEs` con la regla española: vocal + s → quitar solo la s; consonante + es → quitar «es»;
+  - el PATCH compara el `rawText` entrante sin canonizar contra el guardado, y si no hay cambios no escribe;
+  - `scaleIngredientLine` solo escala el token inicial cuando la línea tiene la cantidad delante.
+  - Ruta: delegada, después de W3.
+
+- W4 (F7, writer Opus; misma rama, commit solo de sus archivos):
+  - RED: mobile 10 fallos e i18n 2.
+  - GREEN: i18n 93/93; mobile typecheck y 538/538.
+  - El editor manda la línea completa (`rawText` + nota) con `note: null`. Al elegir un producto usa `formatIngredientLine` y conserva la nota.
+- F4b (writer Opus en un worktree aislado; cherry-pick de c39b69d a `7586fda`):
+  - RED: plurales «probable» en vez de «exact»; PATCH sin cambios que escribía; «0 harina».
+  - GREEN: shared 421/421; api tsc y 1476 (`auth-flow` y `leave` por el timeout; aisladas 26/26).
+  - Plural español: tomate y tomates comparten la clave «tomat».
+  - `ingredientsUnchanged` acepta tanto el `rawText` guardado como la línea completa.
+  - Quedó la carpeta `.claude/worktrees/agent-a92f6899512768cdd` (Windows no pudo borrarla por rutas largas); la rama ya se borró.
+
+- W3 (F5, writer Opus):
+  - RED: 6 archivos de prueba nuevos fallaban; el estándar tenía 18 fallos (sin builder, ítems como string, sin código tipado).
+  - GREEN: api tsc y 1574/1574; `eval:extraccion` en modo A 1/1 (10 corridas); shared 421; mobile typecheck.
+  - Comprobación del padre: `eval:extraccion` 1/1.
+  - `pendingMatches` conserva su forma y el índice apunta a la fila de `recipeIngredients`.
+  - El error `recipe_too_many_ingredients` va solo como mensaje, con el código genérico `recipe_extraction_failed`; un mensaje propio en la app queda como seguimiento.
+  - Recupera secciones aplanadas con una heurística (60 % de las líneas con paréntesis, 2 o más etiquetas en bloques).
+  - Modo B (`EVAL_LIVE=1`, 4 llamadas a GLM) no se corrió.
+  - Huecos del normalizador que encontró: «q.b.», «al gusto» y «1 sobre»; «Ingredientes» sin dos puntos; plurales italianos -ane/-ova.
+
+## Tareas añadidas (2)
+- [ ] F2b — corregir los huecos del normalizador: «q.b.», «al gusto», «quanto basta», «a piacere» y «1 sobre» pasan a la nota sin cantidad; «Ingredientes/Ingredienti/Ingredients» sin dos puntos es una cabecera; plurales italianos -ane/-ova. Motivo: Kokoo está en Italia y «q.b.» es muy común.
+
 ## Siguiente paso
-RDD de F1–F4, después W3 (F5).
+F2b, después la revisión RDD de F4b + F5 + F7 + F2b, y después F6 (con el OK de Andy para el gasto).
