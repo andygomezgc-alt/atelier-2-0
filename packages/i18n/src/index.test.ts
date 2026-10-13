@@ -294,3 +294,12 @@ describe("standard ingredient format copy", () => {
     expect(t("recipe_ingredient_piece_weight", "en", { g: "350" })).toBe("350 g per piece");
   });
 });
+
+// The trash empties itself after 7 days (/api/cron/purge-trash); the three trash screens share this notice.
+describe("trash retention notice", () => {
+  test("says in each language that the trash is emptied after 7 days", () => {
+    expect(es.papelera_retention_note).toBe("Lo que está en la papelera se borra para siempre a los 7 días.");
+    expect(itDict.papelera_retention_note).toBe("Ciò che è nel cestino viene eliminato definitivamente dopo 7 giorni.");
+    expect(en.papelera_retention_note).toBe("Items in the trash are deleted forever after 7 days.");
+  });
+});

@@ -476,6 +476,7 @@ export const es = {
   papelera_title: "Papelera",
   papelera_empty_title: "La papelera está vacía",
   papelera_empty_sub: "Las recetas que borres aparecen acá para recuperarlas.",
+  papelera_retention_note: "Lo que está en la papelera se borra para siempre a los 7 días.",
   toast_recipe_restored: "Receta restaurada",
   btn_escalar: "Escalar",
   scale_title: "Escalar porciones",

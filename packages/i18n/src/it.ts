@@ -449,6 +449,7 @@ export const it: EsDict = {
   papelera_title: "Cestino",
   papelera_empty_title: "Il cestino è vuoto",
   papelera_empty_sub: "Le ricette che elimini finiscono qui per recuperarle.",
+  papelera_retention_note: "Ciò che è nel cestino viene eliminato definitivamente dopo 7 giorni.",
   toast_recipe_restored: "Ricetta ripristinata",
   btn_escalar: "Scala",
   scale_title: "Scala le porzioni",
