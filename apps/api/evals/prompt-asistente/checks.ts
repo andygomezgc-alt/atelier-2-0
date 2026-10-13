@@ -1,4 +1,5 @@
 // Comprobaciones deterministas de la prueba del prompt del asistente. Puras: sin red ni disco.
+import { standardizeIngredientLines, type StandardizeFlag } from "@atelier/shared";
 
 export type Lang = "es" | "it" | "en";
 
@@ -36,29 +37,62 @@ const LIST_ITEM = /^\s*(?:[-*•]|\d+[.)])\s+(.+)$/u;
 const FULLY_BOLD = /^(?:\*\*[^*]+\*\*|__[^_]+__):?$/u;
 const indent = (line: string) => (/^\s*/.exec(line)?.[0] ?? "").replace(/\t/g, "    ").length;
 
-/** Líneas de la lista de ingredientes y fracción que empieza por la cantidad («8 g sal fina», no «Sal fina, 8 g»). */
-export function quantityFirstShare(text: string): { lines: number; share: number } {
+/**
+ * The ingredient list items of a recipe answer, from the ingredients heading to the method heading,
+ * without the group labels. raw is the item without its list marker; item also drops the outer bold
+ * and code quotes.
+ */
+function ingredientItems(text: string): Array<{ raw: string; item: string }> {
   const all = text.split(/\r?\n/);
   const start = all.findIndex(line => INGREDIENTS_HEADING.test(line));
-  if (start < 0) return { lines: 0, share: 0 };
+  if (start < 0) return [];
   const section = all.slice(start + 1);
   const end = section.findIndex(line => METHOD_HEADING.test(line));
   const body = end < 0 ? section : section.slice(0, end);
-  let lines = 0;
-  let quantityFirst = 0;
-  body.forEach((line, index) => {
+  return body.flatMap((line, index) => {
     const raw = LIST_ITEM.exec(line)?.[1]?.trim();
-    if (!raw) return;
+    if (!raw) return [];
     // Fuera la negrita y las comillas de código («`8 g` sal fina»), que no ocultan la cantidad.
     const item = raw.replace(/^[*_`\s]+|[*_`\s]+$/g, "");
     const next = body.slice(index + 1).find(candidate => candidate.trim());
     const hasSubItems = next !== undefined && LIST_ITEM.test(next) && indent(next) > indent(line);
     // Las etiquetas de grupo («Para el caldo:», en negrita entera o con subítems) no son ingredientes.
-    if (!item || item.endsWith(":") || FULLY_BOLD.test(raw) || hasSubItems) return;
-    lines++;
-    if (/^[\d½¼¾]/u.test(item)) quantityFirst++;
+    if (!item || item.endsWith(":") || FULLY_BOLD.test(raw) || hasSubItems) return [];
+    return [{ raw, item }];
   });
-  return { lines, share: lines ? quantityFirst / lines : 0 };
+}
+
+/** Líneas de la lista de ingredientes y fracción que empieza por la cantidad («8 g sal fina», no «Sal fina, 8 g»). */
+export function quantityFirstShare(text: string): { lines: number; share: number } {
+  const items = ingredientItems(text);
+  const quantityFirst = items.filter(({ item }) => /^[\d½¼¾]/u.test(item)).length;
+  return { lines: items.length, share: items.length ? quantityFirst / items.length : 0 };
+}
+
+// Normalizer flags that only tidy the presentation: bold or code quotes, and a note after the comma.
+const PRESENTATION_FLAGS: ReadonlySet<StandardizeFlag> = new Set(["markdown", "note_split"]);
+
+/**
+ * Ingredient lines and the share already in the standard format of @atelier/shared: quantity first,
+ * a metric unit or «ud» pieces, the product and any note after a comma («400 g rape limpio, muy frío»).
+ * A line fails when the shared normalizer has to fix it (spoons, cl/dl, ranges, fractions, a weight per
+ * piece, no measure), when the name comes first («sal fina (8 g)») or when the note is in parentheses.
+ * Headers the normalizer reads as sections (**Farsa**) are not lines.
+ */
+export function formatShare(text: string): { lines: number; share: number } {
+  let lines = 0;
+  let canonical = 0;
+  for (const { raw } of ingredientItems(text)) {
+    // One line at a time: the list version merges the flags of every line.
+    const { ingredients, flags } = standardizeIngredientLines([raw]);
+    const ingredient = ingredients[0];
+    if (!ingredient) continue;
+    lines++;
+    const plain = raw.replace(/[*`]/g, "").trim().toLowerCase();
+    const noteAfterComma = ingredient.note === null || plain.includes(`, ${ingredient.note.toLowerCase()}`);
+    if (ingredient.qty !== null && flags.every(flag => PRESENTATION_FLAGS.has(flag)) && /^\d/.test(plain) && noteAfterComma) canonical++;
+  }
+  return { lines, share: lines ? canonical / lines : 0 };
 }
 
 /** Un bloque ```json en cualquier parte, el bloque <recipe_payload> o un objeto/array JSON al final del texto. */
@@ -78,16 +112,19 @@ export function hasHiddenJson(text: string): boolean {
   return false;
 }
 
-export type DeterministicGrades = { idioma: 0 | 1; titulos: 0 | 1 | null; cantidad: 0 | 1 | null; sin_json: 0 | 1 };
+export type DeterministicGrades = { idioma: 0 | 1; titulos: 0 | 1 | null; cantidad: 0 | 1 | null; formato: 0 | 1 | null; sin_json: 0 | 1 };
 
-/** Las notas deterministas de una respuesta; titulos y cantidad solo existen en los casos de receta. */
+/** Las notas deterministas de una respuesta; titulos, cantidad y formato solo existen en los casos de receta. */
 export function deterministicGrades(answer: string, kase: { lang: Lang; recipe: boolean }): DeterministicGrades {
   const quantities = quantityFirstShare(answer);
+  const format = formatShare(answer);
   return {
     idioma: detectLanguage(answer) === kase.lang ? 1 : 0,
     titulos: kase.recipe ? (recipeDetected(answer) ? 1 : 0) : null,
     // Con menos de 3 ingredientes no hay lista que medir: null, para no contarlo como un fallo de formato.
     cantidad: kase.recipe && quantities.lines >= 3 ? (quantities.share >= 0.8 ? 1 : 0) : null,
+    // Same threshold and null rule as cantidad, over the stricter standard-format check.
+    formato: kase.recipe && format.lines >= 3 ? (format.share >= 0.8 ? 1 : 0) : null,
     sin_json: hasHiddenJson(answer) ? 0 : 1,
   };
 }

@@ -1,4 +1,7 @@
 // Prueba del prompt del asistente: baseline (prompt congelado) frente a v1 (lib/anthropic-system.md).
+// baseline-prompt.md is the v3 prompt frozen before the shared ingredient rules ({{REGLAS_INGREDIENTES}},
+// filled by renderPrinciples), so baseline vs v1 isolates the format change. That change, checks.ts and the
+// new cases change every fingerprint and the _manifest.json of old folders: use a new EVAL_RUN.
 // Cada caso pasa por streamChat, la entrada real del chat (modelos, razonamiento y manejo de errores
 // de producción); solo se simula el presupuesto. Las respuestas se califican con checks.ts y el juez,
 // y quedan en <worktree>/.claude/hillclimb/<carpeta>/<variante>/ para build-report-lite.
@@ -41,7 +44,7 @@ import type { Reservation } from "../../lib/ai/budget";
 import { ChatError, streamChat } from "../../lib/ai/chat";
 import { chatConfig } from "../../lib/ai/config";
 import { emptyUsage, type AiUsage } from "../../lib/ai/types";
-import { buildSystemBlocks } from "../../lib/anthropic";
+import { buildSystemBlocks, renderPrinciples } from "../../lib/anthropic";
 import { memoryContext } from "../../lib/culinary-memory/evidence";
 import { deterministicGrades, wordCount, type Lang } from "./checks";
 import { ensureRunManifest } from "./manifest";
@@ -419,7 +422,7 @@ function summarize(dir: string, label: string, fingerprints: Map<string, string>
     const refused = counted.filter(row => (row.grade as Record<string, unknown> | undefined)?.rechazo === 1).length;
     const truncated = mine.filter(row => row.status === "truncated").length;
     console.log(`  ${mode}: ${counted.length} filas contadas (rechazos ${refused}; fuera: truncadas ${truncated}, sin calificar ${unscored})`);
-    console.log(`    criterios ${fixed(ci.mean)} IC95% [${fixed(ci.lo)}, ${fixed(ci.hi)}] (${criterios.length} casos) · idioma ${rate("idioma")} · titulos ${rate("titulos")} · cantidad ${rate("cantidad")} · sin_json ${rate("sin_json")} · rechazo ${rate("rechazo")}`);
+    console.log(`    criterios ${fixed(ci.mean)} IC95% [${fixed(ci.lo)}, ${fixed(ci.hi)}] (${criterios.length} casos) · idioma ${rate("idioma")} · titulos ${rate("titulos")} · cantidad ${rate("cantidad")} · formato ${rate("formato")} · sin_json ${rate("sin_json")} · rechazo ${rate("rechazo")}`);
   }
 }
 
@@ -431,6 +434,7 @@ const STATE = {
     { id: "idioma", kind: "float", scale: 1 },
     { id: "titulos", kind: "float", scale: 1 },
     { id: "cantidad", kind: "float", scale: 1 },
+    { id: "formato", kind: "float", scale: 1 },
     { id: "sin_json", kind: "float", scale: 1 },
     { id: "rechazo", kind: "float", scale: 1, better: "lower" },
   ],
@@ -541,7 +545,8 @@ describe("prueba del prompt del asistente", () => {
       return;
     }
 
-    const prompt = readFileSync(PROMPTS[config.variant], "utf8");
+    // Both variants go through the production renderer; on the frozen baseline, which has no placeholder, it is a no-op.
+    const prompt = renderPrinciples(readFileSync(PROMPTS[config.variant], "utf8"));
     const judgeName = config.dryRun ? `stub-${config.dryRun}` : judgeModel();
     // manifest.ts no entra: solo decide qué corridas comparten carpeta, no cómo se genera ni se califica una fila.
     const harness = ["run.eval.ts", "judge.ts", "checks.ts"].map(file => readFileSync(join(HERE, file), "utf8"));
@@ -720,7 +725,7 @@ describe("prueba del prompt del asistente", () => {
           // Un rechazo cuenta como fila (rechazo = 1) pero sus capacidades quedan en null, fuera de las medias.
           status: generation.status === "truncated" ? "truncated" : "ok", stop_reason: generation.stopReason,
           grade: refused || !results
-            ? { criterios: null, idioma: null, titulos: null, cantidad: null, sin_json: null, rechazo: 1 }
+            ? { criterios: null, idioma: null, titulos: null, cantidad: null, formato: null, sin_json: null, rechazo: 1 }
             : { criterios: passed / results.length, ...deterministicGrades(answer, kase), rechazo: 0 },
           explanation: {
             criterios: results ? results.map(result => `${result.pass ? "✓" : "✗"} ${result.criterion} — ${result.reason}`).join("\n") : `rechazo del proveedor (${generation.stopReason}): no se califica`,
