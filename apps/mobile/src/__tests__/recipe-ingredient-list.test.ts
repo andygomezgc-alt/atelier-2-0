@@ -111,6 +111,47 @@ describe("RecipeIngredientList", () => {
     expect(onLinePress.mock.calls[0]![0]).toMatchObject({ text: "1 limón", line: { status: "incompatible_unit" } });
   });
 
+  describe("standard format", () => {
+    const withFormat = (
+      base: RecipeIngredientResponse,
+      extra: Partial<RecipeIngredientResponse>,
+    ): RecipeIngredientResponse => ({ ...base, ...extra });
+    const STANDARD = [
+      withFormat(ingredient("a", 0, "40 g aceite de oliva"), { section: null, note: null }),
+      withFormat(ingredient("b", 1, "4 ud calamar"), { section: "Fondo", note: "limpio", qty: 4, unit: "unidad", pesoCalculoG: 350 }),
+      withFormat(ingredient("c", 2, "1 limón"), { section: "Fondo", note: null, qty: 1, unit: "unidad" }),
+      withFormat(ingredient("d", 3, "200 g mantequilla"), { section: "Salsa", note: "fría", qty: 200, unit: "g", pesoCalculoG: 250 }),
+    ];
+    const STANDARD_LINES: RecipeCostLine[] = STANDARD.map((i) => ({
+      ingredientId: i.id, position: i.position, status: "ok", costCents: 100, productId: `p-${i.id}`, recipeUnit: "g", purchaseUnit: "kg",
+    }));
+    const displayTexts = ["40 g aceite de oliva", "4 ud calamar, limpio", "1 limón", "200 g mantequilla, fría"];
+
+    it("adds one heading per section run, with no heading for ingredients without a section", async () => {
+      await render({ ingredients: displayTexts, recipeIngredients: STANDARD, lines: STANDARD_LINES });
+      const all = texts();
+      expect(all.filter((s) => s === "Fondo" || s === "Salsa")).toEqual(["Fondo", "Salsa"]);
+      expect(all.indexOf("· 40 g aceite de oliva")).toBeLessThan(all.indexOf("Fondo"));
+      expect(all.indexOf("Fondo")).toBeLessThan(all.indexOf("· 4 ud calamar"));
+      expect(all.indexOf("· 1 limón")).toBeLessThan(all.indexOf("Salsa"));
+    });
+
+    it("shows the note and, for pieces, the weight per piece under the ingredient", async () => {
+      await render({ ingredients: displayTexts, recipeIngredients: STANDARD, lines: STANDARD_LINES });
+      const all = texts();
+      expect(all.slice(all.indexOf("· 4 ud calamar"), all.indexOf("· 4 ud calamar") + 4)).toEqual([
+        "· 4 ud calamar", "limpio", "350 g por pieza", "1,00 €",
+      ]);
+      expect(all).toContain("fría");
+      expect(all).not.toContain("250 g por pieza");
+    });
+
+    it("keeps the legacy list as it is when there are no cost lines", async () => {
+      await render({ ingredients: displayTexts, recipeIngredients: STANDARD, lines: undefined });
+      expect(texts()).toEqual(["Ingredientes", ...displayTexts.map((s) => `· ${s}`)]);
+    });
+  });
+
   it("shows the reasons but no taps to someone who cannot edit products", async () => {
     await render({ lines: LINES, permissions: { canManageProducts: false, canEditRecipe: false } });
     expect(texts()).toContain("Falta cuánto pesa 1 litro");

@@ -26,8 +26,12 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { listProducts, type Product } from "@/src/api/products";
-import { parseIngredient } from "@atelier/shared";
-import { editIngredientText, selectIngredientProduct, type IngredientValue } from "@/src/lib/recipe-editor";
+import {
+  editIngredientText,
+  ingredientMatchName,
+  selectIngredientProduct,
+  type IngredientValue,
+} from "@/src/lib/recipe-editor";
 export type { IngredientValue } from "@/src/lib/recipe-editor";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 
@@ -84,7 +88,8 @@ export function IngredientAutocomplete({
     setLoading(true);
     timerRef.current = setTimeout(async () => {
       try {
-        const list = await listProducts({ q: parseIngredient(text).name || text.trim() });
+        // Clean name: no quantity, note or piece weight ("400 g rape, muy frío" → "rape").
+        const list = await listProducts({ q: ingredientMatchName(text) });
         // Solo mostramos activos y borradores; archivados no aplican como sugerencia.
         setSuggestions(
           list.filter((p) => p.estado !== "archivado").slice(0, MAX_SUGGESTIONS),

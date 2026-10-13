@@ -30,6 +30,7 @@ import { RecipeIngredientList, type IngredientRow } from "@/src/components/Recip
 import { IngredientFixSheet, type FixTarget } from "@/src/components/IngredientFixSheet";
 import { StatusBadge, type StatusLevel } from "@/src/components/StatusBadge";
 import { setRecipeDraft } from "@/src/lib/recipe-draft";
+import { toEditorIngredient } from "@/src/lib/recipe-editor";
 import { lineAction } from "@/src/lib/ingredient-cost";
 import { forceRefresh } from "@/src/lib/refresh";
 import { can } from "@atelier/shared";
@@ -220,18 +221,25 @@ export default function RecipeDetailScreen() {
       // en el banco para los que no matcheaban exact (los rawText con
       // cantidad pegada al nombre). Combinado con Bug C, el editor de
       // recetas migradas no duplica nada al guardar sin cambios.
-      recipeIngredients: recipe.recipeIngredients.map((ri) => ({
-        rawText: ri.rawText,
-        qty: ri.qty,
-        unit: ri.unit,
-        pezzatura: ri.pezzatura,
-        mermaOverridePct: ri.mermaOverridePct,
-        productId: ri.product?.id ?? null,
-        // Entrega A.5, Fase 7: preservar el override para que al re-guardar
-        // sin cambios no se pierda. Si el chef lo modificó en el editor, el
-        // valor del editor reemplaza este snapshot.
-        pesoCalculoG: ri.pesoCalculoG ?? null,
-      })),
+      recipeIngredients: recipe.recipeIngredients.map((ri) =>
+        // Standard format: the line carries the note (display line) and note
+        // is null, so the server re-splits whatever the chef edits; the
+        // section is copied as is.
+        toEditorIngredient({
+          rawText: ri.rawText,
+          qty: ri.qty,
+          unit: ri.unit,
+          pezzatura: ri.pezzatura,
+          mermaOverridePct: ri.mermaOverridePct,
+          productId: ri.product?.id ?? null,
+          // Entrega A.5, Fase 7: preservar el override para que al re-guardar
+          // sin cambios no se pierda. Si el chef lo modificó en el editor, el
+          // valor del editor reemplaza este snapshot.
+          pesoCalculoG: ri.pesoCalculoG ?? null,
+          section: ri.section ?? null,
+          note: ri.note ?? null,
+        }),
+      ),
     });
     router.push("/recetas/nueva");
   }
