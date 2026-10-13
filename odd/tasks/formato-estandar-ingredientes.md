@@ -233,5 +233,19 @@ Orden: F1 → F2 → F3 → F4 → F5 → F7 → F6.
     - criterios 0.973 [0.941, 1.000] → 0.933 [0.892, 0.975], con los IC solapados;
     - fallos de v1: 2× «cierra con una mejora concreta» (consejo de servicio) y 3× «tiempos con señal de punto» (la base tuvo 2).
 
+- Andy dio F6 por bueno con el modo Creativo; Diario y la extracción real quedan sin medir.
+- RDD F6:
+  - Riesgo medio, consentimiento `granted`, revisión aprobada y confirmada (linaje `review-de1fb22540cf563c`).
+  - Avisos, como seguimientos:
+    - la huella de la corrida no incluye el normalizador de shared, del que depende `formato`;
+    - Diario no está medido (Andy lo aceptó);
+    - la prueba de caché es trivial porque la memoización la hace pasar sola.
+
+## F8 — pasos para Andy después de publicar
+1. Abrir el chat original del calamar y tocar «Guardar como receta». Sale una receta nueva con secciones y nombres limpios.
+2. Borrar la receta vieja del calamar, la que quedó sin secciones.
+3. En el banco, mandar a la papelera los productos sucios del 12-10, los que tienen «(farsa)», «(tripa)» o «(aceite de chorizo)» en el nombre, si la receta nueva ya no los usa.
+4. Completar en la receta nueva lo que quede en rojo (precio, «1 litro pesa», peso por pieza).
+
 ## Siguiente paso
-Andy decide: dar F6 por bueno con el modo Creativo, o medir también Diario y la extracción con las claves de desarrollo.
+PR único hacia main; después F8 (Andy).
