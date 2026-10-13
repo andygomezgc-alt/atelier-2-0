@@ -66,6 +66,13 @@ describe("resolveIngredientDrafts — the server canonicalizes every line", () =
     expect(row).toMatchObject({ productId: "oil", rawText: "aceite", qty: null, unit: null, note: "1 cucharada" });
   });
 
+  it("links the singular standard name to an existing plural bank product without a new draft", async () => {
+    product.findMany.mockResolvedValue([{ id: "tomatoes", name: "Tomates", aliases: [] }]);
+    const [row] = await resolve([{ rawText: "3 tomates", createProductDraft: true }]);
+    expect(product.create).not.toHaveBeenCalled();
+    expect(row!.productId).toBe("tomatoes");
+  });
+
   it("keeps explicit client qty/unit that contradict the text, with the client's rawText as is", async () => {
     const [row] = await resolve([{ rawText: "300 g patata, pelada", qty: 250, unit: "g", note: "en dados" }]);
     expect(row).toMatchObject({ rawText: "300 g patata, pelada", qty: 250, unit: "g", note: "en dados" });

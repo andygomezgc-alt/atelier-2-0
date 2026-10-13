@@ -36,6 +36,48 @@ export function ingredientDisplayLines(rows: ReadonlyArray<{ rawText: string; no
   return rows.map((row) => (row.note ? `${row.rawText}, ${row.note}` : row.rawText).slice(0, CONTENT_LINE_MAX));
 }
 
+/** A full stored row (PATCH only), as read for the no-op comparison. Numeric columns may be Prisma Decimals. */
+export type StoredIngredientRow = StoredIngredientLine & {
+  productId: string | null; unit: string | null; pezzatura: string | null;
+  qty: unknown; mermaOverridePct: unknown; pesoCalculoG: unknown;
+};
+
+/**
+ * Whether a PATCH resends the stored ingredients as they are. The comparison
+ * reads the incoming lines as sent, before canonicalization, so re-saving a
+ * legacy line ("200g arroz") or a display line ("40 g AOVE, en frío", with
+ * note null) is not a change. An omitted field changes nothing
+ * where the server would keep or derive it from the same text (qty, unit,
+ * piece weight, section, note); productId, pezzatura and mermaOverridePct
+ * default to null, as they are saved. A null piece weight is compared as
+ * resolved (from the text, else null). A line that asks for a draft product
+ * is always a change, so the draft is still matched or created.
+ */
+export function ingredientsUnchanged(
+  incoming: readonly RecipeIngredientInput[],
+  resolved: ReadonlyArray<{ pesoCalculoG: number | null }>,
+  stored: readonly StoredIngredientRow[],
+): boolean {
+  const num = (value: unknown) => (value === null || value === undefined ? null : Number(value));
+  return incoming.length === stored.length && incoming.every((ing, index) => {
+    const cur = stored[index]!;
+    if (!ing.productId && ing.createProductDraft) return false;
+    // The editor re-sends a row as its display line ("rawText, note") with
+    // note null: the note then travels in the text and is not cleared.
+    const asDisplayLine = cur.note !== null && ing.rawText === `${cur.rawText}, ${cur.note}`;
+    if (ing.rawText !== cur.rawText && !asDisplayLine) return false;
+    const note = asDisplayLine && ing.note === null ? undefined : ing.note;
+    const pesoCalculoG = ing.pesoCalculoG === null ? resolved[index]!.pesoCalculoG : ing.pesoCalculoG;
+    return (ing.productId ?? null) === cur.productId &&
+      (ing.pezzatura ?? null) === cur.pezzatura && num(ing.mermaOverridePct) === num(cur.mermaOverridePct) &&
+      (ing.qty === undefined || num(ing.qty) === num(cur.qty)) &&
+      (ing.unit === undefined || ing.unit === cur.unit) &&
+      (pesoCalculoG === undefined || pesoCalculoG === num(cur.pesoCalculoG)) &&
+      (ing.section === undefined || blankToNull(ing.section) === cur.section) &&
+      (note === undefined || blankToNull(note) === cur.note);
+  });
+}
+
 /**
  * The server is the only canonicalizer: every line goes through the standard
  * format before it is matched, drafted or stored.

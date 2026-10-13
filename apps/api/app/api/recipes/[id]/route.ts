@@ -4,7 +4,7 @@ import { PatchRecipeRequestSchema, can } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 import { projectRecipeDetail, recipeDetailInclude } from "@/lib/projections";
-import { ingredientDisplayLines, lockRecipeSave, resolveIngredientDrafts, RecipeSaveError } from "@/lib/products/recipe-save";
+import { ingredientDisplayLines, ingredientsUnchanged, lockRecipeSave, resolveIngredientDrafts, RecipeSaveError } from "@/lib/products/recipe-save";
 import type { Prisma } from "@atelier/db";
 
 // P2-1 (auditoría jul 2026): señal tipada para abortar el PATCH desde dentro
@@ -170,11 +170,15 @@ export async function PATCH(
             pezzatura: true, mermaOverridePct: true, pesoCalculoG: true, section: true, note: true },
         });
         const rows = await resolveIngredientDrafts(tx, ctx.restaurantId, parse.data.recipeIngredients!, currentRows);
+        // Compared as sent, before canonicalization: an unchanged save keeps
+        // the stored rows (legacy rawText included) and writes none of them.
+        const unchanged = ingredientsUnchanged(parse.data.recipeIngredients!, rows, currentRows);
+        const savedRows = unchanged ? currentRows : rows;
         // contentJson.ingredients always follows the saved rows (display lines).
-        if (rows.length) {
+        if (savedRows.length) {
           const stored = fresh?.contentJson;
           const base = parse.data.contentJson ?? (stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {});
-          data.contentJson = { ...base, ingredients: ingredientDisplayLines(rows) };
+          data.contentJson = { ...base, ingredients: ingredientDisplayLines(savedRows) };
         }
 
         // limpieza: escritura atómica tenant-scoped (cierra el TOCTOU de
@@ -186,13 +190,6 @@ export async function PATCH(
         });
         if (result.count === 0) throw new RecipeGoneError();
 
-        const strictlyComparedFields = ["productId", "position", "rawText", "unit", "pezzatura", "section", "note"] as const;
-        const numericFields = ["qty", "mermaOverridePct", "pesoCalculoG"] as const;
-        const unchanged = rows.length === currentRows.length && rows.every((row, index) => {
-          const current = currentRows[index]!;
-          return strictlyComparedFields.every(field => row[field] === current[field]) &&
-            numericFields.every(field => row[field] === (current[field] === null ? null : Number(current[field])));
-        });
         if (!unchanged) {
           await tx.recipeIngredient.deleteMany({ where: { recipeId: id } });
           if (rows.length) await tx.recipeIngredient.createMany({ data: rows.map(row => ({ ...row, recipeId: id })) });

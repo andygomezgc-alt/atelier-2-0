@@ -219,6 +219,76 @@ describe("PATCH /api/recipes/[id]", () => {
       });
     });
 
+    describe("the editor re-sends each row as its display line with note null", () => {
+      const editorClient = newClient.map((row, index) => ({ ...row, rawText: displayLines[index]!, note: null }));
+
+      it("an unchanged save is a no-op and writes no rows", async () => {
+        authAs("admin");
+        withStoredIngredients(stored);
+        expect((await patch({ recipeIngredients: editorClient })).status).toBe(200);
+        expect(db.recipeIngredient.deleteMany).not.toHaveBeenCalled();
+        expect(db.recipeIngredient.createMany).not.toHaveBeenCalled();
+        expect(db.recipe.updateMany.mock.calls[0]![0].data.contentJson.ingredients).toEqual(displayLines);
+      });
+
+      it("a changed row rewrites the rows and the note split from the text keeps every note", async () => {
+        authAs("admin");
+        withStoredIngredients(stored);
+        const edited = editorClient.map((row, index) => index ? { ...row, rawText: "50 g AOVE, en frío", qty: 50 } : row);
+        expect((await patch({ recipeIngredients: edited })).status).toBe(200);
+        expect(db.recipeIngredient.deleteMany).toHaveBeenCalledOnce();
+        expect(db.recipeIngredient.createMany.mock.calls[0]![0].data).toMatchObject([
+          { rawText: "4 ud calamar", note: "tubos de 15–18 cm", section: "Calamar" },
+          { rawText: "50 g AOVE", qty: 50, note: "en frío", section: "Aceite de chorizo" },
+        ]);
+      });
+
+      it("a display line whose note was edited is a change", async () => {
+        authAs("admin");
+        withStoredIngredients(stored);
+        const edited = editorClient.map((row, index) => index ? { ...row, rawText: "40 g AOVE, templado" } : row);
+        expect((await patch({ recipeIngredients: edited })).status).toBe(200);
+        expect(db.recipeIngredient.createMany.mock.calls[0]![0].data[1]).toMatchObject({ rawText: "40 g AOVE", note: "templado" });
+      });
+    });
+
+    describe("legacy rows with non-canonical rawText", () => {
+      const legacy = [
+        { id: "row-1", recipeId: "rec-1", productId: null, position: 0, rawText: "200g arroz", qty: 200, unit: "g", pezzatura: null, mermaOverridePct: null, pesoCalculoG: null, section: null, note: null },
+        { id: "row-2", recipeId: "rec-1", productId: null, position: 1, rawText: "300g patata, pelada", qty: 300, unit: "g", pezzatura: null, mermaOverridePct: null, pesoCalculoG: null, section: null, note: null },
+      ];
+      const sent = legacy.map(({ id: _id, recipeId: _recipeId, position: _position, ...row }) => row);
+
+      it("an unchanged PATCH writes no rows and keeps the stored lines in contentJson", async () => {
+        authAs("admin");
+        withStoredIngredients(legacy);
+        expect((await patch({ recipeIngredients: sent })).status).toBe(200);
+        expect(db.recipeIngredient.deleteMany).not.toHaveBeenCalled();
+        expect(db.recipeIngredient.createMany).not.toHaveBeenCalled();
+        expect(db.recipe.updateMany.mock.calls[0]![0].data.contentJson.ingredients).toEqual(["200g arroz", "300g patata, pelada"]);
+      });
+
+      it("an unchanged PATCH from an older app that only sends rawText writes no rows", async () => {
+        authAs("admin");
+        withStoredIngredients(legacy);
+        expect((await patch({ recipeIngredients: sent.map(({ rawText }) => ({ rawText })) })).status).toBe(200);
+        expect(db.recipeIngredient.deleteMany).not.toHaveBeenCalled();
+        expect(db.recipeIngredient.createMany).not.toHaveBeenCalled();
+      });
+
+      it("a changed quantity rewrites every row in the standard format", async () => {
+        authAs("admin");
+        withStoredIngredients(legacy);
+        const edited = sent.map((row, index) => index ? row : { ...row, rawText: "250g arroz", qty: 250 });
+        expect((await patch({ recipeIngredients: edited })).status).toBe(200);
+        expect(db.recipeIngredient.deleteMany).toHaveBeenCalledOnce();
+        expect(db.recipeIngredient.createMany.mock.calls[0]![0].data).toMatchObject([
+          { rawText: "250 g arroz", qty: 250, unit: "g", note: null },
+          { rawText: "300 g patata", qty: 300, unit: "g", note: "pelada" },
+        ]);
+      });
+    });
+
     it("canonicalizes free text on edit", async () => {
       authAs("admin");
       expect((await patch({ recipeIngredients: [{ rawText: "4 calamares de 350 g aprox. (tubos de 15–18 cm, sin roturas)" }] })).status).toBe(200);

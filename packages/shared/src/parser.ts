@@ -276,10 +276,17 @@ export function scaleIngredientLine(raw: string, factor: number): string {
     return qty === null ? token : formatQuantity(qty * factor);
   };
 
+  const parsed = parseIngredient(trimmed);
+  // Name-first line (Fase D, "00 harina, 200 g"): only the trailing quantity
+  // scales; a number at the start belongs to the name.
+  const nameFirst = trimmed.match(PHASE_D);
+  if (parsed.quantity !== null && nameFirst && parsed.name === nameFirst[1]!.trim()) {
+    return trimmed.replace(TRAILING_QUANTITY, (_m, token: string, tail: string) => scale(token) + tail);
+  }
+
   const range = trimmed.match(LEADING_RANGE);
   if (range) return scale(range[1]!) + range[2]! + scale(range[3]!) + trimmed.slice(range[0].length);
 
-  const parsed = parseIngredient(trimmed);
   if (parsed.quantity === null && parsed.measure === undefined) return raw;
 
   // Caso 1: cantidad al inicio (Fase A/B/C/household, ej. "200g harina", "2 cebollas").

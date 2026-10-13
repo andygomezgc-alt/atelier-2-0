@@ -25,6 +25,13 @@ describe("scaleIngredientLine", () => {
     );
   });
 
+  it("scales the trailing quantity of a name-first line and never a number in the name", () => {
+    expect(scaleIngredientLine("Harina 00, 200 g", 2)).toBe("Harina 00, 400 g");
+    expect(scaleIngredientLine("00 harina, 200 g", 2)).toBe("00 harina, 400 g");
+    expect(scaleIngredientLine("00 harina, 1,5 kg", 2)).toBe("00 harina, 3 kg");
+    expect(scaleIngredientLine("Sal fina, 8 g", 0.5)).toBe("Sal fina, 4 g");
+  });
+
   it("achica con factor < 1", () => {
     expect(scaleIngredientLine("200g harina", 0.5)).toBe("100g harina");
   });
