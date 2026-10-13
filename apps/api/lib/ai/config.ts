@@ -2,6 +2,9 @@ import { normalizeChatMode, type ChatModelSelection } from "@atelier/shared";
 
 export type AiProvider = "anthropic" | "gemini" | "zai";
 export type AiTask = "daily" | "creative" | "chatSummary" | "extraction" | "menuStyle" | "menuTheme" | "memory";
+export type AiEffort = "low" | "medium" | "high" | "xhigh" | "max";
+// effort only applies to Anthropic calls; no production task sets it, so chat.ts falls back to its default.
+export type AiConfig = { task: AiTask; provider: AiProvider; model: string; maxTokens: number; timeoutMs: number; effort?: AiEffort };
 
 const DEFAULTS = {
   daily: { provider: "gemini", model: "gemini-3.8-flash", env: "AI_CHAT_DAILY_MODEL", maxTokens: 8192, timeoutMs: 240_000 },
@@ -18,7 +21,7 @@ export const PROVIDER_KEY_ENV: Record<AiProvider, string> = {
   anthropic: "ANTHROPIC_API_KEY", gemini: "GEMINI_API_KEY", zai: "ZAI_API_KEY",
 };
 
-export function aiConfig(task: AiTask) {
+export function aiConfig(task: AiTask): AiConfig {
   const defaults = DEFAULTS[task];
   const model = process.env[defaults.env]?.trim() ||
     (defaults.provider === "zai" ? process.env.AI_GLM_MODEL?.trim() : undefined) || defaults.model;
