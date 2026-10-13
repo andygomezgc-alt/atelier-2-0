@@ -198,4 +198,21 @@ describe("recipe cost lines", () => {
     expect(recipeDetailInclude.recipeIngredients.include.product.select.gramosPorLitro).toBe(true);
     expect(recipeListInclude.recipeIngredients.include.product.select.gramosPorLitro).toBe(true);
   });
+
+  it("a product in the trash does not count in the cost: the line is unlinked", () => {
+    const row = recipeRow();
+    row.recipeIngredients[0] = {
+      ...row.recipeIngredients[0]!,
+      product: { ...product("p-oil", "l", 500, 920), deletedAt: new Date("2026-10-13T10:00:00Z") },
+    };
+    const detail = projectRecipeDetail(row);
+    expect(detail.cost.lines?.[0]).toMatchObject({ ingredientId: "ri-oil", status: "no_product", costCents: null, productId: null });
+    expect(detail.cost).toMatchObject({ totalCents: null, computableCount: 0, unlinkedCount: 2 });
+    expect(projectRecipeListItem(row).perPortionCents).toBeNull();
+  });
+
+  it("list and detail includes select the product's trash date", () => {
+    expect(recipeDetailInclude.recipeIngredients.include.product.select.deletedAt).toBe(true);
+    expect(recipeListInclude.recipeIngredients.include.product.select.deletedAt).toBe(true);
+  });
 });

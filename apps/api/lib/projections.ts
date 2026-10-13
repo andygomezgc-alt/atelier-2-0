@@ -51,6 +51,8 @@ const recipeIngredientsForCostInclude = {
         unidadCompra: true,
         // Weight of one litre: converts g/kg ↔ l/ml in the cost.
         gramosPorLitro: true,
+        // A product in the trash no longer counts in the cost.
+        deletedAt: true,
         pezzaturaMode: true,
         pezzaturaMin: true,
         pezzaturaMax: true,
@@ -193,6 +195,7 @@ type RecipeIngredientRow = {
         unidadCompra: string;
         // Weight of one litre (Prisma.Decimal); null = unknown.
         gramosPorLitro?: { toString(): string } | null;
+        deletedAt?: Date | null;
         // Entrega A.5: pezzatura del banco.
         pezzaturaMode: string | null;
         pezzaturaMin: { toString(): string } | null;
@@ -221,7 +224,8 @@ function mapIngredientsForCost(rows: RecipeIngredientRow[]) {
     pesoCalculoG: row.pesoCalculoG
       ? Number(row.pesoCalculoG.toString())
       : null,
-    product: row.product
+    // A product in the trash is costed as an unlinked line (no_product).
+    product: row.product && !row.product.deletedAt
       ? {
           id: row.product.id,
           precioCompra: row.product.precioCompra,
