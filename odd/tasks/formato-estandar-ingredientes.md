@@ -84,7 +84,7 @@ Orden: F1 → F2 → F3 → F4 → F5 → F7 → F6.
 - [x] F3 (`1b03dc6`, migración `20261013120000_recipe_ingredient_section_note`)
 - [x] F4 (`c7d1721`)
 - [x] F5 (`33681bb`)
-- [ ] F6
+- [x] F6 (`0cb1f17`; medido solo en modo Creativo)
 - [x] F7 (`1b7b2f1`)
 - [ ] F8
 
@@ -221,5 +221,17 @@ Orden: F1 → F2 → F3 → F4 → F5 → F7 → F6.
   - R3-readme-fixture-count: corregido (5 recetas).
   - R3-pipeline-flag-misalignment: solo afecta a las estadísticas de los logs; queda como seguimiento.
 
+- W5 (F6, writer Opus):
+  - commit `0cb1f17`;
+  - RED: anthropic 2 y checks 8;
+  - GREEN: api 1587/1587; dry-run del oráculo 48/48 en las dos variantes; extracción en modo A; shared 471.
+- Corridas pagadas de F6 (OK de Andy, tope 5 US$; gastado unos 2,4 US$; EVAL_RUN `f6-formato`, juez Sonnet):
+  - Producción no entrega GEMINI_API_KEY ni ZAI_API_KEY porque son sensibles. Solo se midió el modo Creativo (Opus). Diario y la extracción real siguen pendientes.
+  - Piloto, 2 casos: base 1.000 y formato 100 %; v1 0.900 y formato 100 %.
+  - Recetas, 5 casos × 3 reps:
+    - **formato 60 % → 100 %**;
+    - criterios 0.973 [0.941, 1.000] → 0.933 [0.892, 0.975], con los IC solapados;
+    - fallos de v1: 2× «cierra con una mejora concreta» (consejo de servicio) y 3× «tiempos con señal de punto» (la base tuvo 2).
+
 ## Siguiente paso
-F6, con el OK de Andy para el gasto (unos 5 US$ recomendados).
+Andy decide: dar F6 por bueno con el modo Creativo, o medir también Diario y la extracción con las claves de desarrollo.
