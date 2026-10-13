@@ -461,6 +461,10 @@ llevan más de 7 días en la papelera. Lo que se borra con ellos:
 Pasado ese plazo ya no se puede restaurar. La respuesta y el log
 `trash_purge_finished` dicen cuántos se borraron de cada tipo; `complete: false`
 indica que se acabó el tiempo y el resto se borra en la siguiente pasada.
+`failed` cuenta los elementos que no se pudieron borrar (se saltan, quedan en el
+log `trash_purge_row_failed` con su id y se reintentan al día siguiente) y
+`aborted` las etapas que se cortaron por un error (`trash_purge_stage_failed`);
+las demás etapas siguen igual.
 
 ### Unir productos duplicados
 

@@ -38,6 +38,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const now = new Date("2026-10-13T03:30:00Z");
 const cutoff = new Date(+now - 7 * DAY);
 const daysAgo = (days: number) => new Date(+now - days * DAY);
+const clean = { failed: { menus: 0, recipes: 0, products: 0 }, aborted: [] };
 
 function expiredBefore(where: Where, row: Trashable): boolean {
   const deletedAt = where.deletedAt as { lt: Date } | undefined;
@@ -53,11 +54,15 @@ function onlyKeys(where: Where, keys: string[]) {
 }
 
 function findExpired(rows: () => Trashable[]) {
+  let calls = 0;
   return async ({ where, take, select }: { where: Where; take: number; select: unknown }) => {
-    onlyKeys(where, ["deletedAt"]);
+    // A purge that keeps asking for the same rows would never end; fail loudly instead.
+    if (++calls > 20) throw new Error("lookup loop");
+    onlyKeys(where, ["deletedAt", "id"]);
     expect(select).toEqual({ id: true });
+    const excluded = (where.id as { notIn: string[] } | undefined)?.notIn ?? [];
     return rows()
-      .filter(row => expiredBefore(where, row))
+      .filter(row => expiredBefore(where, row) && !excluded.includes(row.id))
       .sort((a, b) => +a.deletedAt! - +b.deletedAt!)
       .slice(0, take)
       .map(({ id }) => ({ id }));
@@ -92,7 +97,9 @@ beforeEach(() => {
   db.$transaction.mockImplementation(async (fn: (tx: typeof db) => Promise<unknown>) => {
     journal.tx += 1;
     journal.inTx += 1;
-    try { return await fn(db); } finally { journal.inTx -= 1; }
+    // Roll back like PostgreSQL when the transaction throws.
+    const snapshot = { menus: [...store.menus], items: [...store.items], recipes: [...store.recipes], products: [...store.products] };
+    try { return await fn(db); } catch (error) { Object.assign(store, snapshot); throw error; } finally { journal.inTx -= 1; }
   });
   db.menuFolder.findMany.mockImplementation(findExpired(() => store.menus));
   db.menuFolder.deleteMany.mockImplementation(deleteExpired("menuFolder", () => store.menus, next => { store.menus = next; }, ids => {
@@ -139,7 +146,7 @@ describe("purgeExpiredTrash", () => {
 
     const result = await purgeExpiredTrash(now);
 
-    expect(result).toEqual({ menus: 2, menuItems: 0, recipes: 2, products: 2, complete: true });
+    expect(result).toEqual({ menus: 2, menuItems: 0, recipes: 2, products: 2, complete: true, ...clean });
     for (const [prefix, rows] of [["menu", store.menus], ["recipe", store.recipes], ["product", store.products]] as const) {
       // Exactly 7 days is not older than the cutoff: it stays one more day.
       expect(rows.map(row => row.id)).toEqual([`${prefix}-7d`, `${prefix}-6d`, `${prefix}-active`]);
@@ -201,7 +208,7 @@ describe("purgeExpiredTrash", () => {
       recipes: [{ id: "r-old", deletedAt: daysAgo(9) }],
     });
 
-    expect(await purgeExpiredTrash(now)).toEqual({ menus: 1, menuItems: 0, recipes: 1, products: 0, complete: true });
+    expect(await purgeExpiredTrash(now)).toEqual({ menus: 1, menuItems: 0, recipes: 1, products: 0, complete: true, ...clean });
     expect(store.items).toEqual([]);
   });
 
@@ -242,7 +249,7 @@ describe("purgeExpiredTrash", () => {
 
     const result = await purgeExpiredTrash(now, { batchSize: 1, budgetMs: 1_500 });
 
-    expect(result).toEqual({ menus: 2, menuItems: 0, recipes: 0, products: 0, complete: false });
+    expect(result).toEqual({ menus: 2, menuItems: 0, recipes: 0, products: 0, complete: false, ...clean });
     expect(db.recipe.findMany).not.toHaveBeenCalled();
     expect(db.product.findMany).not.toHaveBeenCalled();
     expect(store.products).toHaveLength(1);
@@ -254,14 +261,93 @@ describe("purgeExpiredTrash", () => {
     await purgeExpiredTrash(now);
 
     expect(logger.info).toHaveBeenCalledWith("trash_purge_finished", expect.objectContaining({
-      menus: 1, menuItems: 0, recipes: 0, products: 1, complete: true, cutoff: cutoff.toISOString(),
+      menus: 1, menuItems: 0, recipes: 0, products: 1, complete: true, ...clean, cutoff: cutoff.toISOString(),
     }));
   });
 
   it("does nothing when the trash holds nothing old enough", async () => {
     seed({ recipes: [{ id: "r1", deletedAt: daysAgo(1) }] });
 
-    expect(await purgeExpiredTrash(now)).toEqual({ menus: 0, menuItems: 0, recipes: 0, products: 0, complete: true });
+    expect(await purgeExpiredTrash(now)).toEqual({ menus: 0, menuItems: 0, recipes: 0, products: 0, complete: true, ...clean });
     expect(db.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("purgeExpiredTrash with failing rows", () => {
+  const fkError = () => Object.assign(new Error("Foreign key constraint violated"), { code: "P2003" });
+
+  it("still purges recipes and products when every menu delete throws", async () => {
+    seed({
+      menus: [{ id: "m1", deletedAt: daysAgo(9) }, { id: "m2", deletedAt: daysAgo(9) }],
+      recipes: [{ id: "r1", deletedAt: daysAgo(9) }],
+      products: [{ id: "p1", deletedAt: daysAgo(9) }],
+    });
+    db.menuFolder.deleteMany.mockRejectedValue(fkError());
+
+    const result = await purgeExpiredTrash(now);
+
+    expect(result).toEqual({
+      menus: 0, menuItems: 0, recipes: 1, products: 1, complete: true,
+      failed: { menus: 2, recipes: 0, products: 0 }, aborted: [],
+    });
+    expect(store.menus).toHaveLength(2);
+    expect(store.recipes).toEqual([]);
+    expect(store.products).toEqual([]);
+    expect(logger.error).toHaveBeenCalledWith("trash_purge_row_failed", { stage: "menus", id: "m1", code: "P2003", message: "Foreign key constraint violated" });
+    expect(logger.error).toHaveBeenCalledWith("trash_purge_row_failed", expect.objectContaining({ stage: "menus", id: "m2" }));
+    expect(logger.info).toHaveBeenCalledWith("trash_purge_finished", expect.objectContaining({ failed: { menus: 2, recipes: 0, products: 0 } }));
+  });
+
+  it("aborts only the stage whose lookup throws and runs the next ones", async () => {
+    seed({ recipes: [{ id: "r1", deletedAt: daysAgo(9) }], products: [{ id: "p1", deletedAt: daysAgo(9) }] });
+    db.menuFolder.findMany.mockRejectedValue(new Error("statement timeout"));
+
+    const result = await purgeExpiredTrash(now);
+
+    expect(result).toEqual({ menus: 0, menuItems: 0, recipes: 1, products: 1, complete: true, failed: { menus: 0, recipes: 0, products: 0 }, aborted: ["menus"] });
+    expect(logger.error).toHaveBeenCalledWith("trash_purge_stage_failed", { stage: "menus", message: "statement timeout" });
+    expect(logger.info).toHaveBeenCalledWith("trash_purge_finished", expect.objectContaining({ aborted: ["menus"] }));
+  });
+
+  it("skips a poisoned recipe, keeps its dish, purges the rest of its batch and does not ask for it again", async () => {
+    seed({
+      menus: [{ id: "m-live", deletedAt: null }],
+      items: [{ id: "i-poison", menuFolderId: "m-live", recipeId: "poison" }, { id: "i-a", menuFolderId: "m-live", recipeId: "a" }],
+      recipes: [
+        { id: "poison", deletedAt: daysAgo(30) },
+        { id: "a", deletedAt: daysAgo(20) },
+        { id: "b", deletedAt: daysAgo(10) },
+      ],
+    });
+    const deleteRecipes = db.recipe.deleteMany.getMockImplementation()!;
+    db.recipe.deleteMany.mockImplementation(async (args: { where: { id: { in: string[] } } }) => {
+      if (args.where.id.in.includes("poison")) throw fkError();
+      return deleteRecipes(args);
+    });
+
+    const result = await purgeExpiredTrash(now, { batchSize: 2 });
+
+    expect(result).toEqual({ menus: 0, menuItems: 1, recipes: 2, products: 0, complete: true, failed: { menus: 0, recipes: 1, products: 0 }, aborted: [] });
+    expect(store.recipes.map(row => row.id)).toEqual(["poison"]);
+    // The failed transaction rolled back, so the poisoned recipe keeps its dish.
+    expect(store.items.map(item => item.id)).toEqual(["i-poison"]);
+    expect(db.recipe.findMany.mock.calls.map(([args]) => args.where)).toEqual([
+      { deletedAt: { lt: cutoff } },
+      { deletedAt: { lt: cutoff }, id: { notIn: ["poison"] } },
+    ]);
+    expect(logger.error).toHaveBeenCalledWith("trash_purge_row_failed", { stage: "recipes", id: "poison", code: "P2003", message: "Foreign key constraint violated" });
+    expect(logger.info).toHaveBeenCalledWith("trash_purge_finished", expect.objectContaining({ recipes: 2, failed: { menus: 0, recipes: 1, products: 0 } }));
+  });
+
+  it("ends when the only expired row keeps failing", async () => {
+    seed({ products: [{ id: "p-bad", deletedAt: daysAgo(30) }] });
+    db.product.deleteMany.mockRejectedValue(new Error("boom"));
+
+    const result = await purgeExpiredTrash(now, { batchSize: 1 });
+
+    expect(result).toMatchObject({ products: 0, failed: { products: 1 }, aborted: [], complete: true });
+    expect(db.product.findMany).toHaveBeenCalledTimes(2);
+    // The batch of one and its single-id retry.
+    expect(db.product.deleteMany).toHaveBeenCalledTimes(2);
   });
 });

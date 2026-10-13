@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { purgeExpiredTrash } = vi.hoisted(() => ({ purgeExpiredTrash: vi.fn() }));
+const { purgeExpiredTrash, logger } = vi.hoisted(() => ({ purgeExpiredTrash: vi.fn(), logger: { error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/lib/trash-purge", () => ({ purgeExpiredTrash }));
+vi.mock("@/lib/logger", () => ({ logger }));
 
 import { GET } from "./route";
 
+const counts = { menus: 1, menuItems: 2, recipes: 3, products: 4, complete: true, failed: { menus: 0, recipes: 1, products: 0 }, aborted: [] };
 const started = new Date("2026-10-13T03:30:00Z");
 const request = (authorization?: string) => new NextRequest("https://local/api/cron/purge-trash", {
   headers: authorization === undefined ? {} : { authorization },
@@ -16,7 +18,7 @@ beforeEach(() => {
   vi.setSystemTime(started);
   vi.stubEnv("CRON_SECRET", "secret");
   vi.clearAllMocks();
-  purgeExpiredTrash.mockResolvedValue({ menus: 1, menuItems: 2, recipes: 3, products: 4, complete: true });
+  purgeExpiredTrash.mockResolvedValue(counts);
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
@@ -33,8 +35,18 @@ describe("purge trash cron", () => {
     const response = await GET(request("Bearer secret"));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ menus: 1, menuItems: 2, recipes: 3, products: 4, complete: true });
+    // Rows skipped by the purge are reported, not turned into an error.
+    expect(await response.json()).toEqual(counts);
     expect(purgeExpiredTrash).toHaveBeenCalledOnce();
     expect(purgeExpiredTrash.mock.calls[0]![0]).toEqual(started);
+  });
+
+  it("answers 500 and logs when the purge fails outside its own handling", async () => {
+    purgeExpiredTrash.mockRejectedValue(new Error("database unavailable"));
+
+    const response = await GET(request("Bearer secret"));
+
+    expect(response.status).toBe(500);
+    expect(logger.error).toHaveBeenCalledWith("trash_purge_crashed", expect.objectContaining({ message: "database unavailable" }));
   });
 });

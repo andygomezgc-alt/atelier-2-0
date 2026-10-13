@@ -36,3 +36,14 @@ describe("categorizeFromName — more fish", () => {
     },
   );
 });
+
+// Keyword false positives (review R3): matching is by whole word.
+describe("keyword matching avoids false positives", () => {
+  it("does not read \"rape\" (monkfish) inside rapeseed oil", () => {
+    expect(categorizeFromName("rapeseed oil")).not.toBe("pescado");
+  });
+
+  it("treats a pork loin as already trimmed: a loin is bought cleaned, so 0 % waste is intended", () => {
+    expect(suggestedMermaPct("lomo de cerdo", "carne")).toBe(0);
+  });
+});
