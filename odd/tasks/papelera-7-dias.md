@@ -60,5 +60,15 @@ Hoy la papelera no caduca: crece sin límite y los productos viejos ensucian el 
   - hay una carrera mínima si se restaura algo durante el borrado;
   - no hay prueba de integración contra Postgres.
 
+- RDD:
+  - Riesgo medio, consentimiento `granted`, revisión aprobada y confirmada (linaje `review-ae7f79334aa031a2`).
+  - R3-poison-batch, corregido en `afce8e6`:
+    - cada etapa se aísla;
+    - un lote que falla se reintenta id por id; el id que sigue fallando se salta con `notIn` y se registra;
+    - `trash_purge_finished` se registra siempre;
+    - RED 9/15, después GREEN 1636/1636.
+  - R3-product-fk-unproved: aceptado como riesgo, porque se verificó con el schema y las migraciones.
+  - R3-keyword-false-positives: pruebas negativas («rapeseed oil» no es pescado; «lomo» da 0 a propósito).
+
 ## Siguiente paso
-RDD y PR.
+PR.
