@@ -16,7 +16,7 @@ import {
   projectProductDetail,
 } from "@/lib/products/projections";
 import { defaultCriticality } from "@/lib/products/criticality";
-import { defaultMermaPct } from "@/lib/products/defaults";
+import { suggestedMermaPct } from "@/lib/products/defaults";
 import { detectPezzaturaFromName, parsePezzatura } from "@atelier/shared";
 
 export const dynamic = "force-dynamic";
@@ -131,7 +131,7 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
 // Crea un producto. Si criticality no viene en el body, se auto-asigna por
 // defaultCriticality(category, name). criticalityManual = false siempre al
 // crear; solo pasa a true si el chef la edita después vía PATCH.
-// mermaPct default: tabla por categoría (defaultMermaPct). mermaOrigen
+// mermaPct default: 0 si el nombre dice que viene limpio, si no la tabla por categoría (suggestedMermaPct). mermaOrigen
 // default: 'sugerida'.
 export const POST = withAuth(
   { permission: "manage_products", body: CreateProductRequestSchema },
@@ -182,7 +182,7 @@ export const POST = withAuth(
           pezzaturaMax,
           unidadCompra: body.unidadCompra,
           precioCompra: body.precioCompra,
-          mermaPct: body.mermaPct ?? defaultMermaPct(body.category),
+          mermaPct: body.mermaPct ?? suggestedMermaPct(body.name, body.category),
           mermaOrigen: body.mermaOrigen ?? "sugerida",
           // Only what the chef declared; never guessed from the category.
           gramosPorLitro: body.gramosPorLitro ?? null,

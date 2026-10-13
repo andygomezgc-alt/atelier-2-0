@@ -63,6 +63,7 @@ export default function PapeleraScreen() {
         data={items}
         keyExtractor={(r) => r.id}
         contentContainerStyle={styles.content}
+        ListHeaderComponent={<Text style={styles.note}>{t("papelera_retention_note")}</Text>}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -103,6 +104,7 @@ export default function PapeleraScreen() {
 
 const styles = StyleSheet.create({
   content: { padding: spacing.lg, gap: spacing.sm },
+  note: { fontFamily: fonts.sans, fontSize: fontSizes.bodySm, color: colors.inkSoft },
   row: {
     flexDirection: "row",
     alignItems: "center",

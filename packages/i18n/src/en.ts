@@ -448,6 +448,7 @@ export const en: EsDict = {
   papelera_title: "Trash",
   papelera_empty_title: "The trash is empty",
   papelera_empty_sub: "Recipes you delete show up here so you can recover them.",
+  papelera_retention_note: "Items in the trash are deleted forever after 7 days.",
   toast_recipe_restored: "Recipe restored",
   btn_escalar: "Scale",
   scale_title: "Scale portions",
