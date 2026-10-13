@@ -181,6 +181,19 @@ describe("recipe cost lines", () => {
     expect(item.perPortionCents).toBe(11);
   });
 
+  it("the detail returns each ingredient's section and note (null when unset)", () => {
+    const row = recipeRow();
+    row.recipeIngredients[0] = { ...row.recipeIngredients[0]!, section: "Aceite de chorizo", note: "en frío" };
+    row.recipeIngredients[1] = { ...row.recipeIngredients[1]!, section: null, note: null };
+    const detail = projectRecipeDetail(row);
+    expect(detail.recipeIngredients.map(({ section, note }) => ({ section, note }))).toEqual([
+      { section: "Aceite de chorizo", note: "en frío" },
+      { section: null, note: null },
+      { section: null, note: null },
+    ]);
+    expect(RecipeDetailSchema.safeParse(detail).success).toBe(true);
+  });
+
   it("list and detail includes select the product's weight per litre", () => {
     expect(recipeDetailInclude.recipeIngredients.include.product.select.gramosPorLitro).toBe(true);
     expect(recipeListInclude.recipeIngredients.include.product.select.gramosPorLitro).toBe(true);

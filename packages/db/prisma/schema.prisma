@@ -759,6 +759,13 @@ model RecipeIngredient {
   // > 0 por CHECK RecipeIngredient_pesoCalculoG_positive.
   pesoCalculoG     Decimal? @db.Decimal(10, 3)
 
+  // Standard ingredient format: the preparation the line belongs to
+  // ("Farsa", "Aceite de chorizo") and the kitchen note ("muy frío",
+  // "1 cucharada"). Null = none. contentJson.ingredients keeps the flat
+  // display line (rawText + ", " + note) for older app builds.
+  section          String?  @db.VarChar(80)
+  note             String?  @db.VarChar(300)
+
   @@index([recipeId, position])
   @@index([productId])
 }
