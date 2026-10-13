@@ -81,8 +81,8 @@ Orden: F1 → F2 → F3 → F4 → F5 → F7 → F6.
 
 - [x] F1 (`f41469b`)
 - [x] F2 (`289bda0`)
-- [ ] F3
-- [ ] F4
+- [x] F3 (`1b03dc6`, migración `20261013120000_recipe_ingredient_section_note`)
+- [x] F4 (`c7d1721`)
 - [ ] F5
 - [ ] F6
 - [ ] F7
@@ -145,5 +145,22 @@ Orden: F1 → F2 → F3 → F4 → F5 → F7 → F6.
     - el esquema es un `ZodEffects`, así que F3 no puede usar `.extend`.
   - Nota para F7: `selectIngredientProduct` todavía no usa el formato canónico.
 
+- W2 (F3 + F4, writer Opus):
+  - RED:
+    - F3: 7 fallos del contrato, más la proyección y las copias.
+    - F4: 34 fallos esperados (match daba `probable` en vez de `exact`, borrador «chorizo», PATCH que solo cambia la nota sin escribir).
+  - GREEN: shared 420/420; api tsc y 1486/1486 (sin flake); mobile typecheck.
+  - Comprobación del padre:
+    - las pruebas de `recipe-save` y de la ruta de match dan 19/19;
+    - la migración es aditiva (2 columnas nullable).
+  - Precedencia:
+    - si el cliente manda qty/unit que contradicen la lectura, se respetan junto con su `rawText`;
+    - la nota separada del texto gana; si no hay, va la del input y si no la heredada;
+    - la sección del input gana; si no hay, va la del paréntesis que coincide con una sección conocida y si no la heredada;
+    - `pesoCalculoG` usa el del cliente si no es null; si no, el peso por pieza de la línea.
+  - Riesgos:
+    - una línea vieja que una app vieja manda con qty/unit contradictorios queda como está hasta que alguien la edite;
+    - un PATCH sobre una receta borrada con un `productId` inválido ahora da 400 en vez de 404.
+
 ## Siguiente paso
-W2 (F3 + F4).
+RDD de F1–F4, después W3 (F5).
