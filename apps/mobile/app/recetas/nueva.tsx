@@ -50,7 +50,12 @@ import {
   getProduct,
 } from "@/src/api/products";
 import { showToast } from "@/src/components/Toast";
-import { buildRecipeRequestBody } from "@/src/lib/recipe-editor";
+import {
+  addIngredientRow,
+  buildRecipeRequestBody,
+  ingredientMatchName,
+  toEditorIngredient,
+} from "@/src/lib/recipe-editor";
 import { consumeRecipeDraft } from "@/src/lib/recipe-draft";
 import { recipeDraftKey, loadRecipeDraft, saveRecipeDraft, clearRecipeDraft } from "@/src/lib/recipe-autosave";
 import {
@@ -250,14 +255,10 @@ export default function NuevaRecetaScreen() {
     //     intentar matchearlos.
     let fromDraft: IngredientValue[];
     if (draft.recipeIngredients && draft.recipeIngredients.length > 0) {
-      fromDraft = draft.recipeIngredients.map((r) => ({
-        ...r,
-        rawText: r.rawText,
-        productId: r.productId ?? null,
-        // Fase 7: pre-fill del override cuando "Modificar receta" abre una
-        // receta que ya tiene pesoCalculoG persistido.
-        pesoCalculoG: r.pesoCalculoG ?? null,
-      }));
+      // Standard format: each row shows its display line (rawText + note),
+      // keeps its section and the extracted qty/unit/pesoCalculoG, and sends
+      // note: null so the server splits the note again on save.
+      fromDraft = draft.recipeIngredients.map(toEditorIngredient);
     } else if (draft.contentJson.ingredients.length > 0) {
       fromDraft = draft.contentJson.ingredients.map((s) => ({
         rawText: s,
@@ -455,11 +456,12 @@ export default function NuevaRecetaScreen() {
 
     // Best-effort: agregar el nombre del ingrediente (sin cantidad) como
     // alias del producto. No bloqueamos el flujo si esto falla — el linkeo
-    // ya quedó hecho. Se parsea para que "480 g ricciola frollata" quede
-    // como alias "ricciola frollata" y matchee exacto la próxima vez.
+    // ya quedó hecho. Se usa el nombre limpio para que "480 g ricciola
+    // frollata, en lomos" quede como alias "ricciola frollata" y matchee
+    // exacto la próxima vez.
     void (async () => {
       try {
-        const aliasName = parseIngredient(current.rawText).name || current.rawText;
+        const aliasName = ingredientMatchName(current.rawText);
         const prod = await getProduct(current.productId);
         const existing = new Set(prod.aliases.map((a) => a.toLowerCase()));
         if (!existing.has(aliasName.toLowerCase())) {
@@ -594,6 +596,11 @@ export default function NuevaRecetaScreen() {
                 parsed.unit === "unidad";
               return (
                 <View key={idx} style={styles.ingredientRow}>
+                  {it.section && it.section !== ingredients[idx - 1]?.section ? (
+                    <Eyebrow variant="terracota" style={styles.sectionCaption}>
+                      {it.section}
+                    </Eyebrow>
+                  ) : null}
                   <IngredientAutocomplete
                     editable={!saving}
                     value={it}
@@ -653,9 +660,7 @@ export default function NuevaRecetaScreen() {
             })}
             <Pressable
               style={styles.addBtn}
-              onPress={() =>
-                setIngredients((prev) => [...prev, { rawText: "", productId: null }])
-              }
+              onPress={() => setIngredients(addIngredientRow)}
             >
               <Ionicons name="add" size={16} color={colors.terracota} />
               <Text style={styles.addLabel}>{t("recetas_form_add_ingredient")}</Text>
@@ -777,6 +782,7 @@ const styles = StyleSheet.create({
     minHeight: 72,
   },
   ingredientRow: { marginTop: spacing.sm },
+  sectionCaption: { marginTop: spacing.sm, marginBottom: spacing.xs },
   antiTypoWarning: {
     marginTop: spacing.xs,
     paddingHorizontal: spacing.sm,

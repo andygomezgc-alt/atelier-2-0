@@ -503,6 +503,40 @@
         "Sigue lo declarado por el chef (cocina clásica): no propone esferificaciones, espumas ni otras técnicas de vanguardia, aunque aparezcan como tendencia aprendida.",
         "Propone como mucho tres direcciones concretas."
       ]
+    },
+    {
+      "id": "receta-secciones-es",
+      "restaurant": "vanguardia_es",
+      "tags": ["receta", "formato"],
+      "lang": "es",
+      "recipe": true,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Pásame la receta del calamar embutido para 4: el calamar relleno con una farsa de sus patas y terminado con un aceite de chorizo." }
+      ],
+      "criteria": [
+        "Indica el rendimiento (4 raciones) y da cantidades métricas para ese total.",
+        "Da las tres elaboraciones (el calamar, la farsa y el aceite de chorizo), cada una con sus ingredientes y cantidades.",
+        "El método va en pasos numerados y los tiempos de cocción llevan la señal para reconocer el punto.",
+        "Cierra con una mejora concreta del plato."
+      ]
+    },
+    {
+      "id": "receta-piezas-it",
+      "restaurant": "clasica_it",
+      "tags": ["receta", "idioma", "formato"],
+      "lang": "it",
+      "recipe": true,
+      "pinnedIdea": null,
+      "messages": [
+        { "role": "user", "content": "Mi scrivi la ricetta dei calamari ripieni in umido per 4 persone? Uso calamari interi da circa 300 g l'uno." }
+      ],
+      "criteria": [
+        "Responde en italiano.",
+        "Indica el rendimiento (4 raciones) y da cantidades métricas para ese total; los calamares van por piezas, con su peso aproximado.",
+        "El método va en pasos numerados y los tiempos de cocción llevan la señal para reconocer el punto.",
+        "Cierra con una mejora concreta del plato."
+      ]
     }
   ]
 }

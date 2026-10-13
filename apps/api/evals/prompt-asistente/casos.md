@@ -30,6 +30,8 @@ Criterio común a todos los casos:
 | 20 | `memoria-declarada-clasica` | Casa Lumbre (declarada clásica) | memoria | es | no |
 | 21 | `memoria-declarada-vanguardia` | Casa Lumbre (declarada vanguardia) | memoria | es | no |
 | 22 | `memoria-conflicto` | Casa Lumbre (conflicto) | memoria | es | no |
+| 23 | `receta-secciones-es` | Brasa y Koji | receta, formato | es | sí |
+| 24 | `receta-piezas-it` | Trattoria da Nella | receta, idioma, formato | it | sí |
 
 Los casos 19 a 22 son gemelos: el mismo restaurante y el mismo mensaje, y solo cambia la memoria. Miden lo que aporta lo que el chef declara en «Cómo cocinamos» (llega al modelo como `indicadasPorElChef`) y si lo declarado gana sobre una tendencia aprendida que lo contradice.
 
@@ -455,3 +457,33 @@ Qué tiene que cumplir:
 
 - Sigue lo declarado por el chef (cocina clásica): no propone esferificaciones, espumas ni otras técnicas de vanguardia, aunque aparezcan como tendencia aprendida.
 - Propone como mucho tres direcciones concretas.
+
+### 23. `receta-secciones-es` — Brasa y Koji
+
+**Chef:**
+
+````text
+Pásame la receta del calamar embutido para 4: el calamar relleno con una farsa de sus patas y terminado con un aceite de chorizo.
+````
+
+Qué tiene que cumplir:
+
+- Indica el rendimiento (4 raciones) y da cantidades métricas para ese total.
+- Da las tres elaboraciones (el calamar, la farsa y el aceite de chorizo), cada una con sus ingredientes y cantidades.
+- El método va en pasos numerados y los tiempos de cocción llevan la señal para reconocer el punto.
+- Cierra con una mejora concreta del plato.
+
+### 24. `receta-piezas-it` — Trattoria da Nella
+
+**Chef:**
+
+````text
+Mi scrivi la ricetta dei calamari ripieni in umido per 4 persone? Uso calamari interi da circa 300 g l'uno.
+````
+
+Qué tiene que cumplir:
+
+- Responde en italiano.
+- Indica el rendimiento (4 raciones) y da cantidades métricas para ese total; los calamares van por piezas, con su peso aproximado.
+- El método va en pasos numerados y los tiempos de cocción llevan la señal para reconocer el punto.
+- Cierra con una mejora concreta del plato.

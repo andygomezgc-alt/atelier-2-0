@@ -178,6 +178,9 @@ type RecipeIngredientRow = {
   // Entrega A.5: override de peso por pieza para esta receta. Null = usar
   // el punto medio de pezzaturaMin/Max del producto enlazado.
   pesoCalculoG: { toString(): string } | null;
+  // Standard ingredient format: preparation and kitchen note (null = none).
+  section?: string | null;
+  note?: string | null;
   product:
     | {
         id: string;
@@ -341,6 +344,8 @@ export function projectRecipeDetail(r: RecipeDetailRow): RecipeDetail {
     pesoCalculoG: row.pesoCalculoG ? Number(row.pesoCalculoG.toString()) : null,
     // Warning per-ingredient (rango ancho de pezzatura → costo aproximado).
     pezzaturaWarning: cost.warningsByIdx.get(idx) ?? null,
+    section: row.section ?? null,
+    note: row.note ?? null,
     product: row.product
       ? {
           id: row.product.id,

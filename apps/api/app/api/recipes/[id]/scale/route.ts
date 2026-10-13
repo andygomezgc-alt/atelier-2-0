@@ -83,6 +83,8 @@ export async function POST(
           pezzatura: ing.pezzatura,
           mermaOverridePct: ing.mermaOverridePct,
           pesoCalculoG: ing.pesoCalculoG,
+          section: ing.section,
+          note: ing.note,
         })),
       });
     }

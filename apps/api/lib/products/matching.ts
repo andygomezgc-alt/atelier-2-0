@@ -11,9 +11,8 @@
 // duplicados ricciola, jul 2026): "lomo de ricciola limpio con piel" reconoce
 // a la "Ricciola" del banco y pregunta en vez de duplicar.
 //
-// Normalización: lowercase + sin acentos + colapsar espacios + plurales obvios
-// removidos (ej. "trufas" → "trufa") — la función normalizeForMatch ya hace
-// las dos primeras y la quitamos de plurales acá si es seguro.
+// Normalización: lowercase + sin acentos + colapsar espacios + clave de plural
+// (ver stripPluralEs) — normalizeForMatch hace las tres primeras.
 //
 // El matching compara el query contra: nombre del producto + todos los
 // aliases. La mejor (menor) distancia gana. Empates se rompen por el nombre
@@ -73,20 +72,21 @@ export function levenshtein(a: string, b: string): number {
   return dp[a.length]!;
 }
 
-// Heurística simple de plurales en castellano/italiano:
-// - "trufas" → "trufa" (strip 's' si len > 3)
-// - "tomates" → "tomate" (strip 'es' si len > 4)
-// No es perfecto (ej. "sales" se reduce a "sal" lo cual es correcto, pero
-// "atrás" se reduce a "atrá"). Combinado con Levenshtein el ruido residual
-// queda dentro del threshold de 3.
+// Spanish plural key: the singular and the plural of a word normalize to the
+// same key, so the singular standard name ("tomate") meets a plural bank
+// product ("Tomates") as exact.
+//   1. Drop a final "s": tomates→tomate, huevos→huevo, limones→limone.
+//   2. Drop a final "e" after a consonant: limone→limon, calamare→calamar,
+//      pane→pan. The singular "tomate" loses the same "e" (→ "tomat"), so
+//      tomate and tomates still share one key.
+// A key, not a word: "nueces"→"nuec" vs "nuez" stays one edit apart
+// (probable), and Italian -i/-e plurals are left to Levenshtein.
+const CONSONANT_E = /[bcdfghjklmnpqrstvwxyz]e$/;
 function stripPluralEs(s: string): string {
-  if (s.length > 4 && (s.endsWith("es") || s.endsWith("os") || s.endsWith("as"))) {
-    return s.slice(0, -2);
-  }
-  if (s.length > 3 && s.endsWith("s")) {
-    return s.slice(0, -1);
-  }
-  return s;
+  let out = s;
+  if (out.length > 3 && out.endsWith("s")) out = out.slice(0, -1);
+  if (out.length > 3 && CONSONANT_E.test(out)) out = out.slice(0, -1);
+  return out;
 }
 
 function normalize(s: string): string {

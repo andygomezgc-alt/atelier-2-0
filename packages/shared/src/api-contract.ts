@@ -385,6 +385,11 @@ export const RecipeIngredientInputSchema = z.object({
   // limpiar). Si el chef quiere usar peso útil debe ajustar la merma del
   // producto, no este override.
   pesoCalculoG: z.number().positive().nullable().optional(),
+  // Standard ingredient format: the preparation this line belongs to and its
+  // kitchen note. Omitted by older app builds; the server then keeps the
+  // values already stored for the same line.
+  section: z.string().max(80).nullable().optional(),
+  note: z.string().max(300).nullable().optional(),
 });
 
 export const CreateRecipeRequestSchema = z.object({
@@ -407,6 +412,39 @@ export const ExtractRecipeRequestSchema = z.object({
   text: z.string().min(1).max(30000),
 });
 export type ExtractRecipeRequest = z.infer<typeof ExtractRecipeRequestSchema>;
+
+// Response of /api/recipes/extract, /upload and /import-gdoc. The app does
+// not parse it with zod; the structured fields are optional so older builds
+// and older servers keep working.
+export const ExtractedRecipeIngredientSchema = z.object({
+  rawText: z.string(),
+  productId: z.string().nullable(),
+  qty: z.number().nullable().optional(),
+  unit: z.string().max(50).nullable().optional(),
+  section: z.string().max(80).nullable().optional(),
+  note: z.string().max(300).nullable().optional(),
+  pesoCalculoG: z.number().positive().nullable().optional(),
+});
+
+export const ExtractedRecipeResponseSchema = z.object({
+  title: z.string(),
+  portions: z.number().nullable().optional(),
+  contentJson: RecipeContentSchema,
+  recipeIngredients: z.array(ExtractedRecipeIngredientSchema).max(50),
+  // Probable bank matches the chef confirms before saving; indexed by
+  // position in recipeIngredients.
+  pendingMatches: z
+    .array(
+      z.object({
+        ingredientIdx: z.number().int().nonnegative(),
+        productId: z.string(),
+        productName: z.string(),
+      }),
+    )
+    .max(50),
+});
+export type ExtractedRecipeIngredient = z.infer<typeof ExtractedRecipeIngredientSchema>;
+export type ExtractedRecipeResponse = z.infer<typeof ExtractedRecipeResponseSchema>;
 
 export const PatchRecipeRequestSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -486,6 +524,10 @@ export const RecipeIngredientResponseSchema = z.object({
   // "wide_range" = el producto tiene pezzatura con rango > 2x (ej. 2-8 kg)
   // y no hay override; el costo es una aproximación basada en el punto medio.
   pezzaturaWarning: z.enum(["wide_range"]).nullable(),
+  // Standard ingredient format. Optional so payloads from an API without
+  // these columns still parse.
+  section: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
   product: z
     .object({
       id: z.string(),
