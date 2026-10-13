@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Prisma } from "@atelier/db";
 import type { RecipeIngredientInput } from "@atelier/shared";
-import { ingredientDisplayLines, resolveIngredientDrafts } from "../recipe-save";
+import { ingredientDisplayLines, ingredientsUnchanged, resolveIngredientDrafts } from "../recipe-save";
 import { categorizeFromName } from "../defaults";
 
 const product = { count: vi.fn(), findMany: vi.fn(), create: vi.fn() };
@@ -140,5 +140,16 @@ describe("ingredientDisplayLines", () => {
   it("never exceeds the 500-character line limit of contentJson", () => {
     const [line] = ingredientDisplayLines([{ rawText: "x".repeat(400), note: "y".repeat(300) }]);
     expect(line!.length).toBe(500);
+  });
+});
+
+describe("ingredientsUnchanged — resolved rows out of step", () => {
+  const stored = [{
+    position: 0, rawText: "200 g arroz", note: null, section: null,
+    productId: null, unit: "g", pezzatura: null, qty: 200, mermaOverridePct: null, pesoCalculoG: null,
+  }];
+
+  it("counts a change instead of throwing when the resolved rows do not line up with the incoming ones", () => {
+    expect(ingredientsUnchanged([{ rawText: "200 g arroz", pesoCalculoG: null }], [], stored)).toBe(false);
   });
 });

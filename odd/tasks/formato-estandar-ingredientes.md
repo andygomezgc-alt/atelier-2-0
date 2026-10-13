@@ -213,5 +213,13 @@ Orden: F1 → F2 → F3 → F4 → F5 → F7 → F6.
     - el objeto de la IA `{qty:1, unit:unidad, name:"sobre de levadura"}` se lee como 1 ud;
     - el conteo de flags por línea en el pipeline cuando el método va antes que los ingredientes.
 
+- RDD F4b + F5 + F7 + F2b:
+  - El primer START comparó contra main (55 archivos) y cortó con `lens_context_budget_exceeded`, porque la selección de archivos sin seguimiento pierde `--base-ref`.
+  - Se rehízo con `status --base-ref=1bfcf9e --untracked-scope=exclude`: 40 archivos.
+  - Consentimiento `granted`; revisión aprobada y confirmada (linaje `review-6f1fef4ade3dafba`).
+  - R3-noop-resolved-index-alignment: se corrigió en el padre con la guarda `resolved.length` y una prueba (RED por `TypeError`, después GREEN 18/18; PATCH 42/42).
+  - R3-readme-fixture-count: corregido (5 recetas).
+  - R3-pipeline-flag-misalignment: solo afecta a las estadísticas de los logs; queda como seguimiento.
+
 ## Siguiente paso
-Revisión RDD de F4b + F5 + F7 + F2b; después F6, con el OK de Andy para el gasto.
+F6, con el OK de Andy para el gasto (unos 5 US$ recomendados).

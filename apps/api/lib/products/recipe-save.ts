@@ -59,7 +59,7 @@ export function ingredientsUnchanged(
   stored: readonly StoredIngredientRow[],
 ): boolean {
   const num = (value: unknown) => (value === null || value === undefined ? null : Number(value));
-  return incoming.length === stored.length && incoming.every((ing, index) => {
+  return incoming.length === stored.length && resolved.length === incoming.length && incoming.every((ing, index) => {
     const cur = stored[index]!;
     if (!ing.productId && ing.createProductDraft) return false;
     // The editor re-sends a row as its display line ("rawText, note") with
