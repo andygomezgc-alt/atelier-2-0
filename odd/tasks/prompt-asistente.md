@@ -194,8 +194,20 @@ Después, medir con una prueba si el prompt nuevo supera al actual antes de desp
     - Latencia: mediana de 5,7 s en Gemini y 7,5 s en Haiku; p90 de 9,1 s y 11,4 s.
     - Haiku genera unos 1.200 tokens de salida por respuesta, unos 950 de ellos de razonamiento.
 
+  - Esfuerzo de Haiku (OK de Andy por unos US$6). El commit `dd8d9c6` añade un esfuerzo opcional a la config de IA; `chat.ts` lo usa y, si falta, mantiene `medium`, así que producción no cambia. La prueba lo fija con `EVAL_HAIKU_EFFORT`. TDD: RED `expected 'medium' to be 'xhigh'`, luego GREEN; la API pasa 1458 tests y el typecheck da 0. La revisión de Gentle AI lo aprobó.
+    - Corridas `haiku-high` y `haiku-xhigh`: los 7 casos con mayor caída de Haiku, con 3 repeticiones, 42 filas en total.
+    - Gasto medido: US$9,77 (generación US$0,08, juez US$9,68). Supera los US$6 estimados, porque son los casos largos y el juez costó unos US$0,23 por llamada en vez de US$0,14.
+    - Criterios en esos 7 casos: Gemini 0,913; Haiku medium 0,623; high 0,723; xhigh 0,665.
+      - xhigh no cabe en los 8.192 tokens máximos del Diario: corta el brodetto en 3 de 3 repeticiones. Sin el brodetto, xhigh queda en unos 0,78 y Gemini en unos 0,94.
+      - Más esfuerzo no corrige los errores de fondo:
+        - en el chef que insiste sigue proponiendo gelatina con piña cruda;
+        - en la esferificación inversa refuerza con lactato y da tiempos de directa;
+        - en la memoria de vanguardia sigue con platos de 2 o 3 elementos.
+    - Coste por mensaje y latencia mediana (p90): Gemini US$0,0028 y 6,1 s (10,2); Haiku medium US$0,0011 y 9,5 s (16,3); high US$0,0015 y 14,1 s (20,4); xhigh US$0,0021 y 19,3 s (40,4).
+    - Conclusión: subir el esfuerzo de Haiku no compensa. Mejora poco, sigue lejos de Gemini y duplica o triplica la latencia del Diario.
+
 ## Siguiente paso
-- Andy decide si el Diario pasa a Haiku.
+- Andy decide si el Diario pasa a Haiku. Con todas las corridas, la recomendación es quedarse con Gemini.
   - Haiku cuesta un tercio que Gemini y avisa mejor del anisakis.
   - En calidad queda igual o algo por debajo, con errores técnicos claros en los casos trampa (gelatina con piña, esferificación inversa).
 - Aparte del modelo, que Gemini omita el aviso del anisakis en idea anclada es un fallo de seguridad actual.
