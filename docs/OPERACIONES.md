@@ -165,8 +165,13 @@ Vercel, sin tocar la terminal**:
   `GET /v13/deployments/{url}`, campo `readyStateReason`.
 - El token del CLI de Vercel (`auth.json`) caduca; correr cualquier comando
   `vercel` lo refresca.
-- Hay un cron en Vercel (`vercel.json`): `/api/cron/recalc-criticality` los
-  lunes 04:00. Protegido por `CRON_SECRET`.
+- Crons en Vercel (`vercel.json`), todos protegidos por `CRON_SECRET` (horas
+  UTC; en el plan Hobby Vercel puede lanzarlos en cualquier minuto de esa hora):
+  - `/api/cron/recalc-criticality`: lunes 04:00.
+  - `/api/cron/culinary-memory`: todos los días 05:00.
+  - `/api/cron/purge-trash`: todos los días 03:30. Vacía la papelera: borra para
+    siempre lo que lleva más de 7 días en ella (ver
+    [Restaurar una receta, menú o producto borrado](#restaurar-una-receta-menú-o-producto-borrado)).
 - `/api/health` sin `deep` valida solo el **formato** de las claves (barato);
   con `?deep=1` pega a `GET https://api.anthropic.com/v1/models` para confirmar
   que la clave de IA de verdad funciona (una key revocada pero con formato ok
@@ -316,7 +321,7 @@ Pasos simples si necesitás cambiar un secreto en prod:
 | `NEXTAUTH_SECRET` (y `AUTH_SECRET`) | Firma de sesiones |
 | `MOBILE_JWT_SECRET` | Firma del token de la app móvil |
 | `BLOB_READ_WRITE_TOKEN` | Almacenamiento de archivos (PDFs subidos) |
-| `CRON_SECRET` | Protege el cron de recálculo |
+| `CRON_SECRET` | Protege los crons (`/api/cron/*`) |
 | `GOOGLE_WEB_CLIENT_ID` / `GOOGLE_IOS_CLIENT_ID` | Login con Google (verificación del token) |
 | `AI_DAILY_LIMIT` | Tope de llamadas de IA por chef/día (no secreto; default 120) |
 
@@ -442,6 +447,20 @@ el rollback **no** revierte la base de datos.
 - **Productos:** igual, icono de papelera en el encabezado de Productos →
   **Restaurar**. *(En la app del teléfono a partir de la próxima horneada;
   el APK b5f3cee7 todavía no lo trae.)*
+
+**La papelera se vacía sola a los 7 días.** El cron diario `/api/cron/purge-trash`
+borra para siempre, en todos los restaurantes, los menús, recetas y productos que
+llevan más de 7 días en la papelera. Lo que se borra con ellos:
+
+- **Menú:** sus secciones, platos y textos del PDF cliente.
+- **Receta:** sus ingredientes, y los platos que la usaban en menús que siguen
+  activos (ya no se veían en el menú desde que la receta fue a la papelera).
+- **Producto:** sus pruebas de rendimiento e historial de precios; los
+  ingredientes de recetas que lo usaban quedan sin enlazar.
+
+Pasado ese plazo ya no se puede restaurar. La respuesta y el log
+`trash_purge_finished` dicen cuántos se borraron de cada tipo; `complete: false`
+indica que se acabó el tiempo y el resto se borra en la siguiente pasada.
 
 ### Unir productos duplicados
 
