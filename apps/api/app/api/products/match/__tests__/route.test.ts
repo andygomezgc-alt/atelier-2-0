@@ -57,4 +57,10 @@ describe("POST /api/products/match", () => {
     const { results } = await match(["1 cucharada AOVE"]);
     expect(results[0]).toMatchObject({ level: "exact", productId: "oil" });
   });
+
+  it("matches an imported recipe of up to 100 ingredients in one call, and rejects 101", async () => {
+    const lines = (n: number) => Array.from({ length: n }, (_, i) => `${i + 1} g ingrediente ${i}`);
+    expect((await match(lines(100))).results).toHaveLength(100);
+    expect(await match(lines(101))).toEqual({ error: "invalid_body" });
+  });
 });

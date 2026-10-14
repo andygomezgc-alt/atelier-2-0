@@ -120,6 +120,47 @@ describe("extraction requests", () => {
   });
 });
 
+describe("long method steps from external documents", () => {
+  // Prose recipes write each step as one paragraph; the save contract caps a step at 500 characters.
+  const sentence = (n: number) =>
+    `Paso ${n}: pochamos la cebolla a fuego medio con una pizca de sal durante veinte minutos, removiendo de vez en cuando para que no tome color.`;
+  const paragraph = Array.from({ length: 8 }, (_, i) => sentence(i + 1)).join(" ");
+  const longStepRecipe = { title: "Calamares en su salsa", portions: null, ingredients: ["1 kg calamares"], method: [paragraph, "Servir caliente."], notes: "" };
+  const words = (steps: string[]) => steps.join(" ").split(/\s+/);
+
+  for (const [kind, mime, magic] of [
+    ["DOCX", DOCX_MIME, [0x50, 0x4b, 0x03, 0x04]],
+    ["PDF", PDF_MIME, [0x25, 0x50, 0x44, 0x46]],
+  ] as const) {
+    it(`a ${kind} whose steps are paragraphs over 500 characters is imported, split by sentence`, async () => {
+      pdf.text = "Receta del PDF";
+      glm.generateGlmJson.mockResolvedValue(longStepRecipe);
+      expect(paragraph.length).toBeGreaterThan(500);
+      const { method } = await extractRecipeFromFile(new Uint8Array(magic), mime);
+      expect(method.length).toBeGreaterThan(2);
+      for (const step of method) expect(step.length).toBeLessThanOrEqual(500);
+      expect(method[0]).toMatch(/^Paso 1: .*\.$/);
+      expect(words(method)).toEqual(words(longStepRecipe.method));
+      expect(method.at(-1)).toBe("Servir caliente.");
+    });
+  }
+
+  it("a step over 500 characters without sentence breaks is cut between words", async () => {
+    const run = Array.from({ length: 120 }, (_, i) => `palabra${i}`).join(" ");
+    glm.generateGlmJson.mockResolvedValue({ ...longStepRecipe, method: [run] });
+    const { method } = await extractRecipeFromFile(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), DOCX_MIME);
+    expect(method.length).toBe(3);
+    for (const step of method) expect(step.length).toBeLessThanOrEqual(500);
+    expect(words(method)).toEqual(words([run]));
+  });
+
+  it("steps up to 500 characters are kept as they are", async () => {
+    const method = ["Rellena los tubos.", "x".repeat(500)];
+    glm.generateGlmJson.mockResolvedValue({ ...longStepRecipe, method });
+    expect((await extractRecipeFromText("x")).method).toEqual(method);
+  });
+});
+
 describe("lenient ingredient validation", () => {
   const base = { title: "Calamar embutido", portions: 16, method: ["Rellena los tubos"], notes: "" };
 
@@ -149,21 +190,36 @@ describe("lenient ingredient validation", () => {
     await expect(extractRecipeFromText("x")).rejects.toThrow("Receta estructurada inválida");
   });
 
-  it("keeps the 50-ingredient cap", async () => {
+  it("accepts up to 100 ingredients", async () => {
     const lines = (n: number) => Array.from({ length: n }, (_, i) => `${i + 1} g sal`);
-    glm.generateGlmJson.mockResolvedValue({ ...base, ingredients: lines(50) });
-    expect((await extractRecipeFromText("x")).ingredients).toHaveLength(50);
+    glm.generateGlmJson.mockResolvedValue({ ...base, ingredients: lines(100) });
+    expect((await extractRecipeFromText("x")).ingredients).toHaveLength(100);
   });
 
-  it("more than 50 ingredients fail with the typed code recipe_too_many_ingredients", async () => {
-    glm.generateGlmJson.mockResolvedValue({ ...base, ingredients: Array.from({ length: 51 }, () => ({ name: "sal" })) });
+  // Tasting-menu recipes from outside list every sub-recipe: 12 sections of 6 ingredients.
+  const subRecipes = Array.from({ length: 12 }, (_, s) =>
+    Array.from({ length: 6 }, (_, i) => ({ section: `Elaboración ${s + 1}`, qty: (i + 1) * 15, unit: "g", name: `ingrediente ${s}-${i}` })),
+  ).flat();
+  for (const [kind, mime, magic] of [
+    ["DOCX", DOCX_MIME, [0x50, 0x4b, 0x03, 0x04]],
+    ["PDF", PDF_MIME, [0x25, 0x50, 0x44, 0x46]],
+  ] as const) {
+    it(`a ${kind} recipe with sub-recipes and 72 ingredients is imported whole`, async () => {
+      pdf.text = "Receta del PDF";
+      glm.generateGlmJson.mockResolvedValue({ ...base, ingredients: subRecipes });
+      expect((await extractRecipeFromFile(new Uint8Array(magic), mime)).ingredients).toEqual(subRecipes);
+    });
+  }
+
+  it("more than 100 ingredients fail with the typed code recipe_too_many_ingredients", async () => {
+    glm.generateGlmJson.mockResolvedValue({ ...base, ingredients: Array.from({ length: 101 }, () => ({ name: "sal" })) });
     const error = await extractRecipeFromText("x").catch((e: unknown) => e);
     expect(error).toBeInstanceOf(RecipeExtractionError);
     expect(error).toMatchObject({ code: "recipe_too_many_ingredients", message: "recipe_too_many_ingredients" });
   });
 
   it("the file path uses the same validation and the same typed code", async () => {
-    glm.generateGlmJson.mockResolvedValue({ ...base, ingredients: Array.from({ length: 51 }, () => "1 limón") });
+    glm.generateGlmJson.mockResolvedValue({ ...base, ingredients: Array.from({ length: 101 }, () => "1 limón") });
     await expect(extractRecipeFromFile(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), DOCX_MIME))
       .rejects.toMatchObject({ code: "recipe_too_many_ingredients" });
   });
