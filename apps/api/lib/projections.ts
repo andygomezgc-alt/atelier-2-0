@@ -48,6 +48,7 @@ const recipeIngredientsForCostInclude = {
         estado: true,
         precioCompra: true,
         mermaPct: true,
+        taxRatePct: true,
         unidadCompra: true,
         // Weight of one litre: converts g/kg ↔ l/ml in the cost.
         gramosPorLitro: true,
@@ -192,6 +193,8 @@ type RecipeIngredientRow = {
         // Sub-paso 6: campos necesarios para computar el costo.
         precioCompra: number;
         mermaPct: { toString(): string }; // Prisma.Decimal
+        // Purchase tax (Prisma.Decimal); optional so older fixtures cost as untaxed.
+        taxRatePct?: { toString(): string } | null;
         unidadCompra: string;
         // Weight of one litre (Prisma.Decimal); null = unknown.
         gramosPorLitro?: { toString(): string } | null;
@@ -230,6 +233,7 @@ function mapIngredientsForCost(rows: RecipeIngredientRow[]) {
           id: row.product.id,
           precioCompra: row.product.precioCompra,
           mermaPct: Number(row.product.mermaPct.toString()),
+          taxRatePct: row.product.taxRatePct != null ? Number(row.product.taxRatePct.toString()) : 0,
           unidadCompra: row.product.unidadCompra as ProductUnit,
           gramosPorLitro:
             row.product.gramosPorLitro != null

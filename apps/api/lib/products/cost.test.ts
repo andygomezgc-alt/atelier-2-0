@@ -640,3 +640,29 @@ describe("computeRecipeCost — per-ingredient lines", () => {
     ]);
   });
 });
+
+describe("purchase tax in recipe cost", () => {
+  it("adds the product tax rate to the cost", () => {
+    const r = computeRecipeCost({ ingredients: [ing({ productOverrides: { taxRatePct: 10 } })], portions: null, salePriceCents: null });
+    expect(r.totalCents).toBeCloseTo(1100);
+  });
+
+  it("no rate means no change (existing products)", () => {
+    const r = computeRecipeCost({ ingredients: [ing({})], portions: null, salePriceCents: null });
+    expect(r.totalCents).toBeCloseTo(1000);
+  });
+
+  it("applies tax before waste", () => {
+    const r = computeRecipeCost({ ingredients: [ing({ productOverrides: { taxRatePct: 10, mermaPct: 50 } })], portions: null, salePriceCents: null });
+    expect(r.totalCents).toBeCloseTo(2200);
+  });
+
+  it("taxes products bought by the piece", () => {
+    const r = computeRecipeCost({
+      ingredients: [ing({ qty: 2, unit: "unidad", productOverrides: { unidadCompra: "unidad", taxRatePct: 22 } })],
+      portions: null,
+      salePriceCents: null,
+    });
+    expect(r.totalCents).toBeCloseTo(2440);
+  });
+});
