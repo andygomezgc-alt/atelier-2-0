@@ -1,4 +1,4 @@
-| done | 3c50619 || done | 786787f || done | 4485260 || done | 59b6968 || done | 56e6fba || done | 11c9590 || done | f280aae || done | a80e6b8 |# Supplier invoice scanner — Plan 1 (foundations)
+# Supplier invoice scanner — Plan 1 (foundations)
 
 Objective: build the foundations of the supplier invoice scanner (reading, totals, gate script, attributes/ambiguo, variant picker, data model, tax in cost, pricing rules). Branch: `feat/supplier-invoice-scanner`. Delivery: ask-on-risk (forecast ~1,600 authored lines → chain strategy asked before PR). Test runner: vitest (api, shared, mobile, i18n).
 Design: `docs/superpowers/specs/2026-10-14-supplier-invoice-scanner-design.md`. Plan: `docs/superpowers/plans/2026-10-14-supplier-invoice-scanner-plan-1.md`. Ledger: `.superpowers/sdd/2026-10-14-supplier-invoice-scanner-plan-1/progress.md`.
@@ -35,3 +35,4 @@ Design: `docs/superpowers/specs/2026-10-14-supplier-invoice-scanner-design.md`. 
 - L3 (2026-10-14) plan 1 written (fded568). User: "Revisé el plan. Ejecutalo vos en esta sesión (nativo), con un revisor independiente al final y para la migración."
 - L4 (2026-10-15) T1-T8 done (a80e6b8..3c50619). Focused tests RED→GREEN per task; api 1690+36, mobile 549, shared 537, i18n 94; pnpm typecheck green. T2 gate (real invoices) pending on the user. T6 independent verifier: PASS; migration applied to dev only. Rulings in the ledger. Final independent review running.
 - L5 (2026-10-15) Final independent review: 6 Important fixed in one pass (e80c799 pricing: paid price, returns, unpriced products; 887b926 match: confirmed alias, acceptsAmbiguous for older builds, safe picker dismissal), each RED→GREEN. api 1735/1735, mobile 550/550, shared 537/537, i18n 94/94, typecheck green. 7 minors deferred (#5-#9, #12, #13). Next: user's 5-8 real invoices for the T2 gate, then Plan 2.
+- L6 (2026-10-15) Rulings and deferred minors (copied from the SDD ledger before deleting it):
