@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectLanguage, deterministicGrades, hasHiddenJson, quantityFirstShare, recipeDetected, wordCount } from "./checks";
+import { detectLanguage, deterministicGrades, formatShare, hasHiddenJson, quantityFirstShare, recipeDetected, wordCount } from "./checks";
 
 const RECETA_ES = [
   "Rinde 10 raciones.",
@@ -130,7 +130,7 @@ describe("quantityFirstShare", () => {
 
 describe("deterministicGrades", () => {
   it("califica una receta completa en su idioma", () => {
-    expect(deterministicGrades(RECETA_ES, { lang: "es", recipe: true })).toEqual({ idioma: 1, titulos: 1, cantidad: 1, sin_json: 1 });
+    expect(deterministicGrades(RECETA_ES, { lang: "es", recipe: true })).toEqual({ idioma: 1, titulos: 1, cantidad: 1, formato: 1, sin_json: 1 });
   });
 
   it("cantidad es null con menos de 3 ingredientes y 0 si la cantidad no va delante", () => {
@@ -141,7 +141,54 @@ describe("deterministicGrades", () => {
   });
 
   it("sin receta no hay títulos ni cantidad; el idioma y el JSON se miden igual", () => {
-    expect(deterministicGrades(`${RECIPE_EN}\n{"title": "Soup"}`, { lang: "es", recipe: false })).toEqual({ idioma: 0, titulos: null, cantidad: null, sin_json: 0 });
+    expect(deterministicGrades(`${RECIPE_EN}\n{"title": "Soup"}`, { lang: "es", recipe: false })).toEqual({ idioma: 0, titulos: null, cantidad: null, formato: null, sin_json: 0 });
+  });
+});
+
+describe("formatShare", () => {
+  it("counts canonical lines: quantity, metric unit or pieces, product and a note after a comma", () => {
+    const text = [
+      "**Ingredientes**", "- 400 g rape limpio, muy frío", "- 8 g sal fina", "- 4 ud calamar", "- `1,2 kg` apionabo, pelado",
+      "**Método**", "1. Limpia el rape.",
+    ].join("\n");
+    expect(formatShare(text)).toEqual({ lines: 4, share: 1 });
+  });
+
+  it("does not count the name first, a parenthesised note, spoons, ranges or unmeasured lines", () => {
+    const text = [
+      "Ingredientes", "- sal fina (8 g)", "- Sal fina, 8 g", "- 40 g AOVE (aceite de chorizo)", "- 1 cucharada aceite de oliva",
+      "- 2-3 dientes de ajo", "- 20 cl nata", "- Pimienta al gusto", "- 200 g chorizo", "Método", "1. Sofríe.",
+    ].join("\n");
+    expect(formatShare(text)).toEqual({ lines: 8, share: 1 / 8 });
+  });
+
+  it("reads bold sub-headers as sections, not as ingredients", () => {
+    const text = [
+      "**Ingredientes**", "", "**Farsa**", "- 200 g patas de calamar", "- 50 g cebolla, picada", "",
+      "**Aceite de chorizo**", "- 100 ml aceite de oliva virgen extra", "- 50 g chorizo", "- **Tripa:**", "- 4 ud calamar, de unos 350 g",
+      "Para el emplatado:", "- 10 g cebollino", "", "**Método**", "1. Pica las patas.",
+    ].join("\n");
+    expect(formatShare(text)).toEqual({ lines: 6, share: 1 });
+  });
+
+  it("has no lines without an ingredients heading", () => {
+    expect(formatShare("400 g rape limpio y 8 g sal fina.")).toEqual({ lines: 0, share: 0 });
+  });
+});
+
+describe("deterministicGrades — formato", () => {
+  it("is 1 from 80 % canonical lines, 0 below it", () => {
+    const four = ["Ingredientes", "- 400 g rape limpio", "- 8 g sal fina", "- 4 ud calamar", "- 50 g chorizo", "- 1 cucharada aceite", "Método", "1. Asa."];
+    expect(deterministicGrades(four.join("\n"), { lang: "es", recipe: true }).formato).toBe(1);
+    const half = ["Ingredientes", "- 400 g rape limpio", "- sal fina (8 g)", "- 4 ud calamar", "- 1 cucharada aceite", "Método", "1. Asa."];
+    expect(deterministicGrades(half.join("\n"), { lang: "es", recipe: true }).formato).toBe(0);
+  });
+
+  it("is null with fewer than 3 lines or when the case is not a recipe", () => {
+    const two = ["Ingredientes", "- 4 huevos", "- 8 g sal fina", "Método", "1. Batir los huevos."].join("\n");
+    expect(deterministicGrades(two, { lang: "es", recipe: true }).formato).toBeNull();
+    expect(deterministicGrades(RECETA_ES, { lang: "es", recipe: false }).formato).toBeNull();
+    expect(deterministicGrades("Rinde 4 raciones, sin ficha.", { lang: "es", recipe: true }).formato).toBeNull();
   });
 });
 

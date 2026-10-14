@@ -44,6 +44,27 @@ export function defaultMermaPct(category: ProductCategory): number {
   }
 }
 
+// Words that say the product is bought already cleaned: the kitchen loses
+// nothing, so the category's waste would double its cost («gamba pelada»).
+const CLEANED_KEYWORDS: ReadonlyArray<string> = [
+  "limpio", "limpia", "limpios", "limpias",
+  "pelado", "pelada", "pelados", "peladas",
+  "fileteado", "fileteada", "filete", "filetes", "lomo", "lomos",
+  "deshuesado", "deshuesada", "sin piel", "sin espinas", "sin hueso", "desconchado", "desconchada",
+  "pulito", "pulita", "puliti", "pulite",
+  "sgusciato", "sgusciata", "sgusciati", "sgusciate",
+  "sfilettato", "sfilettata", "filetto", "filetti", "senza pelle", "senza lisca", "disossato", "disossata",
+  "cleaned", "peeled", "fillet", "fillets", "boneless", "skinless", "trimmed",
+];
+
+// Waste suggested for a new product: 0 when its name says it comes cleaned,
+// otherwise the category default.
+export function suggestedMermaPct(name: string, category: ProductCategory): number {
+  const normalized = normalizeForMatch(name);
+  if (CLEANED_KEYWORDS.some((kw) => matchesKeyword(normalized, kw))) return 0;
+  return defaultMermaPct(category);
+}
+
 // Patrones que disparan criticidad "alta" automática. Se matchea por substring
 // del nombre normalizado (sin acentos, lowercase). Mantener corto y específico:
 // los falsos positivos llevan a marcar productos triviales como críticos.
@@ -144,6 +165,10 @@ const CATEGORY_KEYWORDS: ReadonlyArray<{
     keywords: [
       "atun", "tonno", "tuna",
       "merluza", "merluzzo", "hake",
+      "rape", "coda di rospo", "rana pescatrice", "monkfish",
+      "corvina", "mero", "besugo", "pargo", "san pietro",
+      "sepia", "seppia", "seppie", "chipiron", "chipirones", "calamaro", "totano",
+      "cigala", "cigalas", "carabinero", "carabineros", "navaja", "navajas", "berberecho", "berberechos",
       "salmon", "salmone",
       "pulpo", "polpo", "octopus",
       "calamar", "calamari", "squid",

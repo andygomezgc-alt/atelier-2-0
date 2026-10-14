@@ -32,7 +32,7 @@ vi.mock("@/lib/products/projections", () => ({
   projectProductDetail: (p: { id: string }) => ({ id: p.id }),
 }));
 vi.mock("@/lib/products/criticality", () => ({ defaultCriticality: () => "media" }));
-vi.mock("@/lib/products/defaults", () => ({ defaultMermaPct: () => 10 }));
+// The real waste defaults: the suggested-waste tests read them.
 vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 import * as route from "../route";
@@ -105,6 +105,25 @@ describe("POST /api/products", () => {
     expect(res.status).toBe(201);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(db.productPriceHistory.create).not.toHaveBeenCalled();
+  });
+
+  describe("suggested waste", () => {
+    beforeEach(() => {
+      db.product.create.mockImplementation(async ({ data }) => ({ id: "p-fish", ...data }));
+    });
+
+    it("an already-cleaned product without a declared waste starts at 0 %", async () => {
+      const res = await create({ name: "Gamba pelada", category: "pescado", unidadCompra: "kg", precioCompra: 3000 });
+      expect(res.status).toBe(201);
+      expect(db.product.create.mock.calls[0]![0].data.mermaPct).toBe(0);
+    });
+
+    it("a whole product keeps the category default, and a declared waste always wins", async () => {
+      await create({ name: "Gamba roja", category: "pescado", unidadCompra: "kg", precioCompra: 3000 });
+      await create({ name: "Gamba pelada", category: "pescado", unidadCompra: "kg", precioCompra: 3000, mermaPct: 12 });
+      expect(db.product.create.mock.calls[0]![0].data.mermaPct).toBe(50);
+      expect(db.product.create.mock.calls[1]![0].data.mermaPct).toBe(12);
+    });
   });
 
   describe("gramosPorLitro (weight of one litre)", () => {

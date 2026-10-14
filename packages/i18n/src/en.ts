@@ -421,7 +421,9 @@ export const en: EsDict = {
   recetas_form_add_ingredient: "Add ingredient",
   recetas_form_add_step: "Add step",
   recetas_form_notes_placeholder: "Additional notes…",
-  recetas_form_ingredient_placeholder: "Fresh squab, 1 unit",
+  recetas_form_ingredient_placeholder: "400 g monkfish, trimmed, well chilled",
+  // Standard ingredient format: weight of one piece under a recipe line.
+  recipe_ingredient_piece_weight: "{g} g per piece",
   recetas_form_step_placeholder: "Sear over high heat for 90 s",
   recetas_cargar_title: "Upload file",
   recetas_cargar_pick: "Pick PDF or Word",
@@ -446,6 +448,7 @@ export const en: EsDict = {
   papelera_title: "Trash",
   papelera_empty_title: "The trash is empty",
   papelera_empty_sub: "Recipes you delete show up here so you can recover them.",
+  papelera_retention_note: "Items in the trash are deleted forever after 7 days.",
   toast_recipe_restored: "Recipe restored",
   btn_escalar: "Scale",
   scale_title: "Scale portions",

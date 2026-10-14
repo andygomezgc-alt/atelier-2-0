@@ -10,18 +10,15 @@
 // Usa la clave GLM del server (extractRecipeFromText): la extracción
 // es infraestructura de la app (decisión A-01).
 //
-// El bloque de matching está duplicado del upload route a propósito: son
-// ~25 líneas, evita tocar el path PDF de producción y mantener una
-// abstracción prematura compartida (CLAUDE.md #3/#7).
+// Standard format and bank matching live in lib/recipes/extraction-pipeline,
+// shared with /upload and /import-gdoc.
 
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@atelier/db";
 import { ExtractRecipeRequestSchema } from "@atelier/shared";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 import { extractRecipeFromText } from "@/lib/recipe-extraction";
-import { findMatch, type MatchCandidate } from "@/lib/products/matching";
-import { parseIngredient } from "@/lib/products/parser";
+import { loadMatchCandidates, standardizeExtractedRecipe } from "@/lib/recipes/extraction-pipeline";
 import { reserveAiCall, aiQuotaExceededResponse, recordAiTokens } from "@/lib/ai-quota";
 import { budgetErrorResponse } from "@/lib/ai/budget-policy";
 
@@ -51,76 +48,22 @@ export async function POST(req: NextRequest) {
 
   const start = Date.now();
   try {
-    const [extracted, productList] = await Promise.all([
+    const [extracted, candidates] = await Promise.all([
       extractRecipeFromText(parsed.data.text, usage => recordAiTokens(ctx.userId, usage.inputTokens, usage.outputTokens).catch(() => undefined)),
-      ctx.restaurantId
-        ? prisma.product.findMany({
-            where: {
-              restaurantId: ctx.restaurantId,
-              deletedAt: null,
-              estado: { in: ["activo", "borrador"] },
-            },
-            select: { id: true, name: true, aliases: true },
-          })
-        : Promise.resolve([]),
+      loadMatchCandidates(ctx.restaurantId),
     ]);
-
-    const candidates: MatchCandidate[] = productList.map((p) => ({
-      id: p.id,
-      name: p.name,
-      aliases: p.aliases,
-    }));
-
-    const recipeIngredients: Array<{
-      rawText: string;
-      productId: string | null;
-    }> = [];
-    const pendingMatches: Array<{
-      ingredientIdx: number;
-      productId: string;
-      productName: string;
-    }> = [];
-
-    extracted.ingredients.forEach((rawText, idx) => {
-      // Parsear antes de matchear (Bug C fix, igual que el upload route):
-      // "200g harina" → matchear sólo "harina" contra el banco.
-      const p = parseIngredient(rawText);
-      const m = findMatch(p.name || rawText, candidates);
-      if (m.level === "exact" && m.productId) {
-        recipeIngredients.push({ rawText, productId: m.productId });
-      } else if (m.level === "probable" && m.productId && m.productName) {
-        recipeIngredients.push({ rawText, productId: null });
-        pendingMatches.push({
-          ingredientIdx: idx,
-          productId: m.productId,
-          productName: m.productName,
-        });
-      } else {
-        recipeIngredients.push({ rawText, productId: null });
-      }
-    });
+    const { response, stats } = standardizeExtractedRecipe(extracted, candidates);
 
     logger.info("recipe_extract_from_text", {
       userId: ctx.userId,
       latencyMs: Date.now() - start,
       chars: parsed.data.text.length,
-      ingredients: extracted.ingredients.length,
-      exactMatches: recipeIngredients.filter((r) => r.productId !== null)
-        .length,
-      probableMatches: pendingMatches.length,
+      ...stats,
+      exactMatches: response.recipeIngredients.filter((r) => r.productId !== null).length,
+      probableMatches: response.pendingMatches.length,
     });
 
-    return NextResponse.json({
-      title: extracted.title,
-      portions: extracted.portions ?? null,
-      contentJson: {
-        ingredients: extracted.ingredients,
-        method: extracted.method,
-        notes: extracted.notes ?? "",
-      },
-      recipeIngredients,
-      pendingMatches,
-    });
+    return NextResponse.json(response);
   } catch (err) {
     const budgetResponse = budgetErrorResponse(err);
     if (budgetResponse) return budgetResponse;

@@ -181,8 +181,38 @@ describe("recipe cost lines", () => {
     expect(item.perPortionCents).toBe(11);
   });
 
+  it("the detail returns each ingredient's section and note (null when unset)", () => {
+    const row = recipeRow();
+    row.recipeIngredients[0] = { ...row.recipeIngredients[0]!, section: "Aceite de chorizo", note: "en frío" };
+    row.recipeIngredients[1] = { ...row.recipeIngredients[1]!, section: null, note: null };
+    const detail = projectRecipeDetail(row);
+    expect(detail.recipeIngredients.map(({ section, note }) => ({ section, note }))).toEqual([
+      { section: "Aceite de chorizo", note: "en frío" },
+      { section: null, note: null },
+      { section: null, note: null },
+    ]);
+    expect(RecipeDetailSchema.safeParse(detail).success).toBe(true);
+  });
+
   it("list and detail includes select the product's weight per litre", () => {
     expect(recipeDetailInclude.recipeIngredients.include.product.select.gramosPorLitro).toBe(true);
     expect(recipeListInclude.recipeIngredients.include.product.select.gramosPorLitro).toBe(true);
+  });
+
+  it("a product in the trash does not count in the cost: the line is unlinked", () => {
+    const row = recipeRow();
+    row.recipeIngredients[0] = {
+      ...row.recipeIngredients[0]!,
+      product: { ...product("p-oil", "l", 500, 920), deletedAt: new Date("2026-10-13T10:00:00Z") },
+    };
+    const detail = projectRecipeDetail(row);
+    expect(detail.cost.lines?.[0]).toMatchObject({ ingredientId: "ri-oil", status: "no_product", costCents: null, productId: null });
+    expect(detail.cost).toMatchObject({ totalCents: null, computableCount: 0, unlinkedCount: 2 });
+    expect(projectRecipeListItem(row).perPortionCents).toBeNull();
+  });
+
+  it("list and detail includes select the product's trash date", () => {
+    expect(recipeDetailInclude.recipeIngredients.include.product.select.deletedAt).toBe(true);
+    expect(recipeListInclude.recipeIngredients.include.product.select.deletedAt).toBe(true);
   });
 });

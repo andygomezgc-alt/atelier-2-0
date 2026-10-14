@@ -49,7 +49,7 @@ const SOURCE = {
   salePrice: 1800,
   manualAllergens: [],
   recipeIngredients: [
-    { productId: "p1", position: 0, rawText: "200g arroz", qty: 200, unit: "g", pezzatura: null, mermaOverridePct: null, pesoCalculoG: null },
+    { productId: "p1", position: 0, rawText: "200g arroz", qty: 200, unit: "g", pezzatura: null, mermaOverridePct: null, pesoCalculoG: null, section: "Arroz", note: "lavado" },
   ],
 };
 
@@ -84,6 +84,7 @@ describe("POST /api/recipes/[id]/scale", () => {
     const ingArg = db.recipeIngredient.createMany.mock.calls[0]![0];
     expect(ingArg.data[0].qty).toBe(400); // 200 × 2
     expect(ingArg.data[0].rawText).toBe("400g arroz");
+    expect(ingArg.data[0]).toMatchObject({ section: "Arroz", note: "lavado" });
   });
 
   it("achica (8→4 = ×0.5)", async () => {

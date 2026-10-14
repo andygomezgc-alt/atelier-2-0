@@ -7,9 +7,11 @@
 // response incluye recipeIngredients (estructurado con productId pre-set
 // para matches exactos) y pendingMatches (sugerencias probable que el
 // cliente debe confirmar antes de guardar la receta).
+//
+// Standard format and bank matching live in lib/recipes/extraction-pipeline,
+// shared with /extract and /import-gdoc.
 
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@atelier/db";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { logger } from "@/lib/logger";
 import {
@@ -20,8 +22,7 @@ import {
   DOCX_MIME,
   IMAGE_MIMES,
 } from "@/lib/recipe-extraction";
-import { findMatch, type MatchCandidate } from "@/lib/products/matching";
-import { parseIngredient } from "@/lib/products/parser";
+import { loadMatchCandidates, standardizeExtractedRecipe } from "@/lib/recipes/extraction-pipeline";
 import { reserveAiCall, aiQuotaExceededResponse, recordAiTokens } from "@/lib/ai-quota";
 import { budgetErrorResponse } from "@/lib/ai/budget-policy";
 
@@ -83,81 +84,30 @@ export async function POST(req: NextRequest) {
     // se ejecuta, prefetcheamos el banco de productos del restaurante para
     // tener las candidatas listas y matchear sin un round-trip extra al
     // terminar el LLM.
-    const [extracted, productList] = await Promise.all([
+    // Photos (and PDFs without text, inside extractRecipeFromFile) are read
+    // as images; text PDFs and DOCX as documents.
+    const [extracted, candidates] = await Promise.all([
       isImage
         ? extractRecipeFromImage(buffer, mime, usage => recordAiTokens(ctx.userId, usage.inputTokens, usage.outputTokens).catch(() => undefined))
         : extractRecipeFromFile(buffer, mime, usage => recordAiTokens(ctx.userId, usage.inputTokens, usage.outputTokens).catch(() => undefined)),
-      ctx.restaurantId
-        ? prisma.product.findMany({
-            where: {
-              restaurantId: ctx.restaurantId,
-              deletedAt: null,
-              estado: { in: ["activo", "borrador"] },
-            },
-            select: { id: true, name: true, aliases: true },
-          })
-        : Promise.resolve([]),
+      loadMatchCandidates(ctx.restaurantId),
     ]);
 
-    const candidates: MatchCandidate[] = productList.map((p) => ({
-      id: p.id,
-      name: p.name,
-      aliases: p.aliases,
-    }));
-
-    // Matcheamos cada ingrediente contra el banco. exact → productId pre-set;
-    // probable → lo mandamos en pendingMatches para que el mobile pida
-    // confirmación al chef; none → productId null, el mobile crea draft al
-    // guardar.
-    const recipeIngredients: Array<{ rawText: string; productId: string | null }> = [];
-    const pendingMatches: Array<{
-      ingredientIdx: number;
-      productId: string;
-      productName: string;
-    }> = [];
-
-    extracted.ingredients.forEach((rawText, idx) => {
-      // Bug C fix (Andy 2026-05-17): parsear rawText antes de matchear
-      // contra el banco. El LLM extrae líneas tipo "200g harina" — si las
-      // pasamos enteras a findMatch, Levenshtein contra "harina" da
-      // distance>3 y cae como "none" → se crea draft duplicado. Parseando
-      // primero, matcheamos sólo el nombre limpio.
-      const parsed = parseIngredient(rawText);
-      const m = findMatch(parsed.name || rawText, candidates);
-      if (m.level === "exact" && m.productId) {
-        recipeIngredients.push({ rawText, productId: m.productId });
-      } else if (m.level === "probable" && m.productId && m.productName) {
-        recipeIngredients.push({ rawText, productId: null });
-        pendingMatches.push({
-          ingredientIdx: idx,
-          productId: m.productId,
-          productName: m.productName,
-        });
-      } else {
-        recipeIngredients.push({ rawText, productId: null });
-      }
-    });
+    // Standard format, then matching on the clean name: exact → productId
+    // pre-set; probable → pendingMatches, which the chef confirms; none →
+    // productId null, and a draft product is created on save.
+    const { response, stats } = standardizeExtractedRecipe(extracted, candidates);
 
     logger.info("recipe_upload_extracted", {
       userId: ctx.userId,
       mime,
       bytes: file.size,
       latencyMs: Date.now() - start,
-      ingredients: extracted.ingredients.length,
-      exactMatches: recipeIngredients.filter((r) => r.productId !== null).length,
-      probableMatches: pendingMatches.length,
+      ...stats,
+      exactMatches: response.recipeIngredients.filter((r) => r.productId !== null).length,
+      probableMatches: response.pendingMatches.length,
     });
-    return NextResponse.json({
-      title: extracted.title,
-      portions: extracted.portions ?? null,
-      contentJson: {
-        ingredients: extracted.ingredients,
-        method: extracted.method,
-        notes: extracted.notes ?? "",
-      },
-      recipeIngredients,
-      pendingMatches,
-    });
+    return NextResponse.json(response);
   } catch (err) {
     const budgetResponse = budgetErrorResponse(err);
     if (budgetResponse) return budgetResponse;

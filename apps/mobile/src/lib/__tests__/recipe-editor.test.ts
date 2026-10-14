@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildRecipeRequestBody, editIngredientText, selectIngredientProduct, recipeIngredientPayload } from "../recipe-editor";
+import {
+  addIngredientRow,
+  buildRecipeRequestBody,
+  editIngredientText,
+  ingredientMatchName,
+  recipeIngredientPayload,
+  selectIngredientProduct,
+  toEditorIngredient,
+} from "../recipe-editor";
 
 describe("recipe editor costing data", () => {
   const original = { rawText: "2 piezas merluza", productId: "fish", qty: 2, unit: "piezas", pesoCalculoG: 450, mermaOverridePct: 12, pezzatura: "400-500 g" };
@@ -20,6 +28,62 @@ describe("recipe editor costing data", () => {
     const value = { ...original, rawText: "merluza para el pase", qty: 0.75, unit: "kg" };
     expect(recipeIngredientPayload(value)).toEqual(value);
     expect(selectIngredientProduct(value, { id: "fish", name: "Merluza" })).toMatchObject({ qty: 0.75, unit: "kg", pesoCalculoG: 450 });
+  });
+});
+
+describe("recipe editor standard format", () => {
+  const rape = { rawText: "400 g rape limpio", productId: "rape", qty: 400, unit: "g", pesoCalculoG: null, mermaOverridePct: 8, section: "Pescado" };
+
+  it("matches on the clean ingredient name, without quantity or note", () => {
+    expect(ingredientMatchName("400 g rape limpio, muy frío")).toBe("rape limpio");
+    expect(ingredientMatchName("4 calamares de 350 g aprox.")).toBe("calamar");
+    expect(ingredientMatchName("  sal  ")).toBe("sal");
+  });
+
+  it("keeps the product and its overrides when only the note changes", () => {
+    expect(editIngredientText(rape, "400 g rape limpio, muy frío")).toEqual({ ...rape, rawText: "400 g rape limpio, muy frío" });
+  });
+
+  it("drops the product when the clean name changes", () => {
+    expect(editIngredientText(rape, "400 g rape, muy frío")).toMatchObject({ productId: null, mermaOverridePct: null, section: "Pescado" });
+  });
+
+  it("builds the canonical line when picking a product and keeps the note", () => {
+    const picked = selectIngredientProduct({ rawText: "400 g rape, muy frío", productId: null }, { id: "rape", name: "Rape limpio" });
+    expect(picked).toMatchObject({ rawText: "400 g Rape limpio, muy frío", qty: 400, unit: "g", productId: "rape" });
+  });
+
+  it("writes pieces as «ud» and decimals with a comma", () => {
+    const pieces = selectIngredientProduct({ rawText: "2 piezas merluza", productId: null, qty: 2, unit: "piezas" }, { id: "fish", name: "Merluza" });
+    expect(pieces).toMatchObject({ rawText: "2 ud Merluza", qty: 2, unit: "unidad" });
+    const kilos = selectIngredientProduct({ rawText: "merluza", productId: null, qty: 0.75, unit: "kg" }, { id: "fish", name: "Merluza" });
+    expect(kilos.rawText).toBe("0,75 kg Merluza");
+  });
+
+  it("keeps the piece weight written in the line when picking another product", () => {
+    const picked = selectIngredientProduct({ rawText: "4 calamares de 350 g aprox.", productId: null }, { id: "squid", name: "Calamar" });
+    expect(picked).toMatchObject({ rawText: "4 ud Calamar", qty: 4, unit: "unidad", pesoCalculoG: 350 });
+  });
+
+  it("prefills the editor with the display line, the section and no separate note", () => {
+    const row = { rawText: "4 ud calamar", productId: "squid", qty: 4, unit: "unidad", pesoCalculoG: 350, section: "Fondo", note: "limpio" };
+    expect(toEditorIngredient(row)).toEqual({ ...row, rawText: "4 ud calamar, limpio", note: null });
+    expect(toEditorIngredient({ rawText: "sal" })).toEqual({ rawText: "sal", productId: null, pesoCalculoG: null, section: null, note: null });
+  });
+
+  it("does not repeat the note when the row is prefilled twice", () => {
+    const once = toEditorIngredient({ rawText: "400 g rape limpio", productId: "rape", note: "muy frío" });
+    expect(toEditorIngredient(once).rawText).toBe("400 g rape limpio, muy frío");
+  });
+
+  it("adds a new ingredient in the section of the last row", () => {
+    const rows = [{ ...rape, section: "Fondo" }, { rawText: "sal", productId: null, section: "Salsa" }];
+    expect(addIngredientRow(rows)).toEqual([...rows, { rawText: "", productId: null, section: "Salsa" }]);
+    expect(addIngredientRow([])).toEqual([{ rawText: "", productId: null, section: null }]);
+  });
+
+  it("sends the section with each ingredient", () => {
+    expect(recipeIngredientPayload({ rawText: " sal ", productId: null, section: "Salsa", note: null })).toEqual({ rawText: "sal", productId: null, section: "Salsa", note: null });
   });
 });
 

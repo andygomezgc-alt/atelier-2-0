@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findMatch, levenshtein, type MatchCandidate } from "../matching";
+import { findMatch, levenshtein, tokenizeForMatch, type MatchCandidate } from "../matching";
 
 const cand = (id: string, name: string, aliases: string[] = []): MatchCandidate => ({
   id,
@@ -36,6 +36,37 @@ describe("findMatch — comportamiento existente (frase entera)", () => {
 
   it("query vacío o solo espacios → none", () => {
     expect(findMatch("   ", [cand("p1", "sal")]).level).toBe("none");
+  });
+});
+
+describe("findMatch — Spanish plurals meet the singular standard name", () => {
+  it.each([
+    ["tomate", "Tomates"],
+    ["huevo", "Huevos"],
+    ["calamar", "Calamares"],
+    ["limón", "Limones"],
+    ["patata", "Patatas"],
+    ["pan", "Panes"],
+  ])("%s vs bank %s is exact", (query, bankName) => {
+    const r = findMatch(query, [cand("p1", bankName)]);
+    expect(r.level).toBe("exact");
+    expect(r.productId).toBe("p1");
+  });
+
+  it("the plural query also meets a singular bank product", () => {
+    expect(findMatch("Tomates", [cand("p1", "tomate")]).level).toBe("exact");
+    expect(findMatch("limones", [cand("p1", "Limón")]).level).toBe("exact");
+  });
+
+  it("tokens of the singular and the plural are the same", () => {
+    expect(tokenizeForMatch("tomates huevos calamares limones")).toEqual(
+      tokenizeForMatch("tomate huevo calamar limón"),
+    );
+  });
+
+  it("different products still do not meet", () => {
+    expect(findMatch("tomate", [cand("p1", "Tomillo")]).level).not.toBe("exact");
+    expect(findMatch("aceite de girasol", [cand("p1", "aceites de oliva")]).level).toBe("none");
   });
 });
 

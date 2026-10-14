@@ -49,7 +49,7 @@ const SOURCE = {
   salePrice: 1800,
   manualAllergens: ["gluten"],
   recipeIngredients: [
-    { productId: "p1", position: 0, rawText: "200g arroz", qty: 200, unit: "g", pezzatura: null, mermaOverridePct: null, pesoCalculoG: null },
+    { productId: "p1", position: 0, rawText: "200g arroz", qty: 200, unit: "g", pezzatura: null, mermaOverridePct: null, pesoCalculoG: null, section: "Arroz", note: "lavado" },
   ],
 };
 
@@ -86,6 +86,7 @@ describe("POST /api/recipes/[id]/duplicate", () => {
     expect(ingArg.data).toHaveLength(1);
     expect(ingArg.data[0].recipeId).toBe("rec-2");
     expect(ingArg.data[0].productId).toBe("p1");
+    expect(ingArg.data[0]).toMatchObject({ section: "Arroz", note: "lavado" });
   });
 
   it("404 si la receta no existe", async () => {

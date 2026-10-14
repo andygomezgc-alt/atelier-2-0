@@ -422,7 +422,9 @@ export const it: EsDict = {
   recetas_form_add_ingredient: "Aggiungi ingrediente",
   recetas_form_add_step: "Aggiungi passaggio",
   recetas_form_notes_placeholder: "Note aggiuntive…",
-  recetas_form_ingredient_placeholder: "Piccione fresco, 1",
+  recetas_form_ingredient_placeholder: "400 g coda di rospo pulita, molto fredda",
+  // Standard ingredient format: weight of one piece under a recipe line.
+  recipe_ingredient_piece_weight: "{g} g al pezzo",
   recetas_form_step_placeholder: "Rosolare a fuoco vivo per 90 s",
   recetas_cargar_title: "Carica file",
   recetas_cargar_pick: "Scegli PDF o Word",
@@ -447,6 +449,7 @@ export const it: EsDict = {
   papelera_title: "Cestino",
   papelera_empty_title: "Il cestino è vuoto",
   papelera_empty_sub: "Le ricette che elimini finiscono qui per recuperarle.",
+  papelera_retention_note: "Ciò che è nel cestino viene eliminato definitivamente dopo 7 giorni.",
   toast_recipe_restored: "Ricetta ripristinata",
   btn_escalar: "Scala",
   scale_title: "Scala le porzioni",

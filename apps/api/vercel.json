@@ -11,6 +11,7 @@
     {
       "path": "/api/cron/recalc-criticality",
       "schedule": "0 4 * * 1"
-    }
+    },
+    { "path": "/api/cron/purge-trash", "schedule": "30 3 * * *" }
   ]
 }

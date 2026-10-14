@@ -146,6 +146,37 @@ describe("atomic, retryable recipe creation", () => {
       expect((await saveNewRecipe("r1", "u1", { ...request, origin: "import" }, "admin")).importTicket).toBeNull();
     });
   });
+  it("stores the canonical line, piece weight and note, and rebuilds contentJson from the saved rows", async () => {
+    await saveNewRecipe("r1", "u1", {
+      ...request,
+      contentJson: { ingredients: ["4 calamares de 350 g aprox. (tubos de 15–18 cm, sin roturas)", "sal"], method: ["Mezclar"], notes: "nota" },
+      recipeIngredients: [{ rawText: "4 calamares de 350 g aprox. (tubos de 15–18 cm, sin roturas)" }, { rawText: "sal" }],
+    }, "admin");
+    expect(db.recipeIngredient.createMany.mock.calls[0]![0].data[0]).toMatchObject({
+      rawText: "4 ud calamar", qty: 4, unit: "unidad", pesoCalculoG: 350, note: "tubos de 15–18 cm, sin roturas", section: null,
+    });
+    expect(db.recipe.create.mock.calls[0]![0].data.contentJson).toEqual({
+      ingredients: ["4 ud calamar, tubos de 15–18 cm, sin roturas", "sal"], method: ["Mezclar"], notes: "nota",
+    });
+  });
+  it("names the draft after the clean product, with the section kept apart", async () => {
+    await saveNewRecipe("r1", "u1", {
+      ...request,
+      contentJson: { ingredients: ["100 g chorizo", "40 g AOVE (aceite de chorizo)"], method: [], notes: "" },
+      recipeIngredients: [
+        { rawText: "100 g chorizo", section: "Aceite de chorizo", createProductDraft: true },
+        { rawText: "40 g AOVE (aceite de chorizo)", createProductDraft: true },
+      ],
+    }, "admin");
+    expect(db.product.create.mock.calls.map(([arg]) => arg.data.name)).toEqual(["chorizo", "AOVE"]);
+    expect(db.recipeIngredient.createMany.mock.calls[0]![0].data[1]).toMatchObject({ rawText: "40 g AOVE", section: "Aceite de chorizo", note: null });
+    expect(db.recipe.create.mock.calls[0]![0].data.contentJson.ingredients).toEqual(["100 g chorizo", "40 g AOVE"]);
+  });
+  it("keeps contentJson as sent for a legacy request without structured ingredients", async () => {
+    const { recipeIngredients: _omit, ...legacy } = request;
+    await saveNewRecipe("r1", "u1", legacy, "admin");
+    expect(db.recipe.create.mock.calls[0]![0].data.contentJson).toEqual(request.contentJson);
+  });
   it("propagates a write failure out of the transaction instead of returning success", async () => {
     db.recipeIngredient.createMany.mockRejectedValue(new Error("write failed"));
     await expect(saveNewRecipe("r1", "u1", request, "admin")).rejects.toThrow("write failed");

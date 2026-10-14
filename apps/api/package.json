@@ -9,7 +9,8 @@
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
-    "eval:prompt": "vitest run --config vitest.eval.config.ts",
+    "eval:prompt": "vitest run --config vitest.eval.config.ts evals/prompt-asistente",
+    "eval:extraccion": "vitest run --config vitest.eval.config.ts evals/extraccion-recetas",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

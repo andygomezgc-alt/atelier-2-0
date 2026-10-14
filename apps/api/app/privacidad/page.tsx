@@ -21,7 +21,7 @@ export default function PrivacidadPage() {
         Política de privacidad
       </h1>
       <p style={{ fontFamily: "system-ui, sans-serif", fontSize: 13, color: muted, margin: "0 0 32px" }}>
-        Última actualización: 10 de octubre de 2026
+        Última actualización: 13 de octubre de 2026
       </p>
 
       <h2 style={h2Style}>Responsable</h2>
@@ -167,8 +167,9 @@ export default function PrivacidadPage() {
       <p style={pStyle}>
         Los registros de seguridad y consumo pueden conservarse mientras sean
         necesarios para resolver incidencias, controlar el gasto, prevenir abusos
-        o cumplir obligaciones legales. Los elementos en la papelera pueden seguir
-        siendo recuperables. Durante el piloto conservamos las copias cifradas para
+        o cumplir obligaciones legales. Las recetas, los menús y los productos que
+        borras pasan a la papelera, donde puedes recuperarlos durante 7 días; después
+        se eliminan definitivamente. Durante el piloto conservamos las copias cifradas para
         recuperación y revisamos su necesidad al cerrar esa etapa: no se depuran
         automáticamente al borrar una cuenta. Una solicitud de supresión requiere
         revisar también esas copias y los plazos de los proveedores. Las copias no

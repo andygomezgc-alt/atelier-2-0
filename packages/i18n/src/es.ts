@@ -449,7 +449,9 @@ export const es = {
   recetas_form_add_ingredient: "Añadir ingrediente",
   recetas_form_add_step: "Añadir paso",
   recetas_form_notes_placeholder: "Notas adicionales…",
-  recetas_form_ingredient_placeholder: "Pichón fresco, 1 unidad",
+  recetas_form_ingredient_placeholder: "400 g rape limpio, muy frío",
+  // Standard ingredient format: weight of one piece under a recipe line.
+  recipe_ingredient_piece_weight: "{g} g por pieza",
   recetas_form_step_placeholder: "Sellar a fuego fuerte 90 s",
   recetas_cargar_title: "Cargar archivo",
   recetas_cargar_pick: "Elegir PDF o Word",
@@ -474,6 +476,7 @@ export const es = {
   papelera_title: "Papelera",
   papelera_empty_title: "La papelera está vacía",
   papelera_empty_sub: "Las recetas que borres aparecen acá para recuperarlas.",
+  papelera_retention_note: "Lo que está en la papelera se borra para siempre a los 7 días.",
   toast_recipe_restored: "Receta restaurada",
   btn_escalar: "Escalar",
   scale_title: "Escalar porciones",
