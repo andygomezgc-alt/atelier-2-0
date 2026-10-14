@@ -385,7 +385,12 @@ export function findMatch(
   // distingue? Si los hay, no se enlaza nada y decide el chef. Esto pisa
   // incluso a "exact" — un nombre que coincide letra por letra tampoco
   // alcanza si en el banco hay cuatro gamberi rossi.
-  const family = resolveFamily(query, best.candidate, candidates);
+  // An exact hit on an alias is a choice the chef already made ("gambero
+  // rosso" → the Mazara one): link it instead of asking again.
+  const family: FamilyVerdict =
+    best.level === "exact" && !best.matchedOnName
+      ? { kind: "pass" }
+      : resolveFamily(query, best.candidate, candidates);
   if (family.kind === "ambiguous") {
     return {
       level: "ambiguo",

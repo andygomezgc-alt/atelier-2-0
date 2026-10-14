@@ -63,9 +63,14 @@ export const POST = withAuth(
     // Standard format: the clean name also drops the note and any
     // parenthetical ("rape limpio, muy frío (o merluza)" → "rape limpio"),
     // so an alternative in the note never wins the match.
-    const results = body.queries.map((q) =>
-      findMatch(standardizeIngredientLine(q).ingredient.name || q, candidates),
-    );
+    const results = body.queries.map((q) => {
+      const r = findMatch(standardizeIngredientLine(q).ingredient.name || q, candidates);
+      const first = r.candidates[0];
+      if (r.level !== "ambiguo" || body.acceptsAmbiguous || !first) return r;
+      // Older app builds have no variant picker and would turn "ambiguo"
+      // into a new draft product: offer the first sibling to confirm instead.
+      return { level: "probable" as const, productId: first.id, productName: first.name, distance: r.distance, candidates: [] };
+    });
 
     const response: MatchProductsResponse = { results };
     return NextResponse.json(response);

@@ -131,7 +131,7 @@ function bumpProductCache(p: ProductFull): ProductFull {
 export type { MatchResult };
 export async function matchProducts(queries: string[]): Promise<MatchResult[]> {
   if (queries.length === 0) return [];
-  const body: MatchProductsRequest = { queries };
+  const body: MatchProductsRequest = { queries, acceptsAmbiguous: true };
   const res = await apiFetch<MatchProductsResponse>("/api/products/match", {
     method: "POST",
     body: JSON.stringify(body),

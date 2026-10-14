@@ -18,8 +18,10 @@ type Props = {
 
 export function PickVariantSheet({ open, rawText, candidates, title, body, noneLabel, onPick, onNone }: Props) {
   return (
-    <Modal visible={open} animationType="fade" transparent onRequestClose={onNone}>
-      <Pressable style={styles.backdrop} onPress={onNone}>
+    // Dismissing (backdrop, Android back) must not mean "none": that would
+    // create a duplicate draft. Only the explicit button answers "none".
+    <Modal visible={open} animationType="fade" transparent onRequestClose={() => undefined}>
+      <Pressable style={styles.backdrop} onPress={() => undefined}>
         <Pressable style={styles.card} onPress={() => undefined}>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.raw}>«{rawText}»</Text>

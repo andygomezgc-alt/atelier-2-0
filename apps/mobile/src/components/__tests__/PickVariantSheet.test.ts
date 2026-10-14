@@ -63,3 +63,15 @@ describe("PickVariantSheet", () => {
     expect(onNone).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("PickVariantSheet dismissal", () => {
+  it("tapping outside or pressing back never counts as none of these", () => {
+    const onNone = vi.fn();
+    const screen = render(vi.fn(), onNone);
+    act(() => {
+      screen.root.findByType("Modal" as never).props.onRequestClose();
+      screen.root.findAllByType("Pressable" as never)[0]!.props.onPress();
+    });
+    expect(onNone).not.toHaveBeenCalled();
+  });
+});

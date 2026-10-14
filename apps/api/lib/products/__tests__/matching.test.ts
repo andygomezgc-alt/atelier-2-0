@@ -222,3 +222,13 @@ describe("findMatch — familia con varios productos", () => {
     expect(r.candidates.map((c) => c.id)).not.toContain("s1");
   });
 });
+
+describe("findMatch — alias the chef already confirmed", () => {
+  it("an exact alias win links its product even when the family has siblings", () => {
+    const r = findMatch("gambero rosso", [
+      { id: "g1", name: "gambero rosso mazara cal.3", aliases: ["gambero rosso"] },
+      { id: "g2", name: "gambero rosso sicilia 15/20", aliases: [] },
+    ]);
+    expect(r).toMatchObject({ level: "exact", productId: "g1", candidates: [] });
+  });
+});

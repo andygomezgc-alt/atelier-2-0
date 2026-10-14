@@ -964,6 +964,9 @@ export const CreateYieldTestRequestSchema = z.object({
 export const MatchProductsRequestSchema = z.object({
   // Saving an imported recipe matches every unlinked ingredient in one call.
   queries: z.array(z.string().min(1).max(500)).max(MAX_RECIPE_INGREDIENTS),
+  // Set by app builds that show the variant picker. Older builds get
+  // "ambiguo" as a "probable" to confirm, so they never create duplicates.
+  acceptsAmbiguous: z.boolean().optional(),
 });
 
 export const AmbiguousCandidateSchema = z.object({
