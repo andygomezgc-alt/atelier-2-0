@@ -101,8 +101,11 @@ export const CriticalitySchema = z.enum(["alta", "media", "baja"]);
 //                  panadería). Min/Max en gramos.
 export const PezzaturaModeSchema = z.enum(["pz_per_kg", "g_per_piece"]);
 
+// Tasting-menu recipes with several sub-recipes go past 50 ingredients.
+export const MAX_RECIPE_INGREDIENTS = 100;
+
 export const RecipeContentSchema = z.object({
-  ingredients: z.array(z.string().max(500)).max(50).default([]),
+  ingredients: z.array(z.string().max(500)).max(MAX_RECIPE_INGREDIENTS).default([]),
   method: z.array(z.string().max(500)).max(50).default([]),
   notes: z.string().max(5000).default(""),
 });
@@ -402,7 +405,7 @@ export const CreateRecipeRequestSchema = z.object({
   // productId/rawText/etc. de cada entrada. Debe ser 1:1 con
   // contentJson.ingredients (mismo orden, misma longitud). Si está ausente,
   // legacy: solo contentJson.
-  recipeIngredients: z.array(RecipeIngredientInputSchema).max(50).optional(),
+  recipeIngredients: z.array(RecipeIngredientInputSchema).max(MAX_RECIPE_INGREDIENTS).optional(),
   sourceConversationId: z.string().nullable().optional(),
 });
 
@@ -430,7 +433,7 @@ export const ExtractedRecipeResponseSchema = z.object({
   title: z.string(),
   portions: z.number().nullable().optional(),
   contentJson: RecipeContentSchema,
-  recipeIngredients: z.array(ExtractedRecipeIngredientSchema).max(50),
+  recipeIngredients: z.array(ExtractedRecipeIngredientSchema).max(MAX_RECIPE_INGREDIENTS),
   // Probable bank matches the chef confirms before saving; indexed by
   // position in recipeIngredients.
   pendingMatches: z
@@ -441,7 +444,7 @@ export const ExtractedRecipeResponseSchema = z.object({
         productName: z.string(),
       }),
     )
-    .max(50),
+    .max(MAX_RECIPE_INGREDIENTS),
 });
 export type ExtractedRecipeIngredient = z.infer<typeof ExtractedRecipeIngredientSchema>;
 export type ExtractedRecipeResponse = z.infer<typeof ExtractedRecipeResponseSchema>;
@@ -450,7 +453,7 @@ export const PatchRecipeRequestSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   contentJson: RecipeContentSchema.optional(),
   // Si se manda, reemplaza completamente las filas existentes (delete + insert).
-  recipeIngredients: z.array(RecipeIngredientInputSchema).max(50).optional(),
+  recipeIngredients: z.array(RecipeIngredientInputSchema).max(MAX_RECIPE_INGREDIENTS).optional(),
   state: RecipeStateSchema.optional(),
   priority: z.boolean().optional(),
   // Sub-paso 6: el chef edita estos campos desde la tarjeta de costo en el
@@ -592,7 +595,7 @@ export const RecipeCostSchema = z.object({
   wideRangeCount: z.number().int().nonnegative(),
   // Per-ingredient lines; only the recipe detail sends them. Optional so
   // payloads from an API without lines still parse.
-  lines: z.array(RecipeCostLineSchema).max(50).optional(),
+  lines: z.array(RecipeCostLineSchema).max(MAX_RECIPE_INGREDIENTS).optional(),
 });
 
 export const RecipeDetailSchema = RecipeListItemSchema.extend({
@@ -601,7 +604,7 @@ export const RecipeDetailSchema = RecipeListItemSchema.extend({
   // legacy migradas en Fase 5), se exponen acá. Para legacy puro queda [].
   // El cliente debe preferir esto sobre contentJson.ingredients cuando esté
   // poblado (mejor info estructurada).
-  recipeIngredients: z.array(RecipeIngredientResponseSchema).max(50).default([]),
+  recipeIngredients: z.array(RecipeIngredientResponseSchema).max(MAX_RECIPE_INGREDIENTS).default([]),
   approvedByName: z.string().max(100).nullable(),
   approvedAt: z.string().max(50).nullable(),
   sourceConversationId: z.string().max(100).nullable(),
@@ -959,7 +962,8 @@ export const CreateYieldTestRequestSchema = z.object({
 // Matching de ingredientes contra el banco. POST con array de queries,
 // devuelve un MatchResult por cada uno (mismo orden).
 export const MatchProductsRequestSchema = z.object({
-  queries: z.array(z.string().min(1).max(500)).max(50),
+  // Saving an imported recipe matches every unlinked ingredient in one call.
+  queries: z.array(z.string().min(1).max(500)).max(MAX_RECIPE_INGREDIENTS),
 });
 
 export const MatchResultSchema = z.object({

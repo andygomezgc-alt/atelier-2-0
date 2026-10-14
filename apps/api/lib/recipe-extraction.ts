@@ -8,7 +8,7 @@
 // TODO v2: add Google Drive OAuth flow so the user can pick files directly
 // from Drive without going through the device file picker.
 
-import { EXTRACTION_INGREDIENT_JSON_SCHEMA, renderRules } from "@atelier/shared";
+import { EXTRACTION_INGREDIENT_JSON_SCHEMA, MAX_RECIPE_INGREDIENTS, renderRules } from "@atelier/shared";
 import { generateGlmJson } from "./ai/glm";
 import { visionParts } from "./ai/media";
 import type { UsageCallback } from "./ai/types";
@@ -73,8 +73,6 @@ export function fileMatchesMime(buffer: Uint8Array, mime: string): boolean {
   return false;
 }
 
-const MAX_EXTRACTED_INGREDIENTS = 50;
-
 // Lenient on purpose: the model may answer with plain lines or with objects
 // whose fields are loosely typed ("1/2", "cl"). The extraction pipeline turns
 // either into the standard format.
@@ -91,11 +89,42 @@ const ExtractedIngredientSchema = z.union([
   }),
 ]);
 
+const MAX_STEP_CHARS = 500;
+
+// Prose recipes from outside write a whole step as one paragraph. Steps over
+// the save limit are split by sentence (or between words as a last resort)
+// instead of rejecting the recipe; the text is kept whole.
+function splitLongStep(step: string): string[] {
+  if (step.length <= MAX_STEP_CHARS) return [step];
+  const steps: string[] = [];
+  for (const piece of step.trim().split(/(?<=[.;!?])\s+/).flatMap(cutBetweenWords)) {
+    const last = steps.at(-1);
+    if (last !== undefined && last.length + 1 + piece.length <= MAX_STEP_CHARS) steps[steps.length - 1] = `${last} ${piece}`;
+    else steps.push(piece);
+  }
+  return steps;
+}
+
+function cutBetweenWords(text: string): string[] {
+  const pieces: string[] = [];
+  let rest = text;
+  while (rest.length > MAX_STEP_CHARS) {
+    const space = rest.lastIndexOf(" ", MAX_STEP_CHARS);
+    const at = space > 0 ? space : MAX_STEP_CHARS;
+    pieces.push(rest.slice(0, at));
+    rest = rest.slice(at).trimStart();
+  }
+  pieces.push(rest);
+  return pieces;
+}
+
 const ExtractedRecipeSchema = z.object({
   portions: z.number().int().positive().max(1000).nullable().optional().default(null),
   title: z.string().min(1).max(200),
-  ingredients: z.array(ExtractedIngredientSchema).max(MAX_EXTRACTED_INGREDIENTS),
-  method: z.array(z.string().min(1).max(500)).max(50),
+  ingredients: z.array(ExtractedIngredientSchema).max(MAX_RECIPE_INGREDIENTS),
+  method: z.array(z.string().min(1).max(30_000))
+    .transform((steps) => steps.flatMap(splitLongStep))
+    .pipe(z.array(z.string()).max(50)),
   notes: z.string().max(5000).optional().default(""),
 });
 
