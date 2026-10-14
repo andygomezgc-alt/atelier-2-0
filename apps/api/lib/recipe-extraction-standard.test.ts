@@ -1,7 +1,7 @@
 // Standard ingredient format in the extraction prompts, the GLM schema and the
 // lenient validation of what the model returns. The provider is mocked: these
 // tests only look at the request each entry point builds and at validation.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EXTRACTION_INGREDIENT_JSON_SCHEMA, renderRules } from "@atelier/shared";
 
 const { glm, pdf } = vi.hoisted(() => ({
@@ -27,7 +27,7 @@ import {
   parseExtractedRecipe,
 } from "./recipe-extraction";
 
-type GlmRequest = { system: string; schema: { properties: { ingredients: { items: unknown } } }; content: unknown };
+type GlmRequest = { system: string; schema: { properties: { ingredients: { items: unknown } } }; content: unknown; signal?: AbortSignal };
 const lastRequest = () => glm.generateGlmJson.mock.calls.at(-1)![0] as GlmRequest;
 const RECIPE = { title: "Arroz", portions: null, ingredients: ["400 g arroz"], method: ["Cocer"], notes: "" };
 const SOURCES = ["document", "chat", "photo"] as const;
@@ -228,5 +228,49 @@ describe("lenient ingredient validation", () => {
     expect(parseExtractedRecipe({ ...base, ingredients: [{ name: "AOVE", qty: 40, unit: "g" }] }).ingredients)
       .toEqual([{ name: "AOVE", qty: 40, unit: "g" }]);
     expect(glm.generateGlmJson).not.toHaveBeenCalled();
+  });
+});
+
+describe("one retry when the model answers with broken JSON", () => {
+  // GLM sometimes sends a JSON, "corrects" itself in prose and sends a second one.
+  const broken = () => new Error("ai_response_invalid");
+  afterEach(() => vi.useRealTimers());
+
+  for (const [kind, mime, magic] of [
+    ["DOCX", DOCX_MIME, [0x50, 0x4b, 0x03, 0x04]],
+    ["PDF", PDF_MIME, [0x25, 0x50, 0x44, 0x46]],
+  ] as const) {
+    it(`a ${kind} is extracted on the second try after broken JSON`, async () => {
+      pdf.text = "Receta del PDF";
+      glm.generateGlmJson.mockRejectedValueOnce(broken()).mockResolvedValueOnce(RECIPE);
+      expect((await extractRecipeFromFile(new Uint8Array(magic), mime)).title).toBe("Arroz");
+      expect(glm.generateGlmJson).toHaveBeenCalledTimes(2);
+      expect(lastRequest().system).toBe(extractionSystem("document"));
+      expect(lastRequest().signal).toBeInstanceOf(AbortSignal);
+    });
+  }
+
+  it("retries only once", async () => {
+    glm.generateGlmJson.mockRejectedValue(broken());
+    await expect(extractRecipeFromText("x")).rejects.toThrow("ai_response_invalid");
+    expect(glm.generateGlmJson).toHaveBeenCalledTimes(2);
+  });
+
+  it("other failures are not retried", async () => {
+    for (const code of ["recipe_extraction_incomplete", "ai_provider_http_500"]) {
+      glm.generateGlmJson.mockReset().mockRejectedValue(new Error(code));
+      await expect(extractRecipeFromText("x")).rejects.toThrow(code);
+      expect(glm.generateGlmJson).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("does not retry after a first call over 25 seconds, so the route stays under 60", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    glm.generateGlmJson.mockImplementationOnce(async () => {
+      vi.setSystemTime(Date.now() + 25_001);
+      throw broken();
+    });
+    await expect(extractRecipeFromText("x")).rejects.toThrow("ai_response_invalid");
+    expect(glm.generateGlmJson).toHaveBeenCalledTimes(1);
   });
 });

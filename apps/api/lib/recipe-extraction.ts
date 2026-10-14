@@ -10,6 +10,7 @@
 
 import { EXTRACTION_INGREDIENT_JSON_SCHEMA, MAX_RECIPE_INGREDIENTS, renderRules } from "@atelier/shared";
 import { generateGlmJson } from "./ai/glm";
+import { logger } from "./logger";
 import { visionParts } from "./ai/media";
 import type { UsageCallback } from "./ai/types";
 import { extractText, getDocumentProxy } from "unpdf";
@@ -155,6 +156,24 @@ const SOURCE_LINES: Record<ExtractionSource, string> = {
   photo: "Recibes la foto de una receta. Si no contiene una receta legible, devuelve el título «Sin receta» y listas vacías.",
 };
 
+// GLM sometimes answers a JSON, "corrects" itself in prose and sends a second
+// one; picking either would be a guess, so the extraction asks once more. Only
+// when the first answer was fast enough that both fit in the routes' 60 s.
+const RETRY_IF_FIRST_UNDER_MS = 25_000;
+const EXTRACTION_DEADLINE_MS = 50_000;
+
+async function generateRecipeJson(request: Parameters<typeof generateGlmJson>[0]): Promise<unknown> {
+  const started = Date.now();
+  try {
+    return await generateGlmJson(request);
+  } catch (error) {
+    const elapsedMs = Date.now() - started;
+    if (!(error instanceof Error) || error.message !== "ai_response_invalid" || elapsedMs > RETRY_IF_FIRST_UNDER_MS) throw error;
+    logger.info("recipe_extraction_retry", { reason: "ai_response_invalid", elapsedMs });
+    return generateGlmJson({ ...request, signal: AbortSignal.timeout(EXTRACTION_DEADLINE_MS - elapsedMs) });
+  }
+}
+
 /** System prompt of every recipe extraction: the role, the shared ingredient rules and one line per source. */
 export function extractionSystem(source: ExtractionSource): string {
   return [EXTRACTION_ROLE, renderRules("extraction"), SOURCE_LINES[source]].join("\n\n");
@@ -174,7 +193,7 @@ export async function extractRecipeFromFile(
   // Safety cap: keep prompts predictable in size. ~30k chars ≈ 8k tokens.
   const truncated = text.length > 30_000 ? text.slice(0, 30_000) : text;
 
-  const raw = await generateGlmJson({ task: "extraction", system: extractionSystem("document"), content: truncated, schema: EMIT_RECIPE_TOOL.input_schema, onUsage, incompleteCode: "recipe_extraction_incomplete" });
+  const raw = await generateRecipeJson({ task: "extraction", system: extractionSystem("document"), content: truncated, schema: EMIT_RECIPE_TOOL.input_schema, onUsage, incompleteCode: "recipe_extraction_incomplete" });
   return validateRecipe(raw, "No se pudo interpretar la receta del archivo");
 }
 
@@ -223,13 +242,13 @@ export async function extractRecipeFromText(
   const text = recipeText.trim();
   if (!text) throw new Error("Texto de receta vacío");
   if (text.length > 30_000) throw new Error("recipe_context_too_long");
-  return validateRecipe(await generateGlmJson({ task: "extraction", system: extractionSystem(source),
+  return validateRecipe(await generateRecipeJson({ task: "extraction", system: extractionSystem(source),
     schema: EMIT_RECIPE_TOOL.input_schema, content: text, onUsage, incompleteCode: "recipe_extraction_incomplete" }));
 }
 
 export async function extractRecipeFromImage(buffer: Uint8Array, mimeType: string, onUsage?: UsageCallback): Promise<ExtractedRecipe> {
   const parts = await visionParts(buffer, mimeType);
-  return validateRecipe(await generateGlmJson({ task: "extraction", system: extractionSystem("photo"),
+  return validateRecipe(await generateRecipeJson({ task: "extraction", system: extractionSystem("photo"),
     schema: EMIT_RECIPE_TOOL.input_schema, content: [...parts, { type: "text", text: "Extrae la receta de esta foto." }],
     onUsage, incompleteCode: "recipe_extraction_incomplete" }));
 }
