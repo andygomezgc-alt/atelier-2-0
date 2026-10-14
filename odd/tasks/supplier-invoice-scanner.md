@@ -36,3 +36,19 @@ Design: `docs/superpowers/specs/2026-10-14-supplier-invoice-scanner-design.md`. 
 - L4 (2026-10-15) T1-T8 done (a80e6b8..3c50619). Focused tests RED→GREEN per task; api 1690+36, mobile 549, shared 537, i18n 94; pnpm typecheck green. T2 gate (real invoices) pending on the user. T6 independent verifier: PASS; migration applied to dev only. Rulings in the ledger. Final independent review running.
 - L5 (2026-10-15) Final independent review: 6 Important fixed in one pass (e80c799 pricing: paid price, returns, unpriced products; 887b926 match: confirmed alias, acceptsAmbiguous for older builds, safe picker dismissal), each RED→GREEN. api 1735/1735, mobile 550/550, shared 537/537, i18n 94/94, typecheck green. 7 minors deferred (#5-#9, #12, #13). Next: user's 5-8 real invoices for the T2 gate, then Plan 2.
 - L6 (2026-10-15) Rulings and deferred minors (copied from the SDD ledger before deleting it):
+  - Setup: Ruling: no separate worktree — work on feature branch feat/supplier-invoice-scanner in the main checkout (user chose native execution here; branch is not main) — cost if wrong: none, main untouched.
+  - Task 2: Ruling: Step 8 (real-invoice gate) not run — needs the user's 5-8 invoices; blocks Plan 2 only — cost if wrong: none, tracked as pending.
+  - Task 4: Ruling: match route conflict — main no longer imports parseIngredient and match-ingredients.ts does not exist on main; inlined the candidate select with precioCompra/unidadCompra instead of MATCH_CANDIDATE_SELECT — cost if wrong: none, same fields.
+  - Task 4: Ruling: the pipeline "ambiguo stays unlinked" test passed on first run — it pins existing behaviour (pipeline links only exact), as the plan intended; not a RED — cost if wrong: none.
+  - Task 5: Ruling: PickVariantSheet test used a top-level 'token' inside a hoisted vi.mock (ReferenceError); inlined the Proxies in the factory, then re-ran RED (component moved aside → 'Cannot find module') and GREEN — cost if wrong: none.
+  - Task 6: Ruling: `prisma format` reformatted the whole schema (181-line churn) — reverted and re-applied edits without formatting — cost if wrong: none.
+  - Task 6: Ruling: Step 4 (apply to dev DB ep-summer-heart) deferred until the independent migration verifier returns PASS (user asked for a reviewer "para la migración"); commit 4485260 made, client regenerated locally; typecheck + api 1686/1686 green — cost if wrong: Tasks 7-8 run on a generated client not yet applied to dev, which unit tests do not need.
+  - Task 7: Ruling: RecipeIngredientRow.product.taxRatePct typed optional/nullable (mapped to 0) instead of adding it to every projection fixture — Prisma always selects it, and fixtures/mocks without it cost as untaxed (unchanged behaviour) — cost if wrong: a missing select would silently cost untaxed; the select is added in both places.
+  - Final: minor (deferred): #5 same-day check uses UTC date, off by one near midnight local time.
+  - Final: minor (deferred): #6 20% threshold compares the rounded percentage (19.6% → not pre-selected).
+  - Final: minor (deferred): #7 bank unit g/ml can round a price to 0 cents.
+  - Final: minor (deferred): #8 lenient number edge cases ("(12.50)", "2 x 5", "1.234") when the model ignores the numeric schema.
+  - Final: minor (deferred): #9 one line without total turns the totals check to unknown — check in the real-invoice gate.
+  - Final: minor (deferred): #12 product bank realCost stays net while recipe cost is gross once rates > 0 — Plan 2 (tax field).
+  - Final: minor (deferred): #13 description > 300 chars drops the line; > 200 lines or lines:null fails the page.
+  - Final: Ruling: #4 older builds (no acceptsAmbiguous) get the first sibling as "probable" to confirm instead of "none" — they cannot show the picker, and confirm/decline never creates a duplicate — cost if wrong: an old build may link the wrong sibling if the chef taps yes without reading.
