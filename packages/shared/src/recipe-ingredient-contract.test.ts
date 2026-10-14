@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   CreateRecipeRequestSchema,
+  MAX_RECIPE_INGREDIENTS,
+  RecipeCostSchema,
+  RecipeDetailSchema,
   ExtractedRecipeResponseSchema,
   PatchRecipeRequestSchema,
   RecipeIngredientInputSchema,
@@ -38,13 +41,35 @@ describe("recipe ingredient section and note — input", () => {
     expect(patched.recipeIngredients![0]).toMatchObject(row);
   });
 
-  it("keeps the 50-ingredient cap", () => {
-    const rows = Array.from({ length: 51 }, () => ({ rawText: "sal" }));
-    expect(PatchRecipeRequestSchema.safeParse({ recipeIngredients: rows }).success).toBe(false);
+  it("accepts up to 100 ingredients on create and PATCH, and rejects 101", () => {
+    const rows = (n: number) => Array.from({ length: n }, () => ({ rawText: "sal" }));
+    const lines = (n: number) => ({ ...content, ingredients: Array.from({ length: n }, () => "sal") });
+    expect(MAX_RECIPE_INGREDIENTS).toBe(100);
+    expect(CreateRecipeRequestSchema.safeParse({ title: "Pichón", contentJson: lines(100), recipeIngredients: rows(100) }).success).toBe(true);
+    expect(PatchRecipeRequestSchema.safeParse({ contentJson: lines(100), recipeIngredients: rows(100) }).success).toBe(true);
+    expect(PatchRecipeRequestSchema.safeParse({ recipeIngredients: rows(101) }).success).toBe(false);
+    expect(PatchRecipeRequestSchema.safeParse({ contentJson: lines(101) }).success).toBe(false);
+  });
+
+  it("keeps the 50-step cap on the method", () => {
+    const method = (n: number) => Array.from({ length: n }, () => "Remover");
+    expect(PatchRecipeRequestSchema.safeParse({ contentJson: { ...content, method: method(50) } }).success).toBe(true);
+    expect(PatchRecipeRequestSchema.safeParse({ contentJson: { ...content, method: method(51) } }).success).toBe(false);
   });
 });
 
 describe("recipe ingredient section and note — detail response", () => {
+  it("a recipe detail with 100 ingredients and 100 cost lines parses", () => {
+    const rows = Array.from({ length: 100 }, (_, i) => ({ ...row, id: `ri-${i}`, position: i }));
+    const lines = rows.map((r) => ({
+      ingredientId: r.id, position: r.position, status: "ok", costCents: 10, productId: null, recipeUnit: "g", purchaseUnit: "kg",
+    }));
+    expect(RecipeDetailSchema.shape.recipeIngredients.safeParse(rows).success).toBe(true);
+    expect(RecipeDetailSchema.shape.recipeIngredients.safeParse([...rows, row]).success).toBe(false);
+    expect(RecipeCostSchema.shape.lines.safeParse(lines).success).toBe(true);
+    expect(RecipeCostSchema.shape.lines.safeParse([...lines, lines[0]]).success).toBe(false);
+  });
+
   const row = {
     id: "ri-1", position: 0, rawText: "4 ud calamar", qty: 4, unit: "unidad", pezzatura: null,
     mermaOverridePct: null, pesoCalculoG: 350, pezzaturaWarning: null, product: null,
@@ -85,8 +110,13 @@ describe("ExtractedRecipeResponseSchema", () => {
     });
   });
 
-  it("keeps the 50-ingredient cap", () => {
-    const rows = Array.from({ length: 51 }, () => ({ rawText: "sal", productId: null }));
-    expect(ExtractedRecipeResponseSchema.safeParse({ ...legacy, recipeIngredients: rows }).success).toBe(false);
+  it("accepts up to 100 ingredients and probable matches, and rejects 101", () => {
+    const rows = (n: number) => Array.from({ length: n }, () => ({ rawText: "sal", productId: null }));
+    const matches = (n: number) => Array.from({ length: n }, (_, i) => ({ ingredientIdx: i, productId: "p1", productName: "Sal" }));
+    const ingredients = Array.from({ length: 100 }, () => "sal");
+    expect(ExtractedRecipeResponseSchema.safeParse({
+      ...legacy, contentJson: { ...content, ingredients }, recipeIngredients: rows(100), pendingMatches: matches(100),
+    }).success).toBe(true);
+    expect(ExtractedRecipeResponseSchema.safeParse({ ...legacy, recipeIngredients: rows(101) }).success).toBe(false);
   });
 });
