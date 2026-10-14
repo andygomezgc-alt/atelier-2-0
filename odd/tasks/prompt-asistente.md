@@ -211,3 +211,5 @@ Después, medir con una prueba si el prompt nuevo supera al actual antes de desp
   - Haiku cuesta un tercio que Gemini y avisa mejor del anisakis.
   - En calidad queda igual o algo por debajo, con errores técnicos claros en los casos trampa (gelatina con piña, esferificación inversa).
 - Aparte del modelo, que Gemini omita el aviso del anisakis en idea anclada es un fallo de seguridad actual.
+
+- Decisión de Andy (14-10-2026): el Diario se queda con Gemini. Se fusiona la rama con el modo Haiku y el esfuerzo opcional para futuras comparaciones. El aviso del anisakis en idea anclada no se considera relevante y se deja como está.
