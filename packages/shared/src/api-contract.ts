@@ -966,11 +966,22 @@ export const MatchProductsRequestSchema = z.object({
   queries: z.array(z.string().min(1).max(500)).max(MAX_RECIPE_INGREDIENTS),
 });
 
+export const AmbiguousCandidateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  origen: z.string().nullable(),
+  calibreLabel: z.string().nullable(),
+  precioCompra: z.number().nullable(),
+  unidadCompra: z.string().nullable(),
+});
+
 export const MatchResultSchema = z.object({
-  level: z.enum(["exact", "probable", "none"]),
+  level: z.enum(["exact", "ambiguo", "probable", "none"]),
   productId: z.string().nullable(),
   productName: z.string().nullable(),
   distance: z.number(),
+  // Empty unless level is "ambiguo": the sibling products the chef picks from.
+  candidates: z.array(AmbiguousCandidateSchema).default([]),
 });
 
 export const MatchProductsResponseSchema = z.object({
@@ -1020,6 +1031,7 @@ export type CreateProductRequest = z.infer<typeof CreateProductRequestSchema>;
 export type PatchProductRequest = z.infer<typeof PatchProductRequestSchema>;
 export type MatchProductsRequest = z.infer<typeof MatchProductsRequestSchema>;
 export type MatchResult = z.infer<typeof MatchResultSchema>;
+export type AmbiguousCandidate = z.infer<typeof AmbiguousCandidateSchema>;
 export type MatchProductsResponse = z.infer<typeof MatchProductsResponseSchema>;
 export type RecipeIngredientInput = z.infer<typeof RecipeIngredientInputSchema>;
 export type RecipeIngredientResponse = z.infer<typeof RecipeIngredientResponseSchema>;

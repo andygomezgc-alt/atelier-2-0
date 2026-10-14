@@ -3,6 +3,11 @@
 // Recibe un array de queries (strings de ingredientes que entró el chef).
 // Devuelve, en el mismo orden, un MatchResult por cada uno:
 //   exact (distancia 0)    → enlace silencioso, productId pre-cargado
+//   ambiguo                → el banco tiene varios hermanos de la misma
+//                            familia ("gambero rosso" ×4) y el query no
+//                            distingue: el cliente muestra PickVariantSheet
+//                            con `candidates` y el chef elige. Jamás se
+//                            adivina (pedido de Andy, jul 2026).
 //   probable (distancia 1-3) → el cliente muestra ConfirmMatchSheet
 //   none (distancia >3)    → el cliente ofrece "Crear producto borrador"
 //
@@ -35,13 +40,16 @@ export const POST = withAuth(
         deletedAt: null,
         estado: { in: ["activo", "borrador"] },
       },
-      select: { id: true, name: true, aliases: true },
+      // Price and unit travel with ambiguous candidates so the chef can tell siblings apart.
+      select: { id: true, name: true, aliases: true, precioCompra: true, unidadCompra: true },
     });
 
     const candidates: MatchCandidate[] = products.map((p) => ({
       id: p.id,
       name: p.name,
       aliases: p.aliases,
+      precioCompra: p.precioCompra,
+      unidadCompra: p.unidadCompra,
     }));
 
     // Bug C fix (Andy 2026-05-17): el rawText del cliente puede traer la
