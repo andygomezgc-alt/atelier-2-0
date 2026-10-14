@@ -647,6 +647,9 @@ export const es = {
     "Lo que escribiste se parece a un producto del banco. Si es el mismo, lo enlazamos y guardamos tu texto como alias para próximos matches.",
   confirm_match_yes: "Sí, es el mismo",
   confirm_match_no: "Crear nuevo",
+  pick_variant_title: "¿Cuál de estos es?",
+  pick_variant_body: "En el banco hay varios productos de esta familia. Elegí el que usa la receta.",
+  pick_variant_none: "Ninguno, crear nuevo",
 
   // ─── Migración de recetas legacy (Fase 5, admin only) ───
   btn_migrate_legacy: "Migrar recetas legacy",

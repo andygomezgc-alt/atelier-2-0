@@ -620,6 +620,9 @@ export const it: EsDict = {
     "Quello che hai scritto somiglia a un prodotto del banco. Se è lo stesso, li colleghiamo e salviamo il tuo testo come alias per i prossimi match.",
   confirm_match_yes: "Sì, è lo stesso",
   confirm_match_no: "Crea nuovo",
+  pick_variant_title: "Quale di questi è?",
+  pick_variant_body: "Nel banco ci sono più prodotti di questa famiglia. Scegli quello che usa la ricetta.",
+  pick_variant_none: "Nessuno, crea nuovo",
 
   // ─── Migrazione ricette legacy (Fase 5, solo admin) ───
   btn_migrate_legacy: "Migra ricette legacy",

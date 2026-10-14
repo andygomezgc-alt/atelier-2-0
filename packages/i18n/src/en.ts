@@ -619,6 +619,9 @@ export const en: EsDict = {
     "What you typed looks similar to a product in the bank. If it's the same, we'll link them and save your text as an alias for future matches.",
   confirm_match_yes: "Yes, it's the same",
   confirm_match_no: "Create new",
+  pick_variant_title: "Which one is it?",
+  pick_variant_body: "The bank has several products in this family. Pick the one this recipe uses.",
+  pick_variant_none: "None, create new",
 
   // ─── Legacy recipe migration (Phase 5, admin only) ───
   btn_migrate_legacy: "Migrate legacy recipes",
