@@ -3,6 +3,7 @@ import { cached, invalidate } from "./cache";
 import * as SecureStore from "@/src/lib/secure-storage";
 import * as FileSystem from "expo-file-system/legacy";
 import type {
+  ApiErrorCode,
   RecipeListItem,
   RecipeDetail,
   CreateRecipeRequest,
@@ -167,11 +168,13 @@ export async function uploadRecipeFile(
 
   if (res.status < 200 || res.status >= 300) {
     let message = `HTTP ${res.status}`;
+    let code: ApiErrorCode | undefined;
     try {
       const json = JSON.parse(res.body);
       message = json?.error ?? message;
+      if (typeof json?.code === "string") code = json.code as ApiErrorCode;
     } catch {}
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, code);
   }
 
   return JSON.parse(res.body) as ExtractedRecipeResponse;
