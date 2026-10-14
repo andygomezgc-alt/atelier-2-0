@@ -215,7 +215,7 @@ async function* streamChatUpstream(input: ChatInput, signal: AbortSignal, billin
       thinking: { type: "adaptive", display: "omitted" },
       // Opus 5.5 razona más que Opus 5 en el mismo nivel: en medio iguala a
       // Opus 5 en alto con menos tokens, así que responde antes y cuesta menos.
-      output_config: { effort: "medium" },
+      output_config: { effort: config.effort ?? "medium" },
     }, { signal });
     let usage = emptyUsage();
     try {

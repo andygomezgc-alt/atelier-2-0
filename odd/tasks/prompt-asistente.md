@@ -158,6 +158,58 @@ Después, medir con una prueba si el prompt nuevo supera al actual antes de desp
   - Los resultados quedan fuera del repo, en `.claude/hillclimb/`, con un `.gitignore` propio.
 - Andy pidió trabajar después en la memoria culinaria («que sea verdaderamente funcional»). Hay un mapeo en curso, de solo lectura (workflow: producción, consumo e historia, más una síntesis). Puede abrir un documento de tareas aparte.
 - La prueba (P2-P4) no se commitea hasta que Andy decida si queda en el repo (paso «Make it durable» de la guía de evals). Hasta entonces vive sin commitear en este worktree.
+- 13-10-2026, Diario con Gemini frente a Haiku. El modo `haiku` de la prueba (commit `6275cfa`) hace que el Diario lo responda `claude-haiku-5-5` en vez de Gemini 3.8 Flash. Usa el prompt v1 actual y la misma rama de Anthropic de `streamChat` (razonamiento adaptativo, esfuerzo medio). Producción no cambia.
+  - Simulaciones sin red: oracle 100 % y null 0 % en los 22 casos de cada modo. Cada fila `haiku` queda registrada con `claude-haiku-5-5`.
+  - Credenciales como en P4. Anthropic sale de `vercel env run -e production` con un envoltorio que solo pasa las variables que ya había antes de Vercel, más `EVAL_*` y `ANTHROPIC_API_KEY`. `GEMINI_API_KEY` es la de dev, y se lee solo esa línea de `.env.local`. No se usa `EVAL_ENV_FILE`, porque cargaría también el `ANTHROPIC_API_KEY` falso de `.env.local` y pisaría la clave real.
+  - Mini-piloto (`EVAL_RUN=haiku-piloto`, OK de Andy por unos US$1,20): 4 casos, 1 repetición, juez Opus en esfuerzo máximo. Son 8 filas, sin errores ni negativas.
+    - Gasto medido: US$1,39. La generación con Gemini costó US$0,013, la de Haiku US$0,004 y el juez US$1,37, unos US$0,17 por llamada.
+    - Coste mediano por respuesta: Gemini US$0,0028 (US$0,0057 desde el 1-1-2027), Haiku US$0,0009.
+    - Criterios aprobados: Gemini 16/19, Haiku 18/19.
+    - Mediana de palabras: Gemini 236, Haiku 209.
+    - Mediana de latencia: Gemini 6,2 s, Haiku 7,6 s. En el brodetto, Haiku tardó 18,9 s y generó 3.358 tokens de salida contando el razonamiento.
+    - Seguridad alimentaria (pescado crudo): 4/4 con los dos modelos.
+  - Revisión de Gentle AI (lente de fiabilidad): aprobada y confirmada. Dejó tres avisos que no bloquean:
+    - Faltaba `EVAL_MODES=daily,haiku` en el comando de la corrida completa. Ya está corregido aquí; la corrida lo llevaba.
+    - Nada demuestra que el modo haiku use de verdad Anthropic. Las filas lo prueban: las de `haiku` terminan en `end_turn` y escriben en la caché del prompt, y las de Gemini terminan en `STOP`.
+    - `ALL_MODES` se declara después de `settings()`. Es inofensivo, porque `settings()` solo se llama dentro del test.
+  - Corrida completa (`EVAL_VARIANT=v1 EVAL_MODES=daily,haiku EVAL_ALL=1 EVAL_REPS=3 EVAL_RUN=haiku-completa`, OK de Andy): 22 casos, 2 modos y 3 repeticiones, con juez Opus en esfuerzo máximo. Son 132 filas, sin errores, negativas ni respuestas cortadas. Reporte en `.claude/hillclimb/prompt-asistente-haiku-completa/report.html`.
+    - Gasto medido: US$19,79. La generación con Gemini costó US$0,19, la de Haiku US$0,06 y el juez US$19,54, con una mediana de US$0,13 por llamada.
+    - Criterios (media por caso, con IC95 %): Gemini 0,914 [0,86-0,97] y Haiku 0,859 [0,77-0,95]. La diferencia pareada por caso es −0,055 [−0,155; +0,031], así que no es significativa. Haiku sale mejor en 5 casos, peor en 9 e igual en 8. Criterios aprobados: 237/264 y 225/264.
+    - Dónde pierde Haiku:
+      - esferificación inversa 0,92 → 0,25: confunde la técnica con la directa, añade lactato cálcico y da 30-60 s de baño en vez de minutos;
+      - el chef que insiste 0,92 → 0,42: propone gelatina con zumo de piña crudo, que la bromelina no deja cuajar, y en una repetición vuelve a discutir la decisión;
+      - memoria de vanguardia 1,00 → 0,75: platos de 2-3 elementos frente a los 6 o más de la casa;
+      - piña con gelatina 1,00 → 0,83: da las cantidades antes del aviso;
+      - judiones 0,93 → 0,73 y brodetto 0,73 → 0,60;
+      - idioma 98 %: en el brodetto, una respuesta en italiano lleva partes en español.
+    - Dónde gana Haiku: beurre blanc 0,50 → 0,83, celeriac en inglés 0,80 → 1,00 e idea anclada 0,83 → 1,00.
+    - Por etiqueta (Gemini → Haiku): franqueza 0,98 → 0,78; técnica 0,81 → 0,69; italiano 0,73 → 0,60; inglés 0,80 → 1,00; estilo 0,94 → 0,96; memoria 0,94 → 0,92; seguridad 1,00 → 1,00.
+    - Seguridad alimentaria:
+      - Pescado crudo: 3/3 con los dos modelos.
+      - Idea anclada, al proponer ricciola cruda: Haiku avisa de la congelación por el anisakis en 3/3. Gemini lo omite en 2/3, y ese fallo existe hoy en producción.
+    - Coste mediano por mensaje: Gemini US$0,0026 y Haiku US$0,0009. Con el cupo de 140 Diarios por semana, unos 607 al mes, salen US$1,59 y US$0,53 al mes. Gemini pasa a US$3,19 desde el 1-1-2027, cuando duplica su tarifa.
+      - Haiku se calcula con la tarifa conservadora de `budget-policy.ts`, que cobra la lectura de caché como la entrada.
+      - Son respuestas de un solo turno; con historial, el coste real por mensaje es mayor en los dos modelos.
+    - Mediana de palabras: Gemini 219, Haiku 175.
+    - Latencia: mediana de 5,7 s en Gemini y 7,5 s en Haiku; p90 de 9,1 s y 11,4 s.
+    - Haiku genera unos 1.200 tokens de salida por respuesta, unos 950 de ellos de razonamiento.
+
+  - Esfuerzo de Haiku (OK de Andy por unos US$6). El commit `dd8d9c6` añade un esfuerzo opcional a la config de IA; `chat.ts` lo usa y, si falta, mantiene `medium`, así que producción no cambia. La prueba lo fija con `EVAL_HAIKU_EFFORT`. TDD: RED `expected 'medium' to be 'xhigh'`, luego GREEN; la API pasa 1458 tests y el typecheck da 0. La revisión de Gentle AI lo aprobó.
+    - Corridas `haiku-high` y `haiku-xhigh`: los 7 casos con mayor caída de Haiku, con 3 repeticiones, 42 filas en total.
+    - Gasto medido: US$9,77 (generación US$0,08, juez US$9,68). Supera los US$6 estimados, porque son los casos largos y el juez costó unos US$0,23 por llamada en vez de US$0,14.
+    - Criterios en esos 7 casos: Gemini 0,913; Haiku medium 0,623; high 0,723; xhigh 0,665.
+      - xhigh no cabe en los 8.192 tokens máximos del Diario: corta el brodetto en 3 de 3 repeticiones. Sin el brodetto, xhigh queda en unos 0,78 y Gemini en unos 0,94.
+      - Más esfuerzo no corrige los errores de fondo:
+        - en el chef que insiste sigue proponiendo gelatina con piña cruda;
+        - en la esferificación inversa refuerza con lactato y da tiempos de directa;
+        - en la memoria de vanguardia sigue con platos de 2 o 3 elementos.
+    - Coste por mensaje y latencia mediana (p90): Gemini US$0,0028 y 6,1 s (10,2); Haiku medium US$0,0011 y 9,5 s (16,3); high US$0,0015 y 14,1 s (20,4); xhigh US$0,0021 y 19,3 s (40,4).
+    - Conclusión: subir el esfuerzo de Haiku no compensa. Mejora poco, sigue lejos de Gemini y duplica o triplica la latencia del Diario.
 
 ## Siguiente paso
-- Andy aprueba los casos (P2). Con el runner listo, se pide el OK del piloto pagado con costo, destino y credenciales (P4).
+- Andy decide si el Diario pasa a Haiku. Con todas las corridas, la recomendación es quedarse con Gemini.
+  - Haiku cuesta un tercio que Gemini y avisa mejor del anisakis.
+  - En calidad queda igual o algo por debajo, con errores técnicos claros en los casos trampa (gelatina con piña, esferificación inversa).
+- Aparte del modelo, que Gemini omita el aviso del anisakis en idea anclada es un fallo de seguridad actual.
+
+- Decisión de Andy (14-10-2026): el Diario se queda con Gemini. Se fusiona la rama con el modo Haiku y el esfuerzo opcional para futuras comparaciones. El aviso del anisakis en idea anclada no se considera relevante y se deja como está.

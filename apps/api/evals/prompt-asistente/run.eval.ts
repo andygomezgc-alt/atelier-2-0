@@ -11,6 +11,9 @@
 //   EVAL_RUN=<nombre>: carpeta propia, prompt-asistente-<nombre>, para que el piloto y la corrida completa
 //     nunca compartan filas.
 //   EVAL_MODES=creative,daily  EVAL_REPS=1  EVAL_CONCURRENCY=4
+//     haiku (solo en la prueba): el Diario respondido por claude-haiku-5-5 en vez de Gemini, por la misma rama de
+//     Anthropic de streamChat, para comparar calidad y precio. Solo necesita ANTHROPIC_API_KEY.
+//     EVAL_HAIKU_EFFORT=low|medium|high|xhigh|max fija su esfuerzo (sin ella, medium, el de producción).
 //   EVAL_TIMEOUT_S=300: límite real de cada intento (llega a streamChat como deadlineAt).
 //   EVAL_ENV_FILE=<ruta>: carga de ese archivo solo ANTHROPIC_API_KEY y GEMINI_API_KEY.
 //   EVAL_JUDGE_MODEL (por defecto claude-sonnet-5-5) y EVAL_JUDGE_EFFORT=low|medium|high|xhigh|max (sin ella,
@@ -40,9 +43,25 @@ vi.mock("../../lib/ai/budget", () => ({
   releaseGeneration: async () => undefined,
 }));
 
+// «haiku» no es un modo de producto: en producción normalizeChatMode lo convierte en daily (Gemini). Aquí es el
+// Diario con Claude Haiku 5.5, con los mismos tokens máximos y plazo que el Diario y el razonamiento de la rama de
+// Anthropic de streamChat. Solo esta prueba ve el cambio; el resto de selecciones llegan intactas. Con
+// EVAL_HAIKU_EFFORT el config lleva ese esfuerzo (y entra en la huella); sin ella no lleva ninguno y rige medium.
+vi.mock("../../lib/ai/config", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../lib/ai/config")>();
+  return {
+    ...actual,
+    chatConfig: (selection?: Parameters<typeof actual.chatConfig>[0]) => {
+      if (selection !== "haiku") return actual.chatConfig(selection);
+      const effort = haikuEffort();
+      return { ...actual.aiConfig("daily"), provider: "anthropic" as const, model: "claude-haiku-5-5", ...(effort && { effort }) };
+    },
+  };
+});
+
 import type { Reservation } from "../../lib/ai/budget";
 import { ChatError, streamChat } from "../../lib/ai/chat";
-import { chatConfig } from "../../lib/ai/config";
+import { chatConfig, type AiEffort } from "../../lib/ai/config";
 import { emptyUsage, type AiUsage } from "../../lib/ai/types";
 import { buildSystemBlocks, renderPrinciples } from "../../lib/anthropic";
 import { memoryContext } from "../../lib/culinary-memory/evidence";
@@ -54,7 +73,7 @@ import {
 } from "./judge";
 
 type Variant = "baseline" | "v1";
-type Mode = "creative" | "daily";
+type Mode = "creative" | "daily" | "haiku";
 type DryRun = "oracle" | "null";
 type Status = "ok" | "refused" | "truncated";
 type System = ReturnType<typeof buildSystemBlocks>;
@@ -113,6 +132,13 @@ function positive(name: string, fallback: number, integer: boolean): number {
 
 const oneOf = <T extends string>(values: readonly T[], value: string | undefined): value is T => values.some(item => item === value);
 
+/** EVAL_HAIKU_EFFORT, o undefined para el esfuerzo de producción (medium). */
+function haikuEffort(): AiEffort | undefined {
+  const raw = process.env.EVAL_HAIKU_EFFORT?.trim() || undefined;
+  if (raw !== undefined && !oneOf<AiEffort>(["low", "medium", "high", "xhigh", "max"], raw)) throw new Error("EVAL_HAIKU_EFFORT admite low, medium, high, xhigh o max");
+  return raw;
+}
+
 function settings() {
   const sanity = process.env.EVAL_JUDGE_SANITY?.trim() === "1";
   // La comprobación del juez no depende de la variante: sin EVAL_VARIANT usa baseline, que no llega a leer.
@@ -127,12 +153,13 @@ function settings() {
   }
   const run = process.env.EVAL_RUN?.trim() || undefined;
   if (run !== undefined && !/^[a-z0-9][a-z0-9-]*$/i.test(run)) throw new Error("EVAL_RUN solo admite letras, números y guiones");
-  // Solo los modos de producto: normalizeChatMode convertiría cualquier otro valor en daily sin avisar.
+  // Los modos de producto y haiku: normalizeChatMode convertiría cualquier otro valor en daily sin avisar.
   const modes = list(process.env.EVAL_MODES ?? "creative,daily").map(mode => {
-    if (!oneOf<Mode>(["creative", "daily"], mode)) throw new Error(`EVAL_MODES: modo desconocido «${mode}» (creative o daily)`);
+    if (!oneOf<Mode>(ALL_MODES, mode)) throw new Error(`EVAL_MODES: modo desconocido «${mode}» (creative, daily o haiku)`);
     return mode;
   });
   if (!modes.length) throw new Error("EVAL_MODES está vacía");
+  haikuEffort(); // Falla aquí, antes de cualquier trabajo, si el valor no es válido.
   const timeoutS = positive("EVAL_TIMEOUT_S", 300, false);
   const judgeTimeoutS = positive("EVAL_JUDGE_TIMEOUT_S", 900, false);
   if (Math.max(timeoutS, judgeTimeoutS) * 1000 > 2_147_483_647) throw new Error("EVAL_TIMEOUT_S o EVAL_JUDGE_TIMEOUT_S es demasiado grande");
@@ -440,12 +467,15 @@ const STATE = {
   ],
   perf_fields: [{ id: "cost_usd", unit: "$" }, { id: "in_tokens" }, { id: "out_tokens" }, { id: "latency_s", unit: "s" }, { id: "words" }],
   // USD por millón de tokens: los del chat, de apps/api/lib/ai/budget-policy.ts; el del juez, de la tabla de modelos de la API de Claude.
-  prices: { "claude-opus-5-5": { in: 4, out: 20 }, "gemini-3.8-flash": { in: 0.75, out: 3.75 }, "claude-sonnet-5-5": { in: 2, out: 10 } },
+  prices: {
+    "claude-opus-5-5": { in: 4, out: 20 }, "gemini-3.8-flash": { in: 0.75, out: 3.75 }, "claude-haiku-5-5": { in: 0.1, out: 0.5 },
+    "claude-sonnet-5-5": { in: 2, out: 10 },
+  },
 };
 
 type Task = { kase: EvalCase; mode: Mode; rep: number; promptId: string; fingerprint: string; sharedFingerprint: string };
 type Prints = { fingerprint: string; shared: string };
-const ALL_MODES: Mode[] = ["creative", "daily"];
+const ALL_MODES: readonly Mode[] = ["creative", "daily", "haiku"];
 const VARIANT_DIR = /^(?:baseline|v\d+)$/;
 const sharedFingerprintOf = (row: Record<string, unknown>) => (row.meta as { shared_fingerprint?: unknown } | undefined)?.shared_fingerprint;
 

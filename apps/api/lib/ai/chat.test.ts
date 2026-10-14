@@ -3,7 +3,14 @@ vi.mock("./budget", () => ({
   reserveGeneration: vi.fn().mockResolvedValue({ id: "reservation" }), settleGeneration: vi.fn().mockResolvedValue(undefined),
   releaseGeneration: vi.fn().mockResolvedValue(undefined), settleInterruptedGeneration: vi.fn().mockResolvedValue(undefined),
 }));
-const { opusStream, constructor } = vi.hoisted(() => ({ opusStream: vi.fn(), constructor: vi.fn() }));
+const { opusStream, constructor, configExtra } = vi.hoisted(() => ({
+  opusStream: vi.fn(), constructor: vi.fn(), configExtra: {} as { effort?: AiEffort },
+}));
+// Production configs never set an effort; a test adds one through configExtra to prove chat.ts honors it.
+vi.mock("./config", async importOriginal => {
+  const actual = await importOriginal<typeof import("./config")>();
+  return { ...actual, chatConfig: (selection?: Parameters<typeof actual.chatConfig>[0]) => ({ ...actual.chatConfig(selection), ...configExtra }) };
+});
 vi.mock("@anthropic-ai/sdk", async importOriginal => ({ ...(await importOriginal<typeof import("@anthropic-ai/sdk")>()), default: class {
   messages = { stream: opusStream };
   constructor(options: unknown) { constructor(options); }
@@ -13,6 +20,7 @@ import { inspect } from "node:util";
 import { boundedChatHistory, sseData, stableHistoryWindow, streamChat, type ChatEvent } from "./chat";
 import type { Msg } from "../anthropic";
 import type { ChatModelSelection } from "@atelier/shared";
+import type { AiEffort } from "./config";
 import { releaseGeneration, reserveGeneration, settleGeneration, settleInterruptedGeneration, type Reservation } from "./budget";
 import { logger } from "../logger";
 
@@ -58,7 +66,7 @@ beforeEach(() => {
   vi.mocked(reserveGeneration).mockReset().mockResolvedValue(reservation);
   clearClosings();
   vi.stubEnv("GEMINI_API_KEY", "gemini-test"); vi.stubEnv("ANTHROPIC_API_KEY", "anthropic-test");
-  opusStream.mockReset(); constructor.mockReset();
+  opusStream.mockReset(); constructor.mockReset(); delete configExtra.effort;
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
@@ -120,6 +128,21 @@ describe("Opus chat adapter", () => {
     expect(request).toMatchObject({ model: "claude-opus-5-5", max_tokens: 16384, output_config: { effort: "medium" } });
     expect(request.messages.at(-1).content[0].cache_control).toEqual({ type: "ephemeral" });
     expect(events.at(-1)).toMatchObject({ type: "usage", usage: { inputTokens: 60, outputTokens: 90, cachedTokens: 30 } });
+  });
+  const sentEffort = async () => {
+    opusStream.mockReturnValue({
+      async *[Symbol.asyncIterator]() { yield { type: "content_block_delta", delta: { type: "text_delta", text: "Receta" } }; },
+      finalMessage: async () => ({ stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } }),
+    });
+    await collect(streamChat(input("creative")));
+    return opusStream.mock.calls[0]![0].output_config.effort;
+  };
+  it("sends the effort the config provides", async () => {
+    configExtra.effort = "xhigh";
+    expect(await sentEffort()).toBe("xhigh");
+  });
+  it("sends medium when the config has no effort", async () => {
+    expect(await sentEffort()).toBe("medium");
   });
   it("retains consumed usage when a response is truncated", async () => {
     opusStream.mockReturnValue({
