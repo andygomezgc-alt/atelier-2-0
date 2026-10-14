@@ -13,8 +13,14 @@ describe("normalizeInvoiceUnit", () => {
 });
 
 describe("priceInBankUnit", () => {
-  const p = (unitPriceCents: number | null, unit: string | null, packQty: number | null = null, packUnit: string | null = null) =>
-    ({ unitPriceCents, unit, packQty, packUnit });
+  const p = (
+    unitPriceCents: number | null,
+    unit: string | null,
+    packQty: number | null = null,
+    packUnit: string | null = null,
+    quantity: number | null = null,
+    lineTotalCents: number | null = null,
+  ) => ({ unitPriceCents, unit, packQty, packUnit, quantity, lineTotalCents });
 
   it("same unit passes through", () => expect(priceInBankUnit(p(1250, "kg"), "kg")).toBe(1250));
   it("grams to kilos", () => expect(priceInBankUnit(p(2, "g"), "kg")).toBe(2000));
@@ -67,5 +73,25 @@ describe("proposeLine", () => {
 
   it("an invoice from the same day as the current price still updates", () => {
     expect(proposeLine({ ...base, invoiceDate: "2026-10-01", newPriceCents: 1100 })).toMatchObject({ action: "update_price", priceCents: 1100 });
+  });
+});
+
+describe("price actually paid", () => {
+  const line = (unitPriceCents: number | null, quantity: number | null, lineTotalCents: number | null) =>
+    ({ unitPriceCents, unit: "kg", packQty: null, packUnit: null, quantity, lineTotalCents });
+
+  it("a line discount wins over the list price", () => expect(priceInBankUnit(line(1000, 1, 850), "kg")).toBe(850));
+  it("rounding differences keep the printed unit price", () => expect(priceInBankUnit(line(333, 3, 1000), "kg")).toBe(333));
+  it("no unit price: derived from total / quantity", () => expect(priceInBankUnit(line(null, 2, 1250), "kg")).toBe(625));
+  it("a return line (negative quantity) is never a price", () => expect(priceInBankUnit(line(625, -2, -1250), "kg")).toBeNull());
+  it("a negative line total is never a price", () => expect(priceInBankUnit(line(625, 2, -1250), "kg")).toBeNull());
+});
+
+describe("unpriced products", () => {
+  it("a product without a price created after the invoice still takes the invoice price", () => {
+    expect(proposeLine({
+      productId: "p", currentPriceCents: 0, currentPriceAt: new Date("2026-10-15T08:00:00Z"),
+      newPriceCents: 800, invoiceDate: "2026-10-13",
+    })).toEqual({ action: "update_price", priceCents: 800, changePct: null, preselected: true });
   });
 });

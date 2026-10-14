@@ -23,20 +23,44 @@ export function normalizeInvoiceUnit(raw: string | null): ProductUnit | null {
   return UNIT_ALIASES[raw.trim().toLowerCase().replace(/\.$/, "")] ?? null;
 }
 
+// Last price PAID: a line discount ("Sc. 15%") shows up as a line total below
+// quantity × list price, so total / quantity wins unless the gap is rounding.
+function pricePaidPerUnit(input: { unitPriceCents: number | null; quantity: number | null; lineTotalCents: number | null }): number | null {
+  const fromTotal =
+    input.quantity !== null && input.quantity > 0 && input.lineTotalCents !== null && input.lineTotalCents > 0
+      ? input.lineTotalCents / input.quantity
+      : null;
+  if (input.unitPriceCents === null) return fromTotal;
+  if (fromTotal === null || Math.abs(fromTotal - input.unitPriceCents) <= 1) return input.unitPriceCents;
+  return fromTotal;
+}
+
 export function priceInBankUnit(
-  input: { unitPriceCents: number | null; unit: string | null; packQty: number | null; packUnit: string | null },
+  input: {
+    unitPriceCents: number | null;
+    unit: string | null;
+    packQty: number | null;
+    packUnit: string | null;
+    quantity: number | null;
+    lineTotalCents: number | null;
+  },
   bankUnit: ProductUnit,
 ): number | null {
-  if (input.unitPriceCents === null || !(input.unitPriceCents > 0)) return null;
+  // Returns, deposits and credit lines are never a purchase price.
+  if ((input.quantity !== null && input.quantity < 0) || (input.lineTotalCents !== null && input.lineTotalCents < 0)) {
+    return null;
+  }
+  const paidCents = pricePaidPerUnit(input);
+  if (paidCents === null || !(paidCents > 0)) return null;
   const unit = normalizeInvoiceUnit(input.unit);
   if (unit === null) return null;
-  if (unit === bankUnit) return input.unitPriceCents;
+  if (unit === bankUnit) return Math.round(paidCents);
 
-  let priceCents = input.unitPriceCents;
+  let priceCents = paidCents;
   let perUnit: ProductUnit = unit;
   const packUnit = normalizeInvoiceUnit(input.packUnit);
   if ((unit === "caja" || unit === "unidad") && input.packQty !== null && input.packQty > 0 && packUnit !== null) {
-    priceCents = input.unitPriceCents / input.packQty;
+    priceCents = paidCents / input.packQty;
     perUnit = packUnit;
   }
   // How many `perUnit` fit in one bank unit (1 kg = 1000 g). Null when the
@@ -60,12 +84,14 @@ export function proposeLine(input: {
 }): LineProposal {
   if (input.productId === null) return { action: "create_draft", priceCents: input.newPriceCents, preselected: true };
   if (input.newPriceCents === null) return { action: "connect", priceCents: null, reason: "unsafe_conversion" };
+  // No price yet: any paid price beats none. precioActualizadoAt is then just
+  // the creation date (drafts from recipe imports), not a paid price's date.
+  if (input.currentPriceCents <= 0) {
+    return { action: "update_price", priceCents: input.newPriceCents, changePct: null, preselected: true };
+  }
   // Compare calendar days: the invoice has a date, the price a timestamp.
   if (input.currentPriceAt && input.invoiceDate < input.currentPriceAt.toISOString().slice(0, 10)) {
     return { action: "connect", priceCents: null, reason: "older_invoice" };
-  }
-  if (input.currentPriceCents <= 0) {
-    return { action: "update_price", priceCents: input.newPriceCents, changePct: null, preselected: true };
   }
   if (input.newPriceCents === input.currentPriceCents) return { action: "connect", priceCents: null, reason: "same_price" };
   const changePct = Math.round(((input.newPriceCents - input.currentPriceCents) / input.currentPriceCents) * 100);
