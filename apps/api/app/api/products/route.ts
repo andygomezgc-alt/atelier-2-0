@@ -94,6 +94,7 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
       criticality: true,
       estado: true,
       precioActualizadoAt: true,
+      taxRatePct: true,
     },
   });
 
@@ -186,6 +187,7 @@ export const POST = withAuth(
           mermaOrigen: body.mermaOrigen ?? "sugerida",
           // Only what the chef declared; never guessed from the category.
           gramosPorLitro: body.gramosPorLitro ?? null,
+          ...(body.taxRatePct !== undefined ? { taxRatePct: body.taxRatePct } : {}),
           proveedor: body.proveedor ?? null,
           notas: body.notas ?? null,
           estado: body.estado ?? "activo",

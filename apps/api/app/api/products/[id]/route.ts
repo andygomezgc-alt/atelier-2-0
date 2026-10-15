@@ -166,6 +166,8 @@ export const PATCH = withAuth(
           mermaOrigen: nextMermaOrigen,
           // undefined → untouched; null → cleared.
           gramosPorLitro: body.gramosPorLitro,
+          // undefined → untouched.
+          taxRatePct: body.taxRatePct,
           proveedor: body.proveedor === undefined ? undefined : body.proveedor,
           notas: body.notas === undefined ? undefined : body.notas,
           estado: body.estado ?? undefined,

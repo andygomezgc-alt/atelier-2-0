@@ -1,7 +1,7 @@
 // Projections para el Banco de Productos.
 //
 // Costo real (realCost) se calcula en read-time como:
-//   precioCompra / (1 - mermaPct/100)
+//   precioCompra × (1 + taxRatePct/100) / (1 - mermaPct/100)
 // Un rendimiento útil cero devuelve null, también para datos antiguos.
 //
 // Precios se manejan en centavos enteros (mismo patrón que MenuItem.price).
@@ -28,6 +28,7 @@ type ProductListSource = Pick<
   | "mermaPct"
   | "mermaOrigen"
   | "gramosPorLitro"
+  | "taxRatePct"
   | "criticality"
   | "estado"
   | "precioActualizadoAt"
@@ -38,6 +39,8 @@ export function projectProductListItem(
   usedByUnitCount = 0,
 ): ProductListItem {
   const mermaPctNum = Number(p.mermaPct);
+  // `== null`: a stale query engine may omit the column (same as gramosPorLitro).
+  const taxRatePctNum = p.taxRatePct == null ? 0 : Number(p.taxRatePct);
   return {
     allergens: p.allergens?.length || p.allergensReviewed ? (p.allergens ?? []) : p.allergen ? [p.allergen] : [],
     allergensReviewed: p.allergensReviewed ?? false,
@@ -56,12 +59,14 @@ export function projectProductListItem(
     pezzaturaMax: p.pezzaturaMax ? Number(p.pezzaturaMax) : null,
     unidadCompra: p.unidadCompra,
     precioCompra: p.precioCompra,
-    realCost: realCost(p.precioCompra, mermaPctNum),
+    // The purchase tax is part of what the product costs, as in recipe cost (cost.ts withTax).
+    realCost: realCost(p.precioCompra * (1 + taxRatePctNum / 100), mermaPctNum),
     mermaPct: mermaPctNum,
     mermaOrigen: p.mermaOrigen,
     // Decimal → number; `== null` also covers a stale query engine that
     // omits the column (same reason as the pezzatura fields above).
     gramosPorLitro: p.gramosPorLitro == null ? null : Number(p.gramosPorLitro),
+    taxRatePct: taxRatePctNum,
     criticality: p.criticality,
     estado: p.estado,
     precioActualizadoAt: p.precioActualizadoAt.toISOString(),

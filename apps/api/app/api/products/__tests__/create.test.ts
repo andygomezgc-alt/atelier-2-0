@@ -145,6 +145,17 @@ describe("POST /api/products", () => {
       expect(db.product.create.mock.calls[0]![0].data.gramosPorLitro).toBeNull();
     });
 
+    it("stores the declared purchase tax", async () => {
+      const res = await create({ ...oil, taxRatePct: 10 });
+      expect(res.status).toBe(201);
+      expect(db.product.create.mock.calls[0]![0].data.taxRatePct).toBe(10);
+    });
+
+    it("without a declared tax the database default applies", async () => {
+      await create(oil);
+      expect(db.product.create.mock.calls[0]![0].data).not.toHaveProperty("taxRatePct");
+    });
+
     it.each([0, -5, 920.123, 100000])("rejects %s with 400 before writing", async (gramosPorLitro) => {
       const res = await create({ ...oil, gramosPorLitro });
       expect(res.status).toBe(400);

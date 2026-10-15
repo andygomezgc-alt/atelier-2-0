@@ -85,7 +85,7 @@ export type PezzaturaMode = "pz_per_kg" | "g_per_piece";
 export type Criticality = "alta" | "media" | "baja";
 
 // Fila en la lista del banco. realCost es calculado en el backend
-// (precioCompra / (1 - mermaPct/100)) para que el cliente no tenga que
+// (precioCompra × (1 + taxRatePct/100) / (1 - mermaPct/100)) para que el cliente no tenga que
 // re-implementar la fórmula.
 export type ProductListItem = {
   allergens?: import("./allergens").Allergen[];
@@ -106,6 +106,8 @@ export type ProductListItem = {
   // Weight in grams of 1 litre; null = unknown. Optional so clients built
   // before this field keep compiling and parsing.
   gramosPorLitro?: number | null;
+  // Purchase tax in percent (0-100); optional for older payloads.
+  taxRatePct?: number;
   criticality: Criticality;
   estado: ProductState;
   precioActualizadoAt: string; // ISO

@@ -859,6 +859,14 @@ const gramosPorLitroSchema = z
   .refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, {
     message: "At most 2 decimals",
   });
+// Purchase tax (VAT / IVA) in percent, stored as Decimal(5,2).
+const taxRatePctSchema = z
+  .number()
+  .min(0)
+  .max(100)
+  .refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, {
+    message: "At most 2 decimals",
+  });
 
 export const CreateProductRequestSchema = z.object({
   allergens: z.array(AllergenSchema).max(14).transform(values => [...new Set(values)]).optional(),
@@ -877,6 +885,7 @@ export const CreateProductRequestSchema = z.object({
   mermaOrigen: MermaOrigenSchema.optional(),
   // Omitted or null → stored as null (unknown).
   gramosPorLitro: gramosPorLitroSchema.nullable().optional(),
+  taxRatePct: taxRatePctSchema.optional(),
   proveedor: z.string().max(200).nullable().optional(),
   notas: z.string().max(2000).nullable().optional(),
   estado: ProductStateSchema.optional(),
@@ -901,6 +910,7 @@ export const PatchProductRequestSchema = z.object({
   mermaOrigen: MermaOrigenSchema.optional(),
   // undefined → untouched; null → cleared (unknown).
   gramosPorLitro: gramosPorLitroSchema.nullable().optional(),
+  taxRatePct: taxRatePctSchema.optional(),
   proveedor: z.string().max(200).nullable().optional(),
   notas: z.string().max(2000).nullable().optional(),
   estado: ProductStateSchema.optional(),
@@ -930,6 +940,8 @@ export const ProductListItemSchema = z.object({
   mermaOrigen: MermaOrigenSchema,
   // Weight in grams of 1 litre; null = unknown. Optional for older payloads.
   gramosPorLitro: z.number().positive().nullable().optional(),
+  // Purchase tax in percent; optional for older payloads.
+  taxRatePct: z.number().min(0).max(100).optional(),
   criticality: CriticalitySchema,
   estado: ProductStateSchema,
   precioActualizadoAt: z.string(), // ISO
