@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   role: "admin",
   photoUrl: null as string | null,
   permission: vi.fn(),
+  push: vi.fn(),
   pick: vi.fn(),
   upload: vi.fn(),
   reload: vi.fn(),
@@ -21,7 +22,7 @@ vi.mock("react-native", () => ({
   Platform: { OS: "android", select: (items: Record<string, unknown>) => items.android ?? items.default },
 }));
 vi.mock("@expo/vector-icons", () => ({ Ionicons: "Ionicons" }));
-vi.mock("expo-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("expo-router", () => ({ useRouter: () => ({ push: h.push }) }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 vi.mock("expo-image-picker", () => ({
   requestMediaLibraryPermissionsAsync: h.permission,
@@ -58,7 +59,7 @@ vi.mock("@/src/components/Toast", () => ({ showToast: h.toast }));
 vi.mock("@/src/api/auth", () => ({ uploadRestaurantPhoto: h.upload }));
 vi.mock("@/src/api/client", () => ({ apiFetch: vi.fn() }));
 vi.mock("@/src/lib/api-error", () => ({ apiErrorMessage: () => "network_error" }));
-vi.mock("@atelier/shared", () => ({ can: (role: string, permission: string) => role === "admin" && permission === "edit_restaurant" }));
+vi.mock("@atelier/shared", () => ({ can: (role: string, permission: string) => role === "admin" && ["edit_restaurant", "manage_products"].includes(permission) }));
 
 import CasaScreen from "../../app/(tabs)/casa";
 
@@ -110,6 +111,17 @@ describe("Casa restaurant photo", () => {
     await render();
     expect(editPhoto()).toBeUndefined();
     expect(images()[0]?.props.source.uri).toBe(h.photoUrl);
+  });
+
+  it("opens the supplier invoices to who manages products", async () => {
+    await render();
+    const entry = () => screen.root.findAllByType("Pressable" as never).find((node) => node.props.accessibilityLabel === "casa_facturas_entry_title");
+    await act(async () => { entry()?.props.onPress(); });
+    expect(h.push).toHaveBeenCalledWith("/facturas");
+    await act(async () => { screen.unmount(); });
+    h.role = "viewer";
+    await render();
+    expect(entry()).toBeUndefined();
   });
 
   it("does not upload when gallery permission is denied or selection is cancelled", async () => {

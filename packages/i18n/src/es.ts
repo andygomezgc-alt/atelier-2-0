@@ -908,6 +908,15 @@ export const es = {
   invoice_done_connect: "Vinculada",
   invoice_done_create_draft: "Producto creado",
   invoice_done_ignore: "Ignorada",
+  casa_facturas_entry_title: "Facturas",
+  casa_facturas_entry_sub: "Escanea facturas de proveedores y actualiza los precios",
+  invoices_title: "Facturas",
+  invoices_scan: "Escanear factura",
+  invoices_to_review: "Por revisar ({count})",
+  invoices_empty_title: "Todavía no hay facturas",
+  invoices_empty_sub: "Escanea una factura de un proveedor y Atelier te propone los precios nuevos.",
+  invoices_no_supplier: "Proveedor sin leer",
+  invoices_no_number: "Sin número",
 } as const;
 
 // Each translation maps a key to a string. Values are not pinned as

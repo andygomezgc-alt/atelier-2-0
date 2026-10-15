@@ -877,4 +877,13 @@ export const it: EsDict = {
   invoice_done_connect: "Collegata",
   invoice_done_create_draft: "Prodotto creato",
   invoice_done_ignore: "Ignorata",
+  casa_facturas_entry_title: "Fatture",
+  casa_facturas_entry_sub: "Scansiona le fatture dei fornitori e aggiorna i prezzi",
+  invoices_title: "Fatture",
+  invoices_scan: "Scansiona fattura",
+  invoices_to_review: "Da rivedere ({count})",
+  invoices_empty_title: "Ancora nessuna fattura",
+  invoices_empty_sub: "Scansiona una fattura di un fornitore e Atelier ti propone i nuovi prezzi.",
+  invoices_no_supplier: "Fornitore non letto",
+  invoices_no_number: "Senza numero",
 };

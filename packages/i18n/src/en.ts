@@ -876,4 +876,13 @@ export const en: EsDict = {
   invoice_done_connect: "Linked",
   invoice_done_create_draft: "Product created",
   invoice_done_ignore: "Ignored",
+  casa_facturas_entry_title: "Invoices",
+  casa_facturas_entry_sub: "Scan supplier invoices and update prices",
+  invoices_title: "Invoices",
+  invoices_scan: "Scan invoice",
+  invoices_to_review: "To review ({count})",
+  invoices_empty_title: "No invoices yet",
+  invoices_empty_sub: "Scan a supplier invoice and Atelier proposes the new prices.",
+  invoices_no_supplier: "Supplier not read",
+  invoices_no_number: "No number",
 };
