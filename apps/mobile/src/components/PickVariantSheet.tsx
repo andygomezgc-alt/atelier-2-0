@@ -12,11 +12,14 @@ type Props = {
   title: string;
   body: string;
   noneLabel: string;
+  // Optional way out to search the whole bank; the button shows only with both.
+  otherLabel?: string;
+  onOther?: () => void;
   onPick: (productId: string) => void;
   onNone: () => void;
 };
 
-export function PickVariantSheet({ open, rawText, candidates, title, body, noneLabel, onPick, onNone }: Props) {
+export function PickVariantSheet({ open, rawText, candidates, title, body, noneLabel, otherLabel, onOther, onPick, onNone }: Props) {
   return (
     // Dismissing (backdrop, Android back) must not mean "none": that would
     // create a duplicate draft. Only the explicit button answers "none".
@@ -37,6 +40,11 @@ export function PickVariantSheet({ open, rawText, candidates, title, body, noneL
               );
             })}
           </ScrollView>
+          {otherLabel && onOther ? (
+            <Pressable testID="pick-variant-other" style={styles.btnGhost} onPress={onOther}>
+              <Text style={styles.btnGhostLabel}>{otherLabel}</Text>
+            </Pressable>
+          ) : null}
           <Pressable testID="pick-variant-none" style={styles.btnGhost} onPress={onNone}>
             <Text style={styles.btnGhostLabel}>{noneLabel}</Text>
           </Pressable>

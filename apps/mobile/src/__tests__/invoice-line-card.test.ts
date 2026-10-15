@@ -72,6 +72,16 @@ describe("InvoiceLineCard", () => {
     expect(h.patch).toHaveBeenCalledWith({ action: "create_draft" });
   });
 
+  it("the variant sheet also lets the chef search another product", async () => {
+    await render(line({ action: null, matchLevel: "ambiguo", product: null, siblings: [{ productId: "p7", name: "Calamari 3P" }] as never }));
+    await act(async () => { button("invoice_line_choose")?.props.onPress(); });
+    expect(node("PickVariantSheet").props.otherLabel).toBe("invoice_line_choose_other");
+    expect(node("ProductPickerSheet").props.open).toBe(false);
+    await act(async () => { node("PickVariantSheet").props.onOther(); });
+    expect(node("ProductPickerSheet").props.open).toBe(true);
+    expect(node("PickVariantSheet").props.open).toBe(false);
+  });
+
   it("Change offers every decision, and choosing another product opens the picker", async () => {
     await render(line());
     await act(async () => { button("invoice_line_change")?.props.onPress(); });

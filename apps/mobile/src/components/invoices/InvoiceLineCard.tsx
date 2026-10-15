@@ -127,6 +127,8 @@ export function InvoiceLineCard({ line, readOnly, onPatch, onChooseProduct }: Pr
         title={t("invoice_line_variant_title")}
         body={t("invoice_line_variant_body")}
         noneLabel={t("invoice_line_variant_none")}
+        otherLabel={t("invoice_line_choose_other")}
+        onOther={() => setSheet("picker")}
         onPick={(productId) => {
           close();
           onChooseProduct(productId);
