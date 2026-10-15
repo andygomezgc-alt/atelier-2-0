@@ -9,5 +9,5 @@ export const metadata: Metadata = {
 // El piloto no genera enlaces de contratación, aunque existan variables
 // STRIPE_PAYMENT_LINK_* configuradas en el servidor.
 export default function ProPage() {
-  return <PilotLanding />;
+  return <PilotLanding locale="es" />;
 }

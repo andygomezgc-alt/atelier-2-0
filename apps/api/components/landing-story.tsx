@@ -1,4 +1,6 @@
 import type { CSSProperties } from "react";
+import type { LandingLocale } from "@/lib/landing-locale";
+import { landingCopy } from "./landing-copy";
 import s from "./landing-story.module.css";
 
 // The scroll drives each piece between two points of the story track, in percent.
@@ -14,20 +16,27 @@ function Icon({ name }: { name: string }) {
   );
 }
 
+// The scroll timing of each step; its title and text come from landing-copy.ts, in the same order.
 const steps = [
-  { from: 0, to: 17.4, kind: "first", title: "Apunta la idea", text: "Escríbela en el bloc de ideas en cuanto aparece. Un toque y queda guardada." },
-  { from: 15.6, to: 36.6, kind: "mid", title: "Dale forma con el asistente", text: "Llévala al asistente y conviértela en un plato, con ingredientes y cantidades." },
-  { from: 34.2, to: 51, kind: "mid", title: "Guárdala como receta", text: "Queda como borrador, con su costo por porción calculado con tus precios." },
-  { from: 49.2, to: 61, kind: "mid", title: "Tu equipo la encuentra", text: "Aparece en Recetas, junto a las del resto de la cocina." },
-  { from: 58.5, to: 73.5, kind: "mid", title: "Súmala a la carta", text: "Arma tus menús con platos del recetario, ordénalos por secciones y ponles precio." },
-  { from: 71.5, to: 88, kind: "mid", title: "Escanea tu carta", text: "Hazle una foto a tu carta de siempre y Atelier crea el estilo de la casa para tus PDF." },
-  { from: 86, to: 100, kind: "last", title: "Cada uno con su rol", text: "Comparte el código del restaurante y trabaja con tu brigada, cada persona con su rol." },
+  { from: 0, to: 17.4, kind: "first" },
+  { from: 15.6, to: 36.6, kind: "mid" },
+  { from: 34.2, to: 51, kind: "mid" },
+  { from: 49.2, to: 61, kind: "mid" },
+  { from: 58.5, to: 73.5, kind: "mid" },
+  { from: 71.5, to: 88, kind: "mid" },
+  { from: 86, to: 100, kind: "last" },
 ] as const;
+
+// The answer lines and the ingredients slide in one after another.
+const answerTimes = [[24, 25.8], [25.8, 27.6], [27.6, 29.4], [29.4, 31.2]] as const;
+const ingredientTimes = [[45, 46.2], [45.9, 47.1], [46.8, 48], [47.7, 48.9]] as const;
 
 const stepClass = { first: s.aStepFirst, mid: s.aStepMid, last: s.aStepLast };
 const descClass = { first: s.aDescFirst, mid: s.aDescMid, last: s.aDescLast };
 
-export function LandingStory() {
+export function LandingStory({ locale }: { locale: LandingLocale }) {
+  const t = landingCopy[locale].story;
+  const { created: newRecipe, inTest: triedRecipe, approved: approvedRecipe } = t.recipes;
   return (
     <section id="como-funciona" className={s.story} aria-labelledby="story-title">
       <svg width="0" height="0" className={s.sprite} aria-hidden="true">
@@ -60,17 +69,17 @@ export function LandingStory() {
       <div className={s.track}>
         <div className={s.stage}>
           <div className={s.copy}>
-            <p className={s.eyebrow}>De la idea a la carta</p>
-            <h2 id="story-title" className={s.title}>Así trabaja tu cocina en Atelier.</h2>
+            <p className={s.eyebrow}>{t.eyebrow}</p>
+            <h2 id="story-title" className={s.title}>{t.title}</h2>
             <div className={s.stepsWrap}>
               <div className={s.progress} aria-hidden="true"><span className={`${s.sd} ${s.aGrow}`} style={at(0, 100)} /></div>
               <ol className={s.steps}>
                 {steps.map((step, index) => (
-                  <li key={step.title} className={`${s.step} ${s.sd} ${stepClass[step.kind]}`} style={at(step.from, step.to)}>
+                  <li key={index} className={`${s.step} ${s.sd} ${stepClass[step.kind]}`} style={at(step.from, step.to)}>
                     <span className={s.num}>{String(index + 1).padStart(2, "0")}</span>
                     <div>
-                      <h3>{step.title}</h3>
-                      <div className={`${s.desc} ${s.sd} ${descClass[step.kind]}`} style={at(step.from, step.to)}><p>{step.text}</p></div>
+                      <h3>{t.steps[index]?.title}</h3>
+                      <div className={`${s.desc} ${s.sd} ${descClass[step.kind]}`} style={at(step.from, step.to)}><p>{t.steps[index]?.text}</p></div>
                     </div>
                   </li>
                 ))}
@@ -78,7 +87,7 @@ export function LandingStory() {
             </div>
           </div>
 
-          <figure className={s.phone} aria-label="La app de Atelier: una idea pasa a receta, entra en la carta con el estilo de la casa y la ve toda la brigada. Contenido de demostración.">
+          <figure className={s.phone} aria-label={t.phoneLabel}>
             <div className={s.screen} aria-hidden="true">
               <span className={s.island} />
               <div className={s.sbar}><span>23:41</span><span><Icon name="sig" /><Icon name="wifi" /><Icon name="bat" /></span></div>
@@ -87,187 +96,186 @@ export function LandingStory() {
               <div className={s.views}>
                 {/* 1 · Inicio */}
                 <div className={`${s.scr} ${s.scrInicio} ${s.sd} ${s.aScrFirst}`} style={at(0, 18)}>
-                  <p className={s.explain}>Tu bloc de cocina. Anota ideas sueltas y trabájalas con el Asistente cuando estés listo.</p>
-                  <span className={s.e}>Bloc de ideas</span>
+                  <p className={s.explain}>{t.homeExplain}</p>
+                  <span className={s.e}>{t.ideaPad}</span>
                   <div className={`${s.ibox} ${s.k}`}>
                     <div className={`${s.input} ${s.si}`}>
-                      <span className={`${s.ph} ${s.sd} ${s.aPhCycle}`} style={at(0.6, 12)}>Pichón con espuma de café…</span>
+                      <span className={`${s.ph} ${s.sd} ${s.aPhCycle}`} style={at(0.6, 12)}>{t.ideaPlaceholder}</span>
                       <div className={`${s.typed} ${s.sd} ${s.aFadeOut}`} style={at(10.2, 10.8)}>
-                        <span className={`${s.sd} ${s.aWrite}`} style={at(1.2, 4.2)}>Berenjena asada, algo fresco</span>
-                        <span className={`${s.sd} ${s.aWrite}`} style={at(4.2, 7.2)}>y un crujiente al final…</span>
+                        <span className={`${s.sd} ${s.aWrite}`} style={at(1.2, 4.2)}>{t.ideaTyped[0]}</span>
+                        <span className={`${s.sd} ${s.aWrite}`} style={at(4.2, 7.2)}>{t.ideaTyped[1]}</span>
                       </div>
                     </div>
-                    <span className={`${s.save} ${s.sd} ${s.aSaveCycle}`} style={at(6.6, 11.4)}>GUARDAR<span className={`${s.touch} ${s.sd} ${s.aTap}`} style={at(8.1, 10.2)} /></span>
+                    <span className={`${s.save} ${s.sd} ${s.aSaveCycle}`} style={at(6.6, 11.4)}>{t.save}<span className={`${s.touch} ${s.sd} ${s.aTap}`} style={at(8.1, 10.2)} /></span>
                   </div>
-                  <span className={s.e}>Últimas ideas</span>
+                  <span className={s.e}>{t.latestIdeas}</span>
                   <div className={s.ilist}>
                     <div className={`${s.insert} ${s.sd} ${s.aInsert}`} style={at(10.2, 12.6)}>
                       <div className={s.slot}>
                         <div className={`${s.icard} ${s.k}`}>
-                          <div><p className={s.si}>Berenjena asada, algo fresco y un crujiente al final…</p><small>Marta · <span>Llevar al asistente<span className={`${s.touch} ${s.sd} ${s.aTap}`} style={at(13.8, 16.2)} /></span></small></div>
+                          <div><p className={s.si}>{t.idea}</p><small>Marta · <span>{t.takeToAssistant}<span className={`${s.touch} ${s.sd} ${s.aTap}`} style={at(13.8, 16.2)} /></span></small></div>
                           <Icon name="pencil" /><Icon name="bin" />
                         </div>
                       </div>
                     </div>
-                    <div className={s.slot}><div className={`${s.icard} ${s.k}`}><div><p className={s.si}>Pichón, café y zapallo. ¿Para el otoño?</p><small>Diego · Llevar al asistente</small></div><Icon name="pencil" /><Icon name="bin" /></div></div>
-                    <div className={s.slot}><div className={`${s.icard} ${s.k}`}><div><p className={s.si}>Mollejas, cítricos y pimienta larga</p><small>Guadalupe · Llevar al asistente</small></div><Icon name="pencil" /><Icon name="bin" /></div></div>
+                    {t.otherIdeas.map((idea) => (
+                      <div key={idea.text} className={s.slot}><div className={`${s.icard} ${s.k}`}><div><p className={s.si}>{idea.text}</p><small>{idea.author} · {t.takeToAssistant}</small></div><Icon name="pencil" /><Icon name="bin" /></div></div>
+                    ))}
                   </div>
                 </div>
 
                 {/* 2 · Asistente */}
                 <div className={`${s.scr} ${s.scrAsis} ${s.sd} ${s.aScrMid}`} style={at(15.6, 37.2)}>
-                  <div className={s.pinned}><b><Icon name="tag" />Idea anclada</b><span className={s.si}>Berenjena asada, algo fresco y un crujiente al final…</span></div>
-                  <div className={s.modes}><span className={s.mode}>Diario</span><span className={`${s.mode} ${s.modeOn}`}>Creativo</span></div>
+                  <div className={s.pinned}><b><Icon name="tag" />{t.pinnedIdea}</b><span className={s.si}>{t.idea}</span></div>
+                  <div className={s.modes}><span className={s.mode}>{t.modeDaily}</span><span className={`${s.mode} ${s.modeOn}`}>{t.modeCreative}</span></div>
                   <div className={s.chat}>
-                    <div className={`${s.bubble} ${s.sd} ${s.aPop}`} style={at(18.6, 20.4)}><p>Conviértela en un plato para la carta de otoño.</p><small>23:41</small></div>
+                    <div className={`${s.bubble} ${s.sd} ${s.aPop}`} style={at(18.6, 20.4)}><p>{t.prompt}</p><small>23:41</small></div>
                     <div className={s.answer}>
-                      <span className={`${s.e} ${s.sd} ${s.aSlide}`} style={at(21, 22.2)}>Atelier · sugiere</span>
+                      <span className={`${s.e} ${s.sd} ${s.aSlide}`} style={at(21, 22.2)}>{t.suggests}</span>
                       <span className={`${s.bar} ${s.sd} ${s.aSlide}`} style={at(21, 22.2)} />
-                      <h4 className={`${s.sd} ${s.aSlide}`} style={at(22.2, 24)}>Berenjena asada, yogur al limón y almendra tostada</h4>
+                      <h4 className={`${s.sd} ${s.aSlide}`} style={at(22.2, 24)}>{newRecipe.title}</h4>
                       <ul>
-                        <li className={`${s.sd} ${s.aSlide}`} style={at(24, 25.8)}><span className={s.q}>2</span> berenjenas, asadas enteras</li>
-                        <li className={`${s.sd} ${s.aSlide}`} style={at(25.8, 27.6)}><span className={s.q}>250 g</span> de yogur griego al limón</li>
-                        <li className={`${s.sd} ${s.aSlide}`} style={at(27.6, 29.4)}><span className={s.q}>40 g</span> de almendra marcona</li>
-                        <li className={`${s.sd} ${s.aSlide}`} style={at(29.4, 31.2)}>Aceite de oliva y sal en escamas</li>
+                        {answerTimes.map(([from, to], index) => {
+                          const line = t.answerLines[index];
+                          return (
+                            <li key={index} className={`${s.sd} ${s.aSlide}`} style={at(from, to)}>
+                              {line?.quantity ? <><span className={s.q}>{line.quantity}</span> {line.text}</> : line?.text}
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   </div>
-                  <span className={`${s.savepill} ${s.sd} ${s.aPop}`} style={at(31.2, 32.4)}><Icon name="bookmark" />Guardar como receta<span className={`${s.touch} ${s.sd} ${s.aTap}`} style={at(32.4, 34.8)} /></span>
-                  <div className={s.composer}><span className={s.mic}><Icon name="mic" /></span><span className={`${s.field} ${s.k} ${s.si}`}>Escribe o dicta…</span><span className={s.send}><Icon name="send" /></span></div>
+                  <span className={`${s.savepill} ${s.sd} ${s.aPop}`} style={at(31.2, 32.4)}><Icon name="bookmark" />{t.saveRecipe}<span className={`${s.touch} ${s.sd} ${s.aTap}`} style={at(32.4, 34.8)} /></span>
+                  <div className={s.composer}><span className={s.mic}><Icon name="mic" /></span><span className={`${s.field} ${s.k} ${s.si}`}>{t.composer}</span><span className={s.send}><Icon name="send" /></span></div>
                 </div>
 
                 {/* 4 · Recetas, under the detail and revealed when going back */}
                 <div className={`${s.scr} ${s.scrList} ${s.sd} ${s.aScrList}`} style={at(49.2, 62)}>
-                  <div className={`${s.search} ${s.k}`}><Icon name="search" />Buscar receta…</div>
-                  <div className={s.chips}><span className={`${s.chip} ${s.chipOn}`}>Todas</span><span className={s.chip}>Borrador</span><span className={s.chip}>En prueba</span><span className={s.chip}>Aprobadas</span></div>
-                  <div className={`${s.rcard} ${s.k} ${s.sd} ${s.aRing}`} style={at(51.6, 54)}><h5>Berenjena asada, yogur al limón y almendra tostada</h5><div className={s.rmeta}><span className={s.state}>Borrador</span>Marta</div><span className={s.rcost}>Costo/porc. 1,85 €</span><Icon name="bin" /></div>
-                  <div className={`${s.rcard} ${s.k}`}><h5>Pichón, café y zapallo asado</h5><div className={s.rmeta}><span className={s.state}>En prueba</span>Diego</div><span className={s.rcost}>Costo/porc. 4,10 €</span><Icon name="bin" /></div>
-                  <div className={`${s.rcard} ${s.k}`}><h5>Mollejas con cítricos y pimienta larga</h5><div className={s.rmeta}><span className={s.state}>Aprobada</span>Guadalupe</div><span className={s.rcost}>Costo/porc. 3,60 €</span><Icon name="bin" /></div>
+                  <div className={`${s.search} ${s.k}`}><Icon name="search" />{t.searchRecipe}</div>
+                  <div className={s.chips}>{t.filters.map((filter, index) => <span key={filter} className={index === 0 ? `${s.chip} ${s.chipOn}` : s.chip}>{filter}</span>)}</div>
+                  <div className={`${s.rcard} ${s.k} ${s.sd} ${s.aRing}`} style={at(51.6, 54)}><h5>{newRecipe.title}</h5><div className={s.rmeta}><span className={s.state}>{newRecipe.state}</span>Marta</div><span className={s.rcost}>{t.costLabel} {newRecipe.cost}</span><Icon name="bin" /></div>
+                  <div className={`${s.rcard} ${s.k}`}><h5>{triedRecipe.title}</h5><div className={s.rmeta}><span className={s.state}>{triedRecipe.state}</span>Diego</div><span className={s.rcost}>{t.costLabel} {triedRecipe.cost}</span><Icon name="bin" /></div>
+                  <div className={`${s.rcard} ${s.k}`}><h5>{approvedRecipe.title}</h5><div className={s.rmeta}><span className={s.state}>{approvedRecipe.state}</span>Guadalupe</div><span className={s.rcost}>{t.costLabel} {approvedRecipe.cost}</span><Icon name="bin" /></div>
                 </div>
 
                 {/* 3 · Receta guardada (also the static frame when the scroll does not animate) */}
                 <div className={`${s.scr} ${s.scrDetail} ${s.sd} ${s.aScrDetail}`} style={at(34.8, 51.6)}>
-                  <span className={s.back}><Icon name="back" />Recetas</span>
-                  <span className={s.badge}><Icon name="info" />Borrador</span>
-                  <h4 className={s.dtitle}>Berenjena asada, yogur al limón y almendra tostada</h4>
+                  <span className={s.back}><Icon name="back" />{t.tabs.recipes}</span>
+                  <span className={s.badge}><Icon name="info" />{newRecipe.state}</span>
+                  <h4 className={s.dtitle}>{newRecipe.title}</h4>
                   <p className={s.byline}>Marta · v1</p>
                   <div className={`${s.cost} ${s.k} ${s.sd} ${s.aPop}`} style={at(37.2, 39)}>
-                    <span className={s.e}>Costo por porción</span>
-                    <span className={`${s.costNum} ${s.sd} ${s.aCount}`} style={at(39, 42.6)} />
-                    <span className={`${s.costSub} ${s.sd} ${s.aShow}`} style={at(42, 43.2)}>Total: 7,40 €</span>
+                    <span className={s.e}>{t.costPerPortion}</span>
+                    {/* The count-up is a CSS counter; English writes the euro sign first and a decimal point. */}
+                    <span className={`${s.costNum} ${locale === "en" ? s.costNumEn : ""} ${s.sd} ${s.aCount}`} style={at(39, 42.6)} />
+                    <span className={`${s.costSub} ${s.sd} ${s.aShow}`} style={at(42, 43.2)}>{t.costTotal}</span>
                     <div className={`${s.pills} ${s.sd} ${s.aSlide}`} style={at(43.2, 45)}>
-                      <span className={s.pill}><Icon name="people" />4 porciones<Icon name="pencil" /></span>
-                      <span className={s.pill}><Icon name="tag" />Sin precio de venta<Icon name="pencil" /></span>
+                      <span className={s.pill}><Icon name="people" />{t.portions}<Icon name="pencil" /></span>
+                      <span className={s.pill}><Icon name="tag" />{t.noSalePrice}<Icon name="pencil" /></span>
                     </div>
                   </div>
-                  <span className={`${s.e} ${s.sd} ${s.aShow}`} style={at(44.4, 45.6)}>Ingredientes</span>
+                  <span className={`${s.e} ${s.sd} ${s.aShow}`} style={at(44.4, 45.6)}>{t.ingredientsLabel}</span>
                   <ul className={s.ing}>
-                    <li className={`${s.sd} ${s.aSlide}`} style={at(45, 46.2)}><span>Berenjena</span><span>2 u</span></li>
-                    <li className={`${s.sd} ${s.aSlide}`} style={at(45.9, 47.1)}><span>Yogur griego</span><span>250 g</span></li>
-                    <li className={`${s.sd} ${s.aSlide}`} style={at(46.8, 48)}><span>Almendra marcona</span><span>40 g</span></li>
-                    <li className={`${s.sd} ${s.aSlide}`} style={at(47.7, 48.9)}><span>Limón</span><span>1 u</span></li>
+                    {ingredientTimes.map(([from, to], index) => (
+                      <li key={index} className={`${s.sd} ${s.aSlide}`} style={at(from, to)}><span>{t.ingredients[index]?.name}</span><span>{t.ingredients[index]?.quantity}</span></li>
+                    ))}
                   </ul>
                 </div>
 
                 {/* 5 + 6 · Menú, with the house-style preview sheet */}
                 <div className={`${s.scr} ${s.scrMenu} ${s.sd} ${s.aScrTab}`} style={at(58, 90)}>
-                  <div className={s.mtop}><span className={s.service}>EN SERVICIO</span><span className={s.pdfbtn}><Icon name="doc" />PDF</span></div>
-                  <span className={s.e}>Otoño 2026 · 4 platos</span>
-                  <h4 className={`${s.mtitle} ${s.si}`}>Carta de otoño</h4>
+                  <div className={s.mtop}><span className={s.service}>{t.inService}</span><span className={s.pdfbtn}><Icon name="doc" />PDF</span></div>
+                  <span className={s.e}>{t.menuMeta}</span>
+                  <h4 className={`${s.mtitle} ${s.si}`}>{t.menuTitle}</h4>
                   <div className={`${s.chips} ${s.menuChips}`}>
-                    <span className={`${s.chip} ${s.chipOn} ${s.sd} ${s.aChipOff}`} style={at(84, 85.5)}>Elegante</span>
-                    <span className={s.chip}>Rústica</span>
-                    <span className={s.chip}>Minimal</span>
-                    <span className={`${s.chip} ${s.sd} ${s.aChipOn}`} style={at(84, 85.5)}>Tu estilo</span>
+                    <span className={`${s.chip} ${s.chipOn} ${s.sd} ${s.aChipOff}`} style={at(84, 85.5)}>{t.menuStyles[0]}</span>
+                    <span className={s.chip}>{t.menuStyles[1]}</span>
+                    <span className={s.chip}>{t.menuStyles[2]}</span>
+                    <span className={`${s.chip} ${s.sd} ${s.aChipOn}`} style={at(84, 85.5)}>{t.menuStyles[3]}</span>
                     <span className={s.chip}><Icon name="camera" /><span className={`${s.touch} ${s.sd} ${s.aTap}`} style={at(70, 72.4)} /></span>
                   </div>
                   <div className={`${s.section} ${s.k}`}>
-                    <div className={s.sectionTop}><span className={s.e}>1 · Entrantes</span><small>2 platos</small></div>
-                    <div className={s.sectionName}><Icon name="down" /><span>Entrantes</span><Icon name="bin" /></div>
+                    <div className={s.sectionTop}><span className={s.e}>1 · {t.sectionName}</span><small>{t.sectionCount}</small></div>
+                    <div className={s.sectionName}><Icon name="down" /><span>{t.sectionName}</span><Icon name="bin" /></div>
                     <div className={s.dishes}>
                       <div className={`${s.insert} ${s.sd} ${s.aInsert}`} style={at(62, 65)}>
                         <div className={s.slot}>
                           <div className={`${s.dish} ${s.k} ${s.sd} ${s.aRing}`} style={at(64, 66)}>
-                            <div><p>Berenjena asada, yogur al limón y almendra tostada</p><small>DESDE RECETARIO</small></div>
+                            <div><p>{newRecipe.title}</p><small>{t.fromRecipeBook}</small></div>
                             <span className={`${s.price} ${s.sd} ${s.aPop}`} style={at(65.5, 67.5)}><b>14</b><span>€</span></span>
                           </div>
                         </div>
                       </div>
-                      <div className={s.slot}><div className={`${s.dish} ${s.k}`}><div><p>Mollejas con cítricos y pimienta larga</p><small>DESDE RECETARIO</small></div><span className={s.price}><b>16</b><span>€</span></span></div></div>
+                      <div className={s.slot}><div className={`${s.dish} ${s.k}`}><div><p>{approvedRecipe.title}</p><small>{t.fromRecipeBook}</small></div><span className={s.price}><b>16</b><span>€</span></span></div></div>
                     </div>
                   </div>
-                  <span className={s.addsec}><Icon name="plus" />Agregar sección</span>
+                  <span className={s.addsec}><Icon name="plus" />{t.addSection}</span>
 
                   <div className={`${s.scrim} ${s.sd} ${s.aShow}`} style={at(84, 86)} />
                   <div className={`${s.bsheet} ${s.sd} ${s.aSheetUp}`} style={at(84.5, 86.5)}>
                     <span className={s.handle} />
-                    <h5>Revisa tu estilo</h5>
-                    <p>Inspirado en tu carta: colores, letra y disposición.</p>
+                    <h5>{t.reviewStyle}</h5>
+                    <p>{t.styleHint}</p>
                     <div className={s.house}>
-                      <span className={s.houseName}>Carta de otoño</span>
+                      <span className={s.houseName}>{t.menuTitle}</span>
                       <span className={s.houseRule} />
-                      <span className={s.houseSec}>Entrantes</span>
-                      <span className={s.houseRow}><span>Berenjena asada, yogur al limón</span><span /><span>14</span></span>
-                      <span className={s.houseRow}><span>Mollejas con cítricos</span><span /><span>16</span></span>
+                      <span className={s.houseSec}>{t.sectionName}</span>
+                      <span className={s.houseRow}><span>{t.styleRows[0]}</span><span /><span>14</span></span>
+                      <span className={s.houseRow}><span>{t.styleRows[1]}</span><span /><span>16</span></span>
                     </div>
-                    <span className={s.viewpdf}>Ver PDF real</span>
+                    <span className={s.viewpdf}>{t.viewPdf}</span>
                   </div>
                 </div>
 
                 {/* 7 · Casa */}
                 <div className={`${s.scr} ${s.scrCasa} ${s.sd} ${s.aScrLast}`} style={at(87, 89.5)}>
-                  <span className={s.e}>La casa</span>
+                  <span className={s.e}>{t.houseEyebrow}</span>
                   <h4 className={`${s.ctitle} ${s.si}`}>Casa Arenal</h4>
-                  <div className={s.staffHead}><span className={s.e}>Staff</span><span>5</span></div>
+                  <div className={s.staffHead}><span className={s.e}>{t.staff}</span><span>5</span></div>
                   <ul className={s.staff}>
-                    <li className={`${s.sd} ${s.aSlide}`} style={at(89.5, 91, { "--ring": "var(--app-terra)" })}><span className={s.ini}>MF</span><span className={s.who}><span>Marta Ferri</span><span>Admin</span></span></li>
-                    <li className={`${s.sd} ${s.aSlide}`} style={at(90.5, 92, { "--ring": "var(--app-teal)" })}><span className={s.ini}>DC</span><span className={s.who}><span>Diego Conti</span><span>Chef ejecutivo</span></span><Icon name="chev" /></li>
-                    <li className={`${s.sd} ${s.aSlide}`} style={at(91.5, 93)}><span className={s.ini}>GS</span><span className={s.who}><span>Guadalupe Sosa</span><span>Sous-chef</span></span><Icon name="chev" /></li>
-                    <li className={`${s.sd} ${s.aSlide}`} style={at(92.5, 94)}><span className={s.ini}>NF</span><span className={s.who}><span>Nicolás Ferraro</span><span>Sous-chef</span></span><Icon name="chev" /></li>
-                    <li className={`${s.sd} ${s.aSlide}`} style={at(93.5, 95)}><span className={s.ini}>EC</span><span className={s.who}><span>Emiliano Costa</span><span>Lector</span></span><Icon name="chev" /></li>
+                    <li className={`${s.sd} ${s.aSlide}`} style={at(89.5, 91, { "--ring": "var(--app-terra)" })}><span className={s.ini}>MF</span><span className={s.who}><span>Marta Ferri</span><span>{t.roles.admin}</span></span></li>
+                    <li className={`${s.sd} ${s.aSlide}`} style={at(90.5, 92, { "--ring": "var(--app-teal)" })}><span className={s.ini}>DC</span><span className={s.who}><span>Diego Conti</span><span>{t.roles.executiveChef}</span></span><Icon name="chev" /></li>
+                    <li className={`${s.sd} ${s.aSlide}`} style={at(91.5, 93)}><span className={s.ini}>GS</span><span className={s.who}><span>Guadalupe Sosa</span><span>{t.roles.sousChef}</span></span><Icon name="chev" /></li>
+                    <li className={`${s.sd} ${s.aSlide}`} style={at(92.5, 94)}><span className={s.ini}>NF</span><span className={s.who}><span>Nicolás Ferraro</span><span>{t.roles.sousChef}</span></span><Icon name="chev" /></li>
+                    <li className={`${s.sd} ${s.aSlide}`} style={at(93.5, 95)}><span className={s.ini}>EC</span><span className={s.who}><span>Emiliano Costa</span><span>{t.roles.viewer}</span></span><Icon name="chev" /></li>
                   </ul>
-                  <div className={`${s.code} ${s.k} ${s.sd} ${s.aPop}`} style={at(95, 97.5)}><span>Código de invitación</span><b>ARN-4821</b></div>
+                  <div className={`${s.code} ${s.k} ${s.sd} ${s.aPop}`} style={at(95, 97.5)}><span>{t.inviteCode}</span><b>ARN-4821</b></div>
                 </div>
 
-                <div className={`${s.toast} ${s.sd} ${s.aToast}`} style={at(10.5, 14.4)}><Icon name="check" />Idea guardada</div>
-                <div className={`${s.toast} ${s.sd} ${s.aToast}`} style={at(34.2, 39.6)}><Icon name="check" />Receta guardada como borrador</div>
+                <div className={`${s.toast} ${s.sd} ${s.aToast}`} style={at(10.5, 14.4)}><Icon name="check" />{t.ideaSaved}</div>
+                <div className={`${s.toast} ${s.sd} ${s.aToast}`} style={at(34.2, 39.6)}><Icon name="check" />{t.recipeSaved}</div>
               </div>
 
               <div className={s.tabs}>
-                <span className={`${s.tab} ${s.sd} ${s.aTabFirst}`} style={at(0, 18)}><Icon name="note" />Inicio</span>
-                <span className={`${s.tab} ${s.sd} ${s.aTabMid}`} style={at(15.6, 37.2)}><Icon name="chat" />Asistente</span>
-                <span className={`${s.tab} ${s.tabRecetas} ${s.sd} ${s.aTabMid}`} style={at(34.8, 61)}><Icon name="book" />Recetas</span>
-                <span className={`${s.tab} ${s.sd} ${s.aTabMid}`} style={at(58, 89.5)}><Icon name="list" />Menús</span>
-                <span className={`${s.tab} ${s.sd} ${s.aTabLast}`} style={at(86.5, 88)}><Icon name="house" />Casa</span>
+                <span className={`${s.tab} ${s.sd} ${s.aTabFirst}`} style={at(0, 18)}><Icon name="note" />{t.tabs.home}</span>
+                <span className={`${s.tab} ${s.sd} ${s.aTabMid}`} style={at(15.6, 37.2)}><Icon name="chat" />{t.tabs.assistant}</span>
+                <span className={`${s.tab} ${s.tabRecetas} ${s.sd} ${s.aTabMid}`} style={at(34.8, 61)}><Icon name="book" />{t.tabs.recipes}</span>
+                <span className={`${s.tab} ${s.sd} ${s.aTabMid}`} style={at(58, 89.5)}><Icon name="list" />{t.tabs.menus}</span>
+                <span className={`${s.tab} ${s.sd} ${s.aTabLast}`} style={at(86.5, 88)}><Icon name="house" />{t.tabs.house}</span>
               </div>
 
               {/* 6 · Camera, over the whole screen */}
               <div className={`${s.cam} ${s.sd} ${s.aCam}`} style={at(72, 84)}>
                 <div className={s.camMsg}>
-                  <span className={`${s.sd} ${s.aFadeOut}`} style={at(76.5, 77.5)}>Encuadra tu carta</span>
-                  <span className={`${s.sd} ${s.aShow}`} style={at(77.5, 78.5)}>Analizando tu carta…</span>
+                  <span className={`${s.sd} ${s.aFadeOut}`} style={at(76.5, 77.5)}>{t.frameMenu}</span>
+                  <span className={`${s.sd} ${s.aShow}`} style={at(77.5, 78.5)}>{t.analyzingMenu}</span>
                 </div>
                 <div className={s.finder}>
                   <div className={s.photo}>
                     <span className={s.houseName}>Casa Arenal</span>
                     <span className={s.houseRule} />
-                    <span className={s.houseSec}>Entrantes</span>
-                    <span className={s.houseRow}><span>Croquetas de jamón</span><span /><span>9</span></span>
-                    <span className={s.houseRow}><span>Ensaladilla de la casa</span><span /><span>11</span></span>
-                    <span className={s.houseRow}><span>Alcachofas confitadas</span><span /><span>13</span></span>
-                    <span className={s.houseSec}>Principales</span>
-                    <span className={s.houseRow}><span>Arroz de pato</span><span /><span>22</span></span>
-                    <span className={s.houseRow}><span>Merluza a la brasa</span><span /><span>24</span></span>
-                    <span className={s.houseRow}><span>Carrillera al vino tinto</span><span /><span>21</span></span>
-                    <span className={s.houseSec}>Postres</span>
-                    <span className={s.houseRow}><span>Torrija caramelizada</span><span /><span>8</span></span>
+                    {t.scannedMenu.map((group) => [
+                      <span key={group.section} className={s.houseSec}>{group.section}</span>,
+                      ...group.rows.map((row) => <span key={row.name} className={s.houseRow}><span>{row.name}</span><span /><span>{row.price}</span></span>),
+                    ])}
                   </div>
                   <span className={`${s.scanline} ${s.sd} ${s.aScan}`} style={at(77.5, 81.5)} />
                 </div>
                 <span className={s.shutter}><span className={`${s.touch} ${s.sd} ${s.aTap}`} style={at(75, 77)} /></span>
                 <span className={`${s.flash} ${s.sd} ${s.aFlash}`} style={at(76.4, 77.6)} />
               </div>
-              <div className={`${s.toast} ${s.toastHigh} ${s.sd} ${s.aToast}`} style={at(83.5, 88)}><Icon name="check" />Estilo de la casa creado a partir de tu carta</div>
+              <div className={`${s.toast} ${s.toastHigh} ${s.sd} ${s.aToast}`} style={at(83.5, 88)}><Icon name="check" />{t.styleCreated}</div>
               <span className={s.homebar} />
             </div>
           </figure>

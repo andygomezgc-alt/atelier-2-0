@@ -26,6 +26,10 @@
 .navigation a { display: inline-flex; align-items: center; min-height: 44px; text-decoration: none; }
 .navigation a:hover { text-decoration: underline; }
 .navCta { gap: 10px; border-bottom: 1px solid var(--teal); }
+/* Language switcher: quiet, the current language in teal and underlined */
+.languages { display: flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 600; letter-spacing: 1.4px; color: var(--muted); }
+.languages a { justify-content: center; min-width: 32px; min-height: 44px; }
+.languages a[aria-current="page"] { color: var(--teal); text-decoration: underline; text-decoration-thickness: 1px; }
 .eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--accent); font-size: 12px; font-weight: 600; letter-spacing: 1.8px; text-transform: uppercase; margin-bottom: 24px !important; }
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 2px; }
 
@@ -119,9 +123,12 @@
 }
 @media (max-width: 680px) {
   .header, .hero, .moreSection, .planSection, .faq, .pilot, .footer { width: calc(100% - 40px); }
-  .header { padding-block: 16px; }
+  .header { padding-block: 16px; gap: 12px; }
   .navigation > a:not(.navCta) { display: none; }
-  .navigation { font-size: 13px; }
+  .navigation { font-size: 13px; gap: 12px; }
+  .wordmark { font-size: 28px; }
+  .languages { letter-spacing: 1px; }
+  .languages a { min-width: 26px; }
   .hero { padding-block: 44px 40px; }
   .heroFoot { grid-template-columns: 1fr; }
   .intro { font-size: 16px; }

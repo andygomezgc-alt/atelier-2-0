@@ -12,6 +12,7 @@ const pages = [
   "cuenta/eliminar/page.tsx",
   "../components/pilot-landing.tsx",
   "../components/landing-story.tsx",
+  "../components/landing-copy.ts",
 ];
 
 // The forms these pages used, the common ones, and the actions these pages talk about
