@@ -944,4 +944,5 @@ export const en: EsDict = {
   invoice_apply_already: "This invoice was already applied.",
   invoice_skipped_product_deleted: "{line}: not applied, the product had been deleted.",
   invoice_skipped_newer_price: "{line}: not applied, it already had a newer price.",
+  producto_tax_label: "VAT",
 };

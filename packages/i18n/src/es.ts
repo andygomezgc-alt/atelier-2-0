@@ -976,6 +976,7 @@ export const es = {
   invoice_apply_already: "Esta factura ya estaba aplicada.",
   invoice_skipped_product_deleted: "{line}: no se aplicó, el producto se había borrado.",
   invoice_skipped_newer_price: "{line}: no se aplicó, ya tenía un precio más reciente.",
+  producto_tax_label: "IVA",
 } as const;
 
 // Each translation maps a key to a string. Values are not pinned as

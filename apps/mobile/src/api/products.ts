@@ -46,6 +46,8 @@ export type PriceHistoryEntry = {
   unidadCompra: ProductUnit;
   createdAt: string;
   author: { id: string; name: string } | null;
+  // The invoice line this price came from, when it came from an invoice.
+  invoiceId?: string | null;
 };
 
 export type YieldTestEntry = {

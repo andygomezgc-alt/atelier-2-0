@@ -945,4 +945,5 @@ export const it: EsDict = {
   invoice_apply_already: "Questa fattura era già applicata.",
   invoice_skipped_product_deleted: "{line}: non applicata, il prodotto era stato eliminato.",
   invoice_skipped_newer_price: "{line}: non applicata, aveva già un prezzo più recente.",
+  producto_tax_label: "IVA",
 };
