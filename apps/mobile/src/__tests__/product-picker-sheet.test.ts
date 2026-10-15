@@ -4,7 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 const h = vi.hoisted(() => ({ list: vi.fn(), pick: vi.fn() }));
 vi.mock("react-native", () => ({
-  Pressable: "Pressable", Text: "Text", TextInput: "TextInput", View: "View", StyleSheet: { create: (styles: unknown) => styles },
+  Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", TextInput: "TextInput", View: "View", StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: "android", select: (o: Record<string, unknown>) => o.android ?? o.default },
 }));
 vi.mock("@/src/hooks/useI18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
@@ -38,6 +38,15 @@ describe("ProductPickerSheet", () => {
     const row = sheet.root.findAllByType("Pressable" as never).find((n) => n.props.accessibilityLabel === "Zucchine trombetta");
     await act(async () => { row?.props.onPress(); });
     expect(h.pick).toHaveBeenCalledWith("p2");
+  });
+
+  it("keeps every result reachable: rows scroll and taps work with the keyboard open", async () => {
+    await type("zucc");
+    const list = sheet.root.findByType("ScrollView" as never);
+    expect(list.props.keyboardShouldPersistTaps).toBe("handled");
+    const rows = sheet.root.findAllByType("Pressable" as never);
+    expect(rows).toHaveLength(2);
+    expect(list.findAllByType("Pressable" as never)).toHaveLength(2);
   });
 
   it("does not search for a single letter, and says when nothing matches", async () => {

@@ -1,6 +1,6 @@
 // Search the bank and pick the product an invoice line goes to.
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput } from "react-native";
 import { listProducts, type Product } from "@/src/api/products";
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { useI18n } from "@/src/hooks/useI18n";
@@ -43,12 +43,14 @@ export function ProductPickerSheet({ open, onPick, onClose }: Props) {
         autoCorrect={false}
         style={styles.input}
       />
-      {results && results.length === 0 ? <Text style={styles.empty}>{t("invoice_picker_empty")}</Text> : null}
-      {results?.map((product) => (
-        <Pressable key={product.id} accessibilityRole="button" accessibilityLabel={product.name} style={styles.row} onPress={() => onPick(product.id)}>
-          <Text style={styles.name}>{product.name}</Text>
-        </Pressable>
-      ))}
+      <ScrollView keyboardShouldPersistTaps="handled" style={styles.list}>
+        {results && results.length === 0 ? <Text style={styles.empty}>{t("invoice_picker_empty")}</Text> : null}
+        {results?.map((product) => (
+          <Pressable key={product.id} accessibilityRole="button" accessibilityLabel={product.name} style={styles.row} onPress={() => onPick(product.id)}>
+            <Text style={styles.name}>{product.name}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
     </BottomSheet>
   );
 }
@@ -60,6 +62,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginBottom: spacing.sm,
   },
   empty: { fontFamily: fonts.sans, fontSize: fontSizes.body, color: colors.mute, paddingVertical: spacing.md },
+  list: { flexGrow: 0 },
   row: { paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.edgeSoft },
   name: { fontFamily: fonts.sans, fontSize: fontSizes.bodyLg, color: colors.ink },
 });
