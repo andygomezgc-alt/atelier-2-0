@@ -929,6 +929,22 @@ export const es = {
   invoice_scan_remove_page: "Quitar",
   invoice_scan_partial: "{failed} de {total} facturas no se enviaron. Vuelve a intentarlo.",
   invoice_scan_prepare_failed: "No se pudo preparar el archivo. Inténtalo de nuevo.",
+  invoice_line_new_product: "Producto nuevo",
+  invoice_line_tax: "IVA {rate} %",
+  invoice_line_change: "Cambiar",
+  invoice_line_confirm_big_change: "Confirmar cambio del {pct} %",
+  invoice_line_choose: "Elegir producto",
+  invoice_line_choose_other: "Elegir otro producto",
+  invoice_line_probable_title: "¿Es este producto?",
+  invoice_line_probable_body: "Si lo confirmas, la próxima factura de este proveedor lo reconocerá sola.",
+  invoice_line_probable_yes: "Sí, es este",
+  invoice_line_probable_no: "No, elegir otro",
+  invoice_line_variant_title: "¿Cuál de estos?",
+  invoice_line_variant_body: "Hay varios productos parecidos en el banco.",
+  invoice_line_variant_none: "Ninguno: crear producto",
+  invoice_warning_quantity: "Revisa la cantidad: podría estar mal leída.",
+  invoice_picker_search: "Buscar en el banco",
+  invoice_picker_empty: "Ningún producto con ese nombre.",
 } as const;
 
 // Each translation maps a key to a string. Values are not pinned as
