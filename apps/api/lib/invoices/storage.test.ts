@@ -1,9 +1,9 @@
 // apps/api/lib/invoices/storage.test.ts
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const { blob } = vi.hoisted(() => ({ blob: { put: vi.fn(), get: vi.fn(), del: vi.fn() } }));
+const { blob } = vi.hoisted(() => ({ blob: { put: vi.fn(), get: vi.fn(), del: vi.fn(), list: vi.fn() } }));
 vi.mock("@vercel/blob", () => blob);
 vi.mock("../logger", () => ({ logger: { warn: vi.fn(), error: vi.fn() } }));
-import { deleteInvoiceFiles, readInvoiceFile, storeInvoiceFile } from "./storage";
+import { deleteInvoiceFiles, deleteRestaurantInvoiceFiles, readInvoiceFile, storeInvoiceFile } from "./storage";
 
 beforeEach(() => {
   vi.stubEnv("BLOB_READ_WRITE_TOKEN", "shared");
@@ -50,5 +50,25 @@ describe("invoice storage", () => {
     await expect(deleteInvoiceFiles(["invoices/r1/inv1/a.jpg"])).resolves.toBeUndefined();
     await deleteInvoiceFiles([]);
     expect(blob.del).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("deleteRestaurantInvoiceFiles", () => {
+  it("deletes every page under the restaurant's prefix, page by page", async () => {
+    blob.list
+      .mockResolvedValueOnce({ blobs: [{ pathname: "invoices/r1/a/1.jpg" }], hasMore: true, cursor: "c1" })
+      .mockResolvedValueOnce({ blobs: [{ pathname: "invoices/r1/b/2.pdf" }], hasMore: false });
+    await deleteRestaurantInvoiceFiles("r1");
+    expect(blob.list).toHaveBeenNthCalledWith(1, expect.objectContaining({ prefix: "invoices/r1/", cursor: undefined }));
+    expect(blob.list).toHaveBeenNthCalledWith(2, expect.objectContaining({ prefix: "invoices/r1/", cursor: "c1" }));
+    expect(blob.del.mock.calls.map((c) => c[0])).toEqual([["invoices/r1/a/1.jpg"], ["invoices/r1/b/2.pdf"]]);
+  });
+
+  it("never throws, not even without a token", async () => {
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "");
+    await expect(deleteRestaurantInvoiceFiles("r1")).resolves.toBeUndefined();
+    blob.list.mockRejectedValue(new Error("down"));
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "shared");
+    await expect(deleteRestaurantInvoiceFiles("r1")).resolves.toBeUndefined();
   });
 });

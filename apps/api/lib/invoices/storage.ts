@@ -2,7 +2,7 @@
 // Invoice photos and PDFs are private (spec "Errors → Privacy"): stored with access "private" and
 // read back only by authenticated routes. Keys are never sent to clients.
 import { randomUUID } from "node:crypto";
-import { del, get, put } from "@vercel/blob";
+import { del, get, list, put } from "@vercel/blob";
 import { logger } from "../logger";
 
 export class InvoiceStorageError extends Error {}
@@ -46,5 +46,21 @@ export async function deleteInvoiceFiles(storageKeys: ReadonlyArray<string>): Pr
     await del([...storageKeys], { token: token() });
   } catch (error) {
     logger.warn("invoice_storage_delete_failed", { count: storageKeys.length, message: message(error) });
+  }
+}
+
+// Every invoice file of a restaurant that is being deleted. Its rows cascade from Restaurant;
+// the files are found by their key prefix. Never throws: account deletion must finish.
+export async function deleteRestaurantInvoiceFiles(restaurantId: string): Promise<void> {
+  try {
+    const auth = token();
+    let cursor: string | undefined;
+    do {
+      const page = await list({ prefix: `invoices/${restaurantId}/`, cursor, token: auth });
+      if (page.blobs.length > 0) await del(page.blobs.map((b) => b.pathname), { token: auth });
+      cursor = page.hasMore ? page.cursor : undefined;
+    } while (cursor);
+  } catch (error) {
+    logger.warn("invoice_storage_restaurant_delete_failed", { restaurantId, message: message(error) });
   }
 }
