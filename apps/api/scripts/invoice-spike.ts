@@ -29,7 +29,7 @@ import { extname, join } from "node:path";
 })();
 
 import { extractInvoicePage } from "../lib/invoices/extraction";
-import { checkTotals } from "../lib/invoices/totals";
+import { checkInvoiceTotals } from "../lib/invoices/totals";
 
 const MIME: Record<string, string> = {
   ".pdf": "application/pdf",
@@ -48,7 +48,7 @@ async function main() {
     const started = Date.now();
     try {
       const page = await extractInvoicePage(readFileSync(join(dir, file)), MIME[extname(file).toLowerCase()]!);
-      const totals = checkTotals(page.lines.map((l) => l.lineTotalCents), page.netTotalCents);
+      const totals = checkInvoiceTotals(page.lines, page);
       const withTax = page.lines.filter((l) => l.taxRatePct !== null).length;
       console.log(
         `${file}: ${page.supplierName ?? "?"} #${page.invoiceNumber ?? "?"} ${page.invoiceDate ?? "?"} | ` +
