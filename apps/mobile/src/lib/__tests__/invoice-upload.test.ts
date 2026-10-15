@@ -34,9 +34,10 @@ describe("sendInvoice", () => {
   });
 
   it("a failed clean-up never hides the real error", async () => {
-    h.read.mockRejectedValueOnce(new Error("offline"));
-    h.remove.mockRejectedValueOnce(new Error("still offline"));
-    await expect(sendInvoice([jpg(1)])).rejects.toThrow("offline");
+    h.read.mockRejectedValueOnce(new Error("read failed"));
+    h.remove.mockRejectedValueOnce(new Error("cleanup failed"));
+    await expect(sendInvoice([jpg(1)])).rejects.toMatchObject({ message: "read failed" });
+    expect(h.remove).toHaveBeenCalledWith("inv1");
   });
 });
 
