@@ -57,3 +57,17 @@ export const invoiceLinePatchSchema = z.object({
   priceCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
 });
 export type InvoiceLinePatch = z.infer<typeof invoiceLinePatchSchema>;
+
+// The chef's corrections to what was read in the header. The supplier is either one that
+// already exists (supplierId) or a typed name (created on first use), never both.
+export const invoiceHeaderPatchSchema = z
+  .object({
+    supplierId: z.string().min(1).max(100).optional(),
+    supplierName: z.string().trim().min(1).max(200).optional(),
+    number: z.string().trim().max(60).nullable().optional(),
+    issuedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  })
+  .refine((b) => b.supplierId === undefined || b.supplierName === undefined, {
+    message: "Send supplierId or supplierName, not both",
+  });
+export type InvoiceHeaderPatch = z.infer<typeof invoiceHeaderPatchSchema>;

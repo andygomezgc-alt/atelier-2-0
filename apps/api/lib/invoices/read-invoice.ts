@@ -7,7 +7,8 @@ import { recordAiTokens, reserveAiCall } from "../ai-quota";
 import { AiBudgetError } from "../ai/budget-policy";
 import { logger } from "../logger";
 import { extractInvoicePage, InvoiceExtractionError, type ExtractedInvoicePage } from "./extraction";
-import { normalizeSupplierName, type SecondLook } from "./line-matching";
+import { plausibleDate, upsertSupplier } from "./header";
+import { type SecondLook } from "./line-matching";
 import { proposeInvoiceLines } from "./propose";
 import { secondLook } from "./second-look";
 import { InvoiceStorageError, readInvoiceFile } from "./storage";
@@ -36,37 +37,6 @@ function reasonFor(error: unknown): InvoiceFailureReason {
 
 async function markFailed(invoiceId: string, reason: InvoiceFailureReason) {
   await prisma.invoice.updateMany({ where: { id: invoiceId, status: "reading" }, data: { status: "failed", failureReason: reason } });
-}
-
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-// A misread date ("2026-13-10", "2026-02-31") would fail the save, and a future one would date
-// the price ahead and freeze it: such a date is dropped and the upload day is used instead.
-function plausibleDate(raw: string | null, uploadedAt: Date): string | null {
-  if (!raw || !DATE.test(raw)) return null;
-  const date = new Date(`${raw}T00:00:00Z`);
-  if (Number.isNaN(+date) || date.toISOString().slice(0, 10) !== raw) return null;
-  return +date <= +uploadedAt + DAY_MS ? raw : null;
-}
-
-async function upsertSupplier(restaurantId: string, name: string | null, taxId: string | null): Promise<string | null> {
-  const nameNorm = normalizeSupplierName(name ?? "");
-  if (!name || nameNorm === "") return null;
-  try {
-    const supplier = await prisma.supplier.upsert({
-      where: { restaurantId_nameNorm: { restaurantId, nameNorm } },
-      create: { restaurantId, name: name.trim(), nameNorm, taxId },
-      update: taxId ? { taxId } : {},
-      select: { id: true },
-    });
-    return supplier.id;
-  } catch (error) {
-    // Two reads of the same new supplier race on the unique key: the loser reuses the winner's row.
-    if ((error as { code?: unknown }).code !== "P2002") throw error;
-    const existing = await prisma.supplier.findUnique({ where: { restaurantId_nameNorm: { restaurantId, nameNorm } }, select: { id: true } });
-    return existing?.id ?? null;
-  }
 }
 
 export async function readInvoice(invoiceId: string, deadline: number): Promise<void> {
