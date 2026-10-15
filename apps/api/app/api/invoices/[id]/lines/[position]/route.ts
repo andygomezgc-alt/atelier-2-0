@@ -1,6 +1,7 @@
 // apps/api/app/api/invoices/[id]/lines/[position]/route.ts
 // The chef's decision on one line of an invoice under review. Fenced on the invoice still
 // being in review, so nothing changes on an invoice applied meanwhile.
+// Ignore keeps product and price so it can be undone; apply skips ignored lines.
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { invoiceLinePatchSchema } from "@atelier/shared";
@@ -33,7 +34,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (line.invoice.status !== "review") return fail(409, "invoice_not_in_review", "The invoice is not in review");
 
   const priced = { ...line, quantity: num(line.quantity), packQty: num(line.packQty) };
-  let productId: string | null = null;
+  // Ignoring keeps the proposal on the line, so choosing "update price" again brings it back.
+  let productId: string | null = body.action === "ignore" ? line.productId : null;
   let price = body.priceCents !== undefined ? body.priceCents : line.appliedPriceCents;
   let matchLevel = line.matchLevel;
 
@@ -53,7 +55,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const unit = draftUnitFor(priced);
     price = unit ? priceInBankUnit(priced, unit) : null;
   }
-  if (body.action === "ignore") price = null;
   if (body.action === "update_price" && price === null) return fail(400, "price_required", "Enter a price");
 
   const data = { action: body.action, productId, appliedPriceCents: price, matchLevel };

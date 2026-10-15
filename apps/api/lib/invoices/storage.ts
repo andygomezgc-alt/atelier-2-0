@@ -30,7 +30,15 @@ export async function storeInvoiceFile(restaurantId: string, invoiceId: string, 
 }
 
 export async function openInvoiceFile(storageKey: string): Promise<{ stream: ReadableStream<Uint8Array>; contentType: string } | null> {
-  const result = await get(storageKey, { access: "private", token: token() });
+  const auth = token();
+  let result: Awaited<ReturnType<typeof get>>;
+  try {
+    result = await get(storageKey, { access: "private", token: auth });
+  } catch (error) {
+    if (error instanceof Error && error.name === "BlobNotFoundError") return null;
+    logger.error("invoice_storage_get_failed", { message: message(error) });
+    throw new InvoiceStorageError("invoice_storage_unavailable");
+  }
   if (!result || result.statusCode !== 200) return null;
   return { stream: result.stream, contentType: result.blob.contentType };
 }

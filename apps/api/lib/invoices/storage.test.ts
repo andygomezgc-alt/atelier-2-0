@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { blob } = vi.hoisted(() => ({ blob: { put: vi.fn(), get: vi.fn(), del: vi.fn(), list: vi.fn() } }));
 vi.mock("@vercel/blob", () => blob);
 vi.mock("../logger", () => ({ logger: { warn: vi.fn(), error: vi.fn() } }));
-import { deleteInvoiceFiles, deleteRestaurantInvoiceFiles, readInvoiceFile, storeInvoiceFile } from "./storage";
+import { deleteInvoiceFiles, deleteRestaurantInvoiceFiles, InvoiceStorageError, openInvoiceFile, readInvoiceFile, storeInvoiceFile } from "./storage";
 
 beforeEach(() => {
   vi.stubEnv("BLOB_READ_WRITE_TOKEN", "shared");
@@ -43,6 +43,17 @@ describe("invoice storage", () => {
     blob.get.mockResolvedValueOnce(null);
     expect(await readInvoiceFile("invoices/r1/inv1/b.jpg")).toBeNull();
     expect(blob.get).toHaveBeenCalledWith("invoices/r1/inv1/a.jpg", expect.objectContaining({ access: "private" }));
+  });
+
+  it("a storage outage while reading becomes invoice_storage_unavailable", async () => {
+    blob.get.mockRejectedValue(new Error("fetch failed"));
+    await expect(openInvoiceFile("k")).rejects.toThrow(InvoiceStorageError);
+    await expect(readInvoiceFile("k")).rejects.toMatchObject({ message: "invoice_storage_unavailable" });
+  });
+
+  it("a file the store does not have is simply missing", async () => {
+    blob.get.mockRejectedValue(Object.assign(new Error("not found"), { name: "BlobNotFoundError" }));
+    expect(await readInvoiceFile("k")).toBeNull();
   });
 
   it("deleting never throws", async () => {

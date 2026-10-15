@@ -21,6 +21,7 @@ vi.mock("@/lib/recipes/extraction-pipeline", () => pipeline);
 vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), after }));
 
+import { InvoiceStorageError } from "@/lib/invoices/storage";
 import { GET as list } from "../route";
 import { GET as detail, DELETE as remove } from "../[id]/route";
 import { GET as pageFile } from "../[id]/pages/[position]/route";
@@ -129,6 +130,14 @@ describe("GET /api/invoices/[id]/pages/[position]", () => {
   it.each([["x"], ["-1"], ["1.5"]])("rejects position %j", async (position) => {
     expect((await pageFile(req(), params({ id: "inv1", position }))).status).toBe(404);
     expect(db.invoicePage.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("a storage outage is 503, not a crash", async () => {
+    db.invoicePage.findFirst.mockResolvedValue({ storageKey: "k" });
+    storage.openInvoiceFile.mockRejectedValue(new InvoiceStorageError("invoice_storage_unavailable"));
+    const res = await pageFile(req(), params({ id: "inv1", position: "0" }));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ code: "invoice_storage_unavailable" });
   });
 
   it("a file gone from storage is 404", async () => {

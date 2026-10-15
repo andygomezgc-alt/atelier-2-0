@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
-import { openInvoiceFile } from "@/lib/invoices/storage";
+import { InvoiceStorageError, openInvoiceFile } from "@/lib/invoices/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     select: { storageKey: true },
   });
   if (!page) return notFound();
-  const file = await openInvoiceFile(page.storageKey);
+  let file: Awaited<ReturnType<typeof openInvoiceFile>>;
+  try {
+    file = await openInvoiceFile(page.storageKey);
+  } catch (error) {
+    if (!(error instanceof InvoiceStorageError)) throw error;
+    return NextResponse.json({ error: "Invoice storage unavailable", code: "invoice_storage_unavailable" }, { status: 503 });
+  }
   if (!file) return notFound();
   return new Response(file.stream, { headers: { "Content-Type": file.contentType, "Cache-Control": "private, no-store" } });
 }

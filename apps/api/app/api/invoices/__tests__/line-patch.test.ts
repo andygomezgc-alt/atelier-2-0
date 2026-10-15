@@ -85,9 +85,9 @@ describe("PATCH /api/invoices/[id]/lines/[position]", () => {
     expect(written().data).toEqual({ action: "create_draft", productId: null, appliedPriceCents: 1100, matchLevel: "probable" });
   });
 
-  it("ignoring clears product and price", async () => {
+  it("ignoring keeps product and price, so the chef can take it back", async () => {
     await patch({ action: "ignore" });
-    expect(written().data).toEqual({ action: "ignore", productId: null, appliedPriceCents: null, matchLevel: "probable" });
+    expect(written().data).toEqual({ action: "ignore", productId: "p1", appliedPriceCents: 1100, matchLevel: "probable" });
   });
 
   it("an invoice no longer in review is refused, also when it changed meanwhile", async () => {
