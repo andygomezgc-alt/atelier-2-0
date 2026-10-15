@@ -98,7 +98,7 @@ Un **webhook** es un aviso automático: cada vez que pasa algo importante en Str
 2. En **"Endpoint URL"** pegá exactamente:
 
    ```
-   https://atelier-2-0-mu.vercel.app/api/stripe/webhook
+   https://ateliercocina.com/api/stripe/webhook
    ```
 
 3. En la lista de eventos a escuchar, buscá y marcá estos tres:
@@ -137,5 +137,5 @@ Si el cliente es una empresa italiana (B2B) y necesita **fattura elettronica** c
 - [ ] Cuenta de Stripe creada y verificada (pagos activados)
 - [ ] Productos creados: **Atelier Pro** (49€/mes) y **Atelier Socio Fundador** (24,50€/mes)
 - [ ] Payment Link del Fundador armado, con `?client_reference_id=cmq7wxcnh00017kvgdqueol5l` pegado al final, y mandado a Kokoo
-- [ ] Webhook configurado en `https://atelier-2-0-mu.vercel.app/api/stripe/webhook` con los 3 eventos
+- [ ] Webhook configurado en `https://ateliercocina.com/api/stripe/webhook` con los 3 eventos
 - [ ] Signing secret (`whsec_...`) copiado y pegado a Claude en el chat
