@@ -54,7 +54,10 @@ export function InvoiceLineCard({ line, readOnly, onPatch, onChooseProduct }: Pr
       <Text style={styles.paper}>{line.description}</Text>
       {meta ? <Text style={styles.meta}>{meta}</Text> : null}
       <Text style={styles.product}>{product ? product.name : t("invoice_line_new_product")}</Text>
-      {change && line.action !== "create_draft" ? (
+      {readOnly ? (
+        // The product's price today is not the one before the invoice: show only what was set.
+        line.action === "update_price" && line.appliedPriceCents !== null ? <Text style={styles.price}>{formatEuros(line.appliedPriceCents)}</Text> : null
+      ) : change && (line.action === null || line.action === "update_price") ? (
         <Text style={styles.price}>{`${formatEuros(change.beforeCents)} → ${formatEuros(change.afterCents)} (${change.pct > 0 ? "+" : ""}${change.pct} %)`}</Text>
       ) : null}
       {!readOnly && (line.action === "update_price" || line.action === "create_draft") ? (

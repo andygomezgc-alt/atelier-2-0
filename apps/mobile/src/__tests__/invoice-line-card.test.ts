@@ -103,6 +103,32 @@ describe("InvoiceLineCard", () => {
     expect(card.root.findAllByType("StatusBadge" as never).map((n) => n.props.label)).toContain("invoice_warning_quantity");
   });
 
+  it("an applied update line shows the price it set, not a comparison with today", async () => {
+    await render(line({ product: { id: "p1", name: "Zucchine", unidadCompra: "kg", precioCompra: 180, taxRatePct: 4 } }), true);
+    expect(texts()).toContain("1,80 €");
+    expect(texts().some((x) => x.includes("→"))).toBe(false);
+  });
+
+  it("an applied connect or ignore line shows no price at all", async () => {
+    for (const action of ["connect", "ignore"] as const) {
+      await render(line({ action }), true);
+      expect(texts()).not.toContain("1,80 €");
+      expect(texts().some((x) => x.includes("→"))).toBe(false);
+      await act(async () => { card.unmount(); });
+    }
+  });
+
+  it("in review only a price update and an undecided line show the arrow", async () => {
+    await render(line({ action: "connect" }));
+    expect(texts().some((x) => x.includes("→"))).toBe(false);
+    await act(async () => { card.unmount(); });
+    await render(line({ action: "update_price" }));
+    expect(texts().some((x) => x.includes("→"))).toBe(true);
+    await act(async () => { card.unmount(); });
+    await render(line({ action: null }));
+    expect(texts().some((x) => x.includes("→"))).toBe(true);
+  });
+
   it("an applied invoice only shows what was done", async () => {
     await render(line(), true);
     expect(card.root.findAllByType("Button" as never)).toHaveLength(0);
