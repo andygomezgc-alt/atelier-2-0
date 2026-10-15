@@ -144,7 +144,7 @@ export function PilotLanding() {
           <div className={styles.questions}>
             <details><summary>¿Puedo usarlo en iPhone y Android?</summary><p>Sí. En el piloto, iPhone utiliza TestFlight y Android se instala mediante un APK. Al solicitar acceso te indicaremos cómo instalarlo.</p></details>
             <details><summary>¿Cómo entra mi equipo?</summary><p>Quien crea el restaurante lo administra y puede compartir su código de acceso. Cada persona entra con su propia cuenta y trabaja en el mismo espacio del restaurante.</p></details>
-            <details><summary>¿La IA tiene límites?</summary><p>Sí. Durante el piloto, cada chef dispone de 140 mensajes cotidianos y 8 creativos por periodo de siete días. El piloto también tiene un presupuesto compartido; puedes consultar la disponibilidad en la app. Los límites del futuro plan se confirmarán antes de contratar.</p></details>
+            <details><summary>¿La IA tiene límites?</summary><p>Sí. Durante el piloto, cada chef dispone de 140 mensajes cotidianos y 15 creativos por periodo de siete días. El piloto también tiene un presupuesto compartido; puedes consultar la disponibilidad en la app. Los límites del futuro plan se confirmarán antes de contratar.</p></details>
             <details><summary>¿Solicitar acceso inicia una suscripción?</summary><p>No. El botón abre un correo para pedir acceso al piloto. No inicia una suscripción ni solicita una tarjeta. Antes de abrir los pagos explicaremos cómo cancelar y qué ocurre con tus recetas.</p></details>
           </div>
         </section>

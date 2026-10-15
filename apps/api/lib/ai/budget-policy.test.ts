@@ -16,20 +16,20 @@ describe("pilot policy", () => {
       ["2026-08-31T23:59:00Z", "2026-09-01T00:00:00Z"],
     ]) {
       const daily = Array.from({ length: 140 }, () => new Date(before!));
-      const creative = daily.slice(0, 8);
+      const creative = daily.slice(0, 15);
       expect(() => allowance(task, daily, creative, new Date(after!))).toThrow(task === "daily" ? "ai_daily_weekly_limit" : "ai_creative_limit");
     }
   });
-  it("permits eight Creative responses together, independently of Daily", () => {
+  it("permits fifteen Creative responses together, independently of Daily", () => {
     const daily = Array.from({ length: 140 }, () => now);
-    const dates = Array.from({ length: 7 }, () => new Date(+now - 1000));
+    const dates = Array.from({ length: 14 }, () => new Date(+now - 1000));
     const value = allowance("creative", daily, dates, now);
-    expect(value.creativeAt).toHaveLength(8); expect(value.dailyAt).toEqual(daily);
+    expect(value.creativeAt).toHaveLength(15); expect(value.dailyAt).toEqual(daily);
     expect(() => allowance("creative", value.dailyAt, value.creativeAt, now)).toThrow("ai_creative_limit");
     expect(allowance("daily", [], value.creativeAt, now).dailyAt).toHaveLength(1);
   });
   it.each(["daily", "creative"] as const)("recovers a %s slot exactly seven days after use, preserving newer uses", task => {
-    const limit = task === "daily" ? 140 : 8;
+    const limit = task === "daily" ? 140 : 15;
     const dates = [...Array.from({ length: limit - 1 }, () => now), new Date("2026-09-03T12:00:01Z")];
     const daily = task === "daily" ? dates : [];
     const creative = task === "creative" ? dates : [];

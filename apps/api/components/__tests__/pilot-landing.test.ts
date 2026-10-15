@@ -2,6 +2,7 @@
 // so these checks read the component sources.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { CREATIVE_CHAT_LIMIT, DAILY_CHAT_WEEKLY_LIMIT } from "../../lib/ai/budget-policy";
 
 const read = (file: string) => readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
 const landing = read("pilot-landing.tsx");
@@ -23,5 +24,9 @@ describe("pilot landing", () => {
   it("asks for pilot access by email and links no payment page", () => {
     expect(landing).toContain("mailto:andygomezgc@gmail.com");
     expect(page).not.toMatch(/stripe|payment_link|checkout/i);
+  });
+
+  it("states the AI limits the API actually enforces", () => {
+    expect(landing).toContain(`${DAILY_CHAT_WEEKLY_LIMIT} mensajes cotidianos y ${CREATIVE_CHAT_LIMIT} creativos`);
   });
 });
