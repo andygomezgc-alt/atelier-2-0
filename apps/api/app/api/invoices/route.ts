@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { readUploadedPage } from "@/lib/invoices/upload";
-import { InvoiceStorageError, storeInvoiceFile } from "@/lib/invoices/storage";
+import { deleteInvoiceFiles, InvoiceStorageError, storeInvoiceFile } from "@/lib/invoices/storage";
 import { logger } from "@/lib/logger";
 import { expireStuckReads, groupBySupplier } from "@/lib/invoices/views";
 import type { InvoiceListResponse } from "@atelier/shared";
@@ -40,12 +40,15 @@ export async function POST(req: NextRequest) {
     data: { restaurantId: ctx.restaurantId, uploadedById: ctx.userId, status: "uploading" },
     select: { id: true },
   });
+  let storageKey: string | null = null;
   try {
-    const storageKey = await storeInvoiceFile(ctx.restaurantId, invoice.id, page.buffer, page.mimeType);
+    storageKey = await storeInvoiceFile(ctx.restaurantId, invoice.id, page.buffer, page.mimeType);
     await prisma.invoicePage.create({
       data: { invoiceId: invoice.id, position: 0, storageKey, mimeType: page.mimeType, sizeBytes: page.sizeBytes },
     });
   } catch (error) {
+    // A file whose page row was never saved would be found by nothing: remove it now.
+    if (storageKey) await deleteInvoiceFiles([storageKey]);
     try {
       await prisma.invoice.delete({ where: { id: invoice.id } });
     } catch {

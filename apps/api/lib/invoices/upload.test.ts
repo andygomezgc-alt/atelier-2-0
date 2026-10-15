@@ -25,8 +25,9 @@ describe("readUploadedPage", () => {
     expect(await readUploadedPage(form(PDF, "application/pdf"), { imagesOnly: true })).toMatchObject({ status: 415 }));
   it("rejects bytes that do not match the declared type", async () =>
     expect(await readUploadedPage(form(PDF, "image/jpeg"), { imagesOnly: false })).toMatchObject({ status: 415 }));
-  it("rejects a photo over 6 MB", async () =>
-    expect(await readUploadedPage(form(JPEG, "image/jpeg", "big.jpg", 6 * 1024 * 1024 + 1), { imagesOnly: false })).toMatchObject({ status: 413 }));
-  it("accepts a PDF up to 10 MB", async () =>
-    expect(await readUploadedPage(form(PDF, "application/pdf", "f.pdf", 8 * 1024 * 1024), { imagesOnly: false })).toMatchObject({ mimeType: "application/pdf" }));
+  it.each([[JPEG, "image/jpeg"], [PDF, "application/pdf"]])("rejects any file over 4 MB as too large (%#)", async (bytes, type) =>
+    expect(await readUploadedPage(form(bytes, type, "big", 4 * 1024 * 1024 + 1), { imagesOnly: false }))
+      .toMatchObject({ status: 413, body: { code: "file_too_large" } }));
+  it("accepts a file of exactly 4 MB", async () =>
+    expect(await readUploadedPage(form(PDF, "application/pdf", "f.pdf", 4 * 1024 * 1024), { imagesOnly: false })).toMatchObject({ mimeType: "application/pdf" }));
 });

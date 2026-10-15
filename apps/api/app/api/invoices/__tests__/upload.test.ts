@@ -65,6 +65,13 @@ describe("POST /api/invoices", () => {
     expect(db.invoice.delete).toHaveBeenCalledWith({ where: { id: "inv1" } });
   });
 
+  it("a page row that cannot be saved removes its stored file", async () => {
+    db.invoicePage.create.mockRejectedValueOnce(new Error("db down"));
+    await expect(create(multipart("https://t.local/api/invoices", JPEG, "image/jpeg"))).rejects.toThrow("db down");
+    expect(storage.deleteInvoiceFiles).toHaveBeenCalledWith(["invoices/r1/inv1/a.jpg"]);
+    expect(db.invoice.delete).toHaveBeenCalledWith({ where: { id: "inv1" } });
+  });
+
   it("rejects a bad file before creating anything", async () => {
     const res = await create(multipart("https://t.local/api/invoices", PDF, "image/jpeg"));
     expect(res.status).toBe(415);
