@@ -59,7 +59,7 @@ describe("parseInvoicePage", () => {
     expect(page.grossTotalCents).toBe(5775);
     expect(page.lines[0]).toEqual({
       description: "Gamb.rosso mazara cal.3", code: "GR3", quantity: 1, unit: "cassa",
-      packQty: 5, packUnit: "kg", unitPriceCents: 4000, taxRatePct: 10, lineTotalCents: 4000,
+      packQty: 5, packUnit: "kg", unitPriceCents: 4000, taxRatePct: 10, lineTotalCents: 4000, kind: "item",
     });
     expect(page.lines[1]!.unitPriceCents).toBe(625);
     expect(page.lines[1]!.lineTotalCents).toBe(1250);
@@ -69,7 +69,7 @@ describe("parseInvoicePage", () => {
     const page = parseInvoicePage({ ...PAGE, lines: [{ description: "Vongole veraci" }] });
     expect(page.lines).toEqual([{
       description: "Vongole veraci", code: null, quantity: null, unit: null, packQty: null,
-      packUnit: null, unitPriceCents: null, taxRatePct: null, lineTotalCents: null,
+      packUnit: null, unitPriceCents: null, taxRatePct: null, lineTotalCents: null, kind: "item",
     }]);
     expect(page.droppedLines).toBe(0);
   });
@@ -97,6 +97,58 @@ describe("parseInvoicePage", () => {
   it("throws invoice_response_invalid on a non-object", () => {
     expect(() => parseInvoicePage("nope")).toThrow(InvoiceExtractionError);
     expect(() => parseInvoicePage("nope")).toThrow("invoice_response_invalid");
+  });
+});
+
+describe("parseInvoicePage — line kinds and limits", () => {
+  const item = { description: "GAMBERO ROSSO CARPACCIO G 50 CONGELATO", quantity: 10, unit: "CF", unitPrice: 55.5, lineTotal: 555 };
+
+  it("merges a detail line into the previous article", () => {
+    const page = parseInvoicePage({ ...PAGE, lines: [item, { description: "ARISTAEOMORPHA FOLIACEA PESCATO ZONA FAO 37", kind: "detail" }] });
+    expect(page.lines).toHaveLength(1);
+    expect(page.lines[0]!.description).toBe("GAMBERO ROSSO CARPACCIO G 50 CONGELATO ARISTAEOMORPHA FOLIACEA PESCATO ZONA FAO 37");
+  });
+
+  it("drops a detail line with no article before it, and a header line", () => {
+    const page = parseInvoicePage({ ...PAGE, lines: [{ description: "lotto 123", kind: "detail" }, { description: "VENDITA MERCE", kind: "header" }, item] });
+    expect(page.lines.map((l) => l.description)).toEqual(["GAMBERO ROSSO CARPACCIO G 50 CONGELATO"]);
+    expect(page.droppedLines).toBe(0);
+  });
+
+  it("keeps a deposit as a charge so it still counts in the totals", () => {
+    const page = parseInvoicePage({ ...PAGE, lines: [item, { description: "DIFFERENZA CAUZIONALE", lineTotal: 2.58, kind: "charge" }] });
+    expect(page.lines[1]).toMatchObject({ description: "DIFFERENZA CAUZIONALE", lineTotalCents: 258, kind: "charge" });
+  });
+
+  it("an unknown kind is an item", () => {
+    expect(parseInvoicePage({ ...PAGE, lines: [{ ...item, kind: "banana" }] }).lines[0]!.kind).toBe("item");
+  });
+
+  it("truncates a long description instead of dropping the line", () => {
+    const page = parseInvoicePage({ ...PAGE, lines: [{ ...item, description: "x".repeat(400) }] });
+    expect(page.lines[0]!.description).toHaveLength(300);
+    expect(page.droppedLines).toBe(0);
+  });
+
+  it("keeps the first 200 lines and counts the rest as dropped", () => {
+    const page = parseInvoicePage({ ...PAGE, lines: Array.from({ length: 205 }, () => item) });
+    expect(page.lines).toHaveLength(200);
+    expect(page.droppedLines).toBe(5);
+  });
+
+  it("reads lines: null as no lines", () => {
+    expect(parseInvoicePage({ ...PAGE, lines: null }).lines).toEqual([]);
+  });
+});
+
+describe("extractInvoicePage — prompt", () => {
+  it("asks for line kinds, pack content found in the description, printed totals only and the tax column", async () => {
+    await extractInvoicePage(new Uint8Array([1]), "image/png");
+    const req = glm.generateGlmJson.mock.calls[0]![0] as { system: string; schema: { properties: { lines: { items: { properties: Record<string, unknown> } } } } };
+    expect(Object.keys(req.schema.properties.lines.items.properties)).toContain("kind");
+    expect(req.system).toMatch(/pz24/);
+    expect(req.system).toMatch(/nunca los calcules/);
+    expect(req.system).toMatch(/C\.IVA/);
   });
 });
 

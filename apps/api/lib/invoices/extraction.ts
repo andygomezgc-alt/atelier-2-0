@@ -19,6 +19,8 @@ export type ExtractedInvoiceLine = {
   unitPriceCents: number | null;
   taxRatePct: number | null;
   lineTotalCents: number | null;
+  // "charge": deposits, transport, packaging. Counted in the totals, never a product.
+  kind: "item" | "charge";
 };
 
 export type ExtractedInvoicePage = {
@@ -52,8 +54,11 @@ const text = (max: number) =>
   z.unknown().transform((v) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null));
 const cents = (n: number | null) => (n === null ? null : Math.round(n * 100));
 
+export const MAX_INVOICE_LINES = 200;
+export const MAX_LINE_DESCRIPTION = 300;
+
 const LineSchema = z.object({
-  description: z.string().trim().min(1).max(300),
+  description: z.string().trim().min(1).transform((s) => s.slice(0, MAX_LINE_DESCRIPTION)),
   code: text(60),
   quantity: num,
   unit: text(30),
@@ -62,6 +67,7 @@ const LineSchema = z.object({
   unitPrice: num,
   taxRatePct: num,
   lineTotal: num,
+  kind: z.unknown().transform((v) => (v === "detail" || v === "header" || v === "charge" ? v : "item")),
 });
 
 const PageSchema = z.object({
@@ -73,22 +79,30 @@ const PageSchema = z.object({
   netTotal: num,
   taxTotal: num,
   grossTotal: num,
-  lines: z.array(z.unknown()).max(200).default([]),
+  lines: z.array(z.unknown()).nullish().transform((v) => v ?? []),
 });
 
 export function parseInvoicePage(raw: unknown): ExtractedInvoicePage {
   const parsed = PageSchema.safeParse(raw);
   if (!parsed.success) throw new InvoiceExtractionError("invoice_response_invalid");
   const page = parsed.data;
+  const rawLines = page.lines.slice(0, MAX_INVOICE_LINES);
+  let droppedLines = page.lines.length - rawLines.length;
   const lines: ExtractedInvoiceLine[] = [];
-  let droppedLines = 0;
-  for (const rawLine of page.lines) {
+  for (const rawLine of rawLines) {
     const line = LineSchema.safeParse(rawLine);
     if (!line.success) {
       droppedLines++;
       continue;
     }
     const l = line.data;
+    if (l.kind === "header") continue;
+    if (l.kind === "detail") {
+      // Scientific name, catch zone, lot or origin printed under the article: it describes the article above.
+      const previous = lines.at(-1);
+      if (previous) previous.description = `${previous.description} ${l.description}`.slice(0, MAX_LINE_DESCRIPTION);
+      continue;
+    }
     lines.push({
       description: l.description,
       code: l.code,
@@ -99,6 +113,7 @@ export function parseInvoicePage(raw: unknown): ExtractedInvoicePage {
       unitPriceCents: cents(l.unitPrice),
       taxRatePct: l.taxRatePct,
       lineTotalCents: cents(l.lineTotal),
+      kind: l.kind,
     });
   }
   return {
@@ -126,9 +141,9 @@ const INVOICE_PAGE_JSON_SCHEMA = {
     supplierTaxId: { ...optString, description: "número fiscal del proveedor (partita IVA, CIF, VAT...)" },
     invoiceNumber: optString,
     invoiceDate: { ...optString, description: "fecha de la factura en formato YYYY-MM-DD" },
-    netTotal: { ...optNumber, description: "total sin impuestos (imponible)" },
-    taxTotal: optNumber,
-    grossTotal: optNumber,
+    netTotal: { ...optNumber, description: "total sin impuestos (imponibile) SOLO si está impreso; nunca lo calcules" },
+    taxTotal: { ...optNumber, description: "total de impuestos SOLO si está impreso" },
+    grossTotal: { ...optNumber, description: "total con impuestos SOLO si está impreso" },
     lines: {
       type: "array",
       items: {
@@ -138,11 +153,16 @@ const INVOICE_PAGE_JSON_SCHEMA = {
           code: { ...optString, description: "código de artículo si existe" },
           quantity: optNumber,
           unit: { ...optString, description: "unidad tal cual: kg, g, l, pz, cassa, cartone..." },
-          packQty: { ...optNumber, description: "contenido de un envase si se indica, ej. 5 en 'cassa 5 kg'" },
-          packUnit: { ...optString, description: "unidad del contenido del envase, ej. kg" },
+          packQty: { ...optNumber, description: "contenido de UN envase cuando la línea vende envases (cassa, cartone, CF, conf., PZ de una caja); búscalo también en la descripción" },
+          packUnit: { ...optString, description: "unidad del contenido de un envase: kg, g, l, ml o pz" },
           unitPrice: { ...optNumber, description: "precio unitario sin impuesto" },
-          taxRatePct: { ...optNumber, description: "porcentaje de impuesto de la línea, solo si aparece" },
+          taxRatePct: { ...optNumber, description: "porcentaje de impuesto de la línea, solo si aparece (columna IVA, C.IVA, Aliq. o %; '04' es 4)" },
           lineTotal: { ...optNumber, description: "importe de la línea sin impuesto; negativo si es descuento o devolución" },
+          kind: {
+            type: "string",
+            enum: ["item", "detail", "header", "charge"],
+            description: "item: artículo; detail: renglón que sigue describiendo el artículo anterior; header: título de sección; charge: depósito, envases, transporte",
+          },
         },
         required: ["description"],
       },
@@ -156,6 +176,11 @@ const INVOICE_SYSTEM = [
   "Devuelve SOLO lo que está escrito. No inventes datos: si un campo no aparece, omítelo.",
   "Incluye TODAS las líneas de artículos, una por renglón, en el mismo orden, también descuentos y devoluciones.",
   "No incluyas como línea los subtotales, totales ni resúmenes de impuestos.",
+  "Los renglones sin precio que siguen describiendo el artículo anterior (nombre científico, zona de pesca FAO, lote, origen, 'allevato in...') van con kind 'detail'. Los títulos de sección como 'VENDITA MERCE' van con kind 'header'. Depósitos, envases retornables (cauzione, vuoti, imballi) y transporte van con kind 'charge'.",
+  "Contenido del envase: si la línea vende cajas, confezioni (CF) o piezas que contienen varias unidades, pon en packQty/packUnit el contenido de UN envase, también cuando solo aparece en la descripción. Ejemplos: 'kg 1,75 - pz24' → packQty 24, packUnit 'pz'; '(G 1100 X 4)' → packQty 4.4, packUnit 'kg'; 10 CF con 'Kili: 4,000' → packQty 0.4, packUnit 'kg'.",
+  "Copia la unidad de cada línea de su propia columna (NR, PZ, KG...), sin tomarla de otra línea.",
+  "La columna de impuesto puede llamarse IVA, C.IVA, Aliq. o %; un código '04' significa 4.",
+  "netTotal, taxTotal y grossTotal: solo si están impresos en el documento; nunca los calcules.",
   "Los importes son números con punto decimal, sin símbolo de moneda.",
 ].join("\n");
 
