@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { PageShell, serif, teal, h2Style, pStyle, linkStyle } from "@/components/site";
+import { PageShell, h2Style, pStyle, linkStyle } from "@/components/site";
+import { LegalTitle } from "@/components/legal/legal-page";
 
 export const metadata: Metadata = {
   title: "Eliminar tu cuenta — Atelier",
@@ -8,17 +9,7 @@ export const metadata: Metadata = {
 export default function EliminarCuentaPage() {
   return (
     <PageShell>
-      <h1
-        style={{
-          fontFamily: serif,
-          fontSize: 36,
-          color: teal,
-          margin: "0 0 32px",
-          fontWeight: 600,
-        }}
-      >
-        Eliminar tu cuenta de Atelier
-      </h1>
+      <LegalTitle dated={false}>Eliminar tu cuenta de Atelier</LegalTitle>
 
       <p style={pStyle}>Tienes dos vías para eliminar tu cuenta:</p>
 

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { it as appItalian } from "@atelier/i18n";
 import { CREATIVE_CHAT_LIMIT, DAILY_CHAT_WEEKLY_LIMIT } from "../../lib/ai/budget-policy";
 import { LANDING_LOCALES } from "../../lib/landing-locale";
+import { legalPaths } from "../legal/legal-paths";
 import { landingCopy } from "../landing-copy";
 
 const read = (file: string) => readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
@@ -35,6 +36,16 @@ describe("pilot landing", () => {
   it("keeps the visitor in their language when they go back home", () => {
     expect(landing).not.toMatch(/href="\/"/);
     expect(landing).toContain("href={`/${locale}`}");
+  });
+
+  it("links the footer's legal pages in the visitor's language", () => {
+    const footer = landing.slice(landing.indexOf("<footer"), landing.indexOf("</footer>"));
+    expect(footer).not.toMatch(/href="\//);
+    expect(landing).toContain("const legal = legalPaths(locale);");
+    for (const link of ["href={legal.privacy}", "href={legal.terms}", "href={legal.deleteAccount}"]) expect(footer).toContain(link);
+    expect(legalPaths("es")).toEqual({ privacy: "/privacidad", terms: "/terminos", deleteAccount: "/cuenta/eliminar" });
+    expect(legalPaths("it")).toEqual({ privacy: "/it/privacy", terms: "/it/terms", deleteAccount: "/it/delete-account" });
+    expect(legalPaths("en")).toEqual({ privacy: "/en/privacy", terms: "/en/terms", deleteAccount: "/en/delete-account" });
   });
 
   it("asks for pilot access by email and links no payment page", () => {
