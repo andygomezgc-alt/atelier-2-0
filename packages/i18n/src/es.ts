@@ -945,6 +945,17 @@ export const es = {
   invoice_warning_quantity: "Revisa la cantidad: podría estar mal leída.",
   invoice_picker_search: "Buscar en el banco",
   invoice_picker_empty: "Ningún producto con ese nombre.",
+  invoice_header_title: "Datos de la factura",
+  invoice_header_supplier_new: "Otro proveedor…",
+  invoice_header_supplier_placeholder: "Nombre del proveedor",
+  invoice_header_number_placeholder: "Número de factura",
+  invoice_header_date_placeholder: "DD/MM/AAAA",
+  invoice_header_date_invalid: "Esa fecha no existe.",
+  invoice_header_save: "Guardar",
+  invoice_original_failed: "No se pudo abrir el original.",
+  invoice_supplier_label: "Proveedor",
+  invoice_number_label: "Número",
+  invoice_date_label: "Fecha",
 } as const;
 
 // Each translation maps a key to a string. Values are not pinned as
