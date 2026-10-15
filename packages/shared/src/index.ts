@@ -12,3 +12,4 @@ export * from "./recipe-import";
 export * from "./chef-notes";
 export * from "./ai-models";
 export * from "./atributos";
+export * from "./invoices-contract";

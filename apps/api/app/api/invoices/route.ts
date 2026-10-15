@@ -1,14 +1,34 @@
 // apps/api/app/api/invoices/route.ts
 // POST: first page of a new invoice (multipart field "file"). The invoice stays in
-// "uploading" until POST /api/invoices/[id]/read. GET (list) is added in Task 12.
+// "uploading" until POST /api/invoices/[id]/read. GET: the archive grouped by supplier.
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { requireAuth, isNextResponse } from "@/lib/permissions-guard";
 import { readUploadedPage } from "@/lib/invoices/upload";
 import { InvoiceStorageError, storeInvoiceFile } from "@/lib/invoices/storage";
 import { logger } from "@/lib/logger";
+import { expireStuckReads, groupBySupplier } from "@/lib/invoices/views";
+import type { InvoiceListResponse } from "@atelier/shared";
 
 export const dynamic = "force-dynamic";
+
+export async function GET(req: NextRequest) {
+  const ctx = await requireAuth(req, "manage_products");
+  if (isNextResponse(ctx)) return ctx;
+  await expireStuckReads(ctx.restaurantId, new Date());
+  const rows = await prisma.invoice.findMany({
+    where: { restaurantId: ctx.restaurantId, deletedAt: null, status: { not: "uploading" } },
+    select: {
+      id: true, status: true, number: true, issuedOn: true, grossTotalCents: true, netTotalCents: true,
+      failureReason: true, createdAt: true, supplier: { select: { id: true, name: true } },
+    },
+  });
+  const body: InvoiceListResponse = {
+    toReview: rows.filter((r) => r.status === "review").length,
+    suppliers: groupBySupplier(rows),
+  };
+  return NextResponse.json(body);
+}
 
 export async function POST(req: NextRequest) {
   const ctx = await requireAuth(req, "manage_products");
