@@ -126,6 +126,7 @@
 .cost { display: grid; gap: 4px; padding: 18px; border-radius: 14px; }
 .costNum { font: 400 30px/1.15 var(--app-serif); font-variant-numeric: tabular-nums; counter-reset: eu round(down, var(--c) / 100, 1) ct mod(var(--c), 100); }
 .costNum::after { content: counter(eu) "," counter(ct, decimal-leading-zero) " €"; }
+.costNumEn::after { content: "€" counter(eu) "." counter(ct, decimal-leading-zero); }
 .costSub { font-size: 12.5px; color: var(--app-inksoft); }
 .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .pill { display: flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 999px; background: var(--app-warm); border: .5px solid var(--app-edgesoft); font-size: 11px; color: var(--app-inksoft); }
