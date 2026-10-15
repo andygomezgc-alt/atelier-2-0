@@ -824,6 +824,7 @@ model ProductPriceHistory {
 }
 
 enum InvoiceStatus {
+  uploading
   reading
   review
   applied
