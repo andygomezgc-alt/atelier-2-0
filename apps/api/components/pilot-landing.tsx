@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Fragment, type CSSProperties } from "react";
 import { Crimson_Pro } from "next/font/google";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { legalPaths } from "@/components/legal/legal-paths";
 import type { LandingLocale } from "@/lib/landing-locale";
 import { landingCopy } from "./landing-copy";
 import { LandingStory } from "./landing-story";
@@ -51,6 +52,7 @@ const moreIcons = [
 
 export function PilotLanding({ locale }: { locale: LandingLocale }) {
   const copy = landingCopy[locale];
+  const legal = legalPaths(locale);
   const { first, second, swash } = copy.headline;
   const pilotContact = `mailto:andygomezgc@gmail.com?subject=${encodeURIComponent(copy.mailSubject)}&body=${encodeURIComponent(copy.mailBody)}`;
   return (
@@ -153,7 +155,7 @@ export function PilotLanding({ locale }: { locale: LandingLocale }) {
 
       <footer className={styles.footer}>
         <span className={styles.footerBrand}>Atelier <span>{copy.footerTagline}</span></span>
-        <nav aria-label={copy.legalLabel}><Link href="/privacidad">{copy.privacy}</Link><Link href="/terminos">{copy.terms}</Link><Link href="/cuenta/eliminar">{copy.deleteAccount}</Link></nav>
+        <nav aria-label={copy.legalLabel}><Link href={legal.privacy}>{copy.privacy}</Link><Link href={legal.terms}>{copy.terms}</Link><Link href={legal.deleteAccount}>{copy.deleteAccount}</Link></nav>
       </footer>
     </div>
   );
