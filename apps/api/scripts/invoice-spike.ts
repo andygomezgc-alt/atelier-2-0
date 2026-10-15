@@ -1,15 +1,16 @@
 // Feasibility gate for the invoice scanner (spec, delivery order step 0).
-// Reads every invoice file in a folder with the production extraction and
-// reports, per file, how many lines were read and whether they add up.
+// Reads invoice files with the production extraction and reports, per document, the merged
+// header, every line and whether the lines add up. Pages of one document are listed together;
+// "--doc" starts the next document.
 //
 // Uso:
 //   cd apps/api
-//   ../../packages/db/node_modules/.bin/tsx scripts/invoice-spike.ts <carpeta-con-facturas>
+//   ../../packages/db/node_modules/.bin/tsx scripts/invoice-spike.ts a.jpg b.jpg --doc c.jpg
 //
 // Uses the dev database (generation budget) and the Z.ai key from .env.local.
-// Writes <carpeta>/invoice-spike-report.json with the full readings.
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { extname, join } from "node:path";
+// Writes invoice-spike-report.json next to the first file, with the full readings.
+import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, extname, join } from "node:path";
 
 (() => {
   const envPath = join(__dirname, "..", ".env.local");
@@ -29,7 +30,7 @@ import { extname, join } from "node:path";
 })();
 
 import { extractInvoicePage } from "../lib/invoices/extraction";
-import { checkInvoiceTotals } from "../lib/invoices/totals";
+import { checkInvoiceTotals, mergeInvoicePages } from "../lib/invoices/totals";
 
 const MIME: Record<string, string> = {
   ".pdf": "application/pdf",
@@ -39,29 +40,37 @@ const MIME: Record<string, string> = {
   ".webp": "image/webp",
 };
 
+const mimeFor = (file: string) => MIME[extname(file).toLowerCase()] ?? "application/octet-stream";
+
 async function main() {
-  const dir = process.argv[2];
-  if (!dir) throw new Error("usage: invoice-spike.ts <folder>");
-  const files = readdirSync(dir).filter((f) => MIME[extname(f).toLowerCase()]);
+  const files = process.argv.slice(2);
+  if (files.length === 0) throw new Error("usage: invoice-spike.ts <file>... [--doc <file>...]");
+  const docs: string[][] = [[]];
+  for (const arg of files) {
+    if (arg === "--doc") docs.push([]);
+    else docs[docs.length - 1]!.push(arg);
+  }
   const report: unknown[] = [];
-  for (const file of files) {
+  for (const doc of docs.filter((d) => d.length > 0)) {
     const started = Date.now();
     try {
-      const page = await extractInvoicePage(readFileSync(join(dir, file)), MIME[extname(file).toLowerCase()]!);
-      const totals = checkInvoiceTotals(page.lines, page);
-      const withTax = page.lines.filter((l) => l.taxRatePct !== null).length;
-      console.log(
-        `${file}: ${page.supplierName ?? "?"} #${page.invoiceNumber ?? "?"} ${page.invoiceDate ?? "?"} | ` +
-          `lines=${page.lines.length} dropped=${page.droppedLines} withTax=${withTax} | ` +
-          `totals=${totals.status} diff=${totals.diffCents ?? "-"} | ${Date.now() - started}ms`,
-      );
-      report.push({ file, ms: Date.now() - started, totals, page });
+      const pages = [];
+      for (const file of doc) pages.push(await extractInvoicePage(readFileSync(file), mimeFor(file)));
+      const merged = mergeInvoicePages(pages);
+      const totals = checkInvoiceTotals(merged.lines, merged.header);
+      report.push({ files: doc, ms: Date.now() - started, header: merged.header, lines: merged.lines, droppedLines: merged.droppedLines, totals });
+      console.log(`
+== ${doc.join(" + ")} — ${merged.header.supplierName ?? "?"} #${merged.header.invoiceNumber ?? "?"} ${merged.header.invoiceDate ?? "?"} — net ${merged.header.netTotalCents ?? "-"} gross ${merged.header.grossTotalCents ?? "-"} — totals ${totals.status} (${totals.diffCents ?? "-"}) — dropped ${merged.droppedLines} — ${Date.now() - started}ms`);
+      for (const l of merged.lines) {
+        console.log(`  ${l.kind} | ${l.description} | ${l.quantity ?? "-"} ${l.unit ?? ""} | pack ${l.packQty ?? "-"} ${l.packUnit ?? ""} | ${l.unitPriceCents ?? "-"} | ${l.taxRatePct ?? "-"}% | ${l.lineTotalCents ?? "-"}`);
+      }
     } catch (error) {
-      console.log(`${file}: FAILED ${error instanceof Error ? error.message : String(error)}`);
-      report.push({ file, ms: Date.now() - started, error: error instanceof Error ? error.message : String(error) });
+      console.log(`
+== ${doc.join(" + ")}: FAILED ${error instanceof Error ? error.message : String(error)}`);
+      report.push({ files: doc, ms: Date.now() - started, error: error instanceof Error ? error.message : String(error) });
     }
   }
-  writeFileSync(join(dir, "invoice-spike-report.json"), JSON.stringify(report, null, 2));
+  writeFileSync(join(dirname(docs[0]![0] ?? files[0]!), "invoice-spike-report.json"), JSON.stringify(report, null, 2));
 }
 
 main().then(
