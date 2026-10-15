@@ -38,8 +38,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Atelier accede a tu galería para que cambies tu foto de perfil.",
-          "cameraPermission": "Atelier usa la cámara para que le saques una foto a tu receta y la organice."
+          "photosPermission": "Atelier accede a tu galería para que elijas fotos de perfil, de recetas o de facturas.",
+          "cameraPermission": "Atelier usa la cámara para que fotografíes tus recetas y las facturas de tus proveedores."
         }
       ],
       "expo-font",

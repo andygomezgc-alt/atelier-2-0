@@ -917,6 +917,18 @@ export const es = {
   invoices_empty_sub: "Escanea una factura de un proveedor y Atelier te propone los precios nuevos.",
   invoices_no_supplier: "Proveedor sin leer",
   invoices_no_number: "Sin número",
+  invoice_scan_title: "Escanear factura",
+  invoice_scan_hint: "Haz una foto por página. Cada PDF es una factura.",
+  invoice_scan_camera: "Hacer foto",
+  invoice_scan_add_page: "Añadir otra página",
+  invoice_scan_gallery: "Elegir de la galería",
+  invoice_scan_pdf: "Elegir PDF",
+  invoice_scan_page: "Página {n}",
+  invoice_scan_done: "Listo",
+  invoice_scan_sending: "Enviando…",
+  invoice_scan_remove_page: "Quitar",
+  invoice_scan_partial: "{failed} de {total} facturas no se enviaron. Vuelve a intentarlo.",
+  invoice_scan_prepare_failed: "No se pudo preparar el archivo. Inténtalo de nuevo.",
 } as const;
 
 // Each translation maps a key to a string. Values are not pinned as
