@@ -101,6 +101,19 @@ describe("parseInvoicePage", () => {
 });
 
 describe("extractInvoicePage", () => {
+  it.each(["ai_provider_http_400", "ai_provider_http_502"])("retries once after a transient %s", async (code) => {
+    glm.generateGlmJson.mockRejectedValueOnce(new Error(code));
+    const page = await extractInvoicePage(new Uint8Array([1]), "image/png");
+    expect(glm.generateGlmJson).toHaveBeenCalledTimes(2);
+    expect(page.lines).toHaveLength(2);
+  });
+
+  it.each(["ai_provider_http_401", "ai_provider_http_429"])("does not retry %s", async (code) => {
+    glm.generateGlmJson.mockRejectedValueOnce(new Error(code));
+    await expect(extractInvoicePage(new Uint8Array([1]), "image/png")).rejects.toThrow(code);
+    expect(glm.generateGlmJson).toHaveBeenCalledTimes(1);
+  });
+
   it("sends the image, the schema and the incomplete code", async () => {
     await extractInvoicePage(new Uint8Array([1]), "image/png");
     const req = glm.generateGlmJson.mock.calls[0]![0] as { task: string; schema: { properties: Record<string, unknown> }; incompleteCode: string; content: unknown[] };

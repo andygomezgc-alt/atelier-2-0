@@ -57,7 +57,12 @@ async function generateGlmJsonProvider(request: JsonRequest, onFinalUsage: (usag
       messages: [{ role: "system", content: system }, { role: "user", content: request.content }],
     }),
   });
-  if (!response.ok) throw new Error(`ai_provider_http_${response.status}`);
+  if (!response.ok) {
+    // The body names the cause (bad image, content filter, quota); without it a 400 cannot be told apart.
+    const body = (await response.text().catch(() => "")).slice(0, 500);
+    logger.error("ai_provider_http_error", { provider: "zai", model: config.model, task: request.task, status: response.status, body });
+    throw new Error(`ai_provider_http_${response.status}`);
+  }
   const body = await response.json();
   const usage = {
     inputTokens: tokenCount(body.usage?.prompt_tokens), outputTokens: tokenCount(body.usage?.completion_tokens),

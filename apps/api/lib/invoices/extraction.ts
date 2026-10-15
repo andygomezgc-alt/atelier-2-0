@@ -162,14 +162,18 @@ const INVOICE_SYSTEM = [
 const RETRY_IF_FIRST_UNDER_MS = 25_000;
 const EXTRACTION_DEADLINE_MS = 50_000;
 
+// Broken JSON and provider hiccups (a 400 that passes on the next call, 5xx) get one more attempt.
+// Auth, rate-limit and budget errors do not: repeating them cannot help.
+const RETRYABLE = /^(?:ai_response_invalid|ai_provider_http_(?:400|5\d\d))$/;
+
 async function generateInvoiceJson(request: Parameters<typeof generateGlmJson>[0]): Promise<unknown> {
   const started = Date.now();
   try {
     return await generateGlmJson(request);
   } catch (error) {
     const elapsedMs = Date.now() - started;
-    if (!(error instanceof Error) || error.message !== "ai_response_invalid" || elapsedMs > RETRY_IF_FIRST_UNDER_MS) throw error;
-    logger.info("invoice_extraction_retry", { reason: "ai_response_invalid", elapsedMs });
+    if (!(error instanceof Error) || !RETRYABLE.test(error.message) || elapsedMs > RETRY_IF_FIRST_UNDER_MS) throw error;
+    logger.info("invoice_extraction_retry", { reason: error.message, elapsedMs });
     return generateGlmJson({ ...request, signal: AbortSignal.timeout(EXTRACTION_DEADLINE_MS - elapsedMs) });
   }
 }
