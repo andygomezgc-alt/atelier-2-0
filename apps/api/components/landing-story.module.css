@@ -24,7 +24,7 @@
   border-top: 1px solid var(--line);
 }
 .sprite { position: absolute; }
-.stage { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 56px; align-items: center; width: min(1120px, calc(100% - 64px)); margin-inline: auto; padding-block: 64px; }
+.stage { display: grid; grid-template-columns: minmax(0, 470px) auto; justify-content: center; gap: clamp(56px, 9vw, 140px); align-items: center; width: min(1120px, calc(100% - 64px)); margin-inline: auto; padding-block: 64px; }
 .copy { display: grid; gap: 18px; max-width: 470px; }
 .eyebrow { color: var(--accent); font-size: 12px; font-weight: 600; letter-spacing: 1.8px; text-transform: uppercase; }
 .title { font-family: var(--serif); font-weight: 400; color: var(--teal); font-size: clamp(30px, 3.4vw, 46px); line-height: 1.08; text-wrap: balance; }
