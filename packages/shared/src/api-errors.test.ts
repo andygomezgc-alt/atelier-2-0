@@ -14,7 +14,7 @@ describe("A2 chat error contract", () => {
       expect(ApiErrorCodeSchema.safeParse(code).success, code).toBe(true);
     }
     expect(new Set(ApiErrorCodeSchema.options).size).toBe(ApiErrorCodeSchema.options.length);
-    expect(ApiErrorCodeSchema.options).toHaveLength(53);
+    expect(ApiErrorCodeSchema.options).toHaveLength(65);
   });
 
   it("exports one closed retryability policy", () => {

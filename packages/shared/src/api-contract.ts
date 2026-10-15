@@ -325,6 +325,19 @@ export const ApiErrorCodeSchema = z.enum([
   "chat_refused",
   "chat_response_incomplete",
   "chat_context_too_long",
+  // Supplier invoices.
+  "file_too_large",
+  "invoice_storage_unavailable",
+  "invoice_not_uploading",
+  "invoice_pdf_single_file",
+  "invoice_too_many_pages",
+  "invoice_page_conflict",
+  "invoice_not_found",
+  "invoice_not_in_review",
+  "lines_undecided",
+  "product_required",
+  "price_required",
+  "supplier_not_found",
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
 

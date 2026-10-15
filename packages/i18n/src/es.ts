@@ -874,6 +874,18 @@ export const es = {
   pdf_products_col_supplier: "Proveedor",
   pdf_products_col_state: "Estado",
   toast_offline_stale: "Sin conexión — mostrando lo último cargado.",
+  invoice_file_too_large: "El archivo pesa demasiado (máximo 4 MB).",
+  invoice_scan_too_many_pages: "Máximo 10 páginas por factura.",
+  error_invoice_storage_unavailable: "No se pudo guardar la factura. Inténtalo de nuevo en unos minutos.",
+  error_invoice_not_uploading: "Esta factura ya se envió.",
+  error_invoice_pdf_single_file: "Un PDF va solo: no se le pueden añadir páginas.",
+  error_invoice_page_conflict: "Otra página se subió a la vez. Inténtalo de nuevo.",
+  error_invoice_not_found: "Esta factura ya no existe.",
+  error_invoice_not_in_review: "Esta factura ya no está en revisión.",
+  error_lines_undecided: "Aún hay líneas sin decidir.",
+  error_product_required: "Elige un producto.",
+  error_price_required: "Escribe un precio.",
+  error_supplier_not_found: "Ese proveedor ya no existe.",
 } as const;
 
 // Each translation maps a key to a string. Values are not pinned as
