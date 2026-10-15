@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { normalizeInvoiceUnit, priceInBankUnit, proposeLine } from "./pricing";
+import { draftUnitFor, normalizeInvoiceUnit, priceInBankUnit, proposeLine, quantityLooksMisread } from "./pricing";
 
 describe("normalizeInvoiceUnit", () => {
   it.each([
     ["kg", "kg"], ["KG", "kg"], ["kilo", "kg"], ["gr", "g"], ["lt", "l"], ["ml", "ml"],
     ["pz", "unidad"], ["pezzi", "unidad"], ["unid.", "unidad"], ["pcs", "unidad"],
     ["cassa", "caja"], ["cartone", "caja"], ["box", "caja"], ["ct", "caja"],
+    ["CF", "caja"], ["conf.", "caja"], ["confezione", "caja"], ["NR", "unidad"],
     ["mazzo", null], [null, null], ["", null],
   ])("%j -> %j", (raw, expected) => {
     expect(normalizeInvoiceUnit(raw)).toBe(expected);
@@ -20,11 +21,29 @@ describe("priceInBankUnit", () => {
     packUnit: string | null = null,
     quantity: number | null = null,
     lineTotalCents: number | null = null,
-  ) => ({ unitPriceCents, unit, packQty, packUnit, quantity, lineTotalCents });
+    description = "",
+  ) => ({ unitPriceCents, unit, packQty, packUnit, quantity, lineTotalCents, description });
 
   it("same unit passes through", () => expect(priceInBankUnit(p(1250, "kg"), "kg")).toBe(1250));
   it("grams to kilos", () => expect(priceInBankUnit(p(2, "g"), "kg")).toBe(2000));
-  it("kilos to grams rounds to the cent", () => expect(priceInBankUnit(p(1250, "kg"), "g")).toBe(1));
+  it("kilos to grams: a price that rounding would change by over 5% is not proposed", () =>
+    expect(priceInBankUnit(p(1250, "kg"), "g")).toBeNull());
+  it("kilos to grams for an expensive product survives rounding", () =>
+    expect(priceInBankUnit(p(150000, "kg"), "g")).toBe(150));
+  it("a box of 24 pieces sold per PZ becomes a price per piece", () =>
+    expect(priceInBankUnit(p(4400, "PZ", 24, "pz"), "unidad")).toBe(183));
+  it("a PZ line whose description prints a pack content that was not read: unsafe", () =>
+    expect(priceInBankUnit(p(4400, "PZ", null, null, 1, 4400, "OSTRICA GILLARDEAU 4 (kg 1,75 -pz24)"), "unidad")).toBeNull());
+  it("a CF line with 'G 1100 X 4' and no pack read: unsafe", () =>
+    expect(priceInBankUnit(p(13200, "CF", null, null, 1, 13200, "FIORE DI CARCIOFO (G 1100 X 4)"), "kg")).toBeNull());
+  it("a CF with its content read becomes a price per kilo", () =>
+    expect(priceInBankUnit(p(5550, "CF", 0.4, "kg"), "kg")).toBe(13875));
+  it("a piece with no pack hint stays a piece price", () =>
+    expect(priceInBankUnit(p(650, "PZ", null, null, 6, 3900, "PANNA DA MONTARE MIN.35% 1 L"), "unidad")).toBe(650));
+  it("a case with known content, bank bought per case, stays per case", () =>
+    expect(priceInBankUnit(p(4000, "cassa", 5, "kg", 1, 4000, "SPIGOLA (kg 5)"), "caja")).toBe(4000));
+  it("a piece with a weight content, bank bought per piece, stays per piece", () =>
+    expect(priceInBankUnit(p(300, "PZ", 0.5, "kg"), "unidad")).toBe(300));
   it("a case with known content becomes a price per kilo", () => expect(priceInBankUnit(p(4000, "cassa", 5, "kg"), "kg")).toBe(800));
   it("a case with content in grams, bank in kilos", () => expect(priceInBankUnit(p(1200, "cassa", 500, "g"), "kg")).toBe(2400));
   it("a case without content, bank in kilos: unsafe", () => expect(priceInBankUnit(p(4000, "cassa"), "kg")).toBeNull());
@@ -85,6 +104,8 @@ describe("price actually paid", () => {
   it("no unit price: derived from total / quantity", () => expect(priceInBankUnit(line(null, 2, 1250), "kg")).toBe(625));
   it("a return line (negative quantity) is never a price", () => expect(priceInBankUnit(line(625, -2, -1250), "kg")).toBeNull());
   it("a negative line total is never a price", () => expect(priceInBankUnit(line(625, 2, -1250), "kg")).toBeNull());
+  it("a total above quantity × price means a misread quantity: the printed price stands", () =>
+    expect(priceInBankUnit(line(645, 2.5, 1664), "kg")).toBe(645));
 });
 
 describe("unpriced products", () => {
@@ -94,4 +115,33 @@ describe("unpriced products", () => {
       newPriceCents: 800, invoiceDate: "2026-10-13",
     })).toEqual({ action: "update_price", priceCents: 800, changePct: null, preselected: true });
   });
+});
+
+describe("quantityLooksMisread", () => {
+  it("flags a total above quantity × price", () =>
+    expect(quantityLooksMisread({ quantity: 2.5, unitPriceCents: 645, lineTotalCents: 1664 })).toBe(true));
+  it("a discount is not a misread", () =>
+    expect(quantityLooksMisread({ quantity: 1, unitPriceCents: 1000, lineTotalCents: 850 })).toBe(false));
+  it("rounding is not a misread", () =>
+    expect(quantityLooksMisread({ quantity: 3, unitPriceCents: 333, lineTotalCents: 1000 })).toBe(false));
+  it("missing numbers are not a misread", () =>
+    expect(quantityLooksMisread({ quantity: null, unitPriceCents: 645, lineTotalCents: 1664 })).toBe(false));
+});
+
+describe("proposeLine — charges and the 20% threshold", () => {
+  const base = { productId: "p1", currentPriceCents: 1000, currentPriceAt: new Date("2026-10-01T09:00:00Z"), invoiceDate: "2026-10-12" };
+
+  it("a charge line is ignored, never a product", () =>
+    expect(proposeLine({ ...base, productId: null, newPriceCents: 258, kind: "charge" })).toEqual({ action: "ignore", priceCents: null, reason: "charge" }));
+  it("19.6% is pre-selected even though it rounds to 20", () =>
+    expect(proposeLine({ ...base, newPriceCents: 1196 })).toMatchObject({ action: "update_price", changePct: 20, preselected: true }));
+  it("exactly 20% needs a tick", () =>
+    expect(proposeLine({ ...base, newPriceCents: 1200 })).toMatchObject({ changePct: 20, preselected: false }));
+});
+
+describe("draftUnitFor", () => {
+  it("a case with known content drafts in the content unit", () =>
+    expect(draftUnitFor({ unit: "cassa", packQty: 5, packUnit: "kg" })).toBe("kg"));
+  it("a plain unit drafts in that unit", () => expect(draftUnitFor({ unit: "KG", packQty: null, packUnit: null })).toBe("kg"));
+  it("an unknown unit has no draft unit", () => expect(draftUnitFor({ unit: "mazzo", packQty: null, packUnit: null })).toBeNull());
 });
