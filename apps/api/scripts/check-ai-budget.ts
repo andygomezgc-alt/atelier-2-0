@@ -49,7 +49,7 @@ async function main() {
     // bypass it without changing existing owner quota state after the test.
     const ownerQuota = await prisma.aiChatQuota.findUnique({ where: { userId: owner.id } });
     try {
-      const fullOwnerQuota = { day: "2026-09-10", dailyCount: 999, dailyAt: Array.from({ length: 140 }, () => now), creativeAt: Array.from({ length: 8 }, () => now) };
+      const fullOwnerQuota = { day: "2026-09-10", dailyCount: 999, dailyAt: Array.from({ length: 140 }, () => now), creativeAt: Array.from({ length: 15 }, () => now) };
       await prisma.aiChatQuota.upsert({ where: { userId: owner.id }, create: { userId: owner.id, ...fullOwnerQuota }, update: fullOwnerQuota });
       await Promise.all([reserve(config, owner.id), reserveGeneration(creative, 1000, owner.id, now, budgetId)]);
     } finally {

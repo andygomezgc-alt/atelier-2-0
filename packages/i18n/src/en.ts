@@ -274,7 +274,7 @@ export const en: EsDict = {
   ai_budget_unavailable: "We cannot check the AI budget right now. Please try again later.",
   ai_daily_chat_limit: "You have reached today’s 20 Daily messages. You can continue tomorrow.",
   ai_daily_weekly_limit: "You have used all 140 Daily messages in the last 7 days. Messages become available again as each use reaches 7 days.",
-  ai_creative_limit: "You have used the 8 Creative messages for the last seven days. You can continue with Daily.",
+  ai_creative_limit: "You have used the 15 Creative messages for the last seven days. You can continue with Daily.",
   ai_budget_title: "Pilot AI",
   ai_budget_value: "€{used} of €{limit}",
   ai_budget_note: "Includes pending reservations and a safety margin.",

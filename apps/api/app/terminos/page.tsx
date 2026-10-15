@@ -44,7 +44,7 @@ export default function TerminosPage() {
       <h2 style={h2Style}>Uso justo de la IA</h2>
       <p style={pStyle}>
         El asistente IA tiene límites de uso. Durante el piloto, los límites
-        habituales son 140 mensajes cotidianos y 8 creativos por persona cada
+        habituales son 140 mensajes cotidianos y 15 creativos por persona cada
         siete días, sujetos también al presupuesto compartido del piloto. La
         disponibilidad se puede consultar en la app. Los límites de las futuras
         suscripciones se comunicarán antes de contratar.

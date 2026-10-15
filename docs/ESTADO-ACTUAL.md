@@ -43,7 +43,7 @@ Detalle en `odd/tasks/memoria-culinaria-mejoras.md` y `odd/tasks/notas-del-chef.
 
 ## IA y copias
 
-- Piloto inicial de unos cinco chefs, presupuesto común de **50 EUR para un mes**, 140 mensajes cotidianos y 8 creativos por chef y periodo de siete días. La cuenta principal está exenta de la cuota de mensajes, pero consume el mismo presupuesto común.
+- Piloto inicial de unos cinco chefs, presupuesto común de **50 EUR para un mes**, 140 mensajes cotidianos y 15 creativos por chef y periodo de siete días. La cuenta principal está exenta de la cuota de mensajes, pero consume el mismo presupuesto común.
 - Modelos elegidos: Gemini para el Diario, **Opus 5.5 para el Creativo** (`claude-opus-5-5`, esfuerzo medio, desde el 23-09) y GLM para las otras tareas compatibles. No cambiar proveedores ni gastar tokens para una sincronización.
 - El cambio a Opus 5.5 se comprobó en producción el 23-09 con la primera respuesta real del Creativo: la dio `claude-opus-5-5` en 22 s y se cobró exactamente con su tarifa, 0,059 € de presupuesto. La última respuesta con Opus 5 había costado 0,087 € y tardado 37 s. Para volver atrás basta con el «Instant Rollback» de Vercel.
 - En producción, el modelo del Creativo lo fija `AI_CHAT_CREATIVE_MODEL` en Vercel. La contabilidad del presupuesto rechaza cualquier modelo sin tarifa registrada en `apps/api/lib/ai/budget-policy.ts`.
