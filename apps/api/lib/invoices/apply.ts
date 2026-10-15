@@ -33,7 +33,9 @@ export async function applyInvoice(input: { invoiceId: string; restaurantId: str
       if (!invoice) return { status: "error", code: "invoice_not_found" } as const;
       const claimed = await tx.invoice.updateMany({ where: { id: invoiceId, status: "review" }, data: { status: "applied", appliedAt: now } });
       if (claimed.count === 0) {
-        return invoice.status === "applied" ? ({ status: "already_applied" } as const) : ({ status: "error", code: "invoice_not_in_review" } as const);
+        // The status read above may predate a concurrent apply that committed while this claim waited.
+        const current = await tx.invoice.findFirst({ where: { id: invoiceId }, select: { status: true } });
+        return current?.status === "applied" ? ({ status: "already_applied" } as const) : ({ status: "error", code: "invoice_not_in_review" } as const);
       }
       supplierId = invoice.supplierId;
 
@@ -41,8 +43,10 @@ export async function applyInvoice(input: { invoiceId: string; restaurantId: str
       const undecided = lines.filter((l) => l.action === null).map((l) => l.position);
       if (undecided.length > 0) throw new Undecided(undecided);
 
-      // The invoice's own day at noon UTC: the same calendar day in every European time zone (minor #5).
-      const priceAt = invoice.issuedOn ? new Date(`${invoice.issuedOn.toISOString().slice(0, 10)}T12:00:00Z`) : now;
+      // The invoice's own day at noon UTC: the same calendar day in every European time zone (minor #5),
+      // never later than now, so a price is never dated ahead of when it was applied.
+      const invoiceNoon = invoice.issuedOn ? new Date(`${invoice.issuedOn.toISOString().slice(0, 10)}T12:00:00Z`) : now;
+      const priceAt = invoiceNoon > now ? now : invoiceNoon;
       const counts = { updated: 0, drafts: 0, connected: 0, ignored: 0 };
       const skipped: Skipped[] = [];
 
@@ -90,7 +94,7 @@ export async function applyInvoice(input: { invoiceId: string; restaurantId: str
         counts.updated++;
       }
       return { status: "applied", ...counts, skipped } as const;
-    });
+    }, { timeout: 30_000, maxWait: 10_000 });
   } catch (error) {
     if (error instanceof Undecided) return { status: "error", code: "lines_undecided", positions: error.positions };
     throw error;

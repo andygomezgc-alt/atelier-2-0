@@ -101,6 +101,28 @@ describe("applyInvoice", () => {
     expect(memory.rememberSupplierItems).not.toHaveBeenCalled();
   });
 
+  it("an apply that lost the race to a concurrent one is a quiet success", async () => {
+    // Read before the other transaction committed: still "review"; the claim then finds nothing.
+    tx.invoice.findFirst
+      .mockResolvedValueOnce({ status: "review", supplierId: "s1", issuedOn: null })
+      .mockResolvedValueOnce({ status: "applied" });
+    tx.invoice.updateMany.mockResolvedValue({ count: 0 });
+    expect(await run()).toEqual({ status: "already_applied" });
+    expect(tx.invoiceLine.findMany).not.toHaveBeenCalled();
+  });
+
+  it("a long invoice gets more than the default 5 seconds to apply", async () => {
+    await run();
+    expect(db.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 30_000, maxWait: 10_000 });
+  });
+
+  it("a price is never dated after the moment it is applied", async () => {
+    tx.invoice.findFirst.mockResolvedValue({ status: "review", supplierId: "s1", issuedOn: new Date("2026-10-16T00:00:00Z") });
+    tx.product.findFirst.mockResolvedValue({ id: "p1", unidadCompra: "kg", precioCompra: 150, precioActualizadoAt: null });
+    await run();
+    expect(tx.product.update.mock.calls[0]![0].data.precioActualizadoAt).toEqual(NOW);
+  });
+
   it("a second apply, at once or later, changes nothing", async () => {
     tx.invoice.updateMany.mockResolvedValue({ count: 0 });
     tx.invoice.findFirst.mockResolvedValue({ status: "applied", supplierId: "s1", issuedOn: null });

@@ -127,6 +127,19 @@ describe("readInvoice", () => {
     expect(propose.proposeInvoiceLines).toHaveBeenCalledWith(expect.objectContaining({ invoiceDate: "2026-10-11" }));
   });
 
+  it.each([["2026-13-10"], ["2026-02-31"], ["2027-10-15"]])("an impossible or future printed date %s is not kept", async (invoiceDate) => {
+    extraction.extractInvoicePage.mockResolvedValue(page({ invoiceDate }));
+    await readInvoice("inv1", later());
+    expect(propose.proposeInvoiceLines).toHaveBeenCalledWith(expect.objectContaining({ invoiceDate: "2026-10-11" }));
+    expect(tx.invoice.updateMany.mock.calls.at(-1)![0].data.issuedOn).toBeNull();
+  });
+
+  it("the day after the upload is still a valid printed date", async () => {
+    extraction.extractInvoicePage.mockResolvedValue(page({ invoiceDate: "2026-10-12" }));
+    await readInvoice("inv1", later());
+    expect(propose.proposeInvoiceLines).toHaveBeenCalledWith(expect.objectContaining({ invoiceDate: "2026-10-12" }));
+  });
+
   it("the second look is skipped when the quota has no call left", async () => {
     quota.reserveAiCall.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false, retryAfter: 60 });
     await readInvoice("inv1", later());

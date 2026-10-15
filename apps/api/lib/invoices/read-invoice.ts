@@ -39,6 +39,16 @@ async function markFailed(invoiceId: string, reason: InvoiceFailureReason) {
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// A misread date ("2026-13-10", "2026-02-31") would fail the save, and a future one would date
+// the price ahead and freeze it: such a date is dropped and the upload day is used instead.
+function plausibleDate(raw: string | null, uploadedAt: Date): string | null {
+  if (!raw || !DATE.test(raw)) return null;
+  const date = new Date(`${raw}T00:00:00Z`);
+  if (Number.isNaN(+date) || date.toISOString().slice(0, 10) !== raw) return null;
+  return +date <= +uploadedAt + DAY_MS ? raw : null;
+}
 
 async function upsertSupplier(restaurantId: string, name: string | null, taxId: string | null): Promise<string | null> {
   const nameNorm = normalizeSupplierName(name ?? "");
@@ -85,7 +95,7 @@ export async function readInvoice(invoiceId: string, deadline: number): Promise<
 
     const { header } = merged;
     const supplierId = await upsertSupplier(invoice.restaurantId, header.supplierName, header.supplierTaxId);
-    const issuedOn = header.invoiceDate && DATE.test(header.invoiceDate) ? header.invoiceDate : null;
+    const issuedOn = plausibleDate(header.invoiceDate, invoice.createdAt);
     // The second look is one more AI call: without quota left the chef simply reviews more lines.
     const look: SecondLook = async (requests) =>
       userId && !(await reserveAiCall(userId)).ok ? new Map() : secondLook(requests, onUsage);
