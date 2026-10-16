@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { purgeExpiredTrash, logger } = vi.hoisted(() => ({ purgeExpiredTrash: vi.fn(), logger: { error: vi.fn(), info: vi.fn() } }));
+const { purgeExpiredTrash, purgeExpiredInvoices, logger } = vi.hoisted(() => ({ purgeExpiredTrash: vi.fn(), purgeExpiredInvoices: vi.fn(), logger: { error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/lib/trash-purge", () => ({ purgeExpiredTrash }));
+vi.mock("@/lib/invoices/purge", () => ({ purgeExpiredInvoices }));
 vi.mock("@/lib/logger", () => ({ logger }));
 
 import { GET } from "./route";
@@ -19,6 +20,7 @@ beforeEach(() => {
   vi.stubEnv("CRON_SECRET", "secret");
   vi.clearAllMocks();
   purgeExpiredTrash.mockResolvedValue(counts);
+  purgeExpiredInvoices.mockResolvedValue({ invoices: 1, files: 2, failed: 0, complete: true });
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
@@ -36,9 +38,16 @@ describe("purge trash cron", () => {
 
     expect(response.status).toBe(200);
     // Rows skipped by the purge are reported, not turned into an error.
-    expect(await response.json()).toEqual(counts);
+    expect(await response.json()).toEqual({ ...counts, invoices: { invoices: 1, files: 2, failed: 0, complete: true } });
     expect(purgeExpiredTrash).toHaveBeenCalledOnce();
     expect(purgeExpiredTrash.mock.calls[0]![0]).toEqual(started);
+  });
+
+  it("an invoice purge crash still returns the trash result", async () => {
+    purgeExpiredInvoices.mockRejectedValue(new Error("blob down"));
+    const response = await GET(request("Bearer secret"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ...counts, invoices: null });
   });
 
   it("answers 500 and logs when the purge fails outside its own handling", async () => {

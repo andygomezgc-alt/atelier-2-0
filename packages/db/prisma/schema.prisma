@@ -135,6 +135,8 @@ model Restaurant {
   culinaryMemory CulinaryMemory?
   culinaryMemoryRuns CulinaryMemoryRun[]
   chefNotes ChefNote[]
+  suppliers Supplier[]
+  invoices  Invoice[]
   id              String   @id @default(cuid())
   name            String
   identityLine    String?
@@ -222,6 +224,7 @@ model User {
 
   yieldTests           YieldTest[]           @relation("YieldTestAuthor")
   productPriceHistory  ProductPriceHistory[] @relation("PriceHistoryAuthor")
+  uploadedInvoices     Invoice[]             @relation("InvoiceUploader")
 
   aiUsage AiUsage[]
 
@@ -687,6 +690,9 @@ model Product {
 
   unidadCompra ProductUnit
   precioCompra Int // centavos / cents
+  // Purchase tax rate (IVA/VAT/GST) in percent. precioCompra stays net;
+  // recipe cost adds this rate. 0 = unknown or exempt. CHECK 0..100.
+  taxRatePct   Decimal @default(0) @db.Decimal(5, 2)
 
   mermaPct    Decimal     @default(0) @db.Decimal(5, 2)
   mermaOrigen MermaOrigin @default(sugerida)
@@ -725,6 +731,8 @@ model Product {
   recipeIngredients RecipeIngredient[]
   yieldTests        YieldTest[]
   priceHistory      ProductPriceHistory[]
+  invoiceLines      InvoiceLine[]
+  supplierItems     SupplierItem[]
 
   @@index([restaurantId, estado])
   @@index([restaurantId, criticality])
@@ -805,7 +813,135 @@ model ProductPriceHistory {
   precio       Int // centavos
   unidadCompra ProductUnit
 
+  // Set when the price came from a scanned invoice line.
+  invoiceLineId String?
+  invoiceLine   InvoiceLine? @relation(fields: [invoiceLineId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
 
   @@index([productId, createdAt])
+  @@index([invoiceLineId])
+}
+
+enum InvoiceStatus {
+  uploading
+  reading
+  review
+  applied
+  failed
+}
+
+enum InvoiceLineAction {
+  update_price
+  create_draft
+  connect
+  ignore
+}
+
+// A supplier of one restaurant. nameNorm dedupes "Pescheria X" / "PESCHERIA X srl".
+model Supplier {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String
+  nameNorm     String
+  taxId        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  invoices Invoice[]
+  items    SupplierItem[]
+
+  @@unique([restaurantId, nameNorm])
+}
+
+// One scanned supplier invoice or delivery note. supplierId is null while
+// reading. Duplicates (same supplier + number) are warned about, not blocked.
+model Invoice {
+  id              String        @id @default(cuid())
+  restaurantId    String
+  restaurant      Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  supplierId      String?
+  supplier        Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  number          String?
+  issuedOn        DateTime?     @db.Date
+  netTotalCents   Int?
+  taxTotalCents   Int?
+  grossTotalCents Int?
+  status          InvoiceStatus @default(reading)
+  failureReason   String?
+  uploadedById    String?
+  uploadedBy      User?         @relation("InvoiceUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  appliedAt       DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  pages InvoicePage[]
+  lines InvoiceLine[]
+
+  @@index([restaurantId, deletedAt, issuedOn])
+  @@index([restaurantId, status])
+  @@index([supplierId, number])
+}
+
+// The original file of one page (photo) or one whole PDF, in upload order.
+model InvoicePage {
+  id         String  @id @default(cuid())
+  invoiceId  String
+  invoice    Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  position   Int
+  storageKey String
+  mimeType   String
+  sizeBytes  Int
+
+  @@unique([invoiceId, position])
+}
+
+// One row as read from the paper, plus what the chef decided for it.
+model InvoiceLine {
+  id                String             @id @default(cuid())
+  invoiceId         String
+  invoice           Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  position          Int
+  description       String
+  code              String?
+  quantity          Decimal?           @db.Decimal(12, 3)
+  unit              String?
+  packQty           Decimal?           @db.Decimal(12, 3)
+  packUnit          String?
+  unitPriceCents    Int?
+  taxRatePct        Decimal?           @db.Decimal(5, 2)
+  lineTotalCents    Int?
+  productId         String?
+  product           Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
+  matchLevel        String?
+  action            InvoiceLineAction?
+  appliedPriceCents Int?
+
+  priceHistory ProductPriceHistory[]
+
+  @@unique([invoiceId, position])
+  @@index([productId])
+}
+
+// Supplier memory: once the chef confirms "this description (or code) from
+// this supplier is that product", the next invoice matches deterministically.
+model SupplierItem {
+  id              String   @id @default(cuid())
+  supplierId      String
+  supplier        Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  code            String?
+  descriptionNorm String
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  packQty         Decimal? @db.Decimal(12, 3)
+  packUnit        String?
+  lastPriceCents  Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([supplierId, descriptionNorm])
+  @@unique([supplierId, code])
+  @@index([productId])
 }

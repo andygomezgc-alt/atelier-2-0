@@ -9,6 +9,7 @@
 //   2. Procesamos resultados:
 //      - exact (distancia 0): linkeamos productId silenciosamente.
 //      - probable (1-3): encolamos para mostrar ConfirmMatchSheet, uno a uno.
+//      - ambiguo: varios hermanos de la familia → PickVariantSheet, el chef elige.
 //      - none (>3): marcamos para crear borrador automático al final.
 //   3. ConfirmMatchSheet (Sí/No):
 //      - Sí: linkear + agregar rawText como alias del producto (best-effort).
@@ -38,6 +39,8 @@ import {
   type IngredientValue,
 } from "@/src/components/IngredientAutocomplete";
 import { ConfirmMatchSheet } from "@/src/components/ConfirmMatchSheet";
+import { PickVariantSheet } from "@/src/components/PickVariantSheet";
+import { classifyMatches, type QueuedMatch } from "@/src/lib/match-queue";
 import { PezzaturaPendienteModal } from "@/src/components/PezzaturaPendienteModal";
 import { PesoCalculoEditor } from "@/src/components/PesoCalculoEditor";
 import { useI18n } from "@/src/hooks/useI18n";
@@ -73,13 +76,6 @@ import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
 
-// Cola de probables a confirmar. Procesamos uno a uno.
-type PendingMatch = {
-  ingredientIdx: number;
-  rawText: string;
-  productId: string;
-  productName: string;
-};
 
 export default function NuevaRecetaScreen() {
   const { t } = useI18n();
@@ -107,7 +103,8 @@ export default function NuevaRecetaScreen() {
   const storageWarningShown = useRef(false);
 
   // Estado del flujo de matching durante el save.
-  const [pendingMatches, setPendingMatches] = useState<PendingMatch[]>([]);
+  // Queue of probables to confirm and ambiguous ingredients to pick, one at a time.
+  const [pendingMatches, setPendingMatches] = useState<QueuedMatch[]>([]);
 
   // Cache local de productos del banco. Sirve para:
   //  - Aviso anti-typo (Ajuste 2 del plan A.5).
@@ -408,27 +405,16 @@ export default function NuevaRecetaScreen() {
       });
 
       const draftIndices: number[] = [];
-      const pending: PendingMatch[] = [];
+      let pending: QueuedMatch[] = [];
 
       if (toMatchTexts.length > 0) {
         const results = await matchProducts(toMatchTexts);
-        results.forEach((r, k) => {
-          const idx = toMatchIndices[k]!;
-          if (r.level === "exact" && r.productId) {
-            // Silent link.
-            working[idx]!.productId = r.productId;
-          } else if (r.level === "probable" && r.productId && r.productName) {
-            pending.push({
-              ingredientIdx: idx,
-              rawText: working[idx]!.rawText,
-              productId: r.productId,
-              productName: r.productName,
-            });
-          } else {
-            // none → crear borrador al final.
-            draftIndices.push(idx);
-          }
-        });
+        // exact → silent link; probable → confirm; ambiguo → pick a sibling;
+        // none → draft created in finalize().
+        const { linked, queue, drafts } = classifyMatches(results, toMatchIndices, toMatchTexts);
+        for (const l of linked) working[l.ingredientIdx]!.productId = l.productId;
+        draftIndices.push(...drafts);
+        pending = queue;
       }
 
       // Guardamos el estado en el ref para que ConfirmMatchSheet pueda
@@ -450,7 +436,7 @@ export default function NuevaRecetaScreen() {
 
   async function handleMatchYes() {
     const current = pendingMatches[0];
-    if (!current || !flowStateRef.current) return;
+    if (!current || current.kind !== "confirm" || !flowStateRef.current) return;
     const { workingIngredients } = flowStateRef.current;
     workingIngredients[current.ingredientIdx]!.productId = current.productId;
 
@@ -479,6 +465,17 @@ export default function NuevaRecetaScreen() {
     if (remaining.length === 0) {
       await finalize();
     }
+  }
+
+  // No alias here: the generic text ("gambero rosso") must stay ambiguous.
+  async function handlePickVariant(productId: string) {
+    const current = pendingMatches[0];
+    const state = flowStateRef.current;
+    if (!current || current.kind !== "pick" || !state) return;
+    state.workingIngredients[current.ingredientIdx]!.productId = productId;
+    const remaining = pendingMatches.slice(1);
+    setPendingMatches(remaining);
+    if (remaining.length === 0) await finalize();
   }
 
   async function handleMatchNo() {
@@ -735,7 +732,19 @@ export default function NuevaRecetaScreen() {
           )}
       </ScrollView>
 
-      {currentMatch ? (
+      {currentMatch?.kind === "pick" ? (
+        <PickVariantSheet
+          open
+          rawText={currentMatch.rawText}
+          candidates={currentMatch.candidates}
+          title={t("pick_variant_title")}
+          body={t("pick_variant_body")}
+          noneLabel={t("pick_variant_none")}
+          onPick={(id) => void handlePickVariant(id)}
+          onNone={() => void handleMatchNo()}
+        />
+      ) : null}
+      {currentMatch?.kind === "confirm" ? (
         <ConfirmMatchSheet
           open
           rawText={currentMatch.rawText}

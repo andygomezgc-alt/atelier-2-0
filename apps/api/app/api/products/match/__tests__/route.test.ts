@@ -64,3 +64,30 @@ describe("POST /api/products/match", () => {
     expect(await match(lines(101))).toEqual({ error: "invalid_body" });
   });
 });
+
+describe("ambiguous siblings and older app builds", () => {
+  async function matchWith(body: unknown) {
+    const res = await route.POST(
+      new NextRequest("https://t.local/api/products/match", { method: "POST", headers: { "x-test-body": JSON.stringify(body) } }),
+    );
+    return (await res.json()) as { results: Array<{ level: string; productId: string | null; candidates: unknown[] }> };
+  }
+
+  beforeEach(() => {
+    db.product.findMany.mockReset().mockResolvedValue([
+      { id: "g1", name: "Gambero rosso Mazara cal.3", aliases: [], precioCompra: 4500, unidadCompra: "kg" },
+      { id: "g2", name: "Gambero rosso Sicilia 15/20", aliases: [], precioCompra: 3800, unidadCompra: "kg" },
+    ]);
+  });
+
+  it("returns ambiguo with the siblings to a client that accepts it", async () => {
+    const { results } = await matchWith({ queries: ["gambero rosso"], acceptsAmbiguous: true });
+    expect(results[0]!.level).toBe("ambiguo");
+    expect(results[0]!.candidates).toHaveLength(2);
+  });
+
+  it("an older build without the flag gets a probable match to confirm, never ambiguo", async () => {
+    const { results } = await matchWith({ queries: ["gambero rosso"] });
+    expect(results[0]).toMatchObject({ level: "probable", productId: "g1", candidates: [] });
+  });
+});

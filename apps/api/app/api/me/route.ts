@@ -7,6 +7,7 @@ import { projectMe, meSelect } from "@/lib/projections";
 import { computeLeaveCase } from "@/lib/leave-cases";
 import { deleteRestaurantRecords } from "@/lib/delete-restaurant";
 import { deleteBlobs } from "@/lib/blob";
+import { deleteRestaurantInvoiceFiles } from "@/lib/invoices/storage";
 import { audit } from "@/lib/audit-log";
 import { logger } from "@/lib/logger";
 import { revokeAppleRefreshToken } from "@/lib/apple-auth";
@@ -312,6 +313,7 @@ export async function DELETE(req: NextRequest) {
     restaurant?.menuStyleRefUrl,
     ...(restaurant?.menuStyleVersions ?? []).map(v => v.refUrl),
   ]);
+  if (expectedCase === "C" && expectedRestaurantId) await deleteRestaurantInvoiceFiles(expectedRestaurantId);
   logger.info("account_deleted", { userId: ctx.userId, case: expectedCase });
   return new NextResponse(null, { status: 204 });
 }

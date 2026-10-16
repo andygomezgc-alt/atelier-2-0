@@ -325,6 +325,19 @@ export const ApiErrorCodeSchema = z.enum([
   "chat_refused",
   "chat_response_incomplete",
   "chat_context_too_long",
+  // Supplier invoices.
+  "file_too_large",
+  "invoice_storage_unavailable",
+  "invoice_not_uploading",
+  "invoice_pdf_single_file",
+  "invoice_too_many_pages",
+  "invoice_page_conflict",
+  "invoice_not_found",
+  "invoice_not_in_review",
+  "lines_undecided",
+  "product_required",
+  "price_required",
+  "supplier_not_found",
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
 
@@ -859,6 +872,14 @@ const gramosPorLitroSchema = z
   .refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, {
     message: "At most 2 decimals",
   });
+// Purchase tax (VAT / IVA) in percent, stored as Decimal(5,2).
+const taxRatePctSchema = z
+  .number()
+  .min(0)
+  .max(100)
+  .refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, {
+    message: "At most 2 decimals",
+  });
 
 export const CreateProductRequestSchema = z.object({
   allergens: z.array(AllergenSchema).max(14).transform(values => [...new Set(values)]).optional(),
@@ -877,6 +898,7 @@ export const CreateProductRequestSchema = z.object({
   mermaOrigen: MermaOrigenSchema.optional(),
   // Omitted or null → stored as null (unknown).
   gramosPorLitro: gramosPorLitroSchema.nullable().optional(),
+  taxRatePct: taxRatePctSchema.optional(),
   proveedor: z.string().max(200).nullable().optional(),
   notas: z.string().max(2000).nullable().optional(),
   estado: ProductStateSchema.optional(),
@@ -901,6 +923,7 @@ export const PatchProductRequestSchema = z.object({
   mermaOrigen: MermaOrigenSchema.optional(),
   // undefined → untouched; null → cleared (unknown).
   gramosPorLitro: gramosPorLitroSchema.nullable().optional(),
+  taxRatePct: taxRatePctSchema.optional(),
   proveedor: z.string().max(200).nullable().optional(),
   notas: z.string().max(2000).nullable().optional(),
   estado: ProductStateSchema.optional(),
@@ -930,6 +953,8 @@ export const ProductListItemSchema = z.object({
   mermaOrigen: MermaOrigenSchema,
   // Weight in grams of 1 litre; null = unknown. Optional for older payloads.
   gramosPorLitro: z.number().positive().nullable().optional(),
+  // Purchase tax in percent; optional for older payloads.
+  taxRatePct: z.number().min(0).max(100).optional(),
   criticality: CriticalitySchema,
   estado: ProductStateSchema,
   precioActualizadoAt: z.string(), // ISO
@@ -964,13 +989,27 @@ export const CreateYieldTestRequestSchema = z.object({
 export const MatchProductsRequestSchema = z.object({
   // Saving an imported recipe matches every unlinked ingredient in one call.
   queries: z.array(z.string().min(1).max(500)).max(MAX_RECIPE_INGREDIENTS),
+  // Set by app builds that show the variant picker. Older builds get
+  // "ambiguo" as a "probable" to confirm, so they never create duplicates.
+  acceptsAmbiguous: z.boolean().optional(),
+});
+
+export const AmbiguousCandidateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  origen: z.string().nullable(),
+  calibreLabel: z.string().nullable(),
+  precioCompra: z.number().nullable(),
+  unidadCompra: z.string().nullable(),
 });
 
 export const MatchResultSchema = z.object({
-  level: z.enum(["exact", "probable", "none"]),
+  level: z.enum(["exact", "ambiguo", "probable", "none"]),
   productId: z.string().nullable(),
   productName: z.string().nullable(),
   distance: z.number(),
+  // Empty unless level is "ambiguo": the sibling products the chef picks from.
+  candidates: z.array(AmbiguousCandidateSchema).default([]),
 });
 
 export const MatchProductsResponseSchema = z.object({
@@ -1020,6 +1059,7 @@ export type CreateProductRequest = z.infer<typeof CreateProductRequestSchema>;
 export type PatchProductRequest = z.infer<typeof PatchProductRequestSchema>;
 export type MatchProductsRequest = z.infer<typeof MatchProductsRequestSchema>;
 export type MatchResult = z.infer<typeof MatchResultSchema>;
+export type AmbiguousCandidate = z.infer<typeof AmbiguousCandidateSchema>;
 export type MatchProductsResponse = z.infer<typeof MatchProductsResponseSchema>;
 export type RecipeIngredientInput = z.infer<typeof RecipeIngredientInputSchema>;
 export type RecipeIngredientResponse = z.infer<typeof RecipeIngredientResponseSchema>;

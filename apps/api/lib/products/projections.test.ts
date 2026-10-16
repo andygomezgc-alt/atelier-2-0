@@ -48,3 +48,18 @@ describe("product projection — gramosPorLitro", () => {
     expect(projectProductListItem(productRow(undefined))).toHaveProperty("gramosPorLitro", null);
   });
 });
+
+describe("product projection — purchase tax", () => {
+  it("exposes the tax rate and counts it in the real cost, like recipe cost does", () => {
+    const row = { ...productRow(null), taxRatePct: dec(10), mermaPct: dec(20) } as unknown as DetailSource;
+    const item = projectProductListItem(row);
+    expect(item.taxRatePct).toBe(10);
+    expect(item.realCost).toBeCloseTo((500 * 1.1) / 0.8, 6);
+  });
+
+  it("a product without tax keeps its plain real cost", () => {
+    const item = projectProductListItem({ ...productRow(null), taxRatePct: dec(0) } as unknown as DetailSource);
+    expect(item.taxRatePct).toBe(0);
+    expect(item.realCost).toBe(500);
+  });
+});

@@ -44,6 +44,7 @@ export async function POST(
       mermaPct: source.mermaPct,
       mermaOrigen: source.mermaOrigen,
       gramosPorLitro: source.gramosPorLitro,
+      taxRatePct: source.taxRatePct,
       proveedor: source.proveedor,
       notas: source.notas,
       allergen: source.allergen,

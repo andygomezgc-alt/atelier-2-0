@@ -98,6 +98,8 @@ export type RecipeIngredientForCost = {
   product: {
     id?: string;
     precioCompra: number; // centavos
+    // Purchase tax in percent (Product.taxRatePct). Absent or 0 = no tax.
+    taxRatePct?: number;
     mermaPct: number;     // 0-100
     unidadCompra: ProductUnit;
     // Weight in grams of 1 litre; null/undefined = unknown (never guessed).
@@ -209,6 +211,15 @@ type IngredientPricing =
   | { cost: number; warning: IngredientCostWarning | null }
   | { status: Exclude<CostLineStatus, "ok" | "no_product" | "no_price"> };
 
+// precioCompra is net; recipe cost shows it with the product's purchase tax
+// (spec 2026-10-14). Applied to the price itself so every unit path and the
+// waste correction see the taxed price.
+function withTax(product: LinkedProduct): LinkedProduct {
+  const rate = product.taxRatePct ?? 0;
+  if (!(rate > 0)) return product;
+  return { ...product, precioCompra: product.precioCompra * (1 + rate / 100) };
+}
+
 // Prices one linked ingredient that has a price, a quantity and a unit, in
 // unrounded cents — or says why it cannot be priced.
 function priceIngredient(
@@ -301,7 +312,7 @@ export function computeRecipeCost(input: RecipeCostInput): RecipeCostBreakdown {
       unmeasuredCount++;
       status = "no_quantity";
     } else {
-      const pricing = priceIngredient(ing, product, ing.qty, ing.unit);
+      const pricing = priceIngredient(ing, withTax(product), ing.qty, ing.unit);
       if ("status" in pricing) {
         // Unknown units, needs_*, incompatible_unit and invalid_merma all
         // count as unmeasured, as they did before per-ingredient lines.

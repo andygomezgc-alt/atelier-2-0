@@ -105,6 +105,12 @@ describe("POST /api/products/[id]/duplicate", () => {
     expect(db.product.create.mock.calls[1]![0].data).toHaveProperty("gramosPorLitro", null);
   });
 
+  it("keeps the purchase tax of the source on the copy", async () => {
+    db.product.findUnique.mockResolvedValueOnce({ ...SOURCE, taxRatePct: 10 });
+    await post("prod-1");
+    expect(db.product.create.mock.calls[0]![0].data.taxRatePct).toBe(10);
+  });
+
   it("404 si el producto no existe", async () => {
     db.product.findUnique.mockResolvedValueOnce(null);
     const res = await post("nope");

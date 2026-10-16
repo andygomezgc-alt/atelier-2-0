@@ -34,7 +34,7 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
       where: { productId: id },
       orderBy: { createdAt: "desc" },
       take: 100,
-      include: { author: { select: { id: true, name: true } } },
+      include: { author: { select: { id: true, name: true } }, invoiceLine: { select: { invoiceId: true } } },
     }),
     prisma.yieldTest.findMany({
       where: { productId: id },
@@ -51,6 +51,7 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
       unidadCompra: row.unidadCompra,
       createdAt: row.createdAt.toISOString(),
       author: row.author,
+      invoiceId: row.invoiceLine?.invoiceId ?? null,
     })),
     yieldTests: yieldTests.map((row) => ({
       id: row.id,

@@ -59,6 +59,22 @@ describe("loadMatchCandidates", () => {
 });
 
 describe("standardizeExtractedRecipe", () => {
+  it("an ambiguous ingredient stays unlinked and out of pendingMatches", () => {
+    vi.mocked(findMatch).mockReturnValueOnce({
+      level: "ambiguo",
+      productId: null,
+      productName: null,
+      distance: 0,
+      candidates: [
+        { id: "g1", name: "gambero rosso mazara cal.3", origen: "mazara", calibreLabel: "cal.3", precioCompra: null, unidadCompra: null },
+        { id: "g2", name: "gambero rosso sicilia 15/20", origen: "sicilia", calibreLabel: "15/20", precioCompra: null, unidadCompra: null },
+      ],
+    });
+    const { response } = standardizeExtractedRecipe(recipe(["200 g gambero rosso"]), BANK);
+    expect(response.recipeIngredients[0]!.productId).toBeNull();
+    expect(response.pendingMatches).toEqual([]);
+  });
+
   it("keeps title, portions, method and notes", () => {
     const { response } = standardizeExtractedRecipe(recipe(["40 g AOVE"]), []);
     expect(response).toMatchObject({

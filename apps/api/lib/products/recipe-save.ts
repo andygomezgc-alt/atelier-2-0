@@ -1,14 +1,11 @@
 import type { Prisma } from "@atelier/db";
 import {
-  detectPezzaturaFromName,
   formatIngredientLine,
   normalizeForMatch,
   standardizeIngredientLine,
   type RecipeIngredientInput,
 } from "@atelier/shared";
-import { categorizeFromName, suggestedMermaPct } from "./defaults";
-import { defaultPurchaseUnit } from "./purchase-unit";
-import { defaultCriticality } from "./criticality";
+import { createDraftProduct } from "./drafts";
 import { findMatch } from "./matching";
 
 export class RecipeSaveError extends Error {
@@ -132,14 +129,7 @@ export async function resolveIngredientDrafts(
       const match = findMatch(name, candidates);
       if (match.level === "exact" && match.productId) productId = match.productId;
       else {
-        const category = categorizeFromName(name);
-        const pezzatura = detectPezzaturaFromName(name, category);
-        const created = await tx.product.create({ data: {
-          restaurantId, name, category, unidadCompra: defaultPurchaseUnit(category, name), precioCompra: 0,
-          mermaPct: suggestedMermaPct(name, category), mermaOrigen: "sugerida", estado: "borrador",
-          criticality: defaultCriticality(category, name), criticalityManual: false,
-          pezzaturaMode: pezzatura?.mode ?? null, pezzaturaMin: pezzatura?.min ?? null, pezzaturaMax: pezzatura?.max ?? null,
-        } });
+        const created = await createDraftProduct(tx, { restaurantId, name });
         productId = created.id;
         candidates.push({ id: created.id, name: created.name, aliases: created.aliases });
       }

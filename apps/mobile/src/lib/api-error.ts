@@ -75,6 +75,18 @@ const CODE_TO_KEY: Record<KnownApiErrorCode, TranslationKey> = {
   chat_refused: "error_chat_refused",
   chat_response_incomplete: "error_chat_response_incomplete",
   chat_context_too_long: "error_chat_context_too_long",
+  file_too_large: "invoice_file_too_large",
+  invoice_storage_unavailable: "error_invoice_storage_unavailable",
+  invoice_not_uploading: "error_invoice_not_uploading",
+  invoice_pdf_single_file: "error_invoice_pdf_single_file",
+  invoice_too_many_pages: "invoice_scan_too_many_pages",
+  invoice_page_conflict: "error_invoice_page_conflict",
+  invoice_not_found: "error_invoice_not_found",
+  invoice_not_in_review: "error_invoice_not_in_review",
+  lines_undecided: "error_lines_undecided",
+  product_required: "error_product_required",
+  price_required: "error_price_required",
+  supplier_not_found: "error_supplier_not_found",
 };
 
 // A3 — the chat error classifier reuses this table for closed codes.

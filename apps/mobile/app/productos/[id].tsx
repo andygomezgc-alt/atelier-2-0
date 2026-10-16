@@ -60,6 +60,7 @@ import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { formatGrams, parseGrams } from "@/src/lib/ingredient-cost";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
+import { parseTaxRatePct, realCostWithTax } from "@/src/lib/product-cost";
 
 const UNIT_SHORT: Record<ProductUnit, string> = {
   kg: "kg",
@@ -78,11 +79,6 @@ function parseMermaPct(input: string): number | null {
   const n = Number(input.replace(",", ".").trim());
   if (!Number.isFinite(n) || n < 0 || n >= 100) return null;
   return n;
-}
-
-function realCostLocal(cents: number, mermaPct: number): number | null {
-  if (mermaPct >= 100) return null;
-  return cents / (1 - mermaPct / 100);
 }
 
 export default function ProductoDetailScreen() {
@@ -216,7 +212,7 @@ export default function ProductoDetailScreen() {
       setProduct({
         ...product,
         precioCompra: cents,
-        realCost: realCostLocal(cents, product.mermaPct),
+        realCost: realCostWithTax(cents, product.mermaPct, product.taxRatePct ?? 0),
         precioActualizadoAt: new Date().toISOString(),
       });
       try {
@@ -240,12 +236,28 @@ export default function ProductoDetailScreen() {
       setProduct({
         ...product,
         mermaPct: pct,
-        realCost: realCostLocal(product.precioCompra, pct),
+        realCost: realCostWithTax(product.precioCompra, pct, product.taxRatePct ?? 0),
         mermaOrigen: "confirmada",
       });
       try {
         const updated = await patchProduct(product.id, { mermaPct: pct });
         setProduct(updated);
+      } catch (err) {
+        setProduct(before);
+        throw err;
+      }
+    },
+    [product],
+  );
+
+  // Save of the purchase tax: it is part of the real cost, like in recipe cost.
+  const handleSaveTax = useCallback(
+    async (pct: number) => {
+      if (!product) return;
+      const before = product;
+      setProduct({ ...product, taxRatePct: pct, realCost: realCostWithTax(product.precioCompra, product.mermaPct, pct) });
+      try {
+        setProduct(await patchProduct(product.id, { taxRatePct: pct }));
       } catch (err) {
         setProduct(before);
         throw err;
@@ -531,6 +543,17 @@ export default function ProductoDetailScreen() {
             width={64}
           />
         </View>
+        <View style={styles.fieldRow}>
+          <Text style={styles.fieldLabel}>{t("producto_tax_label")}</Text>
+          <EditableCell
+            value={product.taxRatePct ?? 0}
+            format={(v) => `${v.toLocaleString(dateLocale(lang))} %`}
+            parse={parseTaxRatePct}
+            onSave={handleSaveTax}
+            readOnly={!canEditFields}
+            width={64}
+          />
+        </View>
 
         {/* Aviso de precio viejo (>7 días). Solo aparece si hay precio. */}
         <ProductAllergensEditor allergens={product.allergens} reviewed={product.allergensReviewed} disabled={!canEditFields}
@@ -687,16 +710,34 @@ export default function ProductoDetailScreen() {
                 {!history || history.priceHistory.length === 0 ? (
                   <Text style={styles.muted}>{t("producto_no_price_history")}</Text>
                 ) : (
-                  history.priceHistory.map((row) => (
-                    <View key={row.id} style={styles.historyRow}>
-                      <Text style={styles.historyDate}>
-                        {new Date(row.createdAt).toLocaleDateString(dateLocale(lang))}
-                      </Text>
-                      <Text style={styles.historyValue}>
-                        {formatEurosPerUnit(row.precio, UNIT_SHORT[row.unidadCompra])}
-                      </Text>
-                    </View>
-                  ))
+                  history.priceHistory.map((row) => {
+                    const cells = (
+                      <>
+                        <Text style={styles.historyDate}>
+                          {new Date(row.createdAt).toLocaleDateString(dateLocale(lang))}
+                        </Text>
+                        <Text style={styles.historyValue}>
+                          {formatEurosPerUnit(row.precio, UNIT_SHORT[row.unidadCompra])}
+                        </Text>
+                      </>
+                    );
+                    // A price that came from an invoice opens it (only for who can see invoices).
+                    return row.invoiceId && canEditFields ? (
+                      <Pressable
+                        key={row.id}
+                        style={styles.historyRow}
+                        accessibilityRole="link"
+                        onPress={() => router.push(`/facturas/${row.invoiceId}` as never)}
+                      >
+                        {cells}
+                        <Ionicons name="receipt-outline" size={14} color={colors.mute} />
+                      </Pressable>
+                    ) : (
+                      <View key={row.id} style={styles.historyRow}>
+                        {cells}
+                      </View>
+                    );
+                  })
                 )}
               </View>
             ) : null}

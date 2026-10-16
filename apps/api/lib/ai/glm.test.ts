@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("./budget", () => ({ reserveGeneration: vi.fn().mockResolvedValue({ id: "reservation" }), settleGeneration: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("../logger", () => ({ logger: { info: vi.fn() } }));
+vi.mock("../logger", () => ({ logger: { info: vi.fn(), error: vi.fn() } }));
 import { generateGlmJson } from "./glm";
 import { logger } from "../logger";
 import { reserveGeneration, settleGeneration } from "./budget";
@@ -11,6 +11,14 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 describe("GLM structured generation", () => {
+  it("logs the provider error body before throwing", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response('{"error":{"code":"1210","message":"bad image"}}', { status: 400 })));
+    await expect(generateGlmJson({ task: "extraction", system: "JSON", content: "Data" })).rejects.toThrow("ai_provider_http_400");
+    expect(logger.error).toHaveBeenCalledWith("ai_provider_http_error", expect.objectContaining({
+      provider: "zai", task: "extraction", status: 400, body: expect.stringContaining("bad image"),
+    }));
+  });
+
   it.each(["extraction", "menuStyle", "menuTheme", "memory"] as const)("guards every %s generation before contacting GLM", async task => {
     const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
     vi.mocked(reserveGeneration).mockRejectedValueOnce(new Error("ai_budget_exhausted"));

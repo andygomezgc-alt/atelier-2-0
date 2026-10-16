@@ -3,6 +3,11 @@
 // Recibe un array de queries (strings de ingredientes que entró el chef).
 // Devuelve, en el mismo orden, un MatchResult por cada uno:
 //   exact (distancia 0)    → enlace silencioso, productId pre-cargado
+//   ambiguo                → el banco tiene varios hermanos de la misma
+//                            familia ("gambero rosso" ×4) y el query no
+//                            distingue: el cliente muestra PickVariantSheet
+//                            con `candidates` y el chef elige. Jamás se
+//                            adivina (pedido de Andy, jul 2026).
 //   probable (distancia 1-3) → el cliente muestra ConfirmMatchSheet
 //   none (distancia >3)    → el cliente ofrece "Crear producto borrador"
 //
@@ -35,13 +40,16 @@ export const POST = withAuth(
         deletedAt: null,
         estado: { in: ["activo", "borrador"] },
       },
-      select: { id: true, name: true, aliases: true },
+      // Price and unit travel with ambiguous candidates so the chef can tell siblings apart.
+      select: { id: true, name: true, aliases: true, precioCompra: true, unidadCompra: true },
     });
 
     const candidates: MatchCandidate[] = products.map((p) => ({
       id: p.id,
       name: p.name,
       aliases: p.aliases,
+      precioCompra: p.precioCompra,
+      unidadCompra: p.unidadCompra,
     }));
 
     // Bug C fix (Andy 2026-05-17): el rawText del cliente puede traer la
@@ -55,9 +63,14 @@ export const POST = withAuth(
     // Standard format: the clean name also drops the note and any
     // parenthetical ("rape limpio, muy frío (o merluza)" → "rape limpio"),
     // so an alternative in the note never wins the match.
-    const results = body.queries.map((q) =>
-      findMatch(standardizeIngredientLine(q).ingredient.name || q, candidates),
-    );
+    const results = body.queries.map((q) => {
+      const r = findMatch(standardizeIngredientLine(q).ingredient.name || q, candidates);
+      const first = r.candidates[0];
+      if (r.level !== "ambiguo" || body.acceptsAmbiguous || !first) return r;
+      // Older app builds have no variant picker and would turn "ambiguo"
+      // into a new draft product: offer the first sibling to confirm instead.
+      return { level: "probable" as const, productId: first.id, productName: first.name, distance: r.distance, candidates: [] };
+    });
 
     const response: MatchProductsResponse = { results };
     return NextResponse.json(response);

@@ -46,7 +46,7 @@ import { join } from "node:path";
 import { prisma } from "@atelier/db";
 import { parseIngredient } from "../lib/products/parser";
 import { categorizeFromName } from "../lib/products/defaults";
-import { findMatch } from "../lib/products/matching";
+import { findMatch, type MatchLevel } from "../lib/products/matching";
 
 // ───────── Helpers de formato ─────────
 
@@ -147,7 +147,7 @@ async function reportForRestaurant(restaurantId: string, restaurantName: string)
     parsedName: string;
     parsedUnit: string | null;
     parsedQty: number | null;
-    matchLevel: "exact" | "probable" | "none";
+    matchLevel: MatchLevel;
     matchProduct: string | null;
     matchDistance: number;
     category: string;
@@ -202,7 +202,7 @@ async function reportForRestaurant(restaurantId: string, restaurantName: string)
   }
 
   const entries = [...uniqueIngredients.values()].sort((a, b) => {
-    const levelOrder = { exact: 0, probable: 1, none: 2 } as const;
+    const levelOrder: Record<MatchLevel, number> = { exact: 0, ambiguo: 1, probable: 2, none: 3 };
     if (a.matchLevel !== b.matchLevel) {
       return levelOrder[a.matchLevel] - levelOrder[b.matchLevel];
     }

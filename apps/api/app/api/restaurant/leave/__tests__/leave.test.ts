@@ -77,6 +77,8 @@ vi.mock("@atelier/db", () => ({
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => null) }));
+const deleteRestaurantInvoiceFiles = vi.fn();
+vi.mock("@/lib/invoices/storage", () => ({ deleteRestaurantInvoiceFiles }));
 
 let postRoute: typeof import("../route");
 let preflightRoute: typeof import("../preflight/route");
@@ -258,6 +260,7 @@ describe("POST /api/restaurant/leave", () => {
         }),
       }),
     );
+    expect(deleteRestaurantInvoiceFiles).not.toHaveBeenCalled();
   });
 
   it("case B: 409 case_changed with actualCase B, no DB write", async () => {
@@ -351,6 +354,7 @@ describe("POST /api/restaurant/leave", () => {
       where: { restaurantId: "r1" },
       data: { restaurantId: null },
     });
+    expect(deleteRestaurantInvoiceFiles).toHaveBeenCalledWith("r1");
   });
 
   it("returns 404 when not in a restaurant", async () => {

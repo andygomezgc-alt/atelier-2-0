@@ -348,25 +348,43 @@ export default function CasaScreen() {
         ) : null}
 
         {canBanco ? (
-          <Pressable
-            style={styles.bancoEntry}
-            onPress={() =>
-              // Cast a never: el typed-routes generator de Expo Router emite
-              // "/productos/index" como path para el archivo index.tsx, pero
-              // a runtime ese URL cae al dinámico [id] con id="index" y 404a.
-              // El URL correcto para alcanzar index.tsx es "/productos".
-              router.push("/productos" as never)
-            }
-          >
-            <View style={styles.bancoIcon}>
-              <Ionicons name="archive-outline" size={20} color={colors.terracota} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.bancoTitle}>{t("casa_banco_entry_title")}</Text>
-              <Text style={styles.bancoSub}>{t("casa_banco_entry_sub")}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.mute} />
-          </Pressable>
+          <>
+            <Pressable
+              style={styles.bancoEntry}
+              onPress={() =>
+                // Cast a never: el typed-routes generator de Expo Router emite
+                // "/productos/index" como path para el archivo index.tsx, pero
+                // a runtime ese URL cae al dinámico [id] con id="index" y 404a.
+                // El URL correcto para alcanzar index.tsx es "/productos".
+                router.push("/productos" as never)
+              }
+            >
+              <View style={styles.bancoIcon}>
+                <Ionicons name="archive-outline" size={20} color={colors.terracota} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bancoTitle}>{t("casa_banco_entry_title")}</Text>
+                <Text style={styles.bancoSub}>{t("casa_banco_entry_sub")}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.mute} />
+            </Pressable>
+            <Pressable
+              style={styles.bancoEntry}
+              accessibilityRole="button"
+              accessibilityLabel={t("casa_facturas_entry_title")}
+              // Folder index route: push "/facturas", never "/facturas/index" (see the Banco note).
+              onPress={() => router.push("/facturas" as never)}
+            >
+              <View style={styles.bancoIcon}>
+                <Ionicons name="receipt-outline" size={20} color={colors.terracota} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bancoTitle}>{t("casa_facturas_entry_title")}</Text>
+                <Text style={styles.bancoSub}>{t("casa_facturas_entry_sub")}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.mute} />
+            </Pressable>
+          </>
         ) : null}
 
         <View style={styles.section}>

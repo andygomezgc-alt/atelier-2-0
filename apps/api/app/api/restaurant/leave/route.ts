@@ -22,6 +22,7 @@ import { computeLeaveCase } from "@/lib/leave-cases";
 import { audit } from "@/lib/audit-log";
 import { logger } from "@/lib/logger";
 import { deleteBlobs } from "@/lib/blob";
+import { deleteRestaurantInvoiceFiles } from "@/lib/invoices/storage";
 import { deleteRestaurantRecords } from "@/lib/delete-restaurant";
 
 export const dynamic = "force-dynamic";
@@ -189,6 +190,7 @@ export async function POST(req: NextRequest) {
   if (mismatch) return caseChanged(mismatch);
 
   await deleteBlobs([restaurant.photoUrl, restaurant.menuStyleRefUrl, ...(restaurant.menuStyleVersions ?? []).map(v => v.refUrl)]);
+  await deleteRestaurantInvoiceFiles(restaurantId);
 
   logger.info("restaurant_deleted", { restaurantId, actorId: ctx.userId });
   return NextResponse.json({ action: "deleted" });

@@ -75,6 +75,17 @@ beforeEach(() => {
 });
 
 describe("PATCH /api/products/:id", () => {
+  it("updates the purchase tax, and leaves it alone when not sent", async () => {
+    await patch({ taxRatePct: 22 });
+    expect(db.product.updateMany.mock.calls[0]![0].data.taxRatePct).toBe(22);
+    await patch({ name: "Patata" });
+    expect(db.product.updateMany.mock.calls[1]![0].data.taxRatePct).toBeUndefined();
+  });
+
+  it.each([[150], [-1], [10.555]])("refuses a tax rate of %s", async (taxRatePct) => {
+    expect((await patch({ taxRatePct })).status).toBe(400);
+    expect(db.product.updateMany).not.toHaveBeenCalled();
+  });
   it("persiste todos los alérgenos revisados, incluido ninguno declarado", async () => {
     await patch({ allergens: ["milk", "eggs"] });
     expect(db.product.updateMany.mock.calls[0]![0].data).toMatchObject({ allergens: ["milk", "eggs"], allergen: "milk", allergensReviewed: true });

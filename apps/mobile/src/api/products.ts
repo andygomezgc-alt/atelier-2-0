@@ -46,6 +46,8 @@ export type PriceHistoryEntry = {
   unidadCompra: ProductUnit;
   createdAt: string;
   author: { id: string; name: string } | null;
+  // The invoice line this price came from, when it came from an invoice.
+  invoiceId?: string | null;
 };
 
 export type YieldTestEntry = {
@@ -131,7 +133,7 @@ function bumpProductCache(p: ProductFull): ProductFull {
 export type { MatchResult };
 export async function matchProducts(queries: string[]): Promise<MatchResult[]> {
   if (queries.length === 0) return [];
-  const body: MatchProductsRequest = { queries };
+  const body: MatchProductsRequest = { queries, acceptsAmbiguous: true };
   const res = await apiFetch<MatchProductsResponse>("/api/products/match", {
     method: "POST",
     body: JSON.stringify(body),
@@ -148,7 +150,9 @@ export type MigrateRecipesReport = {
     recipesToMigrate: number;
     recipesSkipped: number;
     totalIngredients: number;
-    matches: { exact: number; probable: number; none: number };
+    // `ambiguo`: varios hermanos de familia en el banco y el texto de la
+    // receta no dice cuál. Ni se enlazan ni se crean drafts.
+    matches: { exact: number; probable: number; ambiguo: number; none: number };
     probableMatchesPolicy: "auto-link" | "leave-unmatched";
   };
   conflicts: Array<{

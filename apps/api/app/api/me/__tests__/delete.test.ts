@@ -29,6 +29,7 @@ const yieldTest = { deleteMany: vi.fn(), count: vi.fn() };
 const productPriceHistory = { deleteMany: vi.fn() };
 const product = { deleteMany: vi.fn() };
 const deleteBlobs = vi.fn();
+const deleteRestaurantInvoiceFiles = vi.fn();
 const revokeAppleRefreshToken = vi.fn();
 const decryptAppleToken = vi.fn((value: string) => `plain:${value}`);
 const stripeMocks = vi.hoisted(() => ({
@@ -83,6 +84,7 @@ vi.mock("@atelier/db", () => ({
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => null) }));
 vi.mock("@/lib/blob", () => ({ deleteBlobs }));
+vi.mock("@/lib/invoices/storage", () => ({ deleteRestaurantInvoiceFiles }));
 vi.mock("@/lib/apple-auth", () => ({ revokeAppleRefreshToken }));
 vi.mock("@/lib/apple-token-crypto", () => ({ decryptAppleToken }));
 vi.mock("stripe", () => ({
@@ -310,6 +312,7 @@ describe("DELETE /api/me", () => {
       undefined,
       undefined,
     ]);
+    expect(deleteRestaurantInvoiceFiles).not.toHaveBeenCalled();
   });
 
   it("case C deletes the restaurant pipeline and then the user", async () => {
@@ -359,6 +362,7 @@ describe("DELETE /api/me", () => {
     expect(verificationToken.deleteMany).toHaveBeenCalledWith({
       where: { identifier: "chef@example.com" },
     });
+    expect(deleteRestaurantInvoiceFiles).toHaveBeenCalledWith("r1");
   });
 
   it("case C anonymizes instead of deleting when authorship survives elsewhere", async () => {
