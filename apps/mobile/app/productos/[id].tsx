@@ -60,7 +60,7 @@ import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { formatGrams, parseGrams } from "@/src/lib/ingredient-cost";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
-import { parseTaxRatePct, realCostWithTax } from "@/src/lib/product-cost";
+import { parseTaxRatePct, realCostWithTax, suggestedMermaReason } from "@/src/lib/product-cost";
 
 const UNIT_SHORT: Record<ProductUnit, string> = {
   kg: "kg",
@@ -543,6 +543,9 @@ export default function ProductoDetailScreen() {
             width={64}
           />
         </View>
+        {suggestedMermaReason(product) ? (
+          <Text style={styles.unitHint}>{t("producto_merma_motivo", { reason: suggestedMermaReason(product)! })}</Text>
+        ) : null}
         <View style={styles.fieldRow}>
           <Text style={styles.fieldLabel}>{t("producto_tax_label")}</Text>
           <EditableCell

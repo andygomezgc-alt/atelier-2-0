@@ -578,6 +578,7 @@ export const it: EsDict = {
   criticality_baja: "Bassa",
 
   merma_origen_sugerida: "Suggerita",
+  producto_merma_motivo: "Suggerito: {reason}",
   merma_origen_confirmada: "Confermata",
   merma_origen_medida: "Misurata",
 
@@ -899,6 +900,9 @@ export const it: EsDict = {
   invoice_scan_partial: "{failed} di {total} fatture non sono state inviate. Riprova.",
   invoice_scan_prepare_failed: "Non è stato possibile preparare il file. Riprova.",
   invoice_line_new_product: "Prodotto nuovo",
+  invoice_line_new_product_named: "Prodotto nuovo: {name}",
+  invoice_line_draft_waste: "Scarto suggerito {pct} % · {reason}",
+  invoice_line_draft_waste_bare: "Scarto suggerito {pct} %",
   invoice_line_tax: "IVA {rate} %",
   invoice_line_change: "Cambia",
   invoice_line_confirm_big_change: "Conferma la variazione del {pct} %",

@@ -53,7 +53,16 @@ export function InvoiceLineCard({ line, readOnly, onPatch, onChooseProduct }: Pr
     <View style={styles.card}>
       <Text style={styles.paper}>{line.description}</Text>
       {meta ? <Text style={styles.meta}>{meta}</Text> : null}
-      <Text style={styles.product}>{product ? product.name : t("invoice_line_new_product")}</Text>
+      <Text style={styles.product}>
+        {product ? product.name : line.draft ? t("invoice_line_new_product_named", { name: line.draft.name }) : t("invoice_line_new_product")}
+      </Text>
+      {!product && line.draft?.mermaPct != null ? (
+        <Text style={styles.meta}>
+          {line.draft.mermaReason
+            ? t("invoice_line_draft_waste", { pct: line.draft.mermaPct, reason: line.draft.mermaReason })
+            : t("invoice_line_draft_waste_bare", { pct: line.draft.mermaPct })}
+        </Text>
+      ) : null}
       {readOnly ? (
         // The product's price today is not the one before the invoice: show only what was set.
         line.action === "update_price" && line.appliedPriceCents !== null ? <Text style={styles.price}>{formatEuros(line.appliedPriceCents)}</Text> : null

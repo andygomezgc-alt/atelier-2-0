@@ -577,6 +577,7 @@ export const en: EsDict = {
   criticality_baja: "Low",
 
   merma_origen_sugerida: "Suggested",
+  producto_merma_motivo: "Suggested: {reason}",
   merma_origen_confirmada: "Confirmed",
   merma_origen_medida: "Measured",
 
@@ -898,6 +899,9 @@ export const en: EsDict = {
   invoice_scan_partial: "{failed} of {total} invoices were not sent. Try again.",
   invoice_scan_prepare_failed: "The file could not be prepared. Try again.",
   invoice_line_new_product: "New product",
+  invoice_line_new_product_named: "New product: {name}",
+  invoice_line_draft_waste: "Suggested trim loss {pct} % · {reason}",
+  invoice_line_draft_waste_bare: "Suggested trim loss {pct} %",
   invoice_line_tax: "VAT {rate} %",
   invoice_line_change: "Change",
   invoice_line_confirm_big_change: "Confirm the {pct} % change",

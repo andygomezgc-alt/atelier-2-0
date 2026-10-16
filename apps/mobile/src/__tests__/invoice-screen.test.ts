@@ -46,7 +46,7 @@ const { default: InvoiceScreen } = await import("../../app/facturas/[id]");
 const line = (over: Partial<InvoiceLineView> = {}): InvoiceLineView => ({
   position: 0, description: "Zucchine", code: null, quantity: 2, unit: "kg", packQty: null, packUnit: null,
   unitPriceCents: 180, taxRatePct: 4, lineTotalCents: 360, matchLevel: "exact", action: "update_price", appliedPriceCents: 180,
-  product: { id: "p1", name: "Zucchine", unidadCompra: "kg", precioCompra: 150, taxRatePct: 4 }, siblings: [], quantityLooksMisread: false, ...over,
+  product: { id: "p1", name: "Zucchine", unidadCompra: "kg", precioCompra: 150, taxRatePct: 4 }, draft: null, siblings: [], quantityLooksMisread: false, ...over,
 });
 const invoice = (over: Partial<InvoiceDetail> = {}): InvoiceDetail => ({
   id: "inv1", status: "review", number: "77", issuedOn: "2026-10-10", grossTotalCents: 2288, netTotalCents: 2200, failureReason: null,
