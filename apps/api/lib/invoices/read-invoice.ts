@@ -7,6 +7,7 @@ import { recordAiTokens, reserveAiCall } from "../ai-quota";
 import { AiBudgetError } from "../ai/budget-policy";
 import { logger } from "../logger";
 import { extractInvoicePage, InvoiceExtractionError, type ExtractedInvoicePage } from "./extraction";
+import { nameDrafts, type DraftSuggestion } from "./draft-naming";
 import { plausibleDate, upsertSupplier } from "./header";
 import { type SecondLook } from "./line-matching";
 import { proposeInvoiceLines } from "./propose";
@@ -76,6 +77,18 @@ export async function readInvoice(invoiceId: string, deadline: number): Promise<
       lines: merged.lines,
       secondLook: look,
     });
+    // New products get a clean name, category and waste from one more AI call; without quota or
+    // on any failure they keep the printed description and the bank's defaults.
+    const newProducts = proposed.filter((l) => l.productId === null && l.kind !== "charge")
+      .map((l) => ({ position: l.position, description: l.description, unit: l.unit, packQty: l.packQty, packUnit: l.packUnit }));
+    let drafts = new Map<number, DraftSuggestion>();
+    if (newProducts.length > 0 && (!userId || (await reserveAiCall(userId)).ok)) {
+      try {
+        drafts = await nameDrafts(newProducts, onUsage);
+      } catch (error) {
+        logger.warn("invoice_draft_naming_failed", { invoiceId, message: error instanceof Error ? error.message : String(error) });
+      }
+    }
 
     await prisma.$transaction(async (tx) => {
       const claimed = await tx.invoice.updateMany({
@@ -89,12 +102,17 @@ export async function readInvoice(invoiceId: string, deadline: number): Promise<
       if (claimed.count === 0) return;
       await tx.invoiceLine.deleteMany({ where: { invoiceId } });
       await tx.invoiceLine.createMany({
-        data: proposed.map((l) => ({
-          invoiceId, position: l.position, description: l.description, code: l.code, quantity: l.quantity, unit: l.unit,
-          packQty: l.packQty, packUnit: l.packUnit, unitPriceCents: l.unitPriceCents, taxRatePct: l.taxRatePct,
-          lineTotalCents: l.lineTotalCents, productId: l.productId, matchLevel: l.matchLevel, action: l.action,
-          appliedPriceCents: l.appliedPriceCents,
-        })),
+        data: proposed.map((l) => {
+          const draft = drafts.get(l.position);
+          return {
+            invoiceId, position: l.position, description: l.description, code: l.code, quantity: l.quantity, unit: l.unit,
+            packQty: l.packQty, packUnit: l.packUnit, unitPriceCents: l.unitPriceCents, taxRatePct: l.taxRatePct,
+            lineTotalCents: l.lineTotalCents, productId: l.productId, matchLevel: l.matchLevel, action: l.action,
+            appliedPriceCents: l.appliedPriceCents,
+            draftName: draft?.name ?? null, draftCategory: draft?.category ?? null,
+            draftMermaPct: draft?.mermaPct ?? null, draftMermaReason: draft?.mermaReason ?? null,
+          };
+        }),
       });
     });
     logger.info("invoice_read", { invoiceId, pages: pages.length, lines: proposed.length, droppedLines: merged.droppedLines });
