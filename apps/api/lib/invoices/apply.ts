@@ -59,8 +59,12 @@ export async function applyInvoice(input: { invoiceId: string; restaurantId: str
 
         if (line.action === "create_draft") {
           const unit = draftUnitFor({ unit: line.unit, packQty: num(line.packQty), packUnit: line.packUnit });
+          const mermaPct = num(line.draftMermaPct);
           const created = await createDraftProduct(tx, {
-            restaurantId, name: line.description, ...(unit ? { unidadCompra: unit } : {}),
+            restaurantId, name: line.draftName ?? line.description,
+            ...(line.draftCategory ? { category: line.draftCategory } : {}),
+            ...(mermaPct !== null ? { mermaPct, ...(line.draftMermaReason ? { mermaMotivo: line.draftMermaReason } : {}) } : {}),
+            ...(unit ? { unidadCompra: unit } : {}),
             precioCompra: line.appliedPriceCents ?? 0, taxRatePct, precioActualizadoAt: priceAt,
           });
           await tx.invoiceLine.update({ where: { id: line.id }, data: { productId: created.id } });

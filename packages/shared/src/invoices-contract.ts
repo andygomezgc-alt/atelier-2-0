@@ -2,6 +2,7 @@
 // Shapes of the invoice routes, shared with the mobile app (Plan 3).
 import { z } from "zod";
 import type { AmbiguousCandidate } from "./api-contract";
+import type { ProductCategory } from "./types";
 
 export type InvoiceStatus = "uploading" | "reading" | "review" | "applied" | "failed";
 export type InvoiceLineAction = "update_price" | "create_draft" | "connect" | "ignore";
@@ -37,6 +38,8 @@ export type InvoiceLineView = {
   action: InvoiceLineAction | null;
   appliedPriceCents: number | null;
   product: { id: string; name: string; unidadCompra: string; precioCompra: number; taxRatePct: number } | null;
+  // What the AI proposes for the bank if this line becomes a new product.
+  draft: { name: string; category: ProductCategory | null; mermaPct: number | null; mermaReason: string | null } | null;
   siblings: AmbiguousCandidate[];
   quantityLooksMisread: boolean;
 };

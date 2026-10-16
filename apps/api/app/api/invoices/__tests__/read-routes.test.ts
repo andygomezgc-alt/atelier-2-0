@@ -77,7 +77,8 @@ describe("GET /api/invoices/[id]", () => {
   const dbLine = (over: Record<string, unknown>) => ({
     position: 0, description: "Calamari", code: null, quantity: { toNumber: () => 2 }, unit: "kg", packQty: null, packUnit: null,
     unitPriceCents: 45, taxRatePct: { toNumber: () => 10 }, lineTotalCents: 90, matchLevel: "exact", action: "update_price",
-    appliedPriceCents: 45, product: { id: "p1", name: "Calamari", unidadCompra: "kg", precioCompra: 40, taxRatePct: { toNumber: () => 10 } }, ...over,
+    appliedPriceCents: 45, product: { id: "p1", name: "Calamari", unidadCompra: "kg", precioCompra: 40, taxRatePct: { toNumber: () => 10 } },
+    draftName: null, draftCategory: null, draftMermaPct: null, draftMermaReason: null, ...over,
   });
 
   it("is scoped to the restaurant and never exposes storage keys", async () => {
@@ -106,6 +107,16 @@ describe("GET /api/invoices/[id]", () => {
     db.invoice.findFirst.mockResolvedValueOnce(invoice([dbLine({ description: "Gambero rosso", matchLevel: "ambiguo", action: null, product: null })])).mockResolvedValueOnce(null);
     const body = await (await detail(req(), params({ id: "inv1" }))).json();
     expect(body.lines[0].siblings.map((s: { id: string }) => s.id)).toEqual(["g1", "g2"]);
+  });
+
+  it("shows the AI's proposal for a line that becomes a new product", async () => {
+    db.invoice.findFirst.mockResolvedValueOnce(invoice([
+      dbLine({ description: "FASOLARO COD 9", action: "create_draft", product: null, draftName: "Fasolari", draftCategory: "pescado", draftMermaPct: { toNumber: () => 30 }, draftMermaReason: "guscio" }),
+      dbLine({ position: 1 }),
+    ])).mockResolvedValueOnce(null);
+    const body = await (await detail(req(), params({ id: "inv1" }))).json();
+    expect(body.lines[0].draft).toEqual({ name: "Fasolari", category: "pescado", mermaPct: 30, mermaReason: "guscio" });
+    expect(body.lines[1].draft).toBeNull();
   });
 
   it("another restaurant's invoice is not found", async () => {

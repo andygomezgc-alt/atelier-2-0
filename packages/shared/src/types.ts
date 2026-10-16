@@ -120,6 +120,8 @@ export type ProductListItem = {
 export type ProductDetail = ProductListItem & {
   proveedor: string | null;
   notas: string | null;
+  // Why a suggested waste has its value (e.g. the invoice AI's reason). Optional for older payloads.
+  mermaMotivo?: string | null;
   aliases: string[];
   criticalityManual: boolean;
   // Cantidad de recetas que enlazan a este producto via RecipeIngredient.

@@ -63,3 +63,11 @@ describe("product projection — purchase tax", () => {
     expect(item.realCost).toBe(500);
   });
 });
+
+describe("product projection — mermaMotivo", () => {
+  it("the detail carries the reason behind a suggested waste", () => {
+    const row = { ...productRow(null), mermaPct: dec(15), mermaMotivo: "guscio e acqua" } as unknown as DetailSource;
+    expect(projectProductDetail(row).mermaMotivo).toBe("guscio e acqua");
+    expect(projectProductDetail(productRow(null)).mermaMotivo).toBeNull();
+  });
+});
