@@ -696,6 +696,8 @@ model Product {
 
   mermaPct    Decimal     @default(0) @db.Decimal(5, 2)
   mermaOrigen MermaOrigin @default(sugerida)
+  // Why a suggested waste has that value (e.g. the AI's reason for an invoice draft).
+  mermaMotivo String?
 
   // Weight in grams of 1 litre of this product; null = unknown, never guessed.
   // Lets the cost engine convert g/kg ↔ l/ml. Enforced > 0 by CHECK
@@ -918,6 +920,11 @@ model InvoiceLine {
   matchLevel        String?
   action            InvoiceLineAction?
   appliedPriceCents Int?
+  // What the AI proposes for the bank when this line becomes a new product.
+  draftName         String?
+  draftCategory     ProductCategory?
+  draftMermaPct     Decimal?           @db.Decimal(5, 2)
+  draftMermaReason  String?
 
   priceHistory ProductPriceHistory[]
 

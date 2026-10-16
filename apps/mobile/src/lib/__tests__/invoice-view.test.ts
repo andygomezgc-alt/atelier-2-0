@@ -8,7 +8,7 @@ const line = (over: Partial<InvoiceLineView> = {}): InvoiceLineView => ({
   position: 0, description: "Zucchine", code: null, quantity: 2, unit: "kg", packQty: null, packUnit: null,
   unitPriceCents: 180, taxRatePct: 4, lineTotalCents: 360, matchLevel: "exact", action: "update_price", appliedPriceCents: 180,
   product: { id: "p1", name: "Zucchine", unidadCompra: "kg", precioCompra: 150, taxRatePct: 4 },
-  siblings: [], quantityLooksMisread: false, ...over,
+  draft: null, siblings: [], quantityLooksMisread: false, ...over,
 });
 
 describe("priceChange", () => {

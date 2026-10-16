@@ -965,6 +965,7 @@ export const ProductListItemSchema = z.object({
 export const ProductDetailSchema = ProductListItemSchema.extend({
   proveedor: z.string().max(200).nullable(),
   notas: z.string().max(2000).nullable(),
+  mermaMotivo: z.string().max(200).nullable().optional(),
   aliases: z.array(z.string()),
   criticalityManual: z.boolean(),
   // Distinct count de recetas que usan este producto. Computado en read time.

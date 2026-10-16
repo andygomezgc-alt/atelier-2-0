@@ -84,6 +84,7 @@ export function projectProductDetail(
     ...projectProductListItem(p, recipesUsingByUnitCount),
     proveedor: p.proveedor,
     notas: p.notas,
+    mermaMotivo: p.mermaMotivo ?? null,
     aliases: p.aliases,
     criticalityManual: p.criticalityManual,
     recipesUsingCount,

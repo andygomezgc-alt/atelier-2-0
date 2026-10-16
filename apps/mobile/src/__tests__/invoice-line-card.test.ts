@@ -20,7 +20,7 @@ const line = (over: Partial<InvoiceLineView> = {}): InvoiceLineView => ({
   position: 4, description: "Zucchine romanesche", code: null, quantity: 2, unit: "kg", packQty: null, packUnit: null,
   unitPriceCents: 180, taxRatePct: 4, lineTotalCents: 360, matchLevel: "exact", action: "update_price", appliedPriceCents: 180,
   product: { id: "p1", name: "Zucchine", unidadCompra: "kg", precioCompra: 150, taxRatePct: 4 },
-  siblings: [], quantityLooksMisread: false, ...over,
+  draft: null, siblings: [], quantityLooksMisread: false, ...over,
 });
 
 let card: ReactTestRenderer;
@@ -38,6 +38,36 @@ beforeEach(() => {
 afterEach(async () => { if (card) await act(async () => { card.unmount(); }); });
 
 describe("InvoiceLineCard", () => {
+  const draft = { name: "Fasolari", category: "pescado" as const, mermaPct: 30, mermaReason: "guscio e acqua" };
+
+  it("a new product shows the name it will get in the bank and its suggested waste with the reason", async () => {
+    await render(line({ description: "FASOLARO COD 9", product: null, action: "create_draft", draft }));
+    expect(texts()).toEqual(expect.arrayContaining([
+      "FASOLARO COD 9",
+      'invoice_line_new_product_named:{"name":"Fasolari"}',
+      'invoice_line_draft_waste:{"pct":30,"reason":"guscio e acqua"}',
+    ]));
+  });
+
+  it("a suggested waste without a reason shows only the percentage", async () => {
+    await render(line({ product: null, action: "create_draft", draft: { ...draft, mermaReason: null } }));
+    expect(texts()).toContain('invoice_line_draft_waste_bare:{"pct":30}');
+  });
+
+  it("without the AI's proposal a new product keeps the generic label", async () => {
+    await render(line({ product: null, action: "create_draft", draft: { ...draft, mermaPct: null, mermaReason: null } }));
+    expect(texts()).toContain('invoice_line_new_product_named:{"name":"Fasolari"}');
+    expect(texts().join(" ")).not.toContain("invoice_line_draft_waste");
+    await render(line({ product: null, action: "create_draft" }));
+    expect(texts()).toContain("invoice_line_new_product");
+  });
+
+  it("a line going to an existing product does not show the AI's new-product proposal", async () => {
+    await render(line({ draft }));
+    expect(texts().join(" ")).not.toContain("Fasolari");
+    expect(texts().join(" ")).not.toContain("invoice_line_draft_waste");
+  });
+
   it("shows the paper text, the product and the price before → after", async () => {
     await render(line());
     expect(texts()).toEqual(expect.arrayContaining(["Zucchine romanesche", "Zucchine", "1,50 € → 1,80 € (+20 %)"]));

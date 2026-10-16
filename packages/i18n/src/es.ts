@@ -605,6 +605,7 @@ export const es = {
   criticality_baja: "Baja",
 
   merma_origen_sugerida: "Sugerida",
+  producto_merma_motivo: "Sugerida: {reason}",
   merma_origen_confirmada: "Confirmada",
   merma_origen_medida: "Medida",
 
@@ -930,6 +931,9 @@ export const es = {
   invoice_scan_partial: "{failed} de {total} facturas no se enviaron. Vuelve a intentarlo.",
   invoice_scan_prepare_failed: "No se pudo preparar el archivo. Inténtalo de nuevo.",
   invoice_line_new_product: "Producto nuevo",
+  invoice_line_new_product_named: "Producto nuevo: {name}",
+  invoice_line_draft_waste: "Merma sugerida {pct} % · {reason}",
+  invoice_line_draft_waste_bare: "Merma sugerida {pct} %",
   invoice_line_tax: "IVA {rate} %",
   invoice_line_change: "Cambiar",
   invoice_line_confirm_big_change: "Confirmar cambio del {pct} %",

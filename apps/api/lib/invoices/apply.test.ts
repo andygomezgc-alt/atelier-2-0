@@ -23,7 +23,8 @@ import { applyInvoice } from "./apply";
 const dec = (n: number) => ({ toNumber: () => n });
 const line = (over: Record<string, unknown>) => ({
   id: "l0", position: 0, description: "Zucchine", code: "ZU1", quantity: dec(2), unit: "kg", packQty: null, packUnit: null,
-  taxRatePct: dec(4), productId: "p1", action: "update_price", appliedPriceCents: 180, ...over,
+  taxRatePct: dec(4), productId: "p1", action: "update_price", appliedPriceCents: 180,
+  draftName: null, draftCategory: null, draftMermaPct: null, draftMermaReason: null, ...over,
 });
 const NOW = new Date("2026-10-15T09:00:00Z");
 const PRICE_DAY = new Date("2026-10-10T12:00:00Z");
@@ -79,6 +80,27 @@ describe("applyInvoice", () => {
     expect(drafts.createDraftProduct).toHaveBeenCalledWith(tx, { restaurantId: "r1", name: "Fasolari", unidadCompra: "kg", precioCompra: 2500, taxRatePct: 4, precioActualizadoAt: PRICE_DAY });
     expect(tx.invoiceLine.update).toHaveBeenCalledWith({ where: { id: "l1" }, data: { productId: "new" } });
     expect(tx.productPriceHistory.create).toHaveBeenCalledWith({ data: { productId: "new", authorId: "u1", precio: 2500, unidadCompra: "kg", invoiceLineId: "l1" } });
+  });
+
+  it("a draft takes the AI's clean name, category and suggested waste with its reason", async () => {
+    tx.invoiceLine.findMany.mockResolvedValue([line({
+      id: "l1", description: "FASOLARO COD 9", productId: null, action: "create_draft", appliedPriceCents: 2500,
+      draftName: "Fasolari", draftCategory: "pescado", draftMermaPct: dec(30), draftMermaReason: "guscio e acqua",
+    })]);
+    await run();
+    expect(drafts.createDraftProduct).toHaveBeenCalledWith(tx, {
+      restaurantId: "r1", name: "Fasolari", category: "pescado", mermaPct: 30, mermaMotivo: "guscio e acqua",
+      unidadCompra: "kg", precioCompra: 2500, taxRatePct: 4, precioActualizadoAt: PRICE_DAY,
+    });
+  });
+
+  it("without the AI's suggestion a draft keeps the printed name and the bank's defaults", async () => {
+    tx.invoiceLine.findMany.mockResolvedValue([line({
+      id: "l1", description: "Fasolari", productId: null, action: "create_draft", appliedPriceCents: 2500,
+      draftName: null, draftCategory: null, draftMermaPct: null, draftMermaReason: null,
+    })]);
+    await run();
+    expect(drafts.createDraftProduct).toHaveBeenCalledWith(tx, { restaurantId: "r1", name: "Fasolari", unidadCompra: "kg", precioCompra: 2500, taxRatePct: 4, precioActualizadoAt: PRICE_DAY });
   });
 
   it("a draft without a price gets no history row", async () => {

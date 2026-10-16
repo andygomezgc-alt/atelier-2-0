@@ -55,6 +55,9 @@ export async function GET(req: NextRequest, { params }: Params) {
       lineTotalCents: l.lineTotalCents, matchLevel: l.matchLevel as InvoiceLineView["matchLevel"], action: l.action,
       appliedPriceCents: l.appliedPriceCents,
       product: l.product ? { ...l.product, taxRatePct: l.product.taxRatePct.toNumber() } : null,
+      draft: l.draftName
+        ? { name: l.draftName, category: l.draftCategory, mermaPct: num(l.draftMermaPct), mermaReason: l.draftMermaReason }
+        : null,
       siblings: l.matchLevel === "ambiguo" ? findMatch(l.description, candidates).candidates : [],
       quantityLooksMisread: quantityLooksMisread(view),
     };

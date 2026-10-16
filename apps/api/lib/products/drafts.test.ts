@@ -20,4 +20,19 @@ describe("createDraftProduct", () => {
     await createDraftProduct(t as never, { restaurantId: "r1", name: "Zucchine", unidadCompra: "kg", precioCompra: 180, taxRatePct: 4, precioActualizadoAt: at });
     expect(t.product.create.mock.calls[0]![0].data).toMatchObject({ unidadCompra: "kg", precioCompra: 180, taxRatePct: 4, precioActualizadoAt: at });
   });
+
+  it("uses a given category and suggested waste and keeps the reason", async () => {
+    const t = tx();
+    await createDraftProduct(t as never, { restaurantId: "r1", name: "Ostrica Gillardeau n. 4", category: "pescado", mermaPct: 15, mermaMotivo: "guscio e acqua" });
+    expect(t.product.create.mock.calls[0]![0].data).toMatchObject({
+      name: "Ostrica Gillardeau n. 4", category: "pescado", mermaPct: 15, mermaOrigen: "sugerida", mermaMotivo: "guscio e acqua",
+    });
+  });
+
+  it("without a given waste the category default applies and no reason is stored", async () => {
+    const t = tx();
+    await createDraftProduct(t as never, { restaurantId: "r1", name: "Branzino", category: "pescado" });
+    expect(t.product.create.mock.calls[0]![0].data).toMatchObject({ category: "pescado", mermaPct: 50 });
+    expect(t.product.create.mock.calls[0]![0].data).not.toHaveProperty("mermaMotivo");
+  });
 });

@@ -12,3 +12,8 @@ export function parseTaxRatePct(input: string): number | null {
   const value = Number(cleaned);
   return value <= 100 ? value : null;
 }
+
+// Why a suggested waste has its value (the invoice AI's reason); hidden once the chef sets it.
+export function suggestedMermaReason(product: { mermaOrigen: string; mermaMotivo?: string | null }): string | null {
+  return product.mermaOrigen === "sugerida" && product.mermaMotivo ? product.mermaMotivo : null;
+}

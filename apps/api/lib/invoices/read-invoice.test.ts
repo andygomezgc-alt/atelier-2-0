@@ -1,6 +1,6 @@
 // apps/api/lib/invoices/read-invoice.test.ts
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const { db, tx, quota, storage, extraction, look, propose } = vi.hoisted(() => {
+const { db, tx, quota, storage, extraction, look, propose, naming } = vi.hoisted(() => {
   const tx = { invoice: { updateMany: vi.fn() }, invoiceLine: { deleteMany: vi.fn(), createMany: vi.fn() } };
   return {
     tx,
@@ -14,6 +14,7 @@ const { db, tx, quota, storage, extraction, look, propose } = vi.hoisted(() => {
     extraction: { extractInvoicePage: vi.fn() },
     look: { secondLook: vi.fn() },
     propose: { proposeInvoiceLines: vi.fn() },
+    naming: { nameDrafts: vi.fn() },
   };
 });
 vi.mock("@atelier/db", () => ({ prisma: db }));
@@ -22,6 +23,7 @@ vi.mock("./storage", async (importOriginal) => ({ ...(await importOriginal<typeo
 vi.mock("./extraction", async (importOriginal) => ({ ...(await importOriginal<typeof import("./extraction")>()), ...extraction }));
 vi.mock("./second-look", () => look);
 vi.mock("./propose", () => propose);
+vi.mock("./draft-naming", () => naming);
 vi.mock("../logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 import { InvoiceExtractionError } from "./extraction";
 import { InvoiceStorageError } from "./storage";
@@ -48,6 +50,7 @@ beforeEach(() => {
   extraction.extractInvoicePage.mockResolvedValue(page());
   propose.proposeInvoiceLines.mockResolvedValue([{ ...page().lines[0], position: 0, productId: null, matchLevel: "none", action: "create_draft", appliedPriceCents: 1100 }]);
   tx.invoice.updateMany.mockResolvedValue({ count: 1 });
+  naming.nameDrafts.mockResolvedValue(new Map());
 });
 
 const failedWith = (reason: string) =>
@@ -76,12 +79,12 @@ describe("readInvoice", () => {
     expect(tx.invoiceLine.createMany.mock.calls[0]![0].data[0]).toMatchObject({ invoiceId: "inv1", position: 0, description: "Zucchine", matchLevel: "none", action: "create_draft", appliedPriceCents: 1100 });
   });
 
-  it("each page reserves one AI call from the uploader", async () => {
+  it("each page reserves one AI call from the uploader, plus one to name the new products", async () => {
     db.invoice.findFirst.mockResolvedValue({ id: "inv1", restaurantId: "r1", uploadedById: "u1", createdAt: new Date(), pages: [
       { position: 0, storageKey: "k0", mimeType: "image/jpeg" }, { position: 1, storageKey: "k1", mimeType: "image/jpeg" },
     ] });
     await readInvoice("inv1", later());
-    expect(quota.reserveAiCall).toHaveBeenCalledTimes(2);
+    expect(quota.reserveAiCall).toHaveBeenCalledTimes(3);
     expect(storage.readInvoiceFile.mock.calls.map((c) => c[0])).toEqual(["k0", "k1"]);
   });
 
@@ -141,7 +144,8 @@ describe("readInvoice", () => {
   });
 
   it("the second look is skipped when the quota has no call left", async () => {
-    quota.reserveAiCall.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false, retryAfter: 60 });
+    // page, naming, then the second look that the mocked propose did not run during the read
+    quota.reserveAiCall.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false, retryAfter: 60 });
     await readInvoice("inv1", later());
     const { secondLook } = propose.proposeInvoiceLines.mock.calls[0]![0];
     expect(await secondLook([{ position: 0, description: "x", candidates: [] }])).toEqual(new Map());
@@ -152,6 +156,49 @@ describe("readInvoice", () => {
     tx.invoice.updateMany.mockResolvedValue({ count: 0 });
     await readInvoice("inv1", later());
     expect(tx.invoiceLine.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("readInvoice — new products", () => {
+  const proposed = (over: Record<string, unknown>) => ({ ...page().lines[0], position: 0, productId: null, matchLevel: "none", action: "create_draft", appliedPriceCents: 1100, ...over });
+
+  it("asks the AI to name only the lines that are not in the bank and saves its suggestion", async () => {
+    propose.proposeInvoiceLines.mockResolvedValue([
+      proposed({ position: 0, description: "ZUCCHINE CHIARE KG 5 COD 77" }),
+      proposed({ position: 1, description: "BRANZINO", productId: "p1", action: "update_price" }),
+      proposed({ position: 2, description: "CAUZIONE CASSE", kind: "charge", action: "ignore" }),
+      proposed({ position: 3, description: "FASOLARO", action: null }),
+    ]);
+    naming.nameDrafts.mockResolvedValue(new Map([[0, { name: "Zucchine chiare", category: "verdura", mermaPct: 10, mermaReason: "estremità" }]]));
+    await readInvoice("inv1", later());
+    expect(naming.nameDrafts.mock.calls[0]![0]).toEqual([
+      { position: 0, description: "ZUCCHINE CHIARE KG 5 COD 77", unit: "kg", packQty: null, packUnit: null },
+      { position: 3, description: "FASOLARO", unit: "kg", packQty: null, packUnit: null },
+    ]);
+    const rows = tx.invoiceLine.createMany.mock.calls[0]![0].data;
+    expect(rows[0]).toMatchObject({ draftName: "Zucchine chiare", draftCategory: "verdura", draftMermaPct: 10, draftMermaReason: "estremità" });
+    expect(rows[3]).toMatchObject({ draftName: null, draftCategory: null, draftMermaPct: null, draftMermaReason: null });
+  });
+
+  it("a naming failure still leaves the invoice in review", async () => {
+    naming.nameDrafts.mockRejectedValue(new Error("ai_provider_http_503"));
+    await readInvoice("inv1", later());
+    expect(tx.invoice.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "review" }) }));
+    expect(tx.invoiceLine.createMany.mock.calls[0]![0].data[0]).toMatchObject({ draftName: null });
+  });
+
+  it("without quota left the lines keep their printed names", async () => {
+    quota.reserveAiCall.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false, retryAfter: 60 });
+    await readInvoice("inv1", later());
+    expect(naming.nameDrafts).not.toHaveBeenCalled();
+    expect(tx.invoiceLine.createMany.mock.calls[0]![0].data[0]).toMatchObject({ draftName: null });
+  });
+
+  it("makes no naming call when every line is already in the bank", async () => {
+    propose.proposeInvoiceLines.mockResolvedValue([proposed({ productId: "p1", action: "update_price" })]);
+    await readInvoice("inv1", later());
+    expect(naming.nameDrafts).not.toHaveBeenCalled();
+    expect(quota.reserveAiCall).toHaveBeenCalledTimes(1);
   });
 });
 
