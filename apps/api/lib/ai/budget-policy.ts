@@ -4,7 +4,7 @@ import type { AiUsage } from "./types";
 // This is a pilot spending allowance, not an automatically renewed subscription.
 export const PILOT_BUDGET_MICROS = 50_000_000;
 export const DAILY_CHAT_WEEKLY_LIMIT = 20 * 7;
-export const CREATIVE_CHAT_LIMIT = 8;
+export const CREATIVE_CHAT_LIMIT = 15;
 export const WEEK_MS = 7 * 86_400_000;
 export const OWNER_EMAIL = "andygomezgc@gmail.com";
 

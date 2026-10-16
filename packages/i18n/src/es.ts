@@ -297,7 +297,7 @@ export const es = {
   ai_budget_unavailable: "No podemos comprobar el saldo de IA. Inténtalo más tarde.",
   ai_daily_chat_limit: "Has llegado a los 20 mensajes de Diario de hoy. Podrás continuar mañana.",
   ai_daily_weekly_limit: "Has utilizado los 140 mensajes de Diario de los últimos 7 días. Recuperarás mensajes a medida que se cumplan 7 días desde cada uso.",
-  ai_creative_limit: "Has usado los 8 mensajes de Creativo de los últimos siete días. Puedes continuar con Diario.",
+  ai_creative_limit: "Has usado los 15 mensajes de Creativo de los últimos siete días. Puedes continuar con Diario.",
   ai_budget_title: "IA del piloto",
   ai_budget_value: "{used} € de {limit} €",
   ai_budget_note: "Incluye reservas pendientes y margen de seguridad.",

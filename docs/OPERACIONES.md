@@ -55,7 +55,11 @@ Atelier tiene cuatro piezas. Así se conectan:
 
 - **Backend (la API).** Vive en **Vercel**, proyecto **`atelier-2-0`**. Es el
   cerebro: guarda recetas, habla con la IA, manda los correos de acceso. Su
-  dirección pública es **https://atelier-2-0-mu.vercel.app**.
+  dirección pública es **https://atelier-2-0-mu.vercel.app**. El mismo proyecto
+  sirve la landing en **https://ateliercocina.com** (dominio comprado en Vercel
+  el 15-10-2026, renovación automática; `www` redirige al dominio principal).
+  Las dos direcciones llevan al mismo despliegue; la de `vercel.app` no se
+  puede quitar porque las apps instaladas llaman a la API por ahí.
 
 - **Base de datos.** Es **Neon** (Postgres). Hay **dos** bases:
   - **Producción = `atelier-pilot`** (la real, con las recetas de los chefs).

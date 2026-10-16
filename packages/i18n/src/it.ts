@@ -275,7 +275,7 @@ export const it: EsDict = {
   ai_budget_unavailable: "Non possiamo verificare il saldo IA. Riprova più tardi.",
   ai_daily_chat_limit: "Hai raggiunto i 20 messaggi di Quotidiano di oggi. Potrai continuare domani.",
   ai_daily_weekly_limit: "Hai utilizzato i 140 messaggi di Quotidiano degli ultimi 7 giorni. I messaggi torneranno disponibili man mano che saranno trascorsi 7 giorni da ciascun utilizzo.",
-  ai_creative_limit: "Hai usato gli 8 messaggi di Creativo degli ultimi sette giorni. Puoi continuare con Quotidiano.",
+  ai_creative_limit: "Hai usato i 15 messaggi di Creativo degli ultimi sette giorni. Puoi continuare con Quotidiano.",
   ai_budget_title: "IA del progetto pilota",
   ai_budget_value: "{used} € di {limit} €",
   ai_budget_note: "Include importi riservati e margine di sicurezza.",

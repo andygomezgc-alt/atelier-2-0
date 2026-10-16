@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { PageShell, serif, teal, muted, h2Style, pStyle, linkStyle } from "@/components/site";
+import { PageShell, h2Style, pStyle, linkStyle } from "@/components/site";
+import { LegalDate, LegalTitle } from "@/components/legal/legal-page";
 
 export const metadata: Metadata = {
   title: "Términos del servicio — Atelier",
@@ -8,20 +9,8 @@ export const metadata: Metadata = {
 export default function TerminosPage() {
   return (
     <PageShell>
-      <h1
-        style={{
-          fontFamily: serif,
-          fontSize: 36,
-          color: teal,
-          margin: "0 0 8px",
-          fontWeight: 600,
-        }}
-      >
-        Términos del servicio
-      </h1>
-      <p style={{ fontFamily: "system-ui, sans-serif", fontSize: 13, color: muted, margin: "0 0 32px" }}>
-        Julio 2026
-      </p>
+      <LegalTitle>Términos del servicio</LegalTitle>
+      <LegalDate>Julio 2026</LegalDate>
 
       <h2 style={h2Style}>El servicio</h2>
       <p style={pStyle}>
@@ -44,7 +33,7 @@ export default function TerminosPage() {
       <h2 style={h2Style}>Uso justo de la IA</h2>
       <p style={pStyle}>
         El asistente IA tiene límites de uso. Durante el piloto, los límites
-        habituales son 140 mensajes cotidianos y 8 creativos por persona cada
+        habituales son 140 mensajes cotidianos y 15 creativos por persona cada
         siete días, sujetos también al presupuesto compartido del piloto. La
         disponibilidad se puede consultar en la app. Los límites de las futuras
         suscripciones se comunicarán antes de contratar.

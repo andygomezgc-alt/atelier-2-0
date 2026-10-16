@@ -6,7 +6,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const pages = ["privacidad/page.tsx", "terminos/page.tsx", "cuenta/eliminar/page.tsx"];
+const pages = [
+  "privacidad/page.tsx",
+  "terminos/page.tsx",
+  "cuenta/eliminar/page.tsx",
+  "../components/pilot-landing.tsx",
+  "../components/landing-story.tsx",
+  "../components/landing-copy.ts",
+];
 
 // The forms these pages used, the common ones, and the actions these pages talk about
 // (accept, cancel, delete, download, ask, contact).

@@ -28,7 +28,8 @@ Las 5 fases del plan están implementadas y commiteadas:
 Verificación automatizada: 5 paquetes typecheck verde, 62 tests pasando, `/api/health` 200, `/api/mobile/auth/request` envía correo real.
 
 **Producción (piloto)**
-- API: <https://atelier-2-0-mu.vercel.app> (Vercel, región `fra1`)
+- Landing: <https://ateliercocina.com> (`www` redirige al dominio principal)
+- API: <https://atelier-2-0-mu.vercel.app> (Vercel, región `fra1`; las apps instaladas llaman aquí)
 - DB: Neon Postgres (proyecto `atelier-prod`, región Frankfurt)
 - Storage: Vercel Blob (`atelier-photos`)
 - Mobile: Expo Go con `--tunnel` desde el portátil del autor (ver "Operación piloto" abajo)

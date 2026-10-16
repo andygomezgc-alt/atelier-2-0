@@ -32,6 +32,7 @@ Detalle en `odd/tasks/memoria-culinaria-mejoras.md` y `odd/tasks/notas-del-chef.
 
 ## Producción y distribución comprobadas
 
+- Landing pública: `https://ateliercocina.com` (desde el 15 de octubre de 2026; `www` redirige al dominio principal). Mismo proyecto y despliegue que la API.
 - API pública: `https://atelier-2-0-mu.vercel.app`. Último despliegue verificado: `dpl_DZsjN6qqrivmHUJhenUwbzsAAAYB` (23 de septiembre, Creativo con Opus 5.5), al que apunta el dominio público. `/api/health` devuelve HTTP 200 y la migración de memoria está aplicada. El anterior verificado fue `dpl_3N5eiTeGEywzzSKn2UVPKpikzfzi` (14 de septiembre: memoria, autenticación y parches de ejecución).
 - Vercel, verificado el 15 de septiembre con la sesión de la CLI: plan Hobby, Fluid Compute activo, límite de 300 segundos por función y Node 24, así que el cron de memoria dispone de sus 300 segundos. Solo `main` despliega (`git.deploymentEnabled` en `apps/api/vercel.json`): las vistas previas de ramas fallaban desde julio porque su entorno no tiene `DATABASE_URL`, y CI ya valida cada PR. Ese mismo día las claves de Apple quedaron solo en Production y el acceso al almacén de fotos en Production y Development (valor comprobado intacto); Preview ya no guarda ninguna variable.
 - Android 0.1.0, versionCode **7** (commit `7412a4f`, EAS `b4dc2171-da4c-4924-9367-478f512e8308`): [APK](https://expo.dev/artifacts/eas/srmOxxqwwLdusCOMCjK3v-L-X1K598pUGubj9V1hYkc.apk), 111.378.762 bytes, descarga comprobada el 30-09. **Es el enlace bueno para los chefs Android** (incluye «Volver a aprender» y Notas del chef).
@@ -43,7 +44,7 @@ Detalle en `odd/tasks/memoria-culinaria-mejoras.md` y `odd/tasks/notas-del-chef.
 
 ## IA y copias
 
-- Piloto inicial de unos cinco chefs, presupuesto común de **50 EUR para un mes**, 140 mensajes cotidianos y 8 creativos por chef y periodo de siete días. La cuenta principal está exenta de la cuota de mensajes, pero consume el mismo presupuesto común.
+- Piloto inicial de unos cinco chefs, presupuesto común de **50 EUR para un mes**, 140 mensajes cotidianos y 15 creativos por chef y periodo de siete días. La cuenta principal está exenta de la cuota de mensajes, pero consume el mismo presupuesto común.
 - Modelos elegidos: Gemini para el Diario, **Opus 5.5 para el Creativo** (`claude-opus-5-5`, esfuerzo medio, desde el 23-09) y GLM para las otras tareas compatibles. No cambiar proveedores ni gastar tokens para una sincronización.
 - El cambio a Opus 5.5 se comprobó en producción el 23-09 con la primera respuesta real del Creativo: la dio `claude-opus-5-5` en 22 s y se cobró exactamente con su tarifa, 0,059 € de presupuesto. La última respuesta con Opus 5 había costado 0,087 € y tardado 37 s. Para volver atrás basta con el «Instant Rollback» de Vercel.
 - En producción, el modelo del Creativo lo fija `AI_CHAT_CREATIVE_MODEL` en Vercel. La contabilidad del presupuesto rechaza cualquier modelo sin tarifa registrada en `apps/api/lib/ai/budget-policy.ts`.
