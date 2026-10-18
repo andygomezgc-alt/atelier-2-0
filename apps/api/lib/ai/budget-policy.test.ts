@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allowance, budgetErrorResponse, modelRate, pilotEnd, reservationMicros, textInputCeiling, usageMicros } from "./budget-policy";
+import { PILOT_BUDGET_MICROS, allowance, budgetErrorResponse, modelRate, pilotEnd, reservationMicros, rollPeriod, textInputCeiling, usageMicros } from "./budget-policy";
 
 const now = new Date("2026-09-10T12:00:00Z");
 describe("pilot policy", () => {
@@ -57,6 +57,16 @@ describe("pilot policy", () => {
   it("clamps the one-month pilot end to the last day and preserves the time", () => {
     expect(pilotEnd(new Date("2026-01-31T12:34:00Z")).toISOString()).toBe("2026-02-28T12:34:00.000Z");
     expect(pilotEnd(now).toISOString()).toBe("2026-10-10T12:00:00.000Z");
+  });
+  it("rolls an ended period forward by whole months, only once it has ended", () => {
+    const end = new Date("2026-11-18T22:59:00Z");
+    expect(rollPeriod(end, new Date(+end - 1))).toBeNull();
+    expect(rollPeriod(end, end)).toEqual({ startsAt: end, endsAt: new Date("2026-12-18T22:59:00Z") });
+    // Months without traffic are skipped: the new period is the one containing now.
+    expect(rollPeriod(end, new Date("2027-02-01T00:00:00Z"))).toEqual({ startsAt: new Date("2027-01-18T22:59:00Z"), endsAt: new Date("2027-02-18T22:59:00Z") });
+  });
+  it("defaults a new pilot to USD 150 a month with the 1.25 cushion", () => {
+    expect(PILOT_BUDGET_MICROS).toBe(187_500_000);
   });
 });
 describe("cost accounting", () => {

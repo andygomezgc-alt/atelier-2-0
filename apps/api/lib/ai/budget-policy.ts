@@ -1,8 +1,9 @@
 import type { AiTask } from "./config";
 import type { AiUsage } from "./types";
 
-// This is a pilot spending allowance, not an automatically renewed subscription.
-export const PILOT_BUDGET_MICROS = 50_000_000;
+// Default monthly allowance for a new budget row: USD 150 with the 1.25 cushion.
+// Each renewal keeps the row's own limitMicros, so a manual change persists.
+export const PILOT_BUDGET_MICROS = 187_500_000;
 export const DAILY_CHAT_WEEKLY_LIMIT = 20 * 7;
 export const CREATIVE_CHAT_LIMIT = 15;
 export const WEEK_MS = 7 * 86_400_000;
@@ -64,6 +65,13 @@ export function pilotEnd(start: Date): Date {
   const lastDay = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate();
   end.setUTCDate(Math.min(day, lastDay));
   return end;
+}
+/** The period that contains `now` once `endsAt` has passed; null while the current one is running. */
+export function rollPeriod(endsAt: Date, now: Date): { startsAt: Date; endsAt: Date } | null {
+  if (now < endsAt) return null;
+  let period = { startsAt: endsAt, endsAt: pilotEnd(endsAt) };
+  while (now >= period.endsAt) period = { startsAt: period.endsAt, endsAt: pilotEnd(period.endsAt) };
+  return period;
 }
 export function allowance(task: AiTask, dailyAt: Date[], creativeAt: Date[], now: Date) {
   const recent = (dates: Date[]) => dates.filter(d => +d > +now - WEEK_MS).sort((a, b) => +a - +b);

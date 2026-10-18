@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@atelier/db";
 import { isAiOwner, reserveGeneration, settleGeneration } from "../lib/ai/budget";
-import { OWNER_EMAIL, reservationMicros, usageMicros, modelRate, AiBudgetError } from "../lib/ai/budget-policy";
+import { OWNER_EMAIL, pilotEnd, reservationMicros, usageMicros, modelRate, AiBudgetError } from "../lib/ai/budget-policy";
 import { recordAiTokens, utcDay, AI_DAILY_LIMIT } from "../lib/ai-quota";
 
 async function main() {
@@ -73,16 +73,20 @@ async function main() {
     const after = await prisma.aiBudget.findUniqueOrThrow({ where: { id: budgetId } });
     assert.equal(after.spentMicros, usageMicros(modelRate(config.model, now), usage));
     assert.equal(after.heldMicros, cost, "Settlement and refund happen once");
-    await prisma.aiBudget.update({ where: { id: budgetId }, data: { endsAt: new Date(+now - 1), startsAt: new Date(+now - 86400000) } });
-    await assert.rejects(reserve(config, owner.id), code("ai_budget_expired"));
-    assert.equal(await prisma.aiBudget.count({ where: { id: budgetId } }), 1, "Expired pilot does not renew itself");
+    // An ended, fully spent period renews itself on the next reservation.
+    const endedAt = new Date(+now - 1);
+    await prisma.aiBudget.update({ where: { id: budgetId }, data: { endsAt: endedAt, startsAt: new Date(+now - 86400000), spentMicros: cost * 2 } });
+    await reserve(config, owner.id);
+    const renewed = await prisma.aiBudget.findUniqueOrThrow({ where: { id: budgetId } });
+    assert.deepEqual([renewed.startsAt, renewed.endsAt, renewed.spentMicros, renewed.limitMicros], [endedAt, pilotEnd(endedAt), 0, cost * 2], "Ended pilot renews for a month, keeping its limit");
+    assert.equal(await prisma.aiBudget.count({ where: { id: budgetId } }), 1, "Renewal updates the same row");
     await assert.rejects(reserveGeneration({ ...config, model: "unknown-model" }, 100, userId, now, budgetId), code("ai_budget_unavailable"));
 
     // Unexpected billed usage trips the circuit, never silently clamps cost.
     await settleGeneration(accepted[1]!, { ...usage, inputTokens: 10000, outputTokens: 10000 });
     assert.ok((await prisma.aiBudget.findUniqueOrThrow({ where: { id: budgetId } })).blockedAt);
     await assert.rejects(reserve(config, owner.id), code("ai_budget_unavailable"));
-    console.log(JSON.stringify({ status: "passed", realAiCalls: 0, checks: ["140 Daily under concurrency", "Creative rolling quota", "no reset at midnight", "exact weekly expiry", "separate technical quota and chat telemetry", "explicit owner exemption", "owner still budgeted", "atomic global spending cap", "unknown cost retained", "idempotent settlement", "no automatic renewal", "unknown tariff denied", "unexpected usage circuit breaker"] }));
+    console.log(JSON.stringify({ status: "passed", realAiCalls: 0, checks: ["140 Daily under concurrency", "Creative rolling quota", "no reset at midnight", "exact weekly expiry", "separate technical quota and chat telemetry", "explicit owner exemption", "owner still budgeted", "atomic global spending cap", "unknown cost retained", "idempotent settlement", "monthly renewal", "unknown tariff denied", "unexpected usage circuit breaker"] }));
   } finally {
     await prisma.aiGeneration.deleteMany({ where: { budgetId } });
     await prisma.aiBudget.deleteMany({ where: { id: budgetId } });

@@ -4,6 +4,7 @@ vi.mock("@atelier/db", () => ({ prisma: { user: { findUnique: h.findUser }, aiBu
 vi.mock("../logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/permissions-guard", () => ({ requireAuth: h.auth, isNextResponse: (r: unknown) => r instanceof Response }));
 import { ownerBudgetStatus, isAiOwner } from "./budget";
+import { pilotEnd } from "./budget-policy";
 import { GET } from "../../app/api/ai-budget/route";
 beforeEach(() => { vi.resetAllMocks(); });
 describe("private owner allowance", () => {
@@ -20,7 +21,16 @@ describe("private owner allowance", () => {
   });
   it("shows unused allowance without starting a pilot or creating a row", async () => {
     h.findUser.mockResolvedValue({ email: "andygomezgc@gmail.com" }); h.findBudget.mockResolvedValue(null);
-    expect(await ownerBudgetStatus("owner")).toMatchObject({ limit: 50, used: 0, reserved: 0, endsAt: null });
+    expect(await ownerBudgetStatus("owner")).toMatchObject({ limit: 187.5, used: 0, reserved: 0, endsAt: null });
+  });
+  it("reports an ended period as the renewed one, not as blocked", async () => {
+    h.findUser.mockResolvedValue({ email: "andygomezgc@gmail.com" });
+    const endsAt = new Date(Date.now() - 1000);
+    h.findBudget.mockResolvedValue({ limitMicros: 187_500_000, spentMicros: 150_000_000, heldMicros: 1_000_000, endsAt, warnedAt: new Date(), blockedAt: null });
+    expect(await ownerBudgetStatus("owner")).toEqual({ limit: 187.5, used: 0, reserved: 1, endsAt: pilotEnd(endsAt).toISOString(), warning: false, blocked: false });
+    // A blocked row never renews, so it keeps reporting the period it stopped in.
+    h.findBudget.mockResolvedValue({ limitMicros: 187_500_000, spentMicros: 1_000_000, heldMicros: 0, endsAt, warnedAt: null, blockedAt: new Date() });
+    expect(await ownerBudgetStatus("owner")).toMatchObject({ used: 1, endsAt: endsAt.toISOString(), blocked: true });
   });
   it("requires authentication and ignores spoofed email query parameters", async () => {
     h.auth.mockResolvedValueOnce(new Response("unauthorized", { status: 401 }));
