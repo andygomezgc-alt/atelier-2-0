@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
@@ -14,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Empty } from "@/src/components/Empty";
+import { SkeletonList } from "@/src/components/SkeletonList";
 import { NetworkError } from "@/src/components/NetworkError";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { SectionExplainer } from "@/src/components/SectionExplainer";
@@ -134,6 +134,12 @@ export default function RecetasScreen() {
     }
   }
 
+  async function handleCreateRecipe() {
+    // A-12 — lazy create del sitio si todavía no hay restaurante.
+    try { await ensureRestaurant(); } catch { return; }
+    router.push("/recetas/nueva");
+  }
+
   async function handleDelete() {
     if (!pendingDelete) return;
     const id = pendingDelete.id;
@@ -199,11 +205,7 @@ export default function RecetasScreen() {
         <View style={styles.createRow}>
           <Pressable
             style={styles.createBtn}
-            onPress={async () => {
-              // A-12 — lazy create del sitio si todavía no hay restaurante.
-              try { await ensureRestaurant(); } catch { return; }
-              router.push("/recetas/nueva");
-            }}
+            onPress={handleCreateRecipe}
           >
             <Ionicons name="add" size={16} color={colors.paper} />
             <Text style={styles.createLabel}>{t("btn_crear_receta")}</Text>
@@ -273,7 +275,7 @@ export default function RecetasScreen() {
         }
         ListEmptyComponent={
           loading ? (
-            <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
+            <SkeletonList rows={4} />
           ) : loadError && recipes.length === 0 ? (
             <NetworkError onRetry={() => void reload()} />
           ) : (
@@ -285,6 +287,9 @@ export default function RecetasScreen() {
                   : t("empty_recetas_filter")
               }
               sub={filter === "in_progress" || filter === "all" ? t("empty_recetas_sub") : undefined}
+              {...(canCreate && (filter === "in_progress" || filter === "all")
+                ? { actionLabel: t("empty_recetas_cta"), onAction: handleCreateRecipe }
+                : {})}
             />
           )
         }

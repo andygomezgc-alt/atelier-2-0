@@ -6,7 +6,7 @@ import type { InvoiceListResponse, InvoiceSummary } from "@atelier/shared";
 const h = vi.hoisted(() => ({ list: vi.fn(), push: vi.fn(), polling: null as boolean | null }));
 
 vi.mock("react-native", () => ({
-  ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", View: "View",
+  ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", RefreshControl: "RefreshControl", ScrollView: "ScrollView", Text: "Text", View: "View",
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: "android", select: (items: Record<string, unknown>) => items.android ?? items.default },
 }));
@@ -26,6 +26,8 @@ vi.mock("@/src/components/Button", () => ({ Button: "Button" }));
 vi.mock("@/src/components/Empty", () => ({ Empty: "Empty" }));
 vi.mock("@/src/components/NetworkError", () => ({ NetworkError: "NetworkError" }));
 vi.mock("@/src/components/StatusBadge", () => ({ StatusBadge: "StatusBadge" }));
+vi.mock("@/src/components/SkeletonList", () => ({ SkeletonList: "SkeletonList" }));
+vi.mock("@/src/lib/refresh", () => ({ forceRefresh: (_prefixes: unknown, reload: () => Promise<unknown>) => reload() }));
 
 import InvoicesScreen from "../../app/facturas/index";
 
@@ -87,6 +89,27 @@ describe("invoice list", () => {
     const row = screen.root.findAllByType("Pressable" as never).find((n) => n.props.accessibilityLabel === "Recchioni 77");
     await act(async () => { row?.props.onPress(); });
     expect(h.push).toHaveBeenCalledWith("/facturas/i1");
+  });
+
+  it("shows ghost rows instead of a spinner until the first answer", async () => {
+    let answer!: (value: InvoiceListResponse) => void;
+    h.list.mockReturnValueOnce(new Promise<InvoiceListResponse>((resolve) => { answer = resolve; }));
+    await render();
+    expect(screen.root.findAllByType("SkeletonList" as never)).toHaveLength(1);
+    expect(screen.root.findAllByType("ActivityIndicator" as never)).toHaveLength(0);
+    await act(async () => { answer(response()); });
+    expect(screen.root.findAllByType("SkeletonList" as never)).toHaveLength(0);
+    expect(texts()).toContain("Recchioni");
+  });
+
+  it("pulling the list down reloads it", async () => {
+    await render();
+    h.list.mockResolvedValue(response({ suppliers: [{ supplier: { id: "s2", name: "Marr" }, invoices: [summary({ id: "i3" })] }] }));
+    const control = screen.root.findByType("ScrollView" as never).props.refreshControl;
+    expect(control.props.refreshing).toBe(false);
+    await act(async () => { await control.props.onRefresh(); });
+    expect(h.list).toHaveBeenCalledTimes(2);
+    expect(texts()).toContain("Marr");
   });
 
   it("offers scanning when empty, and retry when offline", async () => {
