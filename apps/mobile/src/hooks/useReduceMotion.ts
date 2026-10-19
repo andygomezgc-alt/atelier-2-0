@@ -7,10 +7,15 @@ export function useReduceMotion(): boolean | null {
   const [reduce, setReduce] = useState<boolean | null>(null);
   useEffect(() => {
     let alive = true;
+    // A change event is newer than the first read, so once one arrives the read's answer is stale.
+    let changed = false;
     AccessibilityInfo.isReduceMotionEnabled()
-      .then((enabled) => { if (alive) setReduce(enabled); })
-      .catch(() => { if (alive) setReduce(false); });
-    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduce);
+      .then((enabled) => { if (alive && !changed) setReduce(enabled); })
+      .catch(() => { if (alive && !changed) setReduce(false); });
+    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", (enabled) => {
+      changed = true;
+      setReduce(enabled);
+    });
     return () => {
       alive = false;
       sub.remove();

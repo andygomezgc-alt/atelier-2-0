@@ -6,6 +6,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 const h = vi.hoisted(() => ({
   reduceMotion: false,
+  firstRead: null as Promise<boolean> | null,
   start: vi.fn(),
   stop: vi.fn(),
   listener: null as ((enabled: boolean) => void) | null,
@@ -13,7 +14,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock("react-native", () => ({
   AccessibilityInfo: {
-    isReduceMotionEnabled: () => Promise.resolve(h.reduceMotion),
+    isReduceMotionEnabled: () => h.firstRead ?? Promise.resolve(h.reduceMotion),
     addEventListener: (_event: string, fn: (enabled: boolean) => void) => {
       h.listener = fn;
       return { remove: () => { h.listener = null; } };
@@ -48,6 +49,7 @@ beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
   h.reduceMotion = false;
+  h.firstRead = null;
 });
 afterEach(async () => { if (tree) await act(async () => { tree.unmount(); }); });
 
@@ -82,5 +84,16 @@ describe("SkeletonList", () => {
     expect(h.start).toHaveBeenCalledOnce();
     await act(async () => { h.listener?.(true); });
     expect(h.stop).toHaveBeenCalled();
+  });
+});
+
+describe("SkeletonList startup", () => {
+  it("a reduce-motion change during the first read wins over that read's stale answer", async () => {
+    let answer!: (enabled: boolean) => void;
+    h.firstRead = new Promise<boolean>((resolve) => { answer = resolve; });
+    await render();
+    await act(async () => { h.listener?.(true); });
+    await act(async () => { answer(false); });
+    expect(h.start).not.toHaveBeenCalled();
   });
 });

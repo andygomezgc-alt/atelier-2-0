@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { MenuDetailSchema, RecipeDetailSchema } from "@atelier/shared";
 import {
+  activeMenuItemsWhere,
   menuDetailInclude,
+  menuListInclude,
   projectMenuCostSummary,
   projectMenuDetail,
   projectRecipeDetail,
@@ -91,6 +93,12 @@ describe("etiquetas fantasma — includes filtran soft-deletes cruzados", () => 
     expect(menuDetailInclude.items.where).toEqual({
       recipe: { deletedAt: null },
     });
+  });
+
+  it("the menu list counts dishes with the same filter as the menu cost summary", () => {
+    // GET /api/menus queries the summary's dishes with activeMenuItemsWhere, so itemCount
+    // and costSummary.totalDishes count the same dishes.
+    expect(menuListInclude._count.select.items.where).toBe(activeMenuItemsWhere);
   });
 });
 
