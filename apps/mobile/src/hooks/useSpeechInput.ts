@@ -28,6 +28,12 @@ const useSpeechEvent: SpeechModule["useSpeechRecognitionEvent"] = speech
 
 export type SpeechErrorCode = "permission" | "unavailable" | "generic";
 
+// What was typed before tapping the microphone stays first; the dictation goes after it.
+export function mergeDictation(base: string, transcript: string): string {
+  const head = base.trim();
+  return head ? `${head} ${transcript}` : transcript;
+}
+
 type Params = {
   lang: string; // BCP-47, ej. "it-IT" / "es-ES"
   onText: (text: string) => void;
@@ -41,9 +47,7 @@ export function useSpeechInput({ lang, onText, onError }: Params) {
   const baseRef = useRef("");
 
   useSpeechEvent("result", (e) => {
-    const transcript = e.results[0]?.transcript ?? "";
-    const base = baseRef.current;
-    onText(base ? `${base} ${transcript}` : transcript);
+    onText(mergeDictation(baseRef.current, e.results[0]?.transcript ?? ""));
   });
 
   useSpeechEvent("end", () => setListening(false));

@@ -332,6 +332,7 @@ export const en: EsDict = {
   role_viewer: "Viewer",
   empty_inicio_title: "Your notebook is blank",
   empty_inicio_sub: "Jot down the first idea to get going.",
+  empty_inicio_action: "Jot down an idea",
   empty_chat_title: "Ready when you are",
   empty_chat_sub: "Ask about technique, fermentation, foodpairing.",
   chat_starters_label: "Suggestions to get started",

@@ -333,6 +333,7 @@ export const it: EsDict = {
   role_viewer: "Lettore",
   empty_inicio_title: "Il tuo quaderno è in bianco",
   empty_inicio_sub: "Annota la prima idea e parti.",
+  empty_inicio_action: "Annota un'idea",
   empty_chat_title: "Pronto quando lo sei tu",
   empty_chat_sub: "Chiedimi tecnica, fermentazione, abbinamenti.",
   chat_starters_label: "Suggerimenti per iniziare",

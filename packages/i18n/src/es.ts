@@ -357,6 +357,7 @@ export const es = {
   role_viewer: "Lector",
   empty_inicio_title: "Tu cuaderno está en blanco",
   empty_inicio_sub: "Anota la primera idea y empieza.",
+  empty_inicio_action: "Anotar una idea",
   empty_chat_title: "Listo cuando tú lo estés",
   empty_chat_sub: "Pregunta sobre técnica, fermentación, foodpairing.",
   chat_starters_label: "Sugerencias para empezar",
