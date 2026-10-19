@@ -28,18 +28,21 @@ export default function InvoicesScreen() {
   const [data, setData] = useState<InvoiceListResponse | null>(null);
   const [failed, setFailed] = useState(false);
 
-  // A pull, the polling and the focus reload can overlap: only the latest call may write,
-  // so an older, slower answer never replaces a newer one.
-  const latestCall = useRef(0);
+  // A pull, the polling and the focus reload can overlap. Each call is numbered, and an answer
+  // is written unless a newer call already wrote one, so an older answer never replaces a newer
+  // one, and on a slow network (answers landing after the next poll started) the list still updates.
+  const startedCalls = useRef(0);
+  const writtenCall = useRef(0);
   const reload = useCallback(async () => {
-    const call = ++latestCall.current;
+    const call = ++startedCalls.current;
     try {
       const next = await listInvoices();
-      if (call !== latestCall.current) return;
+      if (call < writtenCall.current) return;
+      writtenCall.current = call;
       setData(next);
       setFailed(false);
     } catch {
-      if (call === latestCall.current) setFailed(true);
+      if (call > writtenCall.current) setFailed(true);
     }
   }, []);
   useFocusEffect(useCallback(() => { void reload(); }, [reload]));

@@ -141,6 +141,25 @@ describe("invoice list", () => {
     expect(texts()).not.toContain("Recchioni");
   });
 
+  it("still shows an older answer that arrives while a newer call is waiting", async () => {
+    // A slow network: each answer lands after the next call has started (the polling ticks every few seconds).
+    let firstAnswer!: (value: InvoiceListResponse) => void;
+    let secondAnswer!: (value: InvoiceListResponse) => void;
+    h.list
+      .mockReturnValueOnce(new Promise<InvoiceListResponse>((resolve) => { firstAnswer = resolve; }))
+      .mockReturnValueOnce(new Promise<InvoiceListResponse>((resolve) => { secondAnswer = resolve; }));
+    await render();
+    let pull!: Promise<void>;
+    act(() => { pull = screen.root.findByType("ScrollView" as never).props.refreshControl.props.onRefresh(); });
+    await act(async () => { firstAnswer(response()); });
+    expect(texts()).toContain("Recchioni");
+    await act(async () => {
+      secondAnswer(response({ suppliers: [{ supplier: { id: "s2", name: "Marr" }, invoices: [summary({ id: "i3" })] }] }));
+      await pull;
+    });
+    expect(texts()).toContain("Marr");
+  });
+
   it("offers scanning when empty, and retry when offline", async () => {
     h.list.mockResolvedValue(response({ toReview: 0, suppliers: [] }));
     await render();
