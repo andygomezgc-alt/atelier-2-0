@@ -55,7 +55,7 @@ describe("GET /api/products?trash", () => {
   });
 });
 
-describe("GET /api/products — last price change", () => {
+describe("GET /api/products â€” last price change", () => {
   it("reads the two newest prices and returns the change of the last one", async () => {
     db.product.findMany.mockResolvedValue([
       { id: "p1", precioCompra: 1120, unidadCompra: "kg", priceHistory: [{ precio: 1120, unidadCompra: "kg" }, { precio: 1000, unidadCompra: "kg" }] },
@@ -63,7 +63,8 @@ describe("GET /api/products — last price change", () => {
     ]);
     const res = await get();
     const select = db.product.findMany.mock.calls[0]![0].select;
-    expect(select.priceHistory).toEqual({ orderBy: { createdAt: "desc" }, take: 2, select: { precio: true, unidadCompra: true } });
+    // id breaks ties between rows written in the same millisecond, so the order never flips between reads.
+    expect(select.priceHistory).toEqual({ orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 2, select: { precio: true, unidadCompra: true } });
     expect(await res.json()).toEqual([
       { id: "p1", lastPriceChangePct: 12 },
       { id: "p2", lastPriceChangePct: null },

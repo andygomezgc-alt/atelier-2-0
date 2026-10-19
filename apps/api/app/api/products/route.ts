@@ -96,8 +96,9 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
       estado: true,
       precioActualizadoAt: true,
       taxRatePct: true,
-      // The two newest prices give the trend shown on the row.
-      priceHistory: { orderBy: { createdAt: "desc" }, take: 2, select: { precio: true, unidadCompra: true } },
+      // The two newest prices give the trend shown on the row. id breaks ties
+      // between rows written in the same millisecond, so the order is stable.
+      priceHistory: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 2, select: { precio: true, unidadCompra: true } },
     },
   });
 

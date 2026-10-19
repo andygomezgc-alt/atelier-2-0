@@ -79,12 +79,16 @@ describe("applyInvoice", () => {
     expect(tx.recipeIngredient.findMany).not.toHaveBeenCalled();
   });
 
-  it("two lines for one product count its net change from before the invoice", async () => {
+  it("two lines for one product count its net change and leave one history row with the final price", async () => {
     tx.invoiceLine.findMany.mockResolvedValue([line({}), line({ id: "l1", position: 1, appliedPriceCents: 140 })]);
     tx.product.findFirst
       .mockResolvedValueOnce({ id: "p1", unidadCompra: "kg", precioCompra: 150, precioActualizadoAt: null })
       .mockResolvedValueOnce({ id: "p1", unidadCompra: "kg", precioCompra: 180, precioActualizadoAt: null });
     expect(await run()).toMatchObject({ status: "applied", updated: 2, priceRises: 0, affectedRecipes: 0 });
+    // The product list compares the two newest history rows: an in-between price would make it
+    // compare the invoice against itself instead of against the price before it.
+    expect(tx.productPriceHistory.create).toHaveBeenCalledTimes(1);
+    expect(tx.productPriceHistory.create).toHaveBeenCalledWith({ data: { productId: "p1", authorId: "u1", precio: 140, unidadCompra: "kg", invoiceLineId: "l1" } });
   });
 
   it("a tax rate the model did not read never overwrites the product's", async () => {
