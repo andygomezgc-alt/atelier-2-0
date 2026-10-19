@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
   RefreshControl,
@@ -18,11 +17,15 @@ import { Empty } from "@/src/components/Empty";
 import { NetworkError } from "@/src/components/NetworkError";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { SectionExplainer } from "@/src/components/SectionExplainer";
+import { SkeletonList } from "@/src/components/SkeletonList";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth, getCurrentIdentity } from "@/src/hooks/useAuth";
 import { useOfflineQueueSize, saveIdea, flushQueue } from "@/src/hooks/useOfflineQueue";
 import { useRefresh } from "@/src/hooks/useRefresh";
+import { speechAvailable, useSpeechInput } from "@/src/hooks/useSpeechInput";
+import { SPEECH_LANG } from "@/src/features/assistant/chat-helpers";
+import { tapLight } from "@/src/lib/haptics";
 import { listIdeas, patchIdea, deleteIdea, type Idea } from "@/src/api/ideas";
 import { showToast } from "@/src/components/Toast";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
@@ -31,7 +34,7 @@ import { apiErrorMessage } from "@/src/lib/api-error";
 import { canShowAssistantTab } from "@/src/lib/assistant-tab";
 
 export default function InicioScreen() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { state } = useAuth();
   const showAssistant = canShowAssistantTab(state.status === "signed-in" || state.status === "needs-restaurant" ? state.user : null);
   const router = useRouter();
@@ -39,6 +42,14 @@ export default function InicioScreen() {
   const kb = useKeyboardHeight();
 
   const [text, setText] = useState("");
+  const inputRef = useRef<TextInput>(null);
+  // On-device dictation (free, no API), the same hook as the assistant composer.
+  const { listening, start, stop } = useSpeechInput({
+    lang: SPEECH_LANG[lang] ?? "es-ES",
+    onText: setText,
+    onError: (code) =>
+      showToast(t(code === "permission" ? "error_mic_permission" : "error_mic_unavailable"), "error"),
+  });
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -112,6 +123,7 @@ export default function InicioScreen() {
         setIdeas((prev) => [idea, ...prev.filter((entry) => entry.id !== idea.id)]);
       }
       setText((value) => value.trim() === draft ? "" : value);
+      tapLight();
       showToast(t(result.status === "saved" ? "toast_idea_saved" : "toast_idea_saved_offline"));
       void refreshQueue();
     } catch (err) {
@@ -120,6 +132,16 @@ export default function InicioScreen() {
       savingRef.current = false;
       setSaving(false);
     }
+  }
+
+  function toggleMic() {
+    if (saving) return;
+    if (listening) {
+      stop();
+      return;
+    }
+    tapLight();
+    void start(text);
   }
 
   async function handleDelete() {
@@ -203,6 +225,7 @@ export default function InicioScreen() {
             </View>
             <View style={styles.ideaBox}>
               <TextInput
+                ref={inputRef}
                 value={text}
                 onChangeText={setText}
                 editable={!saving}
@@ -211,15 +234,33 @@ export default function InicioScreen() {
                 placeholderTextColor={colors.mute}
                 style={styles.ideaInput}
               />
-              <Pressable
-                onPress={handleSave}
-                disabled={!text.trim() || saving}
-                style={[styles.saveBtn, (!text.trim() || saving) && styles.saveBtnDisabled]}
-              >
-                <Text style={styles.saveLabel}>
-                  {saving ? "…" : t("btn_save")}
-                </Text>
-              </Pressable>
+              <View style={styles.ideaActions}>
+                {speechAvailable ? (
+                  <Pressable
+                    onPress={toggleMic}
+                    disabled={saving}
+                    hitSlop={6}
+                    style={[styles.micBtn, listening && styles.micBtnActive]}
+                    accessibilityRole="button"
+                    accessibilityLabel={listening ? t("chat_mic_stop") : t("chat_mic_label")}
+                  >
+                    <Ionicons
+                      name={listening ? "stop" : "mic-outline"}
+                      size={18}
+                      color={listening ? colors.paper : colors.terracotaDeep}
+                    />
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  onPress={handleSave}
+                  disabled={!text.trim() || saving || listening}
+                  style={[styles.saveBtn, (!text.trim() || saving || listening) && styles.saveBtnDisabled]}
+                >
+                  <Text style={styles.saveLabel}>
+                    {saving ? "…" : t("btn_save")}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           </View>
 
@@ -229,11 +270,17 @@ export default function InicioScreen() {
               <Eyebrow style={styles.sectionLabel}>{t("eyebrow_ultimas_ideas")}</Eyebrow>
             </View>
             {loading ? (
-              <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.md }} />
+              <SkeletonList rows={3} />
             ) : loadError && ideas.length === 0 ? (
               <NetworkError onRetry={() => void reload()} />
             ) : ideas.length === 0 ? (
-              <Empty icon="bulb-outline" title={t("empty_inicio_title")} sub={t("empty_inicio_sub")} />
+              <Empty
+                icon="bulb-outline"
+                title={t("empty_inicio_title")}
+                sub={t("empty_inicio_sub")}
+                actionLabel={t("empty_inicio_action")}
+                onAction={() => inputRef.current?.focus()}
+              />
             ) : (
               <View style={styles.list}>
                 {ideas.map((idea) => {
@@ -374,8 +421,19 @@ const styles = StyleSheet.create({
     minHeight: 60,
     textAlignVertical: "top",
   },
+  ideaActions: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: spacing.sm },
+  micBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.terracotaEdge,
+    backgroundColor: colors.paper,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  micBtnActive: { backgroundColor: colors.terracotaDeep, borderColor: colors.terracotaDeep },
   saveBtn: {
-    alignSelf: "flex-end",
     backgroundColor: colors.terracotaDeep,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.lg,
