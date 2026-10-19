@@ -90,6 +90,8 @@ describe("idea card status label", () => {
   it("takes the arrow from the translation, not from a literal in the screen", async () => {
     h.role = "sous_chef";
     await render();
+    // The action is shown (as its translation key here), and no arrow is added around it.
+    expect(visibleText()).toContain("inicio_idea_action");
     expect(visibleText()).not.toContain("→");
   });
 });

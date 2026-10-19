@@ -6,6 +6,8 @@ vi.mock("react-native", () => ({ Platform: { select: (o: { default: string }) =>
 import { colors } from "@/src/theme";
 
 function luminance(hex: string): number {
+  // The parser below only reads #rrggbb; any other format would give a wrong ratio without an error.
+  expect(hex).toMatch(/^#[0-9a-f]{6}$/i);
   const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
   const [r, g, b] = channels.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
   return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
@@ -27,5 +29,20 @@ describe("accent token contrast", () => {
 
   it("teal small text on a paperSoft card passes AA", () => {
     expect(contrast(colors.teal, colors.paperSoft)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("teal caption and greeting on the screen background pass AA", () => {
+    expect(contrast(colors.teal, colors.paper)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("idea text typed on the terracotaWash box passes AA", () => {
+    expect(contrast(colors.ink, colors.terracotaWash)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  // Known gap, not AA: placeholders use `mute` across the app (3.84:1 on paper). On the Inicio
+  // idea box it is 3.63:1. This only stops it from getting worse until the palette changes.
+  const PLACEHOLDER_FLOOR_BELOW_AA = 3.5;
+  it("the mute placeholder on the terracotaWash box stays at its current level (below AA)", () => {
+    expect(contrast(colors.mute, colors.terracotaWash)).toBeGreaterThanOrEqual(PLACEHOLDER_FLOOR_BELOW_AA);
   });
 });
