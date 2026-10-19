@@ -11,7 +11,7 @@
 // Acciones administrativas (migrar recetas, info de criticidad auto) viven
 // en /productos/ajustes — se llega ahí desde el ícono ⚙ en el header.
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -213,10 +213,7 @@ export default function ProductosScreen() {
     }
   }, [filter, q, t, updateItems]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
+  // Also runs again when reload changes (filter or search) while the screen is open.
   useFocusEffect(
     useCallback(() => {
       void reload();

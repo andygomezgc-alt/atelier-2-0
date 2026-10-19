@@ -337,6 +337,7 @@ export const es = {
   profile_name_placeholder: "Tu nombre",
   profile_bio_placeholder: "Mantra del chef…",
   profile_name_empty_toast: "El nombre no puede estar vacío",
+  profile_saved_toast: "Perfil guardado",
   // ─── Perfil v2 · Plan + pie ───
   profile_plan: "Plan",
   plan_pilot: "Piloto",

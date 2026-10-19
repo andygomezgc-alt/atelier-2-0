@@ -102,10 +102,7 @@ export default function RecetasScreen() {
     }
   }, [filter, q, t]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
+  // Also runs again when reload changes (filter or search) while the screen is open.
   useFocusEffect(
     useCallback(() => {
       void reload();

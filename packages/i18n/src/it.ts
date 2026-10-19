@@ -313,6 +313,7 @@ export const it: EsDict = {
   profile_name_placeholder: "Il tuo nome",
   profile_bio_placeholder: "Mantra dello chef…",
   profile_name_empty_toast: "Il nome non può essere vuoto",
+  profile_saved_toast: "Profilo salvato",
   // ─── Profilo v2 · Piano + piè ───
   profile_plan: "Piano",
   plan_pilot: "Pilota",

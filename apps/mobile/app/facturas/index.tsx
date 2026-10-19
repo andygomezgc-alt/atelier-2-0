@@ -50,18 +50,7 @@ export default function InvoicesScreen() {
     body = <Empty icon="receipt-outline" title={t("invoices_empty_title")} sub={t("invoices_empty_sub")} actionLabel={t("invoices_scan")} onAction={scan} />;
   } else {
     body = (
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => void onRefresh()}
-            tintColor={colors.terracota}
-            colors={[colors.terracota]}
-            progressBackgroundColor={colors.paper}
-          />
-        }
-      >
+      <>
         <Button label={t("invoices_scan")} iconLeft="camera-outline" onPress={scan} />
         {data.toReview > 0 ? (
           <View style={styles.band}>
@@ -94,19 +83,35 @@ export default function InvoicesScreen() {
             })}
           </View>
         ))}
-      </ScrollView>
+      </>
     );
   }
 
+  // The empty and offline states pull down to reload too, not only a filled list.
+  const filled = !!data && data.suppliers.length > 0;
   return (
     <Screen title={t("invoices_title")} back onBack={() => router.back()}>
-      {body}
+      <ScrollView
+        contentContainerStyle={filled ? styles.content : styles.state}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+            tintColor={colors.terracota}
+            colors={[colors.terracota]}
+            progressBackgroundColor={colors.paper}
+          />
+        }
+      >
+        {body}
+      </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   loading: { paddingHorizontal: spacing.lg },
+  state: { flexGrow: 1 },
   content: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl },
   band: { backgroundColor: colors.terracotaSoft, borderRadius: radii.md, padding: spacing.md },
   bandText: { fontFamily: fonts.sans, fontSize: fontSizes.body, color: colors.ink },
