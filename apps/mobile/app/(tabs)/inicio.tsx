@@ -26,6 +26,7 @@ import { useRefresh } from "@/src/hooks/useRefresh";
 import { speechAvailable, useSpeechInput } from "@/src/hooks/useSpeechInput";
 import { SPEECH_LANG } from "@/src/features/assistant/chat-helpers";
 import { tapLight } from "@/src/lib/haptics";
+import { relativeAge } from "@/src/lib/relative-age";
 import { listIdeas, patchIdea, deleteIdea, type Idea } from "@/src/api/ideas";
 import { showToast } from "@/src/components/Toast";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
@@ -65,6 +66,8 @@ export default function InicioScreen() {
   const [editText, setEditText] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Idea dates are worked out at render time; the list renders again on every focus reload.
+  const now = Date.now();
   const userName =
     state.status === "signed-in" || state.status === "needs-restaurant"
       ? state.user.name.split(" ")[0]
@@ -228,7 +231,8 @@ export default function InicioScreen() {
                 ref={inputRef}
                 value={text}
                 onChangeText={setText}
-                editable={!saving}
+                // Locked while listening: the next result replaces the text from where dictation started.
+                editable={!saving && !listening}
                 multiline
                 placeholder={t("inicio_placeholder")}
                 placeholderTextColor={colors.mute}
@@ -294,11 +298,15 @@ export default function InicioScreen() {
                         onPress={showAssistant ? () => takeToAssistant(idea) : undefined}
                       >
                         <Text style={styles.ideaText}>{idea.text}</Text>
-                        {showAssistant && (
-                          <Text style={[styles.ideaMeta, inChat && styles.ideaMetaInChat]}>
-                            {t(inChat ? "inicio_idea_in_chat" : "inicio_idea_action")}
-                          </Text>
-                        )}
+                        <Text style={styles.ideaMeta}>
+                          <Text style={styles.ideaAge}>{relativeAge(idea.createdAt, now, t)}</Text>
+                          {showAssistant ? (
+                            <Text style={inChat ? styles.ideaMetaInChat : styles.ideaMetaAction}>
+                              {" · "}
+                              {t(inChat ? "inicio_idea_in_chat" : "inicio_idea_action")}
+                            </Text>
+                          ) : null}
+                        </Text>
                       </Pressable>
                       <Pressable
                         hitSlop={10}
@@ -519,10 +527,10 @@ const styles = StyleSheet.create({
   ideaMeta: {
     fontFamily: fonts.sans,
     fontSize: fontSizes.caption,
-    color: colors.terracotaDeep,
-    fontWeight: "600",
     marginTop: spacing.xs,
     letterSpacing: 0.5,
   },
-  ideaMetaInChat: { color: colors.teal },
+  ideaAge: { color: colors.mute },
+  ideaMetaAction: { color: colors.terracotaDeep, fontWeight: "600" },
+  ideaMetaInChat: { color: colors.teal, fontWeight: "600" },
 });
