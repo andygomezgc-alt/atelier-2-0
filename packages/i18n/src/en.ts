@@ -556,6 +556,10 @@ export const en: EsDict = {
   filter_productos_archivados: "Archived",
   filter_productos_pezzatura_pendiente: "Size pending",
   product_list_pezzatura_pendiente: "size pending",
+  product_price_up: "▲ {n}%",
+  product_price_down: "▼ {n}%",
+  product_price_up_a11y: "Up {n}% from the previous price",
+  product_price_down_a11y: "Down {n}% from the previous price",
   rename_pezzatura_desync_title: "Size mismatch",
   rename_pezzatura_desync_body:
     "The name suggests {detected} but the stored size is {current}. Update size?",
@@ -957,6 +961,7 @@ export const en: EsDict = {
   invoice_apply_undecided: "{count} lines still to decide",
   invoice_apply_done: "Done: {updated} prices updated and {drafts} products created.",
   invoice_apply_already: "This invoice was already applied.",
+  invoice_apply_price_rises: "Price rises: {products} · Recipes affected: {recipes}",
   invoice_skipped_product_deleted: "{line}: not applied, the product had been deleted.",
   invoice_skipped_newer_price: "{line}: not applied, it already had a newer price.",
   producto_tax_label: "VAT",

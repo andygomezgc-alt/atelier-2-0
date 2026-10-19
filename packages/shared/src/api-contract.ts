@@ -975,6 +975,9 @@ export const ProductListItemSchema = z.object({
   precioActualizadoAt: z.string(), // ISO
   // Entrega A.5, Fase 8 — recetas (distinct) que usan el producto por unidad.
   usedByUnitCount: z.number().int().nonnegative(),
+  // Whole-percent change of the last price against the previous one (list only);
+  // null when there is nothing to compare. Optional for older payloads.
+  lastPriceChangePct: z.number().int().nullable().optional(),
 });
 
 export const ProductDetailSchema = ProductListItemSchema.extend({

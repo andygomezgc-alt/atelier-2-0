@@ -114,6 +114,25 @@ describe("invoice screen", () => {
     expect(h.invalidate).toHaveBeenCalledWith("products:");
     expect(h.invalidate).toHaveBeenCalledWith("recipes:");
     expect(texts()).toEqual(expect.arrayContaining(['invoice_apply_done:{"updated":1,"drafts":1}', 'invoice_skipped_newer_price:{"line":"Zucchine"}']));
+    // A server from before the price-rise count sends no field: no rise line.
+    expect(texts().some((text) => text.startsWith("invoice_apply_price_rises"))).toBe(false);
+  });
+
+  it("after applying, says how many products rose and how many recipes they touch", async () => {
+    h.apply.mockResolvedValue({ updated: 3, drafts: 0, connected: 0, ignored: 0, skipped: [], priceRises: 3, affectedRecipes: 8 });
+    await render();
+    h.get.mockResolvedValue(invoice({ status: "applied" }));
+    await press("invoice_apply");
+    expect(texts()).toContain('invoice_apply_price_rises:{"products":3,"recipes":8}');
+  });
+
+  it("an invoice where no price rose shows no rise line", async () => {
+    h.apply.mockResolvedValue({ updated: 1, drafts: 0, connected: 0, ignored: 0, skipped: [], priceRises: 0, affectedRecipes: 0 });
+    await render();
+    h.get.mockResolvedValue(invoice({ status: "applied" }));
+    await press("invoice_apply");
+    expect(texts()).toContain('invoice_apply_done:{"updated":1,"drafts":0}');
+    expect(texts().some((text) => text.startsWith("invoice_apply_price_rises"))).toBe(false);
   });
 
   it("a second press while applying sends nothing", async () => {

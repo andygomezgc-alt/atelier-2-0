@@ -115,6 +115,9 @@ export type ProductListItem = {
   // con unit ∈ ("piezas","unidad"). Habilita el indicador pasivo "pezzatura
   // pendiente" en el banco y el filtro asociado.
   usedByUnitCount: number;
+  // Whole-percent change of the last price against the previous one, sent by
+  // the product list only; null when there is nothing to compare.
+  lastPriceChangePct?: number | null;
 };
 
 export type ProductDetail = ProductListItem & {
