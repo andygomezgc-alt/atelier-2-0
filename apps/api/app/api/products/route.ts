@@ -15,6 +15,7 @@ import {
   projectProductListItem,
   projectProductDetail,
 } from "@/lib/products/projections";
+import { lastPriceChangePct } from "@/lib/products/price-change";
 import { defaultCriticality } from "@/lib/products/criticality";
 import { suggestedMermaPct } from "@/lib/products/defaults";
 import { detectPezzaturaFromName, parsePezzatura } from "@atelier/shared";
@@ -95,6 +96,8 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
       estado: true,
       precioActualizadoAt: true,
       taxRatePct: true,
+      // The two newest prices give the trend shown on the row.
+      priceHistory: { orderBy: { createdAt: "desc" }, take: 2, select: { precio: true, unidadCompra: true } },
     },
   });
 
@@ -122,9 +125,10 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
   }
 
   return NextResponse.json(
-    products.map((p) =>
-      projectProductListItem(p, usedByUnitCount.get(p.id) ?? 0),
-    ),
+    products.map((p) => ({
+      ...projectProductListItem(p, usedByUnitCount.get(p.id) ?? 0),
+      lastPriceChangePct: lastPriceChangePct(p.priceHistory, p),
+    })),
   );
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CreateProductRequestSchema, PatchProductRequestSchema } from "./api-contract";
+import { CreateProductRequestSchema, PatchProductRequestSchema, ProductListItemSchema } from "./api-contract";
 
 describe("product editing contracts", () => {
   it("accepts several declared allergens and removes duplicates", () => {
@@ -36,5 +36,24 @@ describe("gramosPorLitro (weight of one litre) contract", () => {
   it.each([0, -1, 920.123, 100000, "920"])("rejects %s", (gramosPorLitro) => {
     expect(CreateProductRequestSchema.safeParse({ ...base, gramosPorLitro }).success).toBe(false);
     expect(PatchProductRequestSchema.safeParse({ gramosPorLitro }).success).toBe(false);
+  });
+});
+
+describe("product list item — last price change", () => {
+  const item = {
+    id: "p1", name: "Gamberi", category: "pescado", pezzatura: null, pezzaturaMode: null, pezzaturaMin: null, pezzaturaMax: null,
+    unidadCompra: "kg", precioCompra: 1120, realCost: 1120, mermaPct: 0, mermaOrigen: "sugerida", criticality: "alta", estado: "activo",
+    precioActualizadoAt: "2026-10-19T12:00:00.000Z", usedByUnitCount: 0,
+  } as const;
+
+  it("accepts a whole percent, null, or no field from an older server", () => {
+    expect(ProductListItemSchema.parse({ ...item, lastPriceChangePct: 12 }).lastPriceChangePct).toBe(12);
+    expect(ProductListItemSchema.parse({ ...item, lastPriceChangePct: -5 }).lastPriceChangePct).toBe(-5);
+    expect(ProductListItemSchema.parse({ ...item, lastPriceChangePct: null }).lastPriceChangePct).toBeNull();
+    expect(ProductListItemSchema.parse(item)).not.toHaveProperty("lastPriceChangePct");
+  });
+
+  it("rejects a fractional percent", () => {
+    expect(ProductListItemSchema.safeParse({ ...item, lastPriceChangePct: 12.5 }).success).toBe(false);
   });
 });

@@ -33,7 +33,7 @@ function get(qs = "") {
 }
 
 beforeEach(() => {
-  db.product.findMany.mockReset().mockResolvedValue([{ id: "p1" }]);
+  db.product.findMany.mockReset().mockResolvedValue([{ id: "p1", priceHistory: [] }]);
   db.recipeIngredient.findMany.mockReset().mockResolvedValue([]);
 });
 
@@ -52,5 +52,21 @@ describe("GET /api/products?trash", () => {
     expect(arg.where.deletedAt).toEqual({ not: null });
     // ordena por borrado mÃ¡s reciente primero.
     expect(arg.orderBy).toEqual([{ deletedAt: "desc" }]);
+  });
+});
+
+describe("GET /api/products — last price change", () => {
+  it("reads the two newest prices and returns the change of the last one", async () => {
+    db.product.findMany.mockResolvedValue([
+      { id: "p1", precioCompra: 1120, unidadCompra: "kg", priceHistory: [{ precio: 1120, unidadCompra: "kg" }, { precio: 1000, unidadCompra: "kg" }] },
+      { id: "p2", precioCompra: 500, unidadCompra: "kg", priceHistory: [{ precio: 500, unidadCompra: "kg" }] },
+    ]);
+    const res = await get();
+    const select = db.product.findMany.mock.calls[0]![0].select;
+    expect(select.priceHistory).toEqual({ orderBy: { createdAt: "desc" }, take: 2, select: { precio: true, unidadCompra: true } });
+    expect(await res.json()).toEqual([
+      { id: "p1", lastPriceChangePct: 12 },
+      { id: "p2", lastPriceChangePct: null },
+    ]);
   });
 });

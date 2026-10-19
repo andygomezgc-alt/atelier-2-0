@@ -31,6 +31,7 @@ import { NetworkError } from "@/src/components/NetworkError";
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { CategoryIcon } from "@/src/components/CategoryIcon";
 import { EditableCell } from "@/src/components/EditableCell";
+import { PriceChangeBadge } from "@/src/components/PriceChangeBadge";
 import { useI18n } from "@/src/hooks/useI18n";
 import { downloadAndShare } from "@/src/lib/export-file";
 import { formatEuros, formatEurosPerUnit, parseEurosToCents } from "@/src/lib/money";
@@ -531,6 +532,7 @@ const ProductRow = memo(function ProductRow({
             <Text style={styles.unitHint}>
               /{UNIT_SHORT[item.unidadCompra]}
             </Text>
+            <PriceChangeBadge pct={item.lastPriceChangePct} />
             {isPezzaturaPending ? (
               <Text style={styles.pezzaturaPendienteText} numberOfLines={1}>
                 · {t("product_list_pezzatura_pendiente")}

@@ -15,7 +15,11 @@ Source: the read-only review accepted by the user on 2026-10-18 ("Propuestas par
   Guards: "solo presentación, sin tocar el flujo de datos; respetar "reducir movimiento" del sistema"; reuse the `ensureRestaurant()` creation path; "sin IA". Also named: Facturas spinner colour and missing pull-to-refresh.
   Assumption: the Inicio parts (`inicio.tsx` spinner and empty state) wait, because `feat/inicio-color` rewrites that screen and the user is testing it first.
 
-Out of scope now (L1): proposal 2 (dictation in Inicio), proposal 4.
+- **S4 — Proposal 4, price rises and the recipes they affect (L12).** "una flecha/porcentaje en la fila del producto ("▲ 12 % desde la última factura") y, al confirmar una factura, un resumen "3 productos subieron; afecta 8 recetas"."
+  Guards: "requiere campo nuevo en la lista de productos (servidor, aditivo y opcional) con el mismo permiso"; "tests de servidor con fixtures de `ProductPriceHistory` y test de la función de variación; sin IA, costo cero."
+  Assumption: the row shows the change from the previous price in the history (same unit, previous price above zero), whether it came from an invoice or a manual edit, and only while the newest history entry still matches the current price. The "same permission" is the product list's own (any member), which already returns every price.
+
+Out of scope now (L1): proposal 2 (dictation in Inicio).
 
 ## Tasks
 
@@ -25,6 +29,7 @@ Out of scope now (L1): proposal 2 (dictation in Inicio), proposal 4.
 | T2 | S2 | inline | done | 9ce6106 |
 | T3 | S3 | inline | done | 073b3d2 |
 | T4 | S2, S3 (review findings) | inline | done | branch `feat/propuestas-atractivo-04-review-fixes` |
+| T5 | S4 | inline | done | branch `feat/price-rise-alerts` |
 
 Route evidence: one parent, inline. Writer trigger (a) does not hold: T2 and T3 both edit `recetas.tsx` and `menus.tsx`, and all three share the i18n files.
 
@@ -41,3 +46,5 @@ Route evidence: one parent, inline. Writer trigger (a) does not hold: T2 and T3 
 - L9 (2026-10-19, user): "Abrí una cadena de 3 PRs, uno por propuesta (chips, food cost, esqueletos), cada uno apilado sobre el anterior." Chain strategy: stacked PRs to main. Slices: #67 `feat/propuestas-atractivo-01-chips` (89c6ca3, T1, +204/−5) → main; #68 `feat/propuestas-atractivo-02-food-cost` (9ce6106, T2, +321/−8) → #67's branch; #69 `feat/propuestas-atractivo` (073b3d2 + docs, T3, +404/−23, size exception by the one-PR-per-proposal choice) → #68's branch. CI (`ci.yml`) runs only on PRs to main, so #68 and #69 get checks once retargeted.
 - L10: Native review of 1bafb73..8325fc1 (lenses risk, reliability), consent granted by the user: approved and acknowledged (lineage review-4bf85b5d69e38757). Non-blocking findings for later work: R3-reduce-motion-race (WARNING: the initial `isReduceMotionEnabled()` read can overwrite a newer `reduceMotionChanged` event), no render test for the FC chip or the menu cost line. R3-total-dishes-vs-itemcount does not hold: `menuListInclude._count` already filters with `activeMenuItemsWhere`.
 - L11 (2026-10-19, user): "Haz esta tarea aquí: “Cerrar hallazgos de la revisión de la cadena #67–#69”". T4: R3-reduce-motion-race RED (first read resolving after a change event restarted the pulse), fixed by ignoring the first read once a change event arrived. Render tests added for the FC chip (value, tone colour, spoken label, absent when unknown) and the in-service menu cost line (line, coverage suffix, absent without summary); they passed on the existing code, as the finding was missing coverage. R3-total-dishes-vs-itemcount pinned with a test that `menuListInclude` counts with `activeMenuItemsWhere`. mobile 688, api projections/menus 51; tsc api and mobile OK. `list-empty-states.test.ts` renamed to `list-screens.test.ts`.
+- L12 (2026-10-19, user): "Sí, arrancá la propuesta 4 ("Subió el precio" y a qué recetas afecta) desde main mientras pruebo el APK del color." T5 opened on `feat/price-rise-alerts` from origin/main (de6ad57). Forecast ~350 authored lines, one PR. Route: inline (one behaviour, shared i18n files; no writer trigger).
+- L13: T5 RED then GREEN. Server: `lastPriceChangePct` (pure function in `apps/api/lib/products/price-change.ts`, 7 cases) on `GET /api/products` from the two newest `ProductPriceHistory` rows; `applyInvoice` returns `priceRises` (net per product, a first price is not a rise) and `affectedRecipes` (distinct live recipes). App: `PriceChangeBadge` on the product row (up in danger, down in green, spoken label) and the summary line in the invoice screen. The visible summary reads "Subieron de precio: 3 · Recetas afectadas: 8" instead of the proposal's "3 productos subieron; afecta 8 recetas" because `@atelier/i18n` has no plurals and the example breaks at a count of 1. Checks: `pnpm -r typecheck` OK; tests i18n 94, shared 541, mobile 693, api 2020. Risk: none (additive optional fields; the list adds one indexed relation read, `@@index([productId, createdAt])`).

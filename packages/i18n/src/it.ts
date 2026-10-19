@@ -557,6 +557,10 @@ export const it: EsDict = {
   filter_productos_archivados: "Archiviati",
   filter_productos_pezzatura_pendiente: "Pezzatura pendente",
   product_list_pezzatura_pendiente: "pezzatura pendente",
+  product_price_up: "▲ {n}%",
+  product_price_down: "▼ {n}%",
+  product_price_up_a11y: "Aumentato del {n}% rispetto al prezzo precedente",
+  product_price_down_a11y: "Diminuito del {n}% rispetto al prezzo precedente",
   rename_pezzatura_desync_title: "Pezzatura disallineata",
   rename_pezzatura_desync_body:
     "Il nome indica {detected} ma la pezzatura caricata è {current}. Aggiornare la pezzatura?",
@@ -958,6 +962,7 @@ export const it: EsDict = {
   invoice_apply_undecided: "Mancano {count} righe da decidere",
   invoice_apply_done: "Fatto: {updated} prezzi aggiornati e {drafts} prodotti creati.",
   invoice_apply_already: "Questa fattura era già applicata.",
+  invoice_apply_price_rises: "Prezzi aumentati: {products} · Ricette interessate: {recipes}",
   invoice_skipped_product_deleted: "{line}: non applicata, il prodotto era stato eliminato.",
   invoice_skipped_newer_price: "{line}: non applicata, aveva già un prezzo più recente.",
   producto_tax_label: "IVA",

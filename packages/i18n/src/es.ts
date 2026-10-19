@@ -584,6 +584,10 @@ export const es = {
   filter_productos_archivados: "Archivados",
   filter_productos_pezzatura_pendiente: "Pezzatura pendiente",
   product_list_pezzatura_pendiente: "pezzatura pendiente",
+  product_price_up: "▲ {n} %",
+  product_price_down: "▼ {n} %",
+  product_price_up_a11y: "Subió un {n} % respecto al precio anterior",
+  product_price_down_a11y: "Bajó un {n} % respecto al precio anterior",
   rename_pezzatura_desync_title: "Pezzatura desincronizada",
   rename_pezzatura_desync_body:
     "El nombre indica {detected} pero la pezzatura cargada es {current}. ¿Actualizar pezzatura?",
@@ -989,6 +993,7 @@ export const es = {
   invoice_apply_undecided: "Faltan {count} líneas por decidir",
   invoice_apply_done: "Listo: {updated} precios actualizados y {drafts} productos creados.",
   invoice_apply_already: "Esta factura ya estaba aplicada.",
+  invoice_apply_price_rises: "Subieron de precio: {products} · Recetas afectadas: {recipes}",
   invoice_skipped_product_deleted: "{line}: no se aplicó, el producto se había borrado.",
   invoice_skipped_newer_price: "{line}: no se aplicó, ya tenía un precio más reciente.",
   producto_tax_label: "IVA",

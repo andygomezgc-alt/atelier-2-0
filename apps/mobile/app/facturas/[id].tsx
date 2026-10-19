@@ -214,6 +214,11 @@ export default function InvoiceScreen() {
             {"updated" in summary ? (
               <>
                 <Text style={styles.summaryText}>{t("invoice_apply_done", { updated: summary.updated, drafts: summary.drafts })}</Text>
+                {summary.priceRises ? (
+                  <Text style={styles.summaryText}>
+                    {t("invoice_apply_price_rises", { products: summary.priceRises, recipes: summary.affectedRecipes ?? 0 })}
+                  </Text>
+                ) : null}
                 {summary.skipped.map((s) => (
                   <Text key={s.position} style={styles.summarySkipped}>
                     {t(s.reason === "product_deleted" ? "invoice_skipped_product_deleted" : "invoice_skipped_newer_price", { line: describeLine(s.position) })}
