@@ -76,6 +76,24 @@ describe("idea card author", () => {
   });
 });
 
+describe("idea card status label", () => {
+  it("labels an idea already in a chat and still opens it in the assistant", async () => {
+    h.role = "sous_chef";
+    h.listIdeas.mockResolvedValue([{ ...idea, status: "in_chat" }]);
+    await render();
+    expect(visibleText()).toContain("inicio_idea_in_chat");
+    expect(visibleText()).not.toContain("inicio_idea_action");
+    await pressIdea();
+    expect(h.push).toHaveBeenCalledWith({ pathname: "/(tabs)/asistente", params: { ideaId: idea.id, ideaText: idea.text } });
+  });
+
+  it("takes the arrow from the translation, not from a literal in the screen", async () => {
+    h.role = "sous_chef";
+    await render();
+    expect(visibleText()).not.toContain("→");
+  });
+});
+
 describe("idea card chat permission", () => {
   it("does not show the assistant action to a restaurant viewer", async () => {
     await render();

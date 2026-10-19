@@ -249,7 +249,7 @@ export default function InicioScreen() {
                         <Text style={styles.ideaText}>{idea.text}</Text>
                         {showAssistant && (
                           <Text style={[styles.ideaMeta, inChat && styles.ideaMetaInChat]}>
-                            {t(inChat ? "inicio_idea_in_chat" : "inicio_idea_action")} →
+                            {t(inChat ? "inicio_idea_in_chat" : "inicio_idea_action")}
                           </Text>
                         )}
                       </Pressable>

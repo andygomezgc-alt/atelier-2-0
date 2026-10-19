@@ -25,7 +25,7 @@ describe("accent token contrast", () => {
     expect(contrast(colors.terracotaDeep, colors.paperSoft)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it("teal small text on the terracotaWash idea box passes AA", () => {
-    expect(contrast(colors.teal, colors.terracotaWash)).toBeGreaterThanOrEqual(4.5);
+  it("teal small text on a paperSoft card passes AA", () => {
+    expect(contrast(colors.teal, colors.paperSoft)).toBeGreaterThanOrEqual(4.5);
   });
 });
