@@ -112,6 +112,22 @@ describe("invoice list", () => {
     expect(texts()).toContain("Marr");
   });
 
+  it("pulling down also reloads an empty list or one that failed to load", async () => {
+    const pull = () => screen.root.findByType("ScrollView" as never).props.refreshControl.props.onRefresh();
+    h.list.mockResolvedValue(response({ toReview: 0, suppliers: [] }));
+    await render();
+    expect(screen.root.findAllByType("Empty" as never)).toHaveLength(1);
+    h.list.mockResolvedValue(response());
+    await act(async () => { await pull(); });
+    expect(texts()).toContain("Recchioni");
+    await act(async () => { screen.unmount(); });
+    h.list.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(response());
+    await render();
+    expect(screen.root.findAllByType("NetworkError" as never)).toHaveLength(1);
+    await act(async () => { await pull(); });
+    expect(texts()).toContain("Recchioni");
+  });
+
   it("offers scanning when empty, and retry when offline", async () => {
     h.list.mockResolvedValue(response({ toReview: 0, suppliers: [] }));
     await render();

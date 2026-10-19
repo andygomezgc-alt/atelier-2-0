@@ -1,6 +1,7 @@
 // Design tokens. Source of truth: brief v4 sec. 13 + project/styles.css :root.
 
 import { Platform } from "react-native";
+import type { ProductCategory } from "@atelier/shared";
 
 // Bloque 4 · C-02 — Crimson Pro como serif única (iOS + Android).
 // Cargada en app/_layout.tsx vía expo-font + @expo-google-fonts/crimson-pro.
@@ -29,6 +30,21 @@ export const colors = {
   // Food cost between target and limit; dark enough for small text on paper.
   amber: "#9a6a14",
 } as const;
+
+// Product bank category icons: muted earth tones, so the list scans without looking like a dashboard.
+export const categoryColors: Record<ProductCategory, string> = {
+  pescado: "#4a7a8a", // steel blue
+  carne: "#a45a4a", // muted red
+  verdura: "#6b8e4f", // sage green
+  fruta: "#c47e4f", // terracota
+  lacteo: "#a8a08a", // cool beige
+  panaderia: "#b89a6e", // warm toast
+  seco: "#8b6f4a", // brown
+  especia: "#b8624a", // rust
+  hierba: "#8ba36b", // light olive green
+  vinagre_aceite: "#a8995a", // olive yellow
+  otro: "#8b7a6f", // mute
+};
 
 export const fonts = {
   // Crimson Pro — 4 variantes cargadas en _layout.tsx.
