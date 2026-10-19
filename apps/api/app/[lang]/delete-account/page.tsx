@@ -61,10 +61,10 @@ const content: Record<LegalPageLocale, Content> = {
         <p style={pStyle}>
           Scrivi dall’indirizzo email del tuo account a{" "}
           <a
-            href="mailto:andygomezgc@gmail.com?subject=Elimina%20account"
+            href="mailto:info@ateliercocina.com?subject=Elimina%20account"
             style={linkStyle}
           >
-            andygomezgc@gmail.com
+            info@ateliercocina.com
           </a>{" "}
           con oggetto «Elimina account» e gestiremo la richiesta entro un massimo di 30 giorni.
         </p>
@@ -104,10 +104,10 @@ const content: Record<LegalPageLocale, Content> = {
         <p style={pStyle}>
           Write from your account’s email address to{" "}
           <a
-            href="mailto:andygomezgc@gmail.com?subject=Delete%20account"
+            href="mailto:info@ateliercocina.com?subject=Delete%20account"
             style={linkStyle}
           >
-            andygomezgc@gmail.com
+            info@ateliercocina.com
           </a>{" "}
           with the subject “Delete account” and we will process it within 30 days at most.
         </p>

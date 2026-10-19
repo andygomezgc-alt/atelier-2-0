@@ -26,10 +26,10 @@ export default function EliminarCuentaPage() {
       <p style={pStyle}>
         Escribe desde el email de tu cuenta a{" "}
         <a
-          href="mailto:andygomezgc@gmail.com?subject=Eliminar%20cuenta"
+          href="mailto:info@ateliercocina.com?subject=Eliminar%20cuenta"
           style={linkStyle}
         >
-          andygomezgc@gmail.com
+          info@ateliercocina.com
         </a>{" "}
         con asunto «Eliminar cuenta» y la procesamos en un máximo de 30 días.
       </p>

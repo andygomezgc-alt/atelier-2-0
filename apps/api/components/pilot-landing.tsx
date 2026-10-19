@@ -54,7 +54,7 @@ export function PilotLanding({ locale }: { locale: LandingLocale }) {
   const copy = landingCopy[locale];
   const legal = legalPaths(locale);
   const { first, second, swash } = copy.headline;
-  const pilotContact = `mailto:andygomezgc@gmail.com?subject=${encodeURIComponent(copy.mailSubject)}&body=${encodeURIComponent(copy.mailBody)}`;
+  const pilotContact = `mailto:info@ateliercocina.com?subject=${encodeURIComponent(copy.mailSubject)}&body=${encodeURIComponent(copy.mailBody)}`;
   return (
     <div lang={locale} className={`${styles.page} ${crimson.variable}`}>
       <a className={styles.skipLink} href="#contenido">{copy.skipLink}</a>
@@ -149,7 +149,7 @@ export function PilotLanding({ locale }: { locale: LandingLocale }) {
           <p>{copy.pilotText}</p>
           <a href={pilotContact} className={styles.primaryButton}>{copy.pilotCta} <Arrow /></a>
           <span className={styles.contactHint}>{copy.pilotHint}</span>
-          <a className={styles.email} href={pilotContact}>andygomezgc@gmail.com</a>
+          <a className={styles.email} href={pilotContact}>info@ateliercocina.com</a>
         </section>
       </main>
 

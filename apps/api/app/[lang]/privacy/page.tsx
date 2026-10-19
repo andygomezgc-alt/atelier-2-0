@@ -59,8 +59,8 @@ const content: Record<LegalPageLocale, Content> = {
         <h2 style={h2Style}>Titolare del trattamento</h2>
         <p style={pStyle}>
           Andy Gomez —{" "}
-          <a href="mailto:andygomezgc@gmail.com" style={linkStyle}>
-            andygomezgc@gmail.com
+          <a href="mailto:info@ateliercocina.com" style={linkStyle}>
+            info@ateliercocina.com
           </a>
           . Per qualsiasi questione relativa ai tuoi dati, scrivi a questo indirizzo email.
         </p>
@@ -214,8 +214,8 @@ const content: Record<LegalPageLocale, Content> = {
         <h2 style={h2Style}>Data controller</h2>
         <p style={pStyle}>
           Andy Gomez —{" "}
-          <a href="mailto:andygomezgc@gmail.com" style={linkStyle}>
-            andygomezgc@gmail.com
+          <a href="mailto:info@ateliercocina.com" style={linkStyle}>
+            info@ateliercocina.com
           </a>
           . For any question about your data, write to that email address.
         </p>

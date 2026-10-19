@@ -16,8 +16,8 @@ export default function PrivacidadPage() {
       <h2 style={h2Style}>Responsable</h2>
       <p style={pStyle}>
         Andy Gomez —{" "}
-        <a href="mailto:andygomezgc@gmail.com" style={linkStyle}>
-          andygomezgc@gmail.com
+        <a href="mailto:info@ateliercocina.com" style={linkStyle}>
+          info@ateliercocina.com
         </a>
         . Para cualquier cuestión sobre tus datos, escribe a ese email.
       </p>

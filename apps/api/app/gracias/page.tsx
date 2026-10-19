@@ -41,7 +41,7 @@ export default async function GraciasPage({ searchParams }: { searchParams: Prom
       <p style={pStyle}>
         {message.body}
       </p>
-      <p style={pStyle}><a href="mailto:andygomezgc@gmail.com?subject=Consulta%20de%20pago%20Atelier" style={linkStyle}>Contactar con Atelier</a></p>
+      <p style={pStyle}><a href="mailto:info@ateliercocina.com?subject=Consulta%20de%20pago%20Atelier" style={linkStyle}>Contactar con Atelier</a></p>
       <p style={{ ...pStyle, marginTop: 32 }}>
         <Link href="/" style={linkStyle}>
           Volver al inicio

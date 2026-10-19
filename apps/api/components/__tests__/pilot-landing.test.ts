@@ -49,7 +49,7 @@ describe("pilot landing", () => {
   });
 
   it("asks for pilot access by email and links no payment page", () => {
-    expect(landing).toContain("mailto:andygomezgc@gmail.com");
+    expect(landing).toContain("mailto:info@ateliercocina.com");
     expect(page).not.toMatch(/stripe|payment_link|checkout/i);
   });
 

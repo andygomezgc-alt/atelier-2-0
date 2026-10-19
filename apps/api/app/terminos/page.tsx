@@ -48,8 +48,8 @@ export default function TerminosPage() {
       <h2 style={h2Style}>Contacto y jurisdicción</h2>
       <p style={pStyle}>
         Para cualquier consulta:{" "}
-        <a href="mailto:andygomezgc@gmail.com" style={linkStyle}>
-          andygomezgc@gmail.com
+        <a href="mailto:info@ateliercocina.com" style={linkStyle}>
+          info@ateliercocina.com
         </a>
         . Estos términos se rigen por la legislación española y cualquier
         disputa se somete a la jurisdicción de España.

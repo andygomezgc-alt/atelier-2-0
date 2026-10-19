@@ -82,8 +82,8 @@ const content: Record<LegalPageLocale, Content> = {
         <h2 style={h2Style}>Contatti e giurisdizione</h2>
         <p style={pStyle}>
           Per qualsiasi domanda:{" "}
-          <a href="mailto:andygomezgc@gmail.com" style={linkStyle}>
-            andygomezgc@gmail.com
+          <a href="mailto:info@ateliercocina.com" style={linkStyle}>
+            info@ateliercocina.com
           </a>
           . I presenti termini sono regolati dalla legge spagnola e qualsiasi controversia è
           sottoposta alla giurisdizione della Spagna.
@@ -133,8 +133,8 @@ const content: Record<LegalPageLocale, Content> = {
         <h2 style={h2Style}>Contact and jurisdiction</h2>
         <p style={pStyle}>
           For any questions:{" "}
-          <a href="mailto:andygomezgc@gmail.com" style={linkStyle}>
-            andygomezgc@gmail.com
+          <a href="mailto:info@ateliercocina.com" style={linkStyle}>
+            info@ateliercocina.com
           </a>
           . These terms are governed by Spanish law and any dispute is subject to the jurisdiction of
           Spain.
