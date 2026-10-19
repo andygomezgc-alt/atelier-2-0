@@ -185,6 +185,14 @@ describe("monthly renewal of the shared pilot budget", () => {
     expect(logger.info).toHaveBeenCalledWith("ai_pilot_budget_rolled", { budgetId: "pilot", startsAt: endsAt.toISOString(), endsAt: "2026-12-18T22:59:00.000Z" });
   });
 
+  it("warns again when a late settlement alone crosses 75% of the renewed period", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-19T08:00:00Z"));
+    h.budget = { ...h.budget, limitMicros: 1_000_000 }; // The previous period had already warned.
+    await expireGeneration("pilot", "gen-1", 800_000);
+    expect(budgetData()).toMatchObject({ startsAt: endsAt, spentMicros: 800_000, warnedAt: expect.any(Date) });
+    expect(logger.warn).toHaveBeenCalledWith("ai_pilot_budget_75_percent", { budgetId: "pilot" });
+  });
+
   it("leaves an ended period alone when the generation was already closed", async () => {
     vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-19T08:00:00Z"));
     h.generation = { ...h.generation, status: "settled" };
