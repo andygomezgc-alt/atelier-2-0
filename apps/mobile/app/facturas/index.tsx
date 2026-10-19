@@ -1,7 +1,7 @@
 // Supplier invoices, newest first, grouped by supplier. A band counts the ones waiting for
 // review; the list refreshes by itself while any invoice is being read.
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import type { InvoiceListResponse } from "@atelier/shared";
@@ -10,12 +10,17 @@ import { Button } from "@/src/components/Button";
 import { Empty } from "@/src/components/Empty";
 import { NetworkError } from "@/src/components/NetworkError";
 import { Screen } from "@/src/components/Screen";
+import { SkeletonList } from "@/src/components/SkeletonList";
 import { StatusBadge } from "@/src/components/StatusBadge";
 import { usePolling } from "@/src/hooks/usePolling";
+import { useRefresh } from "@/src/hooks/useRefresh";
 import { dateLocale, useI18n } from "@/src/hooks/useI18n";
 import { formatDay, invoiceDay, STATUS_BADGE } from "@/src/lib/invoice-view";
 import { formatEuros } from "@/src/lib/money";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
+
+// The invoice list has no client cache to invalidate before a pull-to-refresh.
+const NO_CACHE_PREFIXES: readonly string[] = [];
 
 export default function InvoicesScreen() {
   const router = useRouter();
@@ -34,17 +39,29 @@ export default function InvoicesScreen() {
   useFocusEffect(useCallback(() => { void reload(); }, [reload]));
   const reading = data?.suppliers.some((g) => g.invoices.some((i) => i.status === "reading" || i.status === "uploading")) ?? false;
   usePolling(reading, () => { void reload(); });
+  const { refreshing, onRefresh } = useRefresh(NO_CACHE_PREFIXES, reload);
 
   const scan = () => router.push("/facturas/escanear" as never);
 
   let body: React.ReactNode;
   if (!data) {
-    body = failed ? <NetworkError onRetry={() => void reload()} /> : <ActivityIndicator color={colors.teal} style={styles.loading} />;
+    body = failed ? <NetworkError onRetry={() => void reload()} /> : <View style={styles.loading}><SkeletonList rows={4} /></View>;
   } else if (data.suppliers.length === 0) {
     body = <Empty icon="receipt-outline" title={t("invoices_empty_title")} sub={t("invoices_empty_sub")} actionLabel={t("invoices_scan")} onAction={scan} />;
   } else {
     body = (
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+            tintColor={colors.terracota}
+            colors={[colors.terracota]}
+            progressBackgroundColor={colors.paper}
+          />
+        }
+      >
         <Button label={t("invoices_scan")} iconLeft="camera-outline" onPress={scan} />
         {data.toReview > 0 ? (
           <View style={styles.band}>
@@ -89,7 +106,7 @@ export default function InvoicesScreen() {
 }
 
 const styles = StyleSheet.create({
-  loading: { marginTop: spacing.xxl },
+  loading: { paddingHorizontal: spacing.lg },
   content: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl },
   band: { backgroundColor: colors.terracotaSoft, borderRadius: radii.md, padding: spacing.md },
   bandText: { fontFamily: fonts.sans, fontSize: fontSizes.body, color: colors.ink },

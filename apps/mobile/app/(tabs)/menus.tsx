@@ -6,7 +6,6 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
@@ -18,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Empty } from "@/src/components/Empty";
+import { SkeletonList } from "@/src/components/SkeletonList";
 import { NetworkError } from "@/src/components/NetworkError";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { SectionExplainer } from "@/src/components/SectionExplainer";
@@ -321,7 +321,7 @@ export default function MenusScreen() {
         }
         ListEmptyComponent={
           loading ? (
-            <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
+            <SkeletonList rows={3} />
           ) : loadError && menus.length === 0 ? (
             <NetworkError onRetry={() => void reload()} />
           ) : inService.length === 0 ? (
@@ -330,7 +330,12 @@ export default function MenusScreen() {
             // "crea tu primera carta" NUNCA aparecía. La FlatList ya solo muestra
             // este componente cuando `others` está vacío; falta chequear que
             // tampoco haya menús en servicio para mostrar el estado vacío real.
-            <Empty icon="list-outline" title={t("empty_menus_title")} sub={t("empty_menus_sub")} />
+            <Empty
+              icon="list-outline"
+              title={t("empty_menus_title")}
+              sub={t("empty_menus_sub")}
+              {...(canCreate ? { actionLabel: t("empty_menus_cta"), onAction: () => setNewSheetOpen(true) } : {})}
+            />
           ) : null
         }
       />
