@@ -123,6 +123,7 @@ export const es = {
   btn_save: "GUARDAR",
   eyebrow_ultimas_ideas: "Últimas ideas",
   inicio_idea_action: "Llevar al asistente",
+  inicio_idea_in_chat: "En conversación · seguir",
   eyebrow_casa: "La casa",
   eyebrow_codigo: "Código",
   eyebrow_menus_activos: "Menús activos",

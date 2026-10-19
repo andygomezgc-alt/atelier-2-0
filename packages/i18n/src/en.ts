@@ -101,6 +101,7 @@ export const en: EsDict = {
   btn_save: "SAVE",
   eyebrow_ultimas_ideas: "Latest ideas",
   inicio_idea_action: "Take to assistant",
+  inicio_idea_in_chat: "In conversation · continue",
   eyebrow_casa: "The house",
   eyebrow_codigo: "Code",
   eyebrow_menus_activos: "Active menus",
