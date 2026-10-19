@@ -1,6 +1,6 @@
 // The landing has no page-rendering setup either (see app/__tests__/public-pages-tuteo.test.ts),
 // so these checks read the component sources and the copy dictionary.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { it as appItalian } from "@atelier/i18n";
 import { CREATIVE_CHAT_LIMIT, DAILY_CHAT_WEEKLY_LIMIT } from "../../lib/ai/budget-policy";
@@ -51,6 +51,16 @@ describe("pilot landing", () => {
   it("asks for pilot access by email and links no payment page", () => {
     expect(landing).toContain("mailto:info@ateliercocina.com");
     expect(page).not.toMatch(/stripe|payment_link|checkout/i);
+  });
+
+  // next/font/google downloads at build time and made CI's build flaky.
+  it("loads its serif from font files in the repo, not from Google Fonts", () => {
+    expect(landing).not.toContain("next/font/google");
+    const fontFiles = [...landing.matchAll(/path: "\.\/([^"]+\.woff2)"/g)].map((match) => match[1]);
+    expect(fontFiles.length).toBeGreaterThan(0);
+    for (const file of [...fontFiles, "fonts/crimson-pro/OFL.txt"]) {
+      expect(existsSync(new URL(`../${file}`, import.meta.url)), file).toBe(true);
+    }
   });
 
   it("states the AI limits the API actually enforces, in every language", () => {
