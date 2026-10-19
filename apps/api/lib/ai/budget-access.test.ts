@@ -26,10 +26,10 @@ describe("private owner allowance", () => {
   it("reports an ended period as the renewed one, not as blocked", async () => {
     h.findUser.mockResolvedValue({ email: "andygomezgc@gmail.com" });
     const endsAt = new Date(Date.now() - 1000);
-    h.findBudget.mockResolvedValue({ limitMicros: 187_500_000, spentMicros: 150_000_000, heldMicros: 1_000_000, endsAt, warnedAt: new Date(), blockedAt: null });
+    h.findBudget.mockResolvedValue({ limitMicros: 187_500_000, spentMicros: 150_000_000, heldMicros: 1_000_000, startsAt: new Date(+endsAt - 86_400_000), endsAt, warnedAt: new Date(), blockedAt: null });
     expect(await ownerBudgetStatus("owner")).toEqual({ limit: 187.5, used: 0, reserved: 1, endsAt: pilotEnd(endsAt).toISOString(), warning: false, blocked: false });
     // A blocked row never renews, so it keeps reporting the period it stopped in.
-    h.findBudget.mockResolvedValue({ limitMicros: 187_500_000, spentMicros: 1_000_000, heldMicros: 0, endsAt, warnedAt: null, blockedAt: new Date() });
+    h.findBudget.mockResolvedValue({ limitMicros: 187_500_000, spentMicros: 1_000_000, heldMicros: 0, startsAt: new Date(+endsAt - 86_400_000), endsAt, warnedAt: null, blockedAt: new Date() });
     expect(await ownerBudgetStatus("owner")).toMatchObject({ used: 1, endsAt: endsAt.toISOString(), blocked: true });
   });
   it("requires authentication and ignores spoofed email query parameters", async () => {

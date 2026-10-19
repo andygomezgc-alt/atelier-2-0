@@ -59,11 +59,25 @@ describe("pilot policy", () => {
     expect(pilotEnd(now).toISOString()).toBe("2026-10-10T12:00:00.000Z");
   });
   it("rolls an ended period forward by whole months, only once it has ended", () => {
-    const end = new Date("2026-11-18T22:59:00Z");
-    expect(rollPeriod(end, new Date(+end - 1))).toBeNull();
-    expect(rollPeriod(end, end)).toEqual({ startsAt: end, endsAt: new Date("2026-12-18T22:59:00Z") });
+    const start = new Date("2026-10-18T22:59:00Z"), end = new Date("2026-11-18T22:59:00Z");
+    expect(rollPeriod(start, end, new Date(+end - 1))).toBeNull();
+    expect(rollPeriod(start, end, end)).toEqual({ startsAt: end, endsAt: new Date("2026-12-18T22:59:00Z") });
     // Months without traffic are skipped: the new period is the one containing now.
-    expect(rollPeriod(end, new Date("2027-02-01T00:00:00Z"))).toEqual({ startsAt: new Date("2027-01-18T22:59:00Z"), endsAt: new Date("2027-02-18T22:59:00Z") });
+    expect(rollPeriod(start, end, new Date("2027-02-01T00:00:00Z"))).toEqual({ startsAt: new Date("2027-01-18T22:59:00Z"), endsAt: new Date("2027-02-18T22:59:00Z") });
+  });
+  it("keeps a late anchor day through short months instead of drifting to the 28th", () => {
+    const d = (iso: string) => new Date(`${iso}T12:00:00Z`);
+    // Anchored on the 31st: February is clamped, March is back on the 31st.
+    expect(rollPeriod(d("2025-12-31"), d("2026-01-31"), d("2026-02-01"))).toEqual({ startsAt: d("2026-01-31"), endsAt: d("2026-02-28") });
+    expect(rollPeriod(d("2026-01-31"), d("2026-02-28"), d("2026-03-01"))).toEqual({ startsAt: d("2026-02-28"), endsAt: d("2026-03-31") });
+    expect(rollPeriod(d("2026-02-28"), d("2026-03-31"), d("2026-04-01"))).toEqual({ startsAt: d("2026-03-31"), endsAt: d("2026-04-30") });
+    expect(rollPeriod(d("2026-03-31"), d("2026-04-30"), d("2026-05-01"))).toEqual({ startsAt: d("2026-04-30"), endsAt: d("2026-05-31") });
+    // Skipping several unused months keeps the anchor too.
+    expect(rollPeriod(d("2025-12-31"), d("2026-01-31"), d("2026-05-01"))).toEqual({ startsAt: d("2026-04-30"), endsAt: d("2026-05-31") });
+    // Anchored on the 30th.
+    expect(rollPeriod(d("2026-01-30"), d("2026-02-28"), d("2026-03-01"))).toEqual({ startsAt: d("2026-02-28"), endsAt: d("2026-03-30") });
+    // A 28th anchor that ends on the last day of February stays on the 28th.
+    expect(rollPeriod(d("2026-01-28"), d("2026-02-28"), d("2026-03-01"))).toEqual({ startsAt: d("2026-02-28"), endsAt: d("2026-03-28") });
   });
   it("defaults a new pilot to USD 150 a month with the 1.25 cushion", () => {
     expect(PILOT_BUDGET_MICROS).toBe(187_500_000);
