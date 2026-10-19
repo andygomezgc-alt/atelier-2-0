@@ -45,7 +45,8 @@ Detalle en `odd/tasks/memoria-culinaria-mejoras.md` y `odd/tasks/notas-del-chef.
 
 ## IA y copias
 
-- Piloto inicial de unos cinco chefs, presupuesto común de **50 EUR para un mes**, 140 mensajes cotidianos y 15 creativos por chef y periodo de siete días. La cuenta principal está exenta de la cuota de mensajes, pero consume el mismo presupuesto común.
+- Piloto inicial de unos cinco chefs, presupuesto común **mensual** (hoy 150 $), 140 mensajes cotidianos y 15 creativos por chef y periodo de siete días. La cuenta principal está exenta de la cuota de mensajes, pero consume el mismo presupuesto común.
+- **El presupuesto se renueva solo cada mes** (cambio del 18-10-2026, efectivo cuando se despliegue): la primera llamada a la IA después de `endsAt` corre el periodo un mes (o los que hayan pasado sin uso), pone el gasto y el aviso del 75 % a cero y conserva las reservas en curso y el `limitMicros` de la fila; si la fila está bloqueada (`blockedAt`) no se renueva. Deja en el log `ai_pilot_budget_rolled`. Para cambiar el límite basta con editar `limitMicros` de la fila `pilot`; una fila nueva arranca con 187.500.000 (150 $ × 1,25).
 - Modelos elegidos: Gemini para el Diario, **Opus 5.5 para el Creativo** (`claude-opus-5-5`, esfuerzo medio, desde el 23-09) y GLM para las otras tareas compatibles. No cambiar proveedores ni gastar tokens para una sincronización.
 - El cambio a Opus 5.5 se comprobó en producción el 23-09 con la primera respuesta real del Creativo: la dio `claude-opus-5-5` en 22 s y se cobró exactamente con su tarifa, 0,059 € de presupuesto. La última respuesta con Opus 5 había costado 0,087 € y tardado 37 s. Para volver atrás basta con el «Instant Rollback» de Vercel.
 - En producción, el modelo del Creativo lo fija `AI_CHAT_CREATIVE_MODEL` en Vercel. La contabilidad del presupuesto rechaza cualquier modelo sin tarifa registrada en `apps/api/lib/ai/budget-policy.ts`.
@@ -64,7 +65,7 @@ Detalle en `odd/tasks/memoria-culinaria-mejoras.md` y `odd/tasks/notas-del-chef.
 
 - **Equipo de Kokoo: 5 personas.** Andy (admin), «cripto usuario» (admin), Gaia (chef ejecutivo), **Mariasole Ricci (sous-chef, entró el 16-09)** y **Eugenio Sanchote (Lector, entró el 17-09)**. El recorrido de unirse con código y el de que el admin cambie el rol están probados por personas reales, no solo por pruebas.
 - **Gaia ya usa su cuenta de Google** (sesión del 16-09 a las 21:44). Su cuenta duplicada y vacía creada con Apple sigue existiendo (`cmu4e2b770000l1047tuti7k4`): borrarla es opcional.
-- **Presupuesto de IA en marcha:** periodo **16-09 a 16-10-2026**, gastado 0,01 € de 50 €. Tres generaciones: dos del chat Diario y una extracción con GLM.
+- **Presupuesto de IA renovado el 18-10-2026:** el primer periodo (16-09 a 16-10, 50 €) caducó con 0,32 € gastados y dejó la IA bloqueada dos días. Nuevo periodo **18-10 a 18-11-2026 (23:59 Italia)**, límite **150 $** (`limitMicros` 187.500.000, con el colchón de 1,25 por dólar), gasto a cero. Se cambió solo la fila `pilot` de `AiBudget`. A ritmo del piloto (unos 9 a 11 $/mes en el Creativo) sobra mucho.
 - **Anthropic: 23,84 USD de créditos** el 17-09 (se cargaron 20). Desde entonces se conocen dos gastos: 0,07 $ de una respuesta del Creativo el 18-09 y 0,93 $ de la comparación del 22-09. La recarga automática sigue desactivada, así que el Creativo se detiene al agotarse. Con el coste medido en la comparación, las 160 respuestas al mes del escenario del piloto costarían unos 9,4 $ con Opus 5.5, frente a 15,4 $ con Opus 5; la estimación antigua de 29 $ suponía respuestas mucho más largas.
 
 ## Pendiente

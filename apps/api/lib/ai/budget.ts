@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "@atelier/db";
 import { logger } from "../logger";
-import { AiBudgetError, OWNER_EMAIL, PILOT_BUDGET_MICROS, allowance, modelRate, pilotEnd, reservationMicros, usageMicros } from "./budget-policy";
+import { AiBudgetError, OWNER_EMAIL, PILOT_BUDGET_MICROS, allowance, modelRate, pilotEnd, reservationMicros, rollPeriod, usageMicros } from "./budget-policy";
 import type { AiTask } from "./config";
 import type { AiUsage } from "./types";
 
@@ -15,12 +15,18 @@ export type Reservation = { id: string; budgetId: string; micros: number; rate: 
 /** Fail closed, across every server instance and every provider, before generation. */
 export async function reserveGeneration(config: { task: AiTask; model: string; maxTokens: number }, inputCeiling: number, userId?: string, now = new Date(), budgetId = "pilot"): Promise<Reservation> {
   const { rate, micros } = reservationMicros(config.model, inputCeiling, config.maxTokens, now);
+  let renewed: { startsAt: Date; endsAt: Date } | null = null;
   try {
-    return await prisma.$transaction(async tx => {
+    const reservation = await prisma.$transaction(async tx => {
       await tx.$executeRaw`INSERT INTO "AiBudget" ("id", "limitMicros", "startsAt", "endsAt") VALUES (${budgetId}, ${PILOT_BUDGET_MICROS}, ${now}, ${pilotEnd(now)}) ON CONFLICT ("id") DO NOTHING`;
       const [budget] = await tx.$queryRaw<BudgetRow[]>`SELECT * FROM "AiBudget" WHERE "id" = ${budgetId} FOR UPDATE`;
       if (!budget || budget.blockedAt) throw new AiBudgetError("ai_budget_unavailable");
-      if (now >= budget.endsAt) throw new AiBudgetError("ai_budget_expired", 86400);
+      // An ended period renews itself: spending restarts, holds still in flight carry over.
+      renewed = rollPeriod(budget.endsAt, now);
+      if (renewed) {
+        await tx.aiBudget.update({ where: { id: budgetId }, data: { ...renewed, spentMicros: 0, warnedAt: null } });
+        budget.spentMicros = 0;
+      }
       if (budget.spentMicros + budget.heldMicros + micros > budget.limitMicros) throw new AiBudgetError("ai_budget_exhausted", 60);
       if (config.task === "daily" || config.task === "creative") {
         // Provider adapters may also be used by trusted diagnostic scripts. HTTP
@@ -41,6 +47,9 @@ export async function reserveGeneration(config: { task: AiTask; model: string; m
       await tx.aiBudget.update({ where: { id: budgetId }, data: { heldMicros: { increment: micros } } });
       return { id, budgetId, micros, rate };
     }, { maxWait: 10_000, timeout: 15_000 });
+    const period = renewed as { startsAt: Date; endsAt: Date } | null; // Logged only once committed.
+    if (period) logger.info("ai_pilot_budget_rolled", { budgetId, startsAt: period.startsAt.toISOString(), endsAt: period.endsAt.toISOString() });
+    return reservation;
   } catch (error) {
     if (error instanceof AiBudgetError) throw error;
     logger.error("ai_budget_reservation_failed", { error: "database_unavailable" });
@@ -123,8 +132,10 @@ export async function expireGeneration(budgetId: string, id: string, chargeMicro
 export async function ownerBudgetStatus(userId: string) {
   if (!await isAiOwner(userId)) return null;
   const budget = await prisma.aiBudget.findUnique({ where: { id: "pilot" } });
+  // An ended period renews on the next reservation; report it as already renewed.
+  const renewed = budget && !budget.blockedAt ? rollPeriod(budget.endsAt, new Date()) : null;
   return budget ? {
-    limit: budget.limitMicros / 1e6, used: budget.spentMicros / 1e6, reserved: budget.heldMicros / 1e6,
-    endsAt: budget.endsAt.toISOString(), warning: !!budget.warnedAt, blocked: !!budget.blockedAt || budget.endsAt <= new Date(),
+    limit: budget.limitMicros / 1e6, used: renewed ? 0 : budget.spentMicros / 1e6, reserved: budget.heldMicros / 1e6,
+    endsAt: (renewed?.endsAt ?? budget.endsAt).toISOString(), warning: !renewed && !!budget.warnedAt, blocked: !!budget.blockedAt,
   } : { limit: PILOT_BUDGET_MICROS / 1e6, used: 0, reserved: 0, endsAt: null, warning: false, blocked: false };
 }

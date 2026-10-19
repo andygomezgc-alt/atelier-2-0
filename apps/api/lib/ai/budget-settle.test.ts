@@ -12,7 +12,8 @@ vi.mock("@anthropic-ai/sdk", async importOriginal => ({
   ...(await importOriginal<typeof import("@anthropic-ai/sdk")>()),
   default: class { messages = { stream: h.opusStream }; },
 }));
-import { expireGeneration, releaseGeneration, settleGeneration, settleInterruptedGeneration, type Reservation } from "./budget";
+import { expireGeneration, releaseGeneration, reserveGeneration, settleGeneration, settleInterruptedGeneration, type Reservation } from "./budget";
+import { logger } from "../logger";
 import { modelRate, usageMicros } from "./budget-policy";
 import { streamChat } from "./chat";
 import { chatConfig } from "./config";
@@ -22,7 +23,8 @@ const rate = modelRate("claude-opus-5-5");
 const reservation: Reservation = { id: "gen-1", budgetId: "pilot", micros: 900_000, rate };
 const tx = {
   $queryRaw: vi.fn(async () => [h.budget]),
-  aiGeneration: { findUniqueOrThrow: vi.fn(async () => h.generation), update: h.updateGeneration },
+  $executeRaw: vi.fn(),
+  aiGeneration: { findUniqueOrThrow: vi.fn(async () => h.generation), update: h.updateGeneration, create: vi.fn() },
   aiBudget: { update: h.updateBudget },
 };
 beforeEach(() => {
@@ -138,5 +140,40 @@ describe("A6b managed uncertainty charges both ceilings (real adapter and budget
       heldMicros: { decrement: preparedReservation.micros }, spentMicros: { increment: charged },
     });
     expect(budgetData().blockedAt).toBeUndefined();
+  });
+});
+
+describe("monthly renewal of the shared pilot budget", () => {
+  const config = { task: "extraction" as const, model: "claude-opus-5-5", maxTokens: 1000 };
+  const endsAt = new Date("2026-11-18T22:59:00Z");
+  beforeEach(() => {
+    h.budget = { id: "pilot", limitMicros: 187_500_000, heldMicros: 2_000_000, spentMicros: 187_000_000, endsAt, blockedAt: null, warnedAt: new Date("2026-11-10") };
+  });
+  const renewal = () => h.updateBudget.mock.calls.find(([arg]) => "startsAt" in arg.data)?.[0];
+
+  it("renews an ended period under the row lock instead of expiring, keeping holds and the row's limit", async () => {
+    const now = new Date("2026-11-19T08:00:00Z");
+    const reserved = await reserveGeneration(config, 1000, undefined, now);
+    expect(renewal()).toEqual({ where: { id: "pilot" }, data: { startsAt: endsAt, endsAt: new Date("2026-12-18T22:59:00Z"), spentMicros: 0, warnedAt: null } });
+    expect(h.updateBudget).toHaveBeenLastCalledWith({ where: { id: "pilot" }, data: { heldMicros: { increment: reserved.micros } } });
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(logger.info).toHaveBeenCalledWith("ai_pilot_budget_rolled", { budgetId: "pilot", startsAt: endsAt.toISOString(), endsAt: "2026-12-18T22:59:00.000Z" });
+  });
+
+  it("skips months without traffic", async () => {
+    await reserveGeneration(config, 1000, undefined, new Date("2027-02-01T00:00:00Z"));
+    expect(renewal()?.data).toMatchObject({ startsAt: new Date("2027-01-18T22:59:00Z"), endsAt: new Date("2027-02-18T22:59:00Z") });
+  });
+
+  it("does not renew a period that has not ended", async () => {
+    await expect(reserveGeneration(config, 1000, undefined, new Date(+endsAt - 1))).rejects.toMatchObject({ code: "ai_budget_exhausted" });
+    expect(renewal()).toBeUndefined();
+    expect(logger.info).not.toHaveBeenCalled();
+  });
+
+  it("does not renew a blocked budget", async () => {
+    h.budget = { ...h.budget, blockedAt: new Date("2026-11-01") };
+    await expect(reserveGeneration(config, 1000, undefined, new Date("2026-11-19T08:00:00Z"))).rejects.toMatchObject({ code: "ai_budget_unavailable" });
+    expect(h.updateBudget).not.toHaveBeenCalled();
   });
 });
