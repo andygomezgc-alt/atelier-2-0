@@ -33,6 +33,7 @@ import { StreamingBubble } from "@/src/features/assistant/components/StreamingBu
 import { ChatFailureBanner } from "@/src/features/assistant/components/ChatFailureBanner";
 import { ModelSwitch } from "@/src/features/assistant/components/ModelSwitch";
 import { Composer } from "@/src/features/assistant/components/Composer";
+import { StarterChips } from "@/src/features/assistant/components/StarterChips";
 
 export default function AsistenteScreen() {
   const { t } = useI18n();
@@ -339,11 +340,17 @@ export default function AsistenteScreen() {
           ) : conversation.loadError ? (
             <NetworkError sub={t("error_offline_generic_sub")} onRetry={conversation.retryLoad} />
           ) : conversation.messages.length === 0 && !busy ? (
-            <Empty
-              icon="chatbubble-outline"
-              title={t("empty_chat_title")}
-              sub={t("empty_chat_sub")}
-            />
+            <View style={{ flex: 1 }}>
+              <Empty
+                icon="chatbubble-outline"
+                title={t("empty_chat_title")}
+                sub={t("empty_chat_sub")}
+              />
+              {/* Starters only fill the composer, and step aside once the chef types. */}
+              {!composer.input.trim() ? (
+                <StarterChips onPick={composer.setInput} disabled={composerBusy} />
+              ) : null}
+            </View>
           ) : (
             <FlatList
               data={reversedData}
