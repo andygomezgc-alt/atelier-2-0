@@ -10,7 +10,7 @@ export async function isAiOwner(userId: string): Promise<boolean> {
   return user?.email.trim().toLowerCase() === OWNER_EMAIL;
 }
 
-type BudgetRow = { id: string; limitMicros: number; heldMicros: number; spentMicros: number; endsAt: Date; blockedAt: Date | null; warnedAt: Date | null };
+type BudgetRow = { id: string; limitMicros: number; heldMicros: number; spentMicros: number; startsAt: Date; endsAt: Date; blockedAt: Date | null; warnedAt: Date | null };
 export type Reservation = { id: string; budgetId: string; micros: number; rate: ReturnType<typeof modelRate> };
 /** Fail closed, across every server instance and every provider, before generation. */
 export async function reserveGeneration(config: { task: AiTask; model: string; maxTokens: number }, inputCeiling: number, userId?: string, now = new Date(), budgetId = "pilot"): Promise<Reservation> {
@@ -22,7 +22,7 @@ export async function reserveGeneration(config: { task: AiTask; model: string; m
       const [budget] = await tx.$queryRaw<BudgetRow[]>`SELECT * FROM "AiBudget" WHERE "id" = ${budgetId} FOR UPDATE`;
       if (!budget || budget.blockedAt) throw new AiBudgetError("ai_budget_unavailable");
       // An ended period renews itself: spending restarts, holds still in flight carry over.
-      renewed = rollPeriod(budget.endsAt, now);
+      renewed = rollPeriod(budget.startsAt, budget.endsAt, now);
       if (renewed) {
         await tx.aiBudget.update({ where: { id: budgetId }, data: { ...renewed, spentMicros: 0, warnedAt: null } });
         budget.spentMicros = 0;
@@ -70,22 +70,27 @@ async function closeGeneration(budgetId: string, id: string, reservedMicros: num
   const result = await prisma.$transaction(async tx => {
     const [budget] = await tx.$queryRaw<BudgetRow[]>`SELECT * FROM "AiBudget" WHERE "id" = ${budgetId} FOR UPDATE`;
     if (!budget) throw new Error("missing_budget");
+    // Settling after the period ended renews it first, as a reservation would; otherwise the next
+    // reservation's renewal would wipe this spending. Holds carry over; a blocked row never renews.
+    const renewed = budget.blockedAt ? null : rollPeriod(budget.startsAt, budget.endsAt, new Date());
     const generation = await tx.aiGeneration.findUniqueOrThrow({ where: { id } });
-    if (generation.status !== "reserved") return { closed: false, warn: false };
+    if (generation.status !== "reserved") return { closed: false, warn: false, renewed: null };
     if (generation.budgetId !== budgetId || (reservedMicros !== undefined && generation.reservedMicros !== reservedMicros)) throw new Error("invalid_reservation");
     const { status, micros, usage } = close(generation);
     const exceeded = micros > generation.reservedMicros || (!!usage && (usage.inputTokens > generation.inputCeiling || usage.outputTokens > generation.outputCeiling));
-    const total = budget.spentMicros + micros;
-    const warn = !budget.warnedAt && total >= budget.limitMicros * .75;
+    const total = (renewed ? 0 : budget.spentMicros) + micros;
+    const warn = (!!renewed || !budget.warnedAt) && total >= budget.limitMicros * .75;
     const tokens = usage ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, cachedTokens: usage.cachedTokens, cacheWriteTokens: usage.cacheWriteTokens ?? 0 } : {};
     await tx.aiGeneration.update({ where: { id }, data: { status, chargedMicros: micros, ...tokens, finishedAt: new Date() } });
     await tx.aiBudget.update({ where: { id: budgetId }, data: {
-      heldMicros: { decrement: generation.reservedMicros }, spentMicros: { increment: micros },
+      ...(renewed ? { ...renewed, spentMicros: micros, warnedAt: null } : { spentMicros: { increment: micros } }),
+      heldMicros: { decrement: generation.reservedMicros },
       ...(warn ? { warnedAt: new Date() } : {}), ...(exceeded ? { blockedAt: new Date() } : {}),
     } });
     if (exceeded) logger.error("ai_budget_estimate_exceeded", { generationId: id });
-    return { closed: true, warn };
+    return { closed: true, warn, renewed };
   });
+  if (result.renewed) logger.info("ai_pilot_budget_rolled", { budgetId, startsAt: result.renewed.startsAt.toISOString(), endsAt: result.renewed.endsAt.toISOString() });
   if (result.warn) logger.warn("ai_pilot_budget_75_percent", { budgetId });
   return result.closed;
 }
@@ -133,7 +138,7 @@ export async function ownerBudgetStatus(userId: string) {
   if (!await isAiOwner(userId)) return null;
   const budget = await prisma.aiBudget.findUnique({ where: { id: "pilot" } });
   // An ended period renews on the next reservation; report it as already renewed.
-  const renewed = budget && !budget.blockedAt ? rollPeriod(budget.endsAt, new Date()) : null;
+  const renewed = budget && !budget.blockedAt ? rollPeriod(budget.startsAt, budget.endsAt, new Date()) : null;
   return budget ? {
     limit: budget.limitMicros / 1e6, used: renewed ? 0 : budget.spentMicros / 1e6, reserved: budget.heldMicros / 1e6,
     endsAt: (renewed?.endsAt ?? budget.endsAt).toISOString(), warning: !renewed && !!budget.warnedAt, blocked: !!budget.blockedAt,

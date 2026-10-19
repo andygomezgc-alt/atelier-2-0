@@ -58,19 +58,26 @@ export function reservationMicros(model: string, inputCeiling: number, outputCei
 export function textInputCeiling(payload: unknown): number {
   return Buffer.byteLength(JSON.stringify(payload), "utf8") * 2 + 8192;
 }
-export function pilotEnd(start: Date): Date {
+const lastDayOfMonth = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+/** One month after `start`, on `day` (default: start's own day), clamped to the month's last day. */
+export function pilotEnd(start: Date, day = start.getUTCDate()): Date {
   const end = new Date(start);
-  const day = end.getUTCDate();
   end.setUTCDate(1); end.setUTCMonth(end.getUTCMonth() + 1);
-  const lastDay = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate();
-  end.setUTCDate(Math.min(day, lastDay));
+  end.setUTCDate(Math.min(day, lastDayOfMonth(end)));
   return end;
 }
-/** The period that contains `now` once `endsAt` has passed; null while the current one is running. */
-export function rollPeriod(endsAt: Date, now: Date): { startsAt: Date; endsAt: Date } | null {
+/**
+ * The period that contains `now` once `endsAt` has passed; null while the current one is running.
+ * A period ending on a month's last day may have been clamped: every short month follows a
+ * 31-day one, so its start still carries the anchor day (Jan 31 → Feb 28 → Mar 31, not Mar 28).
+ */
+export function rollPeriod(startsAt: Date, endsAt: Date, now: Date): { startsAt: Date; endsAt: Date } | null {
   if (now < endsAt) return null;
-  let period = { startsAt: endsAt, endsAt: pilotEnd(endsAt) };
-  while (now >= period.endsAt) period = { startsAt: period.endsAt, endsAt: pilotEnd(period.endsAt) };
+  const anchor = (period: { startsAt: Date; endsAt: Date }) => period.endsAt.getUTCDate() === lastDayOfMonth(period.endsAt)
+    ? Math.max(period.endsAt.getUTCDate(), period.startsAt.getUTCDate()) : period.endsAt.getUTCDate();
+  let period = { startsAt, endsAt };
+  do period = { startsAt: period.endsAt, endsAt: pilotEnd(period.endsAt, anchor(period)) };
+  while (now >= period.endsAt);
   return period;
 }
 export function allowance(task: AiTask, dailyAt: Date[], creativeAt: Date[], now: Date) {
