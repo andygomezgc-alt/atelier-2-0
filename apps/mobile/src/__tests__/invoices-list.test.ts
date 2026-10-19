@@ -128,6 +128,19 @@ describe("invoice list", () => {
     expect(texts()).toContain("Recchioni");
   });
 
+  it("keeps the newest answer when a pull overlaps the first load", async () => {
+    let firstAnswer!: (value: InvoiceListResponse) => void;
+    h.list
+      .mockReturnValueOnce(new Promise<InvoiceListResponse>((resolve) => { firstAnswer = resolve; }))
+      .mockResolvedValueOnce(response({ suppliers: [{ supplier: { id: "s2", name: "Marr" }, invoices: [summary({ id: "i3" })] }] }));
+    await render();
+    await act(async () => { await screen.root.findByType("ScrollView" as never).props.refreshControl.props.onRefresh(); });
+    expect(texts()).toContain("Marr");
+    await act(async () => { firstAnswer(response()); });
+    expect(texts()).toContain("Marr");
+    expect(texts()).not.toContain("Recchioni");
+  });
+
   it("offers scanning when empty, and retry when offline", async () => {
     h.list.mockResolvedValue(response({ toReview: 0, suppliers: [] }));
     await render();

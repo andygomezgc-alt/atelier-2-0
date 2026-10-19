@@ -1,6 +1,6 @@
 // Supplier invoices, newest first, grouped by supplier. A band counts the ones waiting for
 // review; the list refreshes by itself while any invoice is being read.
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,12 +28,18 @@ export default function InvoicesScreen() {
   const [data, setData] = useState<InvoiceListResponse | null>(null);
   const [failed, setFailed] = useState(false);
 
+  // A pull, the polling and the focus reload can overlap: only the latest call may write,
+  // so an older, slower answer never replaces a newer one.
+  const latestCall = useRef(0);
   const reload = useCallback(async () => {
+    const call = ++latestCall.current;
     try {
-      setData(await listInvoices());
+      const next = await listInvoices();
+      if (call !== latestCall.current) return;
+      setData(next);
       setFailed(false);
     } catch {
-      setFailed(true);
+      if (call === latestCall.current) setFailed(true);
     }
   }, []);
   useFocusEffect(useCallback(() => { void reload(); }, [reload]));
