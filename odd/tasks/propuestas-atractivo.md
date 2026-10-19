@@ -23,7 +23,7 @@ Out of scope now (L1): proposal 2 (dictation in Inicio), proposal 4.
 |---|---|---|---|---|
 | T1 | S1 | inline | done | 89c6ca3 |
 | T2 | S2 | inline | done | 9ce6106 |
-| T3 | S3 | inline | done | feat(mobile) commit after 9ce6106 |
+| T3 | S3 | inline | done | 073b3d2 |
 
 Route evidence: one parent, inline. Writer trigger (a) does not hold: T2 and T3 both edit `recetas.tsx` and `menus.tsx`, and all three share the i18n files.
 
@@ -36,3 +36,4 @@ Route evidence: one parent, inline. Writer trigger (a) does not hold: T2 and T3 
 - L5: T2 Risk: item 2 (permission-gated cost data on `GET /api/menus`). Independent verifier: S2 PASS, no blockers; confirmed no new exposure (all four roles already hold `view_staff_recipe` and see costs in `GET /api/recipes`). Native assess (base 1bafb73, committed-only): risk medium, review_due false, `under_budget`; not escalated, since the verifier found no new exposure. Advisory taken: the coverage text now reads "sobre {priced} de {total} platos" (es), because dishes priced by kg or at 0 are left out of the summary even when their recipe cost is complete.
 - L6: T3 — RED observed (SkeletonList module missing; facturas still showed ActivityIndicator and had no RefreshControl; recetas/menus empty slots had no action and showed ActivityIndicator), then GREEN. `SkeletonList` pulses only once the reduce-motion setting is known to be off, and stops when it turns on. Recetas: ghost cards and "Crear la primera receta" through the same `handleCreateRecipe` (ensureRestaurant → /recetas/nueva) as the header button, only for roles that can create and the unfiltered views. Menus: ghost cards and "Crear la primera carta" opening the same NewMenuSheet. Casa: hero-shaped skeleton. Facturas: ghost rows and terracota pull-to-refresh. Inicio untouched (assumption in S3).
 - L7: Size: T1 209, T2 329, T3 about 350 authored lines (over the ~400 heuristic in total). Each task is its own commit, so the chain strategy is asked once at delivery.
+- L8: Native assess after T3 (base 1bafb73, committed-only): risk medium, review_due false, `under_budget`; no native review. Final checks before the T3 commit: mobile 681, api 2008, i18n 94 passed; mobile tsc OK. Branch pushed to origin. Pending: `graphify update .` in the main checkout after merge (the worktree has no graph); Engram mirror still pending (host session ended); delivery strategy (one PR or a chain T1 → T2 → T3) is the user's call.
