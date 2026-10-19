@@ -21,8 +21,8 @@ Out of scope now (L1): proposal 2 (dictation in Inicio), proposal 4.
 
 | ID | Specs | Route | Status | Commit |
 |---|---|---|---|---|
-| T1 | S1 | inline | pending | |
-| T2 | S2 | inline | pending | |
+| T1 | S1 | inline | done | 89c6ca3 |
+| T2 | S2 | inline | done | feat(costs) commit after 89c6ca3 |
 | T3 | S3 | inline | pending | |
 
 Route evidence: one parent, inline. Writer trigger (a) does not hold: T2 and T3 both edit `recetas.tsx` and `menus.tsx`, and all three share the i18n files.
@@ -31,3 +31,5 @@ Route evidence: one parent, inline. Writer trigger (a) does not hold: T2 and T3 
 
 - L1 (2026-10-19, user): "Sí, arrancá con las propuestas 3, 1 y 5 desde main y dejá la 2 (dictado en Inicio) para después de probar el color."
 - L2: Engram mirror `odd/propuestas-atractivo/tasks` pending — `mem_save` refused with "host session already ended".
+- L3: T1 GREEN — starter-chips.test.ts 4/4, mobile suite and tsc OK; committed 89c6ca3.
+- L4: T2 — RED observed (projection foodCostPct undefined, projectMenuCostSummary missing, route costSummary undefined, contract fields missing, food-cost module missing), then GREEN: api 2000 passed (leave.test.ts hook timeout under full-suite load, passes alone 8/8 — known flake), shared 539, mobile 668, i18n 94; tsc api/shared/mobile OK. Decisions: menu margin is over what the costed dishes charge on that menu ((Σprice − Σcost) / Σprice); only portion-priced dishes with complete recipe cost count; the summary is gated with `can(role, "view_staff_recipe")` and skipped for the trash. High food cost uses `colors.danger` (the palette's dark terracota) so caption text stays readable; the menu cost line stays uncoloured on the teal card.

@@ -22,6 +22,8 @@ export const colors = {
   edgeSoft: "#ede6d6",
   danger: "#a45a4a",
   green: "#3f6b4a",
+  // Food cost between target and limit; dark enough for small text on paper.
+  amber: "#9a6a14",
 } as const;
 
 export const fonts = {
