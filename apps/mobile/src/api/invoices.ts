@@ -17,7 +17,11 @@ export type InvoiceLineDecision = {
 export type InvoiceApplySkipped = { position: number; reason: "product_deleted" | "newer_price" };
 export type InvoiceApplyResult =
   | { alreadyApplied: true }
-  | { alreadyApplied?: undefined; updated: number; drafts: number; connected: number; ignored: number; skipped: InvoiceApplySkipped[] };
+  | {
+      alreadyApplied?: undefined; updated: number; drafts: number; connected: number; ignored: number; skipped: InvoiceApplySkipped[];
+      // Products whose price this invoice raised, and the live recipes using them. Absent from older servers.
+      priceRises?: number; affectedRecipes?: number;
+    };
 
 async function authHeaders(): Promise<Record<string, string>> {
   const token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);

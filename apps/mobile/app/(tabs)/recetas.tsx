@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
@@ -14,12 +13,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Empty } from "@/src/components/Empty";
+import { SkeletonList } from "@/src/components/SkeletonList";
 import { NetworkError } from "@/src/components/NetworkError";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { SectionExplainer } from "@/src/components/SectionExplainer";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n } from "@/src/hooks/useI18n";
 import { formatEuros } from "@/src/lib/money";
+import { foodCostTone, type FoodCostTone } from "@/src/lib/food-cost";
 import { listRecipes, deleteRecipe, type Recipe, type ListFilters } from "@/src/api/recipes";
 import { downloadAndShare } from "@/src/lib/export-file";
 import { showToast } from "@/src/components/Toast";
@@ -133,6 +134,12 @@ export default function RecetasScreen() {
     }
   }
 
+  async function handleCreateRecipe() {
+    // A-12 — lazy create del sitio si todavía no hay restaurante.
+    try { await ensureRestaurant(); } catch { return; }
+    router.push("/recetas/nueva");
+  }
+
   async function handleDelete() {
     if (!pendingDelete) return;
     const id = pendingDelete.id;
@@ -198,11 +205,7 @@ export default function RecetasScreen() {
         <View style={styles.createRow}>
           <Pressable
             style={styles.createBtn}
-            onPress={async () => {
-              // A-12 — lazy create del sitio si todavía no hay restaurante.
-              try { await ensureRestaurant(); } catch { return; }
-              router.push("/recetas/nueva");
-            }}
+            onPress={handleCreateRecipe}
           >
             <Ionicons name="add" size={16} color={colors.paper} />
             <Text style={styles.createLabel}>{t("btn_crear_receta")}</Text>
@@ -272,7 +275,7 @@ export default function RecetasScreen() {
         }
         ListEmptyComponent={
           loading ? (
-            <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.xl }} />
+            <SkeletonList rows={4} />
           ) : loadError && recipes.length === 0 ? (
             <NetworkError onRetry={() => void reload()} />
           ) : (
@@ -284,6 +287,9 @@ export default function RecetasScreen() {
                   : t("empty_recetas_filter")
               }
               sub={filter === "in_progress" || filter === "all" ? t("empty_recetas_sub") : undefined}
+              {...(canCreate && (filter === "in_progress" || filter === "all")
+                ? { actionLabel: t("empty_recetas_cta"), onAction: handleCreateRecipe }
+                : {})}
             />
           )
         }
@@ -319,8 +325,19 @@ type RecipeCardTFn = (
     | "state_approved"
     | "recetas_card_cost_label"
     | "cost_partial"
-    | "recetas_card_pvp_label",
+    | "recetas_card_pvp_label"
+    | "recetas_card_food_cost"
+    | "cost_card_food_cost",
+  vars?: Record<string, string | number>,
 ) => string;
+
+// Green within target, amber near the limit, terracota above it. `danger` is
+// the palette's dark terracota, readable at caption size on paper.
+const FOOD_COST_COLOR: Record<FoodCostTone, string> = {
+  good: colors.green,
+  warn: colors.amber,
+  high: colors.danger,
+};
 
 const RecipeCard = memo(function RecipeCard({
   item,
@@ -339,6 +356,7 @@ const RecipeCard = memo(function RecipeCard({
   // coste computable ni PVP, no ensuciamos la card con "—".
   const hasCost = item.perPortionCents != null;
   const hasPvp = item.salePrice != null;
+  const tone = foodCostTone(item.foodCostPct);
   return (
     <Pressable style={styles.recipeCard} onPress={() => onPress(item.id)}>
       <View style={{ flex: 1 }}>
@@ -366,6 +384,18 @@ const RecipeCard = memo(function RecipeCard({
               <Text style={styles.pricePvp}>
                 {t("recetas_card_pvp_label")} {formatEuroFromCents(item.salePrice!)}
               </Text>
+            ) : null}
+            {tone ? (
+              <View
+                style={[styles.foodCostChip, { borderColor: FOOD_COST_COLOR[tone] }]}
+                accessible
+                accessibilityLabel={t("cost_card_food_cost", { n: item.foodCostPct! })}
+              >
+                <View style={[styles.foodCostDot, { backgroundColor: FOOD_COST_COLOR[tone] }]} />
+                <Text style={[styles.foodCostText, { color: FOOD_COST_COLOR[tone] }]}>
+                  {t("recetas_card_food_cost", { n: item.foodCostPct! })}
+                </Text>
+              </View>
             ) : null}
           </View>
         ) : null}
@@ -510,7 +540,7 @@ const styles = StyleSheet.create({
   author: { fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.mute },
   // C-06a — línea de coste/PVP debajo de chips. Coste mute (info derivada),
   // PVP destacado en ink + bold (es la decisión del chef).
-  priceRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  priceRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", marginTop: 4 },
   priceCost: { fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.mute },
   priceSep: { fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.mute },
   pricePvp: {
@@ -519,4 +549,16 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontWeight: "600",
   },
+  foodCostChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginLeft: spacing.sm,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderWidth: 1,
+    borderRadius: radii.pill,
+  },
+  foodCostDot: { width: 6, height: 6, borderRadius: 3 },
+  foodCostText: { fontFamily: fonts.sans, fontSize: fontSizes.caption, fontWeight: "600" },
 });

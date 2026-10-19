@@ -197,7 +197,10 @@ export default function InicioScreen() {
           </Text>
 
           <View>
-            <Eyebrow>{t("eyebrow_bloc")}</Eyebrow>
+            <View style={styles.sectionHead}>
+              <View style={styles.sectionBar} />
+              <Eyebrow style={styles.sectionLabel}>{t("eyebrow_bloc")}</Eyebrow>
+            </View>
             <View style={styles.ideaBox}>
               <TextInput
                 value={text}
@@ -221,7 +224,10 @@ export default function InicioScreen() {
           </View>
 
           <View>
-            <Eyebrow>{t("eyebrow_ultimas_ideas")}</Eyebrow>
+            <View style={styles.sectionHead}>
+              <View style={styles.sectionBar} />
+              <Eyebrow style={styles.sectionLabel}>{t("eyebrow_ultimas_ideas")}</Eyebrow>
+            </View>
             {loading ? (
               <ActivityIndicator color={colors.terracota} style={{ marginTop: spacing.md }} />
             ) : loadError && ideas.length === 0 ? (
@@ -230,34 +236,42 @@ export default function InicioScreen() {
               <Empty icon="bulb-outline" title={t("empty_inicio_title")} sub={t("empty_inicio_sub")} />
             ) : (
               <View style={styles.list}>
-                {ideas.map((idea) => (
-                  <View key={idea.id} style={styles.ideaCard}>
-                    <Pressable
-                      style={styles.ideaBody}
-                      disabled={!showAssistant}
-                      onPress={showAssistant ? () => takeToAssistant(idea) : undefined}
-                    >
-                      <Text style={styles.ideaText}>{idea.text}</Text>
-                      {showAssistant && <Text style={styles.ideaMeta}>{t("inicio_idea_action")}</Text>}
-                    </Pressable>
-                    <Pressable
-                      hitSlop={10}
-                      onPress={() => openEdit(idea)}
-                      style={styles.ideaIconBtn}
-                      accessibilityLabel={t("inicio_idea_edit_action")}
-                    >
-                      <Ionicons name="pencil-outline" size={18} color={colors.mute} />
-                    </Pressable>
-                    <Pressable
-                      hitSlop={10}
-                      onPress={() => setPendingDelete(idea)}
-                      style={styles.ideaIconBtn}
-                      accessibilityLabel={t("confirm_delete")}
-                    >
-                      <Ionicons name="trash-outline" size={18} color={colors.mute} />
-                    </Pressable>
-                  </View>
-                ))}
+                {ideas.map((idea) => {
+                  // Left stripe: terracota while the idea is open, teal once it is in a chat.
+                  const inChat = idea.status === "in_chat";
+                  return (
+                    <View key={idea.id} style={[styles.ideaCard, inChat && styles.ideaCardInChat]}>
+                      <Pressable
+                        style={styles.ideaBody}
+                        disabled={!showAssistant}
+                        onPress={showAssistant ? () => takeToAssistant(idea) : undefined}
+                      >
+                        <Text style={styles.ideaText}>{idea.text}</Text>
+                        {showAssistant && (
+                          <Text style={[styles.ideaMeta, inChat && styles.ideaMetaInChat]}>
+                            {t(inChat ? "inicio_idea_in_chat" : "inicio_idea_action")}
+                          </Text>
+                        )}
+                      </Pressable>
+                      <Pressable
+                        hitSlop={10}
+                        onPress={() => openEdit(idea)}
+                        style={styles.ideaIconBtn}
+                        accessibilityLabel={t("inicio_idea_edit_action")}
+                      >
+                        <Ionicons name="pencil-outline" size={18} color={colors.teal} />
+                      </Pressable>
+                      <Pressable
+                        hitSlop={10}
+                        onPress={() => setPendingDelete(idea)}
+                        style={styles.ideaIconBtn}
+                        accessibilityLabel={t("confirm_delete")}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                      </Pressable>
+                    </View>
+                  );
+                })}
               </View>
             )}
           </View>
@@ -337,14 +351,17 @@ const styles = StyleSheet.create({
   greet: {
     fontFamily: fonts.serif,
     fontSize: fontSizes.serifLg,
-    color: colors.ink,
+    color: colors.teal,
     lineHeight: fontSizes.serifLg * 1.3,
   },
   greetEm: { fontFamily: fonts.serifItalic, color: colors.terracota },
+  sectionHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm - 1 },
+  sectionBar: { width: 14, height: 2, borderRadius: 1, backgroundColor: colors.terracota },
+  sectionLabel: { color: colors.teal, fontSize: fontSizes.caption },
   ideaBox: {
-    backgroundColor: colors.paperSoft,
-    borderWidth: 0.5,
-    borderColor: colors.edge,
+    backgroundColor: colors.terracotaWash,
+    borderWidth: 1,
+    borderColor: colors.terracotaEdge,
     borderRadius: radii.md,
     padding: spacing.md,
     marginTop: spacing.sm,
@@ -359,15 +376,15 @@ const styles = StyleSheet.create({
   },
   saveBtn: {
     alignSelf: "flex-end",
-    backgroundColor: colors.terracota,
+    backgroundColor: colors.terracotaDeep,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xs + 2,
+    paddingVertical: spacing.xs + 3,
   },
   saveBtnDisabled: { opacity: 0.4 },
   saveLabel: {
     fontFamily: fonts.sans,
-    fontSize: fontSizes.caption,
+    fontSize: fontSizes.bodySm,
     color: colors.paper,
     fontWeight: "600",
     letterSpacing: 1.4,
@@ -378,11 +395,14 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: spacing.sm,
     backgroundColor: colors.paperSoft,
-    borderWidth: 0.5,
+    borderWidth: 1,
     borderColor: colors.edge,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.terracota,
     borderRadius: radii.md,
     padding: spacing.md,
   },
+  ideaCardInChat: { borderLeftColor: colors.teal },
   ideaBody: { flex: 1 },
   ideaIconBtn: { paddingTop: 2, paddingLeft: spacing.xs },
   modalBackdrop: {
@@ -424,7 +444,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs + 2,
   },
   modalBtnGhost: { backgroundColor: "transparent" },
-  modalBtnPrimary: { backgroundColor: colors.terracota },
+  modalBtnPrimary: { backgroundColor: colors.terracotaDeep },
   modalBtnGhostLabel: {
     fontFamily: fonts.sans,
     fontSize: fontSizes.caption,
@@ -441,8 +461,10 @@ const styles = StyleSheet.create({
   ideaMeta: {
     fontFamily: fonts.sans,
     fontSize: fontSizes.caption,
-    color: colors.mute,
+    color: colors.terracotaDeep,
+    fontWeight: "600",
     marginTop: spacing.xs,
     letterSpacing: 0.5,
   },
+  ideaMetaInChat: { color: colors.teal },
 });

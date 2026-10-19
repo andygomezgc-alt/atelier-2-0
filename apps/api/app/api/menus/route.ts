@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
-import { CreateMenuRequestSchema, type CreateMenuRequest } from "@atelier/shared";
+import { CreateMenuRequestSchema, can, type CreateMenuRequest } from "@atelier/shared";
 import { withAuth } from "@/lib/with-auth";
 import { logger } from "@/lib/logger";
-import { projectMenuListItem, menuListInclude } from "@/lib/projections";
+import {
+  activeMenuItemsWhere,
+  menuCostItemSelect,
+  menuListInclude,
+  projectMenuCostSummary,
+  projectMenuListItem,
+} from "@/lib/projections";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +22,24 @@ export const GET = withAuth({}, async (ctx, _body, req: NextRequest) => {
     include: menuListInclude,
   });
 
-  return NextResponse.json(menus.map(projectMenuListItem));
+  const projected = menus.map(projectMenuListItem);
+  // In-service menus carry their average dish cost and margin. Costs come from
+  // recipes, so they need the same permission as the recipe list.
+  const inServiceIds =
+    trash || !can(ctx.role, "view_staff_recipe") ? [] : menus.filter((m) => m.inService).map((m) => m.id);
+  if (inServiceIds.length === 0) return NextResponse.json(projected);
+
+  const items = await prisma.menuItem.findMany({
+    where: { menuFolderId: { in: inServiceIds }, ...activeMenuItemsWhere },
+    select: menuCostItemSelect,
+  });
+  return NextResponse.json(
+    projected.map((menu) =>
+      menu.inService
+        ? { ...menu, costSummary: projectMenuCostSummary(items.filter((item) => item.menuFolderId === menu.id)) }
+        : menu,
+    ),
+  );
 });
 
 export const POST = withAuth(

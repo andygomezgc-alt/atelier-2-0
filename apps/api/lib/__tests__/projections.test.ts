@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { MenuDetailSchema, RecipeDetailSchema } from "@atelier/shared";
 import {
+  activeMenuItemsWhere,
   menuDetailInclude,
+  menuListInclude,
+  projectMenuCostSummary,
   projectMenuDetail,
   projectRecipeDetail,
   projectRecipeListItem,
@@ -90,6 +93,12 @@ describe("etiquetas fantasma — includes filtran soft-deletes cruzados", () => 
     expect(menuDetailInclude.items.where).toEqual({
       recipe: { deletedAt: null },
     });
+  });
+
+  it("the menu list counts dishes with the same filter as the menu cost summary", () => {
+    // GET /api/menus queries the summary's dishes with activeMenuItemsWhere, so itemCount
+    // and costSummary.totalDishes count the same dishes.
+    expect(menuListInclude._count.select.items.where).toBe(activeMenuItemsWhere);
   });
 });
 
@@ -209,6 +218,33 @@ describe("recipe cost lines", () => {
     expect(detail.cost.lines?.[0]).toMatchObject({ ingredientId: "ri-oil", status: "no_product", costCents: null, productId: null });
     expect(detail.cost).toMatchObject({ totalCents: null, computableCount: 0, unlinkedCount: 2 });
     expect(projectRecipeListItem(row).perPortionCents).toBeNull();
+  });
+
+  it("the list item exposes the detail's food cost %, only when the cost is complete", () => {
+    const complete = recipeRow();
+    complete.recipeIngredients = [complete.recipeIngredients[0]!];
+    complete.salePrice = 100;
+    // 22c of oil for 2 portions sold at 1 € each: 22 / (2 × 100) = 11%.
+    expect(projectRecipeDetail(complete).cost.foodCostPct).toBe(11);
+    expect(projectRecipeListItem(complete).foodCostPct).toBe(11);
+    const partial = { ...recipeRow(), salePrice: 100 };
+    expect(projectRecipeListItem(partial).foodCostPct).toBeNull();
+  });
+
+  it("an in-service menu summarises the average dish cost and margin of its fully costed dishes", () => {
+    const oilOnly = (portions: number) => ({ portions, recipeIngredients: [recipeRow().recipeIngredients[0]!] });
+    const dish = (price: number, priceUnit: string, recipe: ReturnType<typeof oilOnly> | RecipeDetailRow) => ({ price, priceUnit, recipe });
+    const summary = projectMenuCostSummary([
+      dish(100, "portion", oilOnly(2)), // 11c per portion
+      dish(200, "portion", oilOnly(1)), // 22c per portion
+      dish(500, "portion", recipeRow()), // partial cost: left out
+      dish(900, "kg", oilOnly(1)), // priced by weight: left out
+      dish(0, "portion", oilOnly(1)), // no price: left out
+    ]);
+    // Average of 11c and 22c; margin over what those two dishes charge: (300 - 33) / 300.
+    expect(summary).toEqual({ avgDishCostCents: 17, marginPct: 89, pricedDishes: 2, totalDishes: 5 });
+    expect(projectMenuCostSummary([dish(500, "portion", recipeRow())])).toBeNull();
+    expect(projectMenuCostSummary([])).toBeNull();
   });
 
   it("list and detail includes select the product's trash date", () => {

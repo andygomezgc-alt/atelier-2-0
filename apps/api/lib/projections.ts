@@ -3,6 +3,7 @@ import type {
   RecipeListItem,
   RecipeDetail,
   MenuListItem,
+  MenuCostSummary,
   MenuDetail,
   IdeaResponse,
   RestaurantResponse,
@@ -297,6 +298,7 @@ export function projectRecipeListItem(r: RecipeListRow): RecipeListItem {
     updatedAt: r.updatedAt.toISOString(),
     perPortionCents: cost.perPortionCents,
     costStatus: cost.status,
+    foodCostPct: cost.foodCostPct,
     salePrice: r.salePrice,
     portions: r.portions,
     allergens: allergensResult.allergens,
@@ -409,6 +411,48 @@ export function projectMenuListItem(m: MenuListRow): MenuListItem {
     itemCount: m._count.items,
     updatedAt: m.updatedAt.toISOString(),
     inService: m.inService,
+  };
+}
+
+// Dishes of the in-service menus, with what computeRecipeCost needs.
+export const menuCostItemSelect = {
+  menuFolderId: true,
+  price: true,
+  priceUnit: true,
+  recipe: { select: { portions: true, recipeIngredients: recipeIngredientsForCostInclude } },
+} as const;
+
+type MenuCostItemRow = {
+  price: number;
+  priceUnit: string;
+  recipe: { portions: number | null; recipeIngredients: RecipeIngredientRow[] };
+};
+
+// Average dish cost and margin of a menu, with the same cost function as the
+// recipe detail. Only portion-priced dishes whose recipe cost is complete count:
+// a partial cost would make the menu look cheaper than it is.
+export function projectMenuCostSummary(items: MenuCostItemRow[]): MenuCostSummary | null {
+  let costCents = 0;
+  let priceCents = 0;
+  let pricedDishes = 0;
+  for (const item of items) {
+    if (item.priceUnit !== "portion" || item.price <= 0) continue;
+    const cost = computeRecipeCost({
+      ingredients: mapIngredientsForCost(item.recipe.recipeIngredients),
+      portions: item.recipe.portions,
+      salePriceCents: null,
+    });
+    if (cost.status !== "complete" || cost.perPortionCents === null) continue;
+    costCents += cost.perPortionCents;
+    priceCents += item.price;
+    pricedDishes += 1;
+  }
+  if (pricedDishes === 0) return null;
+  return {
+    avgDishCostCents: Math.round(costCents / pricedDishes),
+    marginPct: Math.round(((priceCents - costCents) / priceCents) * 100),
+    pricedDishes,
+    totalDishes: items.length,
   };
 }
 

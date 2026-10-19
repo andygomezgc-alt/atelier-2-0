@@ -506,6 +506,9 @@ export const RecipeListItemSchema = z.object({
   // ingredientes no ser computables (sin productos enlazados / sin precio).
   perPortionCents: z.number().nullable(),
   costStatus: z.enum(["complete", "partial", "unavailable"]).optional(),
+  // Same value as the detail's cost.foodCostPct: null unless the cost is
+  // complete and the recipe has portions and a sale price.
+  foodCostPct: z.number().nullable().optional(),
   salePrice: z.number().int().nonnegative().nullable(), // centavos
   portions: z.number().int().positive().nullable(),
   // Fase 1 alérgenos — unión de los `Product.allergen` de los ingredientes
@@ -723,6 +726,15 @@ export const LeaveResponseSchema = z.object({
   action: z.enum(["left", "deleted"]),
 });
 
+// Cost of an in-service menu, from its portion-priced dishes whose recipe cost
+// is complete. marginPct is over what those dishes charge on this menu.
+export const MenuCostSummarySchema = z.object({
+  avgDishCostCents: z.number().int().nonnegative(),
+  marginPct: z.number().int(),
+  pricedDishes: z.number().int().nonnegative(),
+  totalDishes: z.number().int().nonnegative(),
+});
+
 export const MenuListItemSchema = z.object({
   id: z.string().max(100),
   name: z.string().max(120),
@@ -730,6 +742,9 @@ export const MenuListItemSchema = z.object({
   itemCount: z.number().int().nonnegative().max(10000),
   updatedAt: z.string().max(50),
   inService: z.boolean(),
+  // Only on in-service menus, for roles that can see staff recipes; null when
+  // no dish can be costed yet.
+  costSummary: MenuCostSummarySchema.nullable().optional(),
 });
 
 export const MenuDishSchema = z.object({
@@ -960,6 +975,9 @@ export const ProductListItemSchema = z.object({
   precioActualizadoAt: z.string(), // ISO
   // Entrega A.5, Fase 8 — recetas (distinct) que usan el producto por unidad.
   usedByUnitCount: z.number().int().nonnegative(),
+  // Whole-percent change of the last price against the previous one (list only);
+  // null when there is nothing to compare. Optional for older payloads.
+  lastPriceChangePct: z.number().int().nullable().optional(),
 });
 
 export const ProductDetailSchema = ProductListItemSchema.extend({
@@ -1039,6 +1057,7 @@ export type RecipeCostLine = z.infer<typeof RecipeCostLineSchema>;
 export type CreateMenuRequest = z.infer<typeof CreateMenuRequestSchema>;
 export type PatchMenuRequest = z.infer<typeof PatchMenuRequestSchema>;
 export type MenuListItem = z.infer<typeof MenuListItemSchema>;
+export type MenuCostSummary = z.infer<typeof MenuCostSummarySchema>;
 export type LeaveCase = z.infer<typeof LeaveCaseSchema>;
 export type LeavePreflightResponse = z.infer<typeof LeavePreflightResponseSchema>;
 export type LeaveResponse = z.infer<typeof LeaveResponseSchema>;

@@ -6,6 +6,7 @@ const { db, tx, drafts, memory } = vi.hoisted(() => {
     invoiceLine: { findMany: vi.fn(), update: vi.fn() },
     product: { findFirst: vi.fn(), update: vi.fn() },
     productPriceHistory: { create: vi.fn() },
+    recipeIngredient: { findMany: vi.fn() },
   };
   return {
     tx,
@@ -37,6 +38,7 @@ beforeEach(() => {
   tx.invoiceLine.findMany.mockResolvedValue([line({})]);
   tx.product.findFirst.mockResolvedValue({ id: "p1", unidadCompra: "kg", precioCompra: 150, precioActualizadoAt: new Date("2026-10-01T12:00:00Z") });
   drafts.createDraftProduct.mockResolvedValue({ id: "new", name: "Fasolari", aliases: [] });
+  tx.recipeIngredient.findMany.mockResolvedValue([]);
 });
 
 describe("applyInvoice", () => {
@@ -47,13 +49,46 @@ describe("applyInvoice", () => {
   });
 
   it("updates the price dated at noon UTC of the invoice day, its tax and the history", async () => {
-    expect(await run()).toEqual({ status: "applied", updated: 1, drafts: 0, connected: 0, ignored: 0, skipped: [] });
+    expect(await run()).toEqual({ status: "applied", updated: 1, drafts: 0, connected: 0, ignored: 0, skipped: [], priceRises: 1, affectedRecipes: 0 });
     expect(tx.product.findFirst).toHaveBeenCalledWith({
       where: { id: "p1", restaurantId: "r1", deletedAt: null },
       select: { id: true, unidadCompra: true, precioCompra: true, precioActualizadoAt: true },
     });
     expect(tx.product.update).toHaveBeenCalledWith({ where: { id: "p1" }, data: { precioCompra: 180, precioActualizadoAt: PRICE_DAY, taxRatePct: 4 } });
     expect(tx.productPriceHistory.create).toHaveBeenCalledWith({ data: { productId: "p1", authorId: "u1", precio: 180, unidadCompra: "kg", invoiceLineId: "l0" } });
+  });
+
+  it("counts the products whose price rose and the live recipes that use them", async () => {
+    tx.invoiceLine.findMany.mockResolvedValue([line({}), line({ id: "l1", position: 1, productId: "p2", appliedPriceCents: 190 })]);
+    tx.product.findFirst
+      .mockResolvedValueOnce({ id: "p1", unidadCompra: "kg", precioCompra: 150, precioActualizadoAt: null })
+      .mockResolvedValueOnce({ id: "p2", unidadCompra: "kg", precioCompra: 200, precioActualizadoAt: null });
+    tx.recipeIngredient.findMany.mockResolvedValue([{ recipeId: "rc1" }, { recipeId: "rc2" }]);
+    expect(await run()).toMatchObject({ status: "applied", updated: 2, priceRises: 1, affectedRecipes: 2 });
+    expect(tx.recipeIngredient.findMany).toHaveBeenCalledWith({
+      where: { productId: { in: ["p1"] }, recipe: { deletedAt: null } },
+      select: { recipeId: true },
+      distinct: ["recipeId"],
+    });
+  });
+
+  it("a first price or a new draft is not a rise and reads no recipes", async () => {
+    tx.invoiceLine.findMany.mockResolvedValue([line({}), line({ id: "l1", position: 1, productId: null, action: "create_draft", appliedPriceCents: 2500 })]);
+    tx.product.findFirst.mockResolvedValue({ id: "p1", unidadCompra: "kg", precioCompra: 0, precioActualizadoAt: null });
+    expect(await run()).toMatchObject({ status: "applied", updated: 1, drafts: 1, priceRises: 0, affectedRecipes: 0 });
+    expect(tx.recipeIngredient.findMany).not.toHaveBeenCalled();
+  });
+
+  it("two lines for one product count its net change and leave one history row with the final price", async () => {
+    tx.invoiceLine.findMany.mockResolvedValue([line({}), line({ id: "l1", position: 1, appliedPriceCents: 140 })]);
+    tx.product.findFirst
+      .mockResolvedValueOnce({ id: "p1", unidadCompra: "kg", precioCompra: 150, precioActualizadoAt: null })
+      .mockResolvedValueOnce({ id: "p1", unidadCompra: "kg", precioCompra: 180, precioActualizadoAt: null });
+    expect(await run()).toMatchObject({ status: "applied", updated: 2, priceRises: 0, affectedRecipes: 0 });
+    // The product list compares the two newest history rows: an in-between price would make it
+    // compare the invoice against itself instead of against the price before it.
+    expect(tx.productPriceHistory.create).toHaveBeenCalledTimes(1);
+    expect(tx.productPriceHistory.create).toHaveBeenCalledWith({ data: { productId: "p1", authorId: "u1", precio: 140, unidadCompra: "kg", invoiceLineId: "l1" } });
   });
 
   it("a tax rate the model did not read never overwrites the product's", async () => {

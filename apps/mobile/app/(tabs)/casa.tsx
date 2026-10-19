@@ -15,6 +15,7 @@ import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
+import { SkeletonList } from "@/src/components/SkeletonList";
 import { NetworkError } from "@/src/components/NetworkError";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n } from "@/src/hooks/useI18n";
@@ -168,8 +169,8 @@ export default function CasaScreen() {
   if (rs.status === "loading") {
     return (
       <Screen>
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.terracota} />
+        <View style={styles.skeleton}>
+          <SkeletonList hero rows={3} />
         </View>
       </Screen>
     );
@@ -490,7 +491,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
     gap: spacing.xl,
   },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  skeleton: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   heroRow: { flexDirection: "row", gap: spacing.lg, alignItems: "center" },
   heroPhoto: {
     width: 56,

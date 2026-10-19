@@ -2,7 +2,7 @@
 // Applies a reviewed invoice in one transaction: claim review -> applied, refuse undecided
 // lines, then write prices, drafts and links. Supplier memory is written after the commit,
 // best effort: a cache must never roll back prices.
-import { prisma } from "@atelier/db";
+import { prisma, type ProductUnit } from "@atelier/db";
 import { createDraftProduct } from "../products/drafts";
 import { logger } from "../logger";
 import { draftUnitFor } from "./pricing";
@@ -10,7 +10,7 @@ import { rememberSupplierItems, type MemoryEntry } from "./supplier-memory";
 
 type Skipped = { position: number; reason: "product_deleted" | "newer_price" };
 export type ApplyResult =
-  | { status: "applied"; updated: number; drafts: number; connected: number; ignored: number; skipped: Skipped[] }
+  | { status: "applied"; updated: number; drafts: number; connected: number; ignored: number; skipped: Skipped[]; priceRises: number; affectedRecipes: number }
   | { status: "already_applied" }
   | { status: "error"; code: "invoice_not_found" | "invoice_not_in_review" | "lines_undecided"; positions?: number[] };
 
@@ -49,6 +49,9 @@ export async function applyInvoice(input: { invoiceId: string; restaurantId: str
       const priceAt = invoiceNoon > now ? now : invoiceNoon;
       const counts = { updated: 0, drafts: 0, connected: 0, ignored: 0 };
       const skipped: Skipped[] = [];
+      // Price before this invoice and after it, per product: two lines for one product count once, by their net change,
+      // and leave one history row with the final price (written after the loop, from the last line).
+      const priceMoves = new Map<string, { from: number; to: number; unit: ProductUnit; lineId: string }>();
 
       for (const line of lines) {
         const taxRatePct = num(line.taxRatePct);
@@ -93,11 +96,21 @@ export async function applyInvoice(input: { invoiceId: string; restaurantId: str
           where: { id: product.id },
           data: { precioCompra: price, precioActualizadoAt: priceAt, ...(taxRatePct !== null ? { taxRatePct } : {}) },
         });
-        await tx.productPriceHistory.create({ data: { productId: product.id, authorId: userId, precio: price, unidadCompra: product.unidadCompra, invoiceLineId: line.id } });
+        priceMoves.set(product.id, { from: priceMoves.get(product.id)?.from ?? product.precioCompra, to: price, unit: product.unidadCompra, lineId: line.id });
         memory(product.id);
         counts.updated++;
       }
-      return { status: "applied", ...counts, skipped } as const;
+      // The product list compares the two newest history rows, so an in-between price from this same invoice
+      // would compare the invoice against itself instead of against the price before it.
+      for (const [productId, move] of priceMoves) {
+        await tx.productPriceHistory.create({ data: { productId, authorId: userId, precio: move.to, unidadCompra: move.unit, invoiceLineId: move.lineId } });
+      }
+      // A first price (from zero) is not a rise. Recipes in the trash are not counted.
+      const risen = [...priceMoves].filter(([, move]) => move.from > 0 && move.to > move.from).map(([id]) => id);
+      const affected = risen.length > 0
+        ? await tx.recipeIngredient.findMany({ where: { productId: { in: risen }, recipe: { deletedAt: null } }, select: { recipeId: true }, distinct: ["recipeId"] })
+        : [];
+      return { status: "applied", ...counts, skipped, priceRises: risen.length, affectedRecipes: affected.length } as const;
     }, { timeout: 30_000, maxWait: 10_000 });
   } catch (error) {
     if (error instanceof Undecided) return { status: "error", code: "lines_undecided", positions: error.positions };
