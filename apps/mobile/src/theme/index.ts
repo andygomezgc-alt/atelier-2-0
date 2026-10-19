@@ -15,6 +15,10 @@ export const colors = {
   tealSoft: "#2a4a4a",
   terracota: "#c47e4f",
   terracotaSoft: "#d99a6e",
+  // Accents for small text and buttons: terracota alone is ~3:1 on paper (fails AA).
+  terracotaDeep: "#a35b30",
+  terracotaWash: "#fcefe0",
+  terracotaEdge: "#e6c9ac",
   ink: "#2a2520",
   inkSoft: "#4a4036",
   mute: "#8b7a6f",
