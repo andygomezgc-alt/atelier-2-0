@@ -58,9 +58,12 @@ describe("pilot landing", () => {
     expect(landing).not.toContain("next/font/google");
     const fontFiles = [...landing.matchAll(/path: "\.\/([^"]+\.woff2)"/g)].map((match) => match[1]);
     expect(fontFiles.length).toBeGreaterThan(0);
-    for (const file of [...fontFiles, "fonts/crimson-pro/OFL.txt"]) {
-      expect(existsSync(new URL(`../${file}`, import.meta.url)), file).toBe(true);
+    // next/font/local only logs a broken font file and the build still passes.
+    for (const file of fontFiles) {
+      const magic = readFileSync(new URL(`../${file}`, import.meta.url)).subarray(0, 4).toString("latin1");
+      expect(magic, file).toBe("wOF2");
     }
+    expect(existsSync(new URL("../fonts/crimson-pro/OFL.txt", import.meta.url))).toBe(true);
   });
 
   it("states the AI limits the API actually enforces, in every language", () => {
