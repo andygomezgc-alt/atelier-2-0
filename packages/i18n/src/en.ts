@@ -902,6 +902,8 @@ export const en: EsDict = {
   casa_facturas_entry_title: "Invoices",
   casa_facturas_entry_sub: "Scan supplier invoices and update prices",
   invoices_title: "Invoices",
+  invoices_beta_tag: "Beta",
+  invoices_beta_note: "We're still refining invoice reading as you use it. Check the details before confirming them.",
   invoices_scan: "Scan invoice",
   invoices_to_review: "To review ({count})",
   invoices_empty_title: "No invoices yet",

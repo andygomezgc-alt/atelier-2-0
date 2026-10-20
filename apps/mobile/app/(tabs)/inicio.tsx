@@ -416,10 +416,11 @@ const styles = StyleSheet.create({
   sectionHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm - 1 },
   sectionBar: { width: 14, height: 2, borderRadius: 1, backgroundColor: colors.terracota },
   sectionLabel: { color: colors.teal, fontSize: fontSizes.caption },
+  // Same paper and hairline edge as the recipe cards.
   ideaBox: {
-    backgroundColor: colors.terracotaWash,
-    borderWidth: 1,
-    borderColor: colors.terracotaEdge,
+    backgroundColor: colors.paperSoft,
+    borderWidth: 0.5,
+    borderColor: colors.edge,
     borderRadius: radii.md,
     padding: spacing.md,
     marginTop: spacing.sm,
@@ -438,7 +439,7 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: colors.terracotaEdge,
+    borderColor: colors.edge,
     backgroundColor: colors.paper,
     alignItems: "center",
     justifyContent: "center",

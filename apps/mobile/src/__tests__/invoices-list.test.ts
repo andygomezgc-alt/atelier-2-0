@@ -73,6 +73,15 @@ describe("invoice list", () => {
     expect(texts().some((s) => s.startsWith("invoices_to_review"))).toBe(false);
   });
 
+  it("warns that invoices are in beta, with a filled list and with an empty one", async () => {
+    await render();
+    expect(texts()).toEqual(expect.arrayContaining(["invoices_beta_tag", "invoices_beta_note"]));
+    await act(async () => { screen.unmount(); });
+    h.list.mockResolvedValue(response({ toReview: 0, suppliers: [] }));
+    await render();
+    expect(texts()).toEqual(expect.arrayContaining(["invoices_beta_tag", "invoices_beta_note"]));
+  });
+
   it("refreshes by itself only while an invoice is being read", async () => {
     await render();
     expect(h.polling).toBe(true);

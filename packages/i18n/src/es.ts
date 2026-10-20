@@ -934,6 +934,8 @@ export const es = {
   casa_facturas_entry_title: "Facturas",
   casa_facturas_entry_sub: "Escanea facturas de proveedores y actualiza los precios",
   invoices_title: "Facturas",
+  invoices_beta_tag: "Beta",
+  invoices_beta_note: "Estamos afinando la lectura de facturas con vuestro uso. Revisa los datos antes de confirmarlos.",
   invoices_scan: "Escanear factura",
   invoices_to_review: "Por revisar ({count})",
   invoices_empty_title: "Todavía no hay facturas",

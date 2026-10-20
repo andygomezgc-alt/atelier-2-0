@@ -13,6 +13,7 @@ vi.mock("@/src/hooks/useI18n", () => ({ useI18n: () => ({ t: h.t }) }));
 
 import { MemoryChip } from "../components/MemoryChip";
 import { colors } from "../theme";
+import { styles as chatStyles } from "../features/assistant/chat-styles";
 
 let screen: ReactTestRenderer;
 const flat = (style: unknown): Record<string, unknown> =>
@@ -23,7 +24,7 @@ const chipStyle = () => {
   return flat(typeof style === "function" ? style({ pressed: false }) : style);
 };
 const label = () => screen.root.findByType("Text" as never);
-const dot = () => screen.root.findAllByType("View" as never).find((node) => flat(node.props.style).width === 8)!;
+const dot = () => screen.root.findAllByType("View" as never).find((node) => flat(node.props.style).width === 7)!;
 async function render(enabled: boolean) {
   await act(async () => { screen = create(createElement(MemoryChip, { enabled, onPress: h.onPress })); });
 }
@@ -38,12 +39,12 @@ describe("memory chip in the chat", () => {
     expect(colors.green).toBe("#3f6b4a");
   });
 
-  it("shows the memory on in green with an 8px dot", async () => {
+  it("shows the memory on in green with a 7px dot", async () => {
     await render(true);
     expect(label().props.children).toBe("chat_memory");
     expect(flat(label().props.style).color).toBe(colors.green);
     expect(chipStyle().borderColor).toBe(colors.green);
-    expect(flat(dot().props.style)).toMatchObject({ width: 8, height: 8, backgroundColor: colors.green });
+    expect(flat(dot().props.style)).toMatchObject({ width: 7, height: 7, backgroundColor: colors.green });
   });
 
   it("shows the memory off in grey", async () => {
@@ -54,9 +55,12 @@ describe("memory chip in the chat", () => {
     expect(flat(dot().props.style).backgroundColor).toBe(colors.mute);
   });
 
-  it("has the same pill measures as the history button", async () => {
+  it("has the same compact pill measures as the history button, keeping a wide touch target", async () => {
     await render(true);
-    expect(chipStyle()).toMatchObject({ minHeight: 48, borderWidth: 0.5, borderRadius: 999 });
+    const { minHeight, paddingHorizontal } = chatStyles.compactPill;
+    expect(chipStyle()).toMatchObject({ minHeight, paddingHorizontal, borderWidth: 0.5, borderRadius: 999 });
+    expect(minHeight).toBe(34);
+    expect(chip().props.hitSlop).toBe(7);
   });
 
   it("is an accessible button labelled with the visible text", async () => {

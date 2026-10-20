@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { recipeConversationText } from "../recipe-conversation";
+import { hasWrittenRecipe, recipeConversationText } from "../recipe-conversation";
 const base = "# Risotto\n## Ingredientes\n200 g arroz\n## Preparación\nCocer el arroz.";
 describe("saving recipes developed in conversation", () => {
   it("retains the base recipe plus subsequent requests and refinements", () => {
@@ -18,5 +18,23 @@ describe("saving recipes developed in conversation", () => {
   });
   it("refuses oversized context instead of silently dropping the start or refinements", () => {
     expect(() => recipeConversationText([{ role: "assistant", content: base }, { role: "user", content: "x".repeat(30000) }])).toThrow("recipe_context_too_long");
+  });
+});
+
+describe("offering to save only a recipe written with quantities", () => {
+  it("detects an assistant recipe with ingredients, quantities and method", () => {
+    expect(hasWrittenRecipe([{ role: "user", content: "Un risotto" }, { role: "assistant", content: base }])).toBe(true);
+  });
+  it("detects quantities in list items, after the name and in fractions", () => {
+    const recipe = "## Ingredienti\n- Sale fino, 8 g\n- ½ limone\n## Procedimento\nMescolare.";
+    expect(hasWrittenRecipe([{ role: "assistant", content: recipe }])).toBe(true);
+  });
+  it("ignores ideas and recipes whose ingredients have no quantities", () => {
+    const noQuantities = "## Ingredientes\n- arroz\n- caldo\n## Preparación\nCocer 18 minutos.";
+    expect(hasWrittenRecipe([{ role: "assistant", content: "Berenjena asada con yogur" }])).toBe(false);
+    expect(hasWrittenRecipe([{ role: "assistant", content: noQuantities }])).toBe(false);
+  });
+  it("ignores a recipe written by the chef rather than the assistant", () => {
+    expect(hasWrittenRecipe([{ role: "user", content: base }, { role: "assistant", content: "¿Para cuántos?" }])).toBe(false);
   });
 });
