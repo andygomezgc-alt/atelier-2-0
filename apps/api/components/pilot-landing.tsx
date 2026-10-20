@@ -1,15 +1,12 @@
 import Link from "next/link";
 import { Fragment, type CSSProperties } from "react";
-import { Crimson_Pro } from "next/font/google";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { legalPaths } from "@/components/legal/legal-paths";
 import type { LandingLocale } from "@/lib/landing-locale";
 import { landingCopy } from "./landing-copy";
-import { LandingStory } from "./landing-story";
+import { LandingPhone } from "./landing-story";
+import { landingFont } from "./landing-font";
 import styles from "./pilot-landing.module.css";
-
-// The app's serif, used by the phone in the scroll story.
-const crimson = Crimson_Pro({ subsets: ["latin"], weight: ["400", "500"], style: ["normal", "italic"], variable: "--font-crimson" });
 
 function Arrow() {
   return (
@@ -56,7 +53,7 @@ export function PilotLanding({ locale }: { locale: LandingLocale }) {
   const { first, second, swash } = copy.headline;
   const pilotContact = `mailto:info@ateliercocina.com?subject=${encodeURIComponent(copy.mailSubject)}&body=${encodeURIComponent(copy.mailBody)}`;
   return (
-    <div lang={locale} className={`${styles.page} ${crimson.variable}`}>
+    <div lang={locale} className={`${styles.page} ${landingFont.variable}`}>
       <a className={styles.skipLink} href="#contenido">{copy.skipLink}</a>
       <header className={styles.header}>
         <Link href={`/${locale}`} className={styles.wordmark} aria-label={copy.homeLabel}><span>A</span>telier</Link>
@@ -64,12 +61,12 @@ export function PilotLanding({ locale }: { locale: LandingLocale }) {
           <a href="#como-funciona">{copy.navHow}</a>
           <a href="#plan">{copy.navPlan}</a>
           <LanguageSwitcher locale={locale} label={copy.languageLabel} className={styles.languages} />
-          <a href="#piloto" className={styles.navCta}>{copy.navCta} <Arrow /></a>
         </nav>
       </header>
 
       <main id="contenido">
         <section className={styles.hero} aria-labelledby="titulo">
+          <div className={styles.heroContent}>
           <p className={styles.eyebrow}><span className={styles.dot} /> {copy.heroEyebrow}</p>
           <h1 id="titulo" className={styles.headline}>
             <span className={styles.line}><Words words={first} start={0} /></span>
@@ -84,17 +81,38 @@ export function PilotLanding({ locale }: { locale: LandingLocale }) {
           <div className={styles.heroFoot}>
             <div className={styles.heroCopy}>
               <p className={`${styles.intro} ${styles.rise}`} style={{ "--d": 0 } as CSSProperties}>{copy.intro}</p>
-              <a href="#piloto" className={`${styles.primaryButton} ${styles.rise}`} style={{ "--d": 120 } as CSSProperties}>{copy.heroCta} <Arrow /></a>
+              <div className={styles.heroActions}>
+                <a href="#piloto" className={styles.primaryButton}>{copy.heroCta} <Arrow /></a>
+                <Link href={`/${locale}/tour`} className={styles.tourLink}>
+                  <svg aria-hidden="true" width="34" height="34" viewBox="0 0 34 34" fill="none"><circle cx="17" cy="17" r="16" stroke="currentColor" /><path d="m14 10 10 7-10 7Z" fill="currentColor" /></svg>
+                  {copy.tour.watch}
+                </Link>
+              </div>
               <p className={`${styles.caption} ${styles.rise}`} style={{ "--d": 120 } as CSSProperties}>{copy.heroCaption}</p>
             </div>
-            <a className={`${styles.cue} ${styles.rise}`} style={{ "--d": 240 } as CSSProperties} href="#como-funciona">
-              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 4v15m-6-6 6 6 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              {copy.heroCue}
-            </a>
+          </div>
+          </div>
+          <div className={styles.heroPreview}>
+            <LandingPhone locale={locale} preview />
+            <p>{copy.tour.preview}</p>
           </div>
         </section>
 
-        <LandingStory locale={locale} />
+        <section id="como-funciona" className={styles.overview} aria-labelledby="overview-title">
+          <h2 id="overview-title">{copy.overview.title}</h2>
+          <ol className={styles.overviewSteps}>
+            {copy.overview.items.map((item, index) => (
+              <li key={item.title}>
+                <span className={styles.overviewNumber}>{String(index + 1).padStart(2, "0")}</span>
+                <div><p className={styles.noteLabel}>{item.label}</p><h3>{item.title}</h3><p>{item.text}</p></div>
+              </li>
+            ))}
+          </ol>
+          <div className={styles.tourInvite}>
+            <div><h3>{copy.tour.invitation}</h3><p>{copy.tour.pace}</p></div>
+            <Link href={`/${locale}/tour`} className={styles.secondaryButton}>{copy.tour.open} <Arrow /></Link>
+          </div>
+        </section>
 
         <section className={styles.moreSection} aria-labelledby="more-title">
           <div className={styles.sectionHeading}>

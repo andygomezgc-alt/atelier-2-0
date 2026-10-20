@@ -3,9 +3,9 @@ import type { LandingLocale } from "@/lib/landing-locale";
 import { landingCopy } from "./landing-copy";
 import s from "./landing-story.module.css";
 
-// The scroll drives each piece between two points of the story track, in percent.
+// Each original keyframe occupies a range of the shared 0–100 storyboard position.
 function at(from: number, to: number, extra?: Record<string, string>): CSSProperties {
-  return { "--from": `${from}%`, "--to": `${to}%`, ...extra } as CSSProperties;
+  return { "--from": from, "--to": to, ...extra } as CSSProperties;
 }
 
 function Icon({ name }: { name: string }) {
@@ -16,29 +16,15 @@ function Icon({ name }: { name: string }) {
   );
 }
 
-// The scroll timing of each step; its title and text come from landing-copy.ts, in the same order.
-const steps = [
-  { from: 0, to: 17.4, kind: "first" },
-  { from: 15.6, to: 36.6, kind: "mid" },
-  { from: 34.2, to: 51, kind: "mid" },
-  { from: 49.2, to: 61, kind: "mid" },
-  { from: 58.5, to: 73.5, kind: "mid" },
-  { from: 71.5, to: 88, kind: "mid" },
-  { from: 86, to: 100, kind: "last" },
-] as const;
-
 // The answer lines and the ingredients slide in one after another.
 const answerTimes = [[24, 25.8], [25.8, 27.6], [27.6, 29.4], [29.4, 31.2]] as const;
 const ingredientTimes = [[45, 46.2], [45.9, 47.1], [46.8, 48], [47.7, 48.9]] as const;
 
-const stepClass = { first: s.aStepFirst, mid: s.aStepMid, last: s.aStepLast };
-const descClass = { first: s.aDescFirst, mid: s.aDescMid, last: s.aDescLast };
-
-export function LandingStory({ locale }: { locale: LandingLocale }) {
+export function LandingPhone({ locale, preview = false }: { locale: LandingLocale; preview?: boolean }) {
   const t = landingCopy[locale].story;
   const { created: newRecipe, inTest: triedRecipe, approved: approvedRecipe } = t.recipes;
   return (
-    <section id="como-funciona" className={s.story} aria-labelledby="story-title">
+    <div className={`${s.story} ${preview ? s.preview : ""}`}>
       <svg width="0" height="0" className={s.sprite} aria-hidden="true">
         <symbol id="story-note" viewBox="0 0 24 24"><path d="M13.5 4.5H6A1.5 1.5 0 0 0 4.5 6v12A1.5 1.5 0 0 0 6 19.5h12a1.5 1.5 0 0 0 1.5-1.5v-7.5" /><path d="M18.4 3.6l2 2-8.6 8.6-3 .8.8-3z" /></symbol>
         <symbol id="story-chat" viewBox="0 0 24 24"><path d="M12 4.5c4.7 0 8.5 3 8.5 6.7S16.7 18 12 18c-1 0-2-.1-2.9-.4L4.5 19.5l1.2-3.6C4.3 14.7 3.5 13 3.5 11.2 3.5 7.5 7.3 4.5 12 4.5z" /></symbol>
@@ -65,27 +51,6 @@ export function LandingStory({ locale }: { locale: LandingLocale }) {
         <symbol id="story-doc" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4v13H6z" /><path d="M14 3.5v4h4M9 13h6M9 16.5h4" /></symbol>
         <symbol id="story-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
       </svg>
-
-      <div className={s.track}>
-        <div className={s.stage}>
-          <div className={s.copy}>
-            <p className={s.eyebrow}>{t.eyebrow}</p>
-            <h2 id="story-title" className={s.title}>{t.title}</h2>
-            <div className={s.stepsWrap}>
-              <div className={s.progress} aria-hidden="true"><span className={`${s.sd} ${s.aGrow}`} style={at(0, 100)} /></div>
-              <ol className={s.steps}>
-                {steps.map((step, index) => (
-                  <li key={index} className={`${s.step} ${s.sd} ${stepClass[step.kind]}`} style={at(step.from, step.to)}>
-                    <span className={s.num}>{String(index + 1).padStart(2, "0")}</span>
-                    <div>
-                      <h3>{t.steps[index]?.title}</h3>
-                      <div className={`${s.desc} ${s.sd} ${descClass[step.kind]}`} style={at(step.from, step.to)}><p>{t.steps[index]?.text}</p></div>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </div>
 
           <figure className={s.phone} aria-label={t.phoneLabel}>
             <div className={s.screen} aria-hidden="true">
@@ -279,8 +244,6 @@ export function LandingStory({ locale }: { locale: LandingLocale }) {
               <span className={s.homebar} />
             </div>
           </figure>
-        </div>
-      </div>
-    </section>
+    </div>
   );
 }

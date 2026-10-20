@@ -16,13 +16,51 @@ const es = {
   // The headline words rise one by one; the swash words carry the underline.
   headline: { first: ["Tu", "cocina", "tiene", "ideas."], second: ["Dales"], swash: ["un", "lugar."] },
   intro: "Tus ideas, recetas y equipo, en un mismo lugar. Un cuaderno creativo que te acompaña dentro y fuera de la cocina.",
-  heroCta: "Quiero probar Atelier",
+  heroCta: "Solicitar acceso al piloto",
   heroCaption: "Piloto para iPhone y Android",
-  heroCue: "Sigue bajando: así trabaja una cocina en Atelier",
+
+  overview: {
+    "title": "De la idea a la carta.",
+    "items": [
+      {
+        "label": "Ideas",
+        "title": "Captura la inspiración.",
+        "text": "Anota ideas en cuanto aparecen. Un toque y quedan guardadas."
+      },
+      {
+        "label": "Recetas",
+        "title": "Dale forma y calcula su costo.",
+        "text": "Convierte tus ideas en recetas con ayuda del asistente. Ajusta ingredientes y calcula su costo."
+      },
+      {
+        "label": "Carta y equipo",
+        "title": "Comparte el trabajo de tu cocina.",
+        "text": "Guarda tus recetas, súmalas a la carta y trabaja con tu equipo en un mismo lugar."
+      }
+    ]
+  },
+  tour: {
+    "watch": "Ver cómo funciona",
+    "preview": "Vista de demostración",
+    "invitation": "Conoce Atelier, paso a paso.",
+    "pace": "7 pasos, a tu ritmo.",
+    "open": "Ver recorrido de la app",
+    "back": "Volver al inicio",
+    "eyebrow": "Recorrido guiado",
+    "title": "Así funciona Atelier.",
+    "intro": "Conoce la app, paso a paso y a tu ritmo.",
+    "stepsLabel": "Pasos del recorrido",
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "repeat": "Repetir paso",
+    "pause": "Pausar",
+    "of": "de",
+    "demo": "Contenido de demostración"
+  },
 
   moreEyebrow: "Y mucho más",
   moreTitle: ["Todo lo que pasa en tu cocina,", "en el mismo cuaderno."],
-  moreText: "Lo que viste arriba es el recorrido de un plato. Esto también lo tienes desde el primer día.",
+  moreText: "Herramientas para el trabajo de cada día, desde la primera idea hasta el servicio.",
   more: [
     { title: "Banco de productos", text: "Cargas cada precio una sola vez y vale para todas tus recetas, con su merma y su rendimiento." },
     { title: "Importa tus recetas", text: "Sube tus recetas de siempre en PDF o Word y quedan en el recetario, listas para editar." },
@@ -214,13 +252,51 @@ const it: LandingCopy = {
   heroEyebrow: "Pensato per gli chef e la loro brigata",
   headline: { first: ["La", "tua", "cucina", "ha", "idee."], second: ["Dagli"], swash: ["una", "casa."] },
   intro: "Le tue idee, le ricette e la brigata, tutto in un unico posto. Un quaderno creativo che ti accompagna dentro e fuori dalla cucina.",
-  heroCta: "Voglio provare Atelier",
+  heroCta: "Richiedi accesso al pilota",
   heroCaption: "Fase pilota per iPhone e Android",
-  heroCue: "Continua a scorrere: ecco come lavora una cucina in Atelier",
+
+  overview: {
+    "title": "Dall’idea al menu.",
+    "items": [
+      {
+        "label": "Idee",
+        "title": "Cattura l’ispirazione.",
+        "text": "Annota le idee appena arrivano. Un tocco e sono salvate."
+      },
+      {
+        "label": "Ricette",
+        "title": "Dai forma alle idee e calcola il costo.",
+        "text": "Trasforma le idee in ricette con l’aiuto dell’assistente. Modifica gli ingredienti e calcola il costo."
+      },
+      {
+        "label": "Menu e brigata",
+        "title": "Condividi il lavoro della tua cucina.",
+        "text": "Salva le ricette, aggiungile al menu e lavora con la brigata in un unico posto."
+      }
+    ]
+  },
+  tour: {
+    "watch": "Scopri come funziona",
+    "preview": "Anteprima dimostrativa",
+    "invitation": "Scopri Atelier, passo dopo passo.",
+    "pace": "7 passi, al tuo ritmo.",
+    "open": "Esplora l’app",
+    "back": "Torna alla pagina iniziale",
+    "eyebrow": "Percorso guidato",
+    "title": "Ecco come funziona Atelier.",
+    "intro": "Scopri l’app, passo dopo passo e al tuo ritmo.",
+    "stepsLabel": "Passi del percorso",
+    "previous": "Indietro",
+    "next": "Avanti",
+    "repeat": "Ripeti il passo",
+    "pause": "Pausa",
+    "of": "di",
+    "demo": "Contenuto dimostrativo"
+  },
 
   moreEyebrow: "E molto altro",
   moreTitle: ["Tutto quello che succede nella tua cucina,", "nello stesso quaderno."],
-  moreText: "Quello che hai visto sopra è il percorso di un piatto. Tutto questo lo hai già dal primo giorno.",
+  moreText: "Strumenti per il lavoro di ogni giorno, dalla prima idea al servizio.",
   more: [
     { title: "Banco prodotti", text: "Inserisci ogni prezzo una volta sola e vale per tutte le tue ricette, con il suo scarto e la sua resa." },
     { title: "Importa le tue ricette", text: "Carica le tue ricette di sempre in PDF o Word e finiscono nel ricettario, pronte da modificare." },
@@ -407,13 +483,51 @@ const en: LandingCopy = {
   heroEyebrow: "Made for chefs and their team",
   headline: { first: ["Your", "kitchen", "has", "ideas."], second: ["Give", "them"], swash: ["a", "home."] },
   intro: "Your ideas, recipes and team, all in one place. A creative notebook that goes with you in and out of the kitchen.",
-  heroCta: "I want to try Atelier",
+  heroCta: "Request pilot access",
   heroCaption: "Pilot for iPhone and Android",
-  heroCue: "Keep scrolling: this is how a kitchen works in Atelier",
+
+  overview: {
+    "title": "From idea to menu.",
+    "items": [
+      {
+        "label": "Ideas",
+        "title": "Capture the inspiration.",
+        "text": "Note ideas as they come. One tap and they are saved."
+      },
+      {
+        "label": "Recipes",
+        "title": "Shape your idea and cost it.",
+        "text": "Turn ideas into recipes with the assistant. Adjust ingredients and calculate the cost."
+      },
+      {
+        "label": "Menu and team",
+        "title": "Share the work of your kitchen.",
+        "text": "Save your recipes, add them to the menu and work with your team in one place."
+      }
+    ]
+  },
+  tour: {
+    "watch": "See how it works",
+    "preview": "Demo preview",
+    "invitation": "Get to know Atelier, step by step.",
+    "pace": "7 steps, at your own pace.",
+    "open": "Explore the app",
+    "back": "Back to home",
+    "eyebrow": "Guided tour",
+    "title": "This is how Atelier works.",
+    "intro": "Discover the app, step by step and at your own pace.",
+    "stepsLabel": "Tour steps",
+    "previous": "Previous",
+    "next": "Next",
+    "repeat": "Replay step",
+    "pause": "Pause",
+    "of": "of",
+    "demo": "Demonstration content"
+  },
 
   moreEyebrow: "And much more",
   moreTitle: ["Everything that happens in your kitchen,", "in the same notebook."],
-  moreText: "What you saw above is the journey of one dish. You also get all of this from day one.",
+  moreText: "Tools for everyday kitchen work, from the first idea to service.",
   more: [
     { title: "Product bank", text: "Enter each price once and it works for all your recipes, with its waste and yield." },
     { title: "Import your recipes", text: "Upload the recipes you already use as PDF or Word and they land in the recipe book, ready to edit." },

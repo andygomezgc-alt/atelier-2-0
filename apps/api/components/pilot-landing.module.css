@@ -8,6 +8,7 @@
   --line: #ded8cc;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
   width: 100%;
+  background: var(--paper);
   color: var(--ink);
   font-family: system-ui, sans-serif;
   line-height: 1.6;
@@ -18,7 +19,7 @@
 .page h1, .page h2, .page h3, .page p, .page figure { margin: 0; }
 .page h1, .page h2 { font-family: var(--serif); color: var(--teal); font-weight: 400; line-height: 1.08; }
 .page h2 { font-size: clamp(34px, 3.4vw, 46px); }
-.header, .hero, .moreSection, .planSection, .faq, .pilot, .footer { width: min(1120px, calc(100% - 64px)); margin-inline: auto; }
+.header, .hero, .overview, .moreSection, .planSection, .faq, .pilot, .footer { width: min(1280px, calc(100% - 80px)); margin-inline: auto; }
 .header { display: flex; justify-content: space-between; align-items: center; padding-block: 24px; border-bottom: 1px solid var(--line); gap: 20px; }
 .wordmark { font-family: var(--serif); font-size: 36px; font-style: italic; text-decoration: none; color: var(--teal) !important; }
 .wordmark span { color: var(--accent); }
@@ -34,9 +35,10 @@
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 2px; }
 
 /* Hero: the headline is the thesis, its words rise once on load */
-.hero { display: grid; padding-block: 64px 56px; }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) 320px; align-items: center; gap: 44px; padding-block: 42px 46px; }
+.heroContent { min-width: 0; }
 .hero .eyebrow { margin-bottom: 30px !important; }
-.page .headline { font-size: clamp(50px, 8.6vw, 118px); line-height: .98; letter-spacing: -.035em; }
+.page .headline { font-size: clamp(48px, 6.5vw, 90px); line-height: 1.04; letter-spacing: -.045em; text-wrap: balance; }
 .line { display: block; }
 .word { display: inline-block; overflow: hidden; padding-bottom: .12em; margin-bottom: -.12em; vertical-align: top; }
 .word > span { display: inline-block; }
@@ -44,14 +46,31 @@
 .swash { position: absolute; left: 0; bottom: -.06em; width: 100%; height: .2em; overflow: visible; }
 .swash path, .icon * { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 0; }
 .swash path { stroke-width: 3; }
-.heroFoot { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px 48px; align-items: end; margin-top: 34px; padding-top: 28px; border-top: 1px solid var(--line); }
+.heroFoot { margin-top: 32px; }
 .heroCopy { display: grid; gap: 22px; justify-items: start; }
-.intro { max-width: 470px; font-size: 18px; color: var(--muted); }
+.intro { max-width: 540px; font-size: 18px; color: var(--muted); }
+.heroActions { display: flex; align-items: center; flex-wrap: wrap; gap: 18px 28px; }
+.tourLink { display: inline-flex; align-items: center; gap: 12px; min-height: 44px; color: var(--teal) !important; font-size: 15px; }
+.tourLink svg { flex: none; }
+.heroPreview { text-align: center; min-width: 0; }
+.heroPreview > p { color: var(--muted); font-size: 12px; margin-top: 18px; }
+.backLink { display: inline-flex; align-items: center; min-height: 44px; font-size: 14px; }
 .primaryButton { display: inline-flex; gap: 18px; align-items: center; justify-content: center; min-height: 52px; padding: 14px 24px; background: var(--teal); color: var(--paper) !important; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 6px; transition: background 160ms; }
 .primaryButton:hover { background: #2b5050; }
 .caption { color: var(--muted); font-size: 13px; margin-top: -12px !important; }
-.cue { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--teal) !important; text-decoration: none; }
-.cue svg { flex: none; }
+.overview { border-top: 1px solid var(--line); padding-block: 28px 48px; }
+.overviewSteps { list-style: none; padding: 0; margin: 28px 0 30px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.overviewSteps li { display: flex; align-items: flex-start; gap: 20px; padding-right: 20px; }
+.overviewSteps li + li { border-left: 1px solid var(--line); padding-left: 24px; }
+.overviewNumber { color: var(--accent); font: 24px/1.2 var(--serif); }
+.overviewSteps h3 { font: 400 27px/1.15 var(--serif); color: var(--teal); margin-block: 8px; }
+.overviewSteps div > p:last-child { font-size: 14px; color: var(--muted); }
+.tourInvite { display: flex; justify-content: space-between; align-items: center; gap: 24px; border: 1px solid #d9b99f; border-radius: 6px; padding: 24px 28px; background: #fcf8f0; }
+.tourInvite > div { display: flex; align-items: center; gap: 24px; }
+.tourInvite h3 { font: 400 30px/1.15 var(--serif); color: var(--teal); }
+.tourInvite p { color: var(--muted); font-size: 14px; }
+.secondaryButton { display: inline-flex; justify-content: center; align-items: center; gap: 16px; flex-shrink: 0; border: 1px solid var(--teal); border-radius: 4px; min-height: 46px; padding: 10px 16px; color: var(--teal) !important; text-decoration: none; font-size: 14px; font-weight: 600; }
+.secondaryButton:hover { background: #eee7db; }
 
 @keyframes wordUp { from { transform: translateY(108%); } to { transform: none; } }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
@@ -117,19 +136,34 @@
 .skipLink { position: absolute; top: -100px; left: 16px; z-index: 10; padding: 12px 20px; background: var(--card); }
 .skipLink:focus { top: 12px; }
 @media (max-width: 900px) {
+  .hero { grid-template-columns: minmax(0, 1fr) 260px; gap: 24px; }
+  .page .headline { font-size: 58px; }
+  .tourInvite > div { display: grid; gap: 8px; }
   .planSection { gap: 40px; }
   .faq { gap: 35px; }
   .more { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 680px) {
-  .header, .hero, .moreSection, .planSection, .faq, .pilot, .footer { width: calc(100% - 40px); }
+@media (max-width: 760px) {
+  .header, .hero, .overview, .moreSection, .planSection, .faq, .pilot, .footer { width: calc(100% - 40px); }
   .header { padding-block: 16px; gap: 12px; }
   .navigation > a:not(.navCta) { display: none; }
   .navigation { font-size: 13px; gap: 12px; }
   .wordmark { font-size: 28px; }
   .languages { letter-spacing: 1px; }
-  .languages a { min-width: 26px; }
-  .hero { padding-block: 44px 40px; }
+  .languages a { min-width: 36px; }
+  .hero { grid-template-columns: 1fr; padding-block: 32px 36px; gap: 32px; }
+  .page .headline { font-size: clamp(45px, 11vw, 70px); }
+  .hero .eyebrow { margin-bottom: 22px !important; }
+  .heroActions { align-items: stretch; flex-direction: column; width: 100%; gap: 12px; }
+  .tourLink { justify-content: center; }
+  .heroPreview { overflow: hidden; padding: 0 8px 8px; }
+  .overviewSteps { grid-template-columns: 1fr; gap: 22px; }
+  .overviewSteps li, .overviewSteps li + li { padding: 0; border: 0; gap: 18px; }
+  .overviewSteps h3 { font-size: 26px; }
+  .tourInvite { flex-direction: column; align-items: stretch; background: var(--teal); border-color: var(--teal); padding: 26px 22px; gap: 20px; }
+  .tourInvite h3, .tourInvite p { color: var(--paper); }
+  .tourInvite .secondaryButton { border-color: var(--paper); color: var(--paper) !important; }
+  .tourInvite .secondaryButton:hover { background: #2b5050; }
   .heroFoot { grid-template-columns: 1fr; }
   .intro { font-size: 16px; }
   .eyebrow { font-size: 10px; letter-spacing: 1.3px; margin-bottom: 20px !important; }

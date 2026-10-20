@@ -1,0 +1,37 @@
+.intro, .tour { width: min(1040px, calc(100% - 64px)); margin-inline: auto; }
+.intro { padding-block: 40px 24px; }
+.intro > p:first-child { color: var(--accent); font-size: 12px; letter-spacing: 1.8px; text-transform: uppercase; margin-bottom: 12px; }
+.intro h1 { font-size: clamp(38px, 5vw, 62px); }
+.intro > p:last-child { color: var(--muted); margin-top: 14px; }
+.tour { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 28px 64px; padding-bottom: 40px; }
+.chapters { min-width: 0; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.steps button { width: 100%; display: flex; align-items: center; gap: 16px; text-align: left; padding: 10px 12px; border: 0; border-left: 2px solid transparent; background: none; color: var(--muted); font: inherit; cursor: pointer; min-height: 44px; }
+.steps button span { font: 22px var(--serif); color: var(--accent); font-variant-numeric: tabular-nums; }
+.steps button[aria-current="step"] { border-left-color: var(--accent); background: #f0e9dd; color: var(--teal); font-weight: 600; }
+.steps button:hover { background: #f3ede2; }
+.description { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 20px; min-height: 174px; }
+.tour .description h2 { font-size: 28px; margin-block: 10px !important; }
+.description > p:last-child { color: var(--muted); max-width: 34em; font-size: 15px; }
+.count { color: var(--accent); font-size: 12px; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+.preview { min-width: 0; text-align: center; }
+.caption { margin-top: 20px !important; color: var(--muted); font-size: 12px; }
+.controls { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-block: 16px; background: var(--paper); position: sticky; bottom: 0; z-index: 10; }
+.controls button { min-height: 44px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 5px; background: transparent; color: var(--teal); font: inherit; font-size: 14px; cursor: pointer; }
+.controls > button:last-child { background: var(--teal); color: var(--paper); border-color: var(--teal); }
+.controls button:hover:not(:disabled) { border-color: var(--accent); }
+.controls button:disabled { opacity: .45; cursor: default; }
+.tour button:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.playControls { display: flex; gap: 10px; }
+@media (max-width: 760px) {
+  .intro, .tour { width: calc(100% - 40px); }
+  .intro { padding-top: 28px; }
+  .tour { grid-template-columns: 1fr; gap: 24px; }
+  .steps { display: flex; overflow-x: auto; gap: 8px; padding: 4px; }
+  .steps button { width: 44px; justify-content: center; padding: 8px; border: 1px solid var(--line); border-radius: 4px; font-size: 0; gap: 0; }
+  .steps button span { font-size: 20px; }
+  .description { margin-top: 16px; min-height: 140px; padding-top: 16px; }
+  .controls { flex-wrap: wrap; }
+  .playControls { order: 3; flex-basis: 100%; justify-content: center; }
+  .controls button { font-size: 13px; }
+}

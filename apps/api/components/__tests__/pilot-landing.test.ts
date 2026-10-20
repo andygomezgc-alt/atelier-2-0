@@ -21,8 +21,10 @@ function strings(value: unknown, path: string): [string, unknown][] {
 }
 
 describe("pilot landing", () => {
-  it("renders the scroll story inside the landing, in the page language", () => {
-    expect(landing).toMatch(/<LandingStory\s+locale=\{locale\}\s*\/>/);
+  it("shows a static phone and links to an optional localized tour", () => {
+    expect(landing).toContain("<LandingPhone locale={locale}");
+    expect(landing).toContain("href={`/${locale}/tour`}");
+    expect(landing).not.toContain("<LandingStory");
     expect(landing).toContain("lang={locale}");
   });
 
