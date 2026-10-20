@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, Fragment } from "react";
 import { act, create } from "react-test-renderer";
 
@@ -54,10 +54,14 @@ function Probe({ name }: { name: "a" | "b" }) {
   return null;
 }
 
+let renderer: ReturnType<typeof create> | null = null;
+
 // Two screens with dictation mounted at once, like Inicio and the assistant tab.
 async function mountBoth() {
   await act(async () => {
-    create(createElement(Fragment, null, createElement(Probe, { name: "a" }), createElement(Probe, { name: "b" })));
+    renderer = create(
+      createElement(Fragment, null, createElement(Probe, { name: "a" }), createElement(Probe, { name: "b" })),
+    );
   });
 }
 
@@ -66,6 +70,13 @@ const result = (transcript: string) => ({ results: [{ transcript }], isFinal: fa
 beforeEach(() => {
   h.listeners.clear();
   vi.clearAllMocks();
+});
+
+// The hook keeps the current dictation owner at module level, so screens from an
+// earlier test must not stay mounted and answer to it.
+afterEach(() => {
+  act(() => renderer?.unmount());
+  renderer = null;
 });
 
 describe("mergeDictation", () => {
@@ -136,6 +147,36 @@ describe("useSpeechInput with two screens mounted", () => {
     await act(async () => {
       await h.api.b.start("");
     });
+    act(() => h.emit("result", result("brioche")));
+    expect(h.onText.b).toHaveBeenCalledWith("brioche");
+    expect(h.onText.a).not.toHaveBeenCalled();
+  });
+
+  // iOS sends "error" without a following "end" when its native start fails.
+  it("stops writing after an error that no end follows", async () => {
+    await mountBoth();
+    await act(async () => {
+      await h.api.a.start("");
+    });
+    act(() => h.emit("error", { error: "audio-capture" }));
+    expect(h.onError.a).toHaveBeenCalledWith("unavailable");
+    expect(h.api.a.listening).toBe(false);
+
+    act(() => h.emit("result", result("brioche")));
+    expect(h.onText.a).not.toHaveBeenCalled();
+  });
+
+  it("hands the dictation over to the screen that starts the microphone last", async () => {
+    await mountBoth();
+    await act(async () => {
+      await h.api.a.start("");
+    });
+    await act(async () => {
+      await h.api.b.start("");
+    });
+    expect(h.api.a.listening).toBe(false);
+    expect(h.api.b.listening).toBe(true);
+
     act(() => h.emit("result", result("brioche")));
     expect(h.onText.b).toHaveBeenCalledWith("brioche");
     expect(h.onText.a).not.toHaveBeenCalled();
