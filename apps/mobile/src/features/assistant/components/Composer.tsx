@@ -1,6 +1,7 @@
 // Composer of the assistant: dictation, text input, and send or stop (moved out of the screen in A12, Stop in A13).
 import { Pressable, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { ListeningPulse } from "@/src/components/ListeningPulse";
 import { SendButton } from "@/src/components/SendButton";
 import { useI18n } from "@/src/hooks/useI18n";
 import { speechAvailable } from "@/src/hooks/useSpeechInput";
@@ -26,28 +27,30 @@ export function Composer({ input, onChangeText, composerBusy, listening, busy, s
     <View style={styles.composer}>
       {/* Sin el módulo nativo (Expo Go) el mic se esconde; en el APK está. */}
       {speechAvailable ? (
-        <Pressable
-          onPress={onMic}
-          disabled={composerBusy}
-          style={[
-            styles.micBtn,
-            listening && styles.micBtnActive,
-            composerBusy && styles.micBtnDisabled,
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={listening ? t("chat_mic_stop") : t("chat_mic_label")}
-        >
-          <Ionicons
-            name={listening ? "stop" : "mic-outline"}
-            size={18}
-            color={listening ? colors.paper : colors.terracota}
-          />
-        </Pressable>
+        <ListeningPulse active={listening} size={44} color={colors.terracota}>
+          <Pressable
+            onPress={onMic}
+            disabled={composerBusy}
+            style={[
+              styles.micBtn,
+              listening && styles.micBtnActive,
+              composerBusy && styles.micBtnDisabled,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={listening ? t("chat_mic_stop") : t("chat_mic_label")}
+          >
+            <Ionicons
+              name={listening ? "stop" : "mic-outline"}
+              size={18}
+              color={listening ? colors.paper : colors.terracota}
+            />
+          </Pressable>
+        </ListeningPulse>
       ) : null}
       <TextInput
         value={input}
         onChangeText={onChangeText}
-        placeholder={t("chat_placeholder_voice")}
+        placeholder={listening ? t("mic_listening") : t("chat_placeholder_voice")}
         placeholderTextColor={colors.mute}
         style={styles.composerInput}
         multiline

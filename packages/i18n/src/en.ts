@@ -240,6 +240,7 @@ export const en: EsDict = {
   chat_placeholder_voice: "Type or dictate…",
   chat_mic_label: "Dictate by voice",
   chat_mic_stop: "Stop dictation",
+  mic_listening: "Listening…",
   chat_send: "Send",
   chat_stop_answer: "Stop",
   chat_profile_open: "Open profile",

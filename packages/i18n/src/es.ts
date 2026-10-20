@@ -262,6 +262,7 @@ export const es = {
   chat_placeholder_voice: "Escribe o dicta…",
   chat_mic_label: "Dictar por voz",
   chat_mic_stop: "Detener dictado",
+  mic_listening: "Escuchando…",
   chat_send: "Enviar",
   chat_stop_answer: "Detener",
   chat_profile_open: "Abrir perfil",

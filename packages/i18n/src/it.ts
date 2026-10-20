@@ -241,6 +241,7 @@ export const it: EsDict = {
   chat_placeholder_voice: "Scrivi o detta…",
   chat_mic_label: "Detta a voce",
   chat_mic_stop: "Ferma la dettatura",
+  mic_listening: "In ascolto…",
   chat_send: "Invia",
   chat_stop_answer: "Interrompi",
   chat_profile_open: "Apri il profilo",
