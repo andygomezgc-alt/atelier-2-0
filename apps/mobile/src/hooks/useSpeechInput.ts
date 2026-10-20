@@ -16,6 +16,11 @@ const useSpeechEvent: SpeechModule["useSpeechRecognitionEvent"] = speech
 
 export type SpeechErrorCode = "permission" | "unavailable" | "generic";
 
+// The device runs one dictation at a time, so the last screen to start the
+// microphone takes it over: the screen that was listening stops listening and
+// writing. This releases whichever hook owns the current dictation.
+let releaseOwner: (() => void) | null = null;
+
 // What was typed before tapping the microphone stays first; the dictation goes after it.
 export function mergeDictation(base: string, transcript: string): string {
   const head = base.trim();
@@ -49,8 +54,10 @@ export function useSpeechInput({ lang, onText, onError }: Params) {
     setListening(false);
   });
 
+  // iOS sends no "end" after an error from its native start, so let go here too.
   useSpeechEvent("error", (e) => {
     if (!ownsRef.current) return;
+    ownsRef.current = false;
     setListening(false);
     const code = e.error;
     // Benignos: el usuario no habló o canceló — no es un error para mostrar.
@@ -80,6 +87,11 @@ export function useSpeechInput({ lang, onText, onError }: Params) {
           return;
         }
         baseRef.current = base.trim();
+        releaseOwner?.();
+        releaseOwner = () => {
+          ownsRef.current = false;
+          setListening(false);
+        };
         ownsRef.current = true;
         setListening(true);
         speech.ExpoSpeechRecognitionModule.start({
