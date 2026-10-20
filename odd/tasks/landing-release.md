@@ -10,9 +10,9 @@ Branch: codex/landing-guided-tour. Delivery: exception-ok, user-authorized direc
 
 ## Tasks
 - T1 [S1,S2] inline — completed: preserve reviewed work units; commits efd31d5 (landing) and c3b95d2 (Prisma checker). Existing native review approved and acknowledged before these commits.
-- T2 [S1,S3] inline — completed, merge commit pending: merged origin/main 3c42306, preserved local fonts, resolved one component conflict. No writer trigger: one understood font-integration behavior. Risk: item 5, build/deployment integration.
+- T2 [S1,S3] inline — completed: merge commit aded747 integrates origin/main 3c42306, preserves local fonts and resolves one component conflict. No writer trigger: one understood font-integration behavior. Risk: item 5, build/deployment integration.
 - T3 [S2,S3] delegated verification — completed: focused 20 tests, full 147 files/2038 tests, typecheck/build/postbuild/diffcheck pass. Independent integration audit PASS 11 assertion groups; parent reran its exact probe. Trigger: large release checks and named risk item 5.
-- T4 [S1,S3] inline native assessment — pending: assess integrated candidate; only enter a new native review if due, with candidate consent. Do not reuse burned authority for changed bytes.
+- T4 [S1,S3] inline native assessment — awaiting candidate consent: integrated release assessment is high / review_due high_risk because of the postbuild checker process signal. Previous approval covered pre-integration bytes; publication permission does not imply consent for a new review candidate.
 - T5 [S1] inline — pending: normal fast-forward main push and observe Vercel deployment. Commit identity pending.
 - T6 [S2,S4] inline — pending: public HTTP/browser verification and completion evidence.
 
@@ -25,3 +25,4 @@ Branch: codex/landing-guided-tour. Delivery: exception-ok, user-authorized direc
 - L6 RED observed: the shared-font guard failed because landing-font.ts still imported next/font/google. Moved the exact current-main local font paths, weights, styles and fallback into that shared helper; kept WOFF2 magic and license validation in the adapted test. The component now retains the approved landing without duplicate font setup.
 - L7 GREEN integrated checks: 147 API files/2038 tests, typecheck, production build, Prisma checker (82 API manifests), and diffcheck against origin/main all exit 0. Non-fatal build warning: OpenTelemetry/Sentry dynamic require in unchanged logger code. Inherited OFL license trailing whitespace is identical to main and was not modified.
 - L8 Independent verification PASS: 11 assertion groups, source/staged hashes unchanged. Twelve previously reviewed source blobs retain parity; local font configuration exactly matches production. Mobile/i18n/db/config/lockfile/font binaries identical to main. Public production and push remain pending. External evidence: TEMP/atelier-landing-checks-20261020-160404 and TEMP/atelier-landing-integration-verify-h089h8.
+- L9 Committed the resolved merge as aded747f68c55e0df5b79744753f06558a4e1cbc. Normal source readback and preservation checks pass. Native assessment against production main is high / high_risk; must relay the integrated candidate's native consent before review. No push or deployment performed.
