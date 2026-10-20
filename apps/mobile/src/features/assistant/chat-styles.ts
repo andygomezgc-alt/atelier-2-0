@@ -31,6 +31,7 @@ export const styles = StyleSheet.create({
   chatActions: {
     flexDirection: "row",
     flexWrap: "wrap",
+    alignItems: "center",
     gap: spacing.sm,
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.md,
@@ -54,6 +55,9 @@ export const styles = StyleSheet.create({
     fontSize: fontSizes.serifBodySm,
     color: colors.ink,
   },
+  // Secondary actions (Cronología): smaller than "New chat"; hitSlop keeps the touch target.
+  compactPill: { minHeight: 34, paddingHorizontal: 10, paddingVertical: 4 },
+  compactLabel: { fontSize: fontSizes.body },
   avatar: {
     width: 32,
     height: 32,

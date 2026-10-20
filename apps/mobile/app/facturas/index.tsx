@@ -98,6 +98,13 @@ export default function InvoicesScreen() {
 
   // The empty and offline states pull down to reload too, not only a filled list.
   const filled = !!data && data.suppliers.length > 0;
+  // Invoice reading is still in beta, whatever the list shows.
+  const beta = (
+    <View style={[styles.beta, !filled && styles.betaOutside]}>
+      <Text style={styles.betaTag}>{t("invoices_beta_tag")}</Text>
+      <Text style={styles.betaNote}>{t("invoices_beta_note")}</Text>
+    </View>
+  );
   return (
     <Screen title={t("invoices_title")} back onBack={() => router.back()}>
       <ScrollView
@@ -112,6 +119,7 @@ export default function InvoicesScreen() {
           />
         }
       >
+        {beta}
         {body}
       </ScrollView>
     </Screen>
@@ -122,6 +130,14 @@ const styles = StyleSheet.create({
   loading: { paddingHorizontal: spacing.lg },
   state: { flexGrow: 1 },
   content: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl },
+  beta: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
+  betaOutside: { marginHorizontal: spacing.lg, marginTop: spacing.lg },
+  betaTag: {
+    fontFamily: fonts.sans, fontSize: fontSizes.micro, fontWeight: "600", letterSpacing: 0.8, textTransform: "uppercase",
+    color: colors.terracotaDeep, borderWidth: 0.5, borderColor: colors.terracotaEdge, borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm, paddingVertical: 2, overflow: "hidden",
+  },
+  betaNote: { flex: 1, fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.mute, lineHeight: 16 },
   band: { backgroundColor: colors.terracotaSoft, borderRadius: radii.md, padding: spacing.md },
   bandText: { fontFamily: fonts.sans, fontSize: fontSizes.body, color: colors.ink },
   group: { gap: spacing.xs },
