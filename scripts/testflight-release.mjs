@@ -3,7 +3,7 @@
 //
 // Usage:
 //   node scripts/testflight-release.mjs 21                         # a given build number
-//   node scripts/testflight-release.mjs --after 2026-10-20T13:00Z  # the first build uploaded after that time
+//   node scripts/testflight-release.mjs --after 2026-10-20T13:00Z  # the newest build uploaded after that time
 //   node scripts/testflight-release.mjs 21 --group Chefs           # group name (default: Chefs)
 //
 // Reads the App Store Connect key and app id from the `testflight` submit profile in apps/mobile/eas.json.
@@ -61,7 +61,8 @@ function ascClient(credentials, scratch) {
       const text = stdout.slice(0, cut);
       if (status >= 200 && status < 300) return text ? JSON.parse(text) : {};
       last = `${status} ${text.slice(0, 300)}`;
-      if (status !== 401 && (method !== "GET" || (status >= 400 && status < 500))) break;
+      // Reads also retry rate limits (429), server errors and curl failures (000).
+      if (status !== 401 && (method !== "GET" || (status >= 400 && status < 500 && status !== 429))) break;
       await sleep(attempt * 2000);
     }
     throw new Error(`App Store Connect ${method} ${path.split("?")[0]} failed: ${last}`);

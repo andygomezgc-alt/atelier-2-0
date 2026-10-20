@@ -5,7 +5,7 @@ import { releaseToGroup, withBuildNumber } from "./lib/testflight-release.mjs";
 const NOTES = "Sign in with Apple or Google. This is build 9 of the existing application; Apple and Google sign-in are preserved.";
 
 // In-memory App Store Connect: answers the paths the release uses and records every write.
-function fakeAsc({ processing = ["VALID"], external = "READY_FOR_BETA_SUBMISSION", inGroup = false, notes = NOTES, uploaded = "2026-10-20T07:02:52-07:00" } = {}) {
+function fakeAsc({ processing = ["VALID"], external = "READY_FOR_BETA_SUBMISSION", externals = null, inGroup = false, notes = NOTES, uploaded = "2026-10-20T07:02:52-07:00" } = {}) {
   const writes = [];
   const states = [...processing];
   const api = async (method, path, body) => {
@@ -17,6 +17,7 @@ function fakeAsc({ processing = ["VALID"], external = "READY_FOR_BETA_SUBMISSION
     }
     if (path.startsWith("/v1/builds?")) {
       const state = states.length > 1 ? states.shift() : states[0];
+      if (externals?.length) external = externals.shift();
       if (state === "MISSING") return { data: [] };
       return {
         data: [{ id: "build-21", attributes: { version: "21", processingState: state, uploadedDate: uploaded } }],
@@ -68,6 +69,26 @@ test("without a build number it takes the newest build uploaded after the given 
     /not processed/,
   );
   assert.deepEqual(old.writes, []);
+});
+
+test("keeps waiting while the build is still processing for external testers", async () => {
+  const { api, writes } = fakeAsc({ externals: ["PROCESSING", "PROCESSING", "READY_FOR_BETA_SUBMISSION"] });
+  const result = await releaseToGroup({ api, appId: "app-1", buildNumber: "21", group: "Chefs", ...quiet });
+  assert.equal(writes.length, 3);
+  assert.equal(result.externalState, "WAITING_FOR_BETA_REVIEW");
+});
+
+test("treats a build already ready for external testing as released", async () => {
+  const { api, writes } = fakeAsc({ inGroup: true, external: "READY_FOR_BETA_TESTING", notes: NOTES.replace("build 9", "build 21") });
+  const result = await releaseToGroup({ api, appId: "app-1", buildNumber: "21", group: "Chefs", ...quiet });
+  assert.deepEqual(writes, []);
+  assert.equal(result.externalState, "READY_FOR_BETA_TESTING");
+});
+
+test("refuses a build whose external state cannot be submitted, after adding it to the group", async () => {
+  const { api, writes } = fakeAsc({ external: "MISSING_EXPORT_COMPLIANCE" });
+  await assert.rejects(releaseToGroup({ api, appId: "app-1", buildNumber: "21", group: "Chefs", ...quiet }), /MISSING_EXPORT_COMPLIANCE/);
+  assert.equal(writes.some((w) => w.path === "/v1/betaAppReviewSubmissions"), false);
 });
 
 test("stops without writing when Apple rejects the processed build", async () => {

@@ -3,7 +3,7 @@
 // build added and a beta review submission. Every step checks first, so a rerun is safe.
 
 // External states where the build is already submitted, approved or available to testers.
-const SUBMITTED = new Set(["WAITING_FOR_BETA_REVIEW", "IN_BETA_REVIEW", "BETA_APPROVED", "IN_BETA_TESTING"]);
+const SUBMITTED = new Set(["WAITING_FOR_BETA_REVIEW", "IN_BETA_REVIEW", "BETA_APPROVED", "READY_FOR_BETA_TESTING", "IN_BETA_TESTING"]);
 
 /** The review notes name the build ("This is build 9 of the existing application"); keep that number current. */
 export function withBuildNumber(notes, buildNumber) {
@@ -41,8 +41,9 @@ export async function releaseToGroup({
   let build;
   for (;;) {
     build = await findBuild(api, appId, buildNumber, uploadedAfter);
-    if (build?.state === "VALID") break;
-    if (build && build.state !== "PROCESSING") throw new Error(`Build ${build.version} is ${build.state} in App Store Connect`);
+    // A processed build can still be processing for external testers for a while.
+    if (build?.state === "VALID" && build.externalState !== "PROCESSING") break;
+    if (build && build.state !== "PROCESSING" && build.state !== "VALID") throw new Error(`Build ${build.version} is ${build.state} in App Store Connect`);
     if (Date.now() >= deadline) throw new Error(`Build ${buildNumber ?? "(new)"} not processed by Apple yet; run this again later`);
     log(build ? `Apple is processing build ${build.version}…` : "Waiting for the build to reach App Store Connect…");
     await sleep(pollMs);
