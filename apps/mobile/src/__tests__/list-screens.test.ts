@@ -160,16 +160,16 @@ describe("Menus list", () => {
 });
 
 describe("Recipe card food cost", () => {
-  const recipe = (foodCostPct: number | null) => ({
-    id: "r1", title: "Tarta de queso", state: "approved", priority: false, version: 1, authorName: "Chef",
+  const recipe = (foodCostPct: number | null, priority = false) => ({
+    id: "r1", title: "Tarta de queso", state: "approved", priority, version: 1, authorName: "Chef",
     updatedAt: "2026-10-19T10:00:00Z", perPortionCents: 250, costStatus: "complete", foodCostPct,
     salePrice: 900, portions: 8, allergens: [], unlinkedIngredients: 0,
   });
   let card: ReactTestRenderer | null = null;
-  async function renderCard(foodCostPct: number | null) {
+  async function renderCard(foodCostPct: number | null, priority = false) {
     await render(RecetasScreen);
     const renderItem = screen.root.findByType("FlatList" as never).props.renderItem as (row: { item: unknown }) => ReactElement;
-    await act(async () => { card = create(renderItem({ item: recipe(foodCostPct) })); });
+    await act(async () => { card = create(renderItem({ item: recipe(foodCostPct, priority) })); });
     return card!;
   }
   const chip = (c: ReactTestRenderer) =>
@@ -191,6 +191,13 @@ describe("Recipe card food cost", () => {
     await act(async () => { card!.unmount(); screen.unmount(); });
     card = null;
     expect(borderOf(await renderCard(41))).toBe("danger");
+  });
+
+  it("marks a priority recipe with a single star and a spoken label", async () => {
+    const c = await renderCard(33, true);
+    expect(c.root.findAll((n) => n.type === ("Ionicons" as never) && n.props.name === "star")).toHaveLength(1);
+    expect(cardTexts(c).some((t) => t.includes("★"))).toBe(false);
+    expect(c.root.findAllByProps({ accessibilityLabel: "recetas_card_priority" }).length).toBeGreaterThan(0);
   });
 
   it("shows no chip when the food cost is unknown", async () => {

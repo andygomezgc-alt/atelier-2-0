@@ -51,7 +51,8 @@ export function Composer({ input, onChangeText, composerBusy, listening, busy, s
         placeholderTextColor={colors.mute}
         style={styles.composerInput}
         multiline
-        editable={!composerBusy}
+        // Locked while listening: the next result replaces the text from where dictation started.
+        editable={!composerBusy && !listening}
         accessibilityLabel={t("chat_input_label")}
       />
       {busy ? (
