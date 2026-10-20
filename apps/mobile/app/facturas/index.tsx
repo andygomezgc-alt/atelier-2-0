@@ -1,6 +1,6 @@
 // Supplier invoices, newest first, grouped by supplier. A band counts the ones waiting for
 // review; the list refreshes by itself while any invoice is being read.
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,12 +28,21 @@ export default function InvoicesScreen() {
   const [data, setData] = useState<InvoiceListResponse | null>(null);
   const [failed, setFailed] = useState(false);
 
+  // A pull, the polling and the focus reload can overlap. Each call is numbered, and an answer
+  // is written unless a newer call already wrote one, so an older answer never replaces a newer
+  // one, and on a slow network (answers landing after the next poll started) the list still updates.
+  const startedCalls = useRef(0);
+  const writtenCall = useRef(0);
   const reload = useCallback(async () => {
+    const call = ++startedCalls.current;
     try {
-      setData(await listInvoices());
+      const next = await listInvoices();
+      if (call < writtenCall.current) return;
+      writtenCall.current = call;
+      setData(next);
       setFailed(false);
     } catch {
-      setFailed(true);
+      if (call > writtenCall.current) setFailed(true);
     }
   }, []);
   useFocusEffect(useCallback(() => { void reload(); }, [reload]));
@@ -50,18 +59,7 @@ export default function InvoicesScreen() {
     body = <Empty icon="receipt-outline" title={t("invoices_empty_title")} sub={t("invoices_empty_sub")} actionLabel={t("invoices_scan")} onAction={scan} />;
   } else {
     body = (
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => void onRefresh()}
-            tintColor={colors.terracota}
-            colors={[colors.terracota]}
-            progressBackgroundColor={colors.paper}
-          />
-        }
-      >
+      <>
         <Button label={t("invoices_scan")} iconLeft="camera-outline" onPress={scan} />
         {data.toReview > 0 ? (
           <View style={styles.band}>
@@ -94,20 +92,52 @@ export default function InvoicesScreen() {
             })}
           </View>
         ))}
-      </ScrollView>
+      </>
     );
   }
 
+  // The empty and offline states pull down to reload too, not only a filled list.
+  const filled = !!data && data.suppliers.length > 0;
+  // Invoice reading is still in beta, whatever the list shows.
+  const beta = (
+    <View style={[styles.beta, !filled && styles.betaOutside]}>
+      <Text style={styles.betaTag}>{t("invoices_beta_tag")}</Text>
+      <Text style={styles.betaNote}>{t("invoices_beta_note")}</Text>
+    </View>
+  );
   return (
     <Screen title={t("invoices_title")} back onBack={() => router.back()}>
-      {body}
+      <ScrollView
+        contentContainerStyle={filled ? styles.content : styles.state}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+            tintColor={colors.terracota}
+            colors={[colors.terracota]}
+            progressBackgroundColor={colors.paper}
+          />
+        }
+      >
+        {beta}
+        {body}
+      </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   loading: { paddingHorizontal: spacing.lg },
+  state: { flexGrow: 1 },
   content: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl },
+  beta: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
+  betaOutside: { marginHorizontal: spacing.lg, marginTop: spacing.lg },
+  betaTag: {
+    fontFamily: fonts.sans, fontSize: fontSizes.micro, fontWeight: "600", letterSpacing: 0.8, textTransform: "uppercase",
+    color: colors.terracotaDeep, borderWidth: 0.5, borderColor: colors.terracotaEdge, borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm, paddingVertical: 2, overflow: "hidden",
+  },
+  betaNote: { flex: 1, fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.mute, lineHeight: 16 },
   band: { backgroundColor: colors.terracotaSoft, borderRadius: radii.md, padding: spacing.md },
   bandText: { fontFamily: fonts.sans, fontSize: fontSizes.body, color: colors.ink },
   group: { gap: spacing.xs },

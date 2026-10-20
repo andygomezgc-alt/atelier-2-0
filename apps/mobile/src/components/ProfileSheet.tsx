@@ -146,7 +146,7 @@ export function ProfileSheet({ open, onClose }: Props) {
     try {
       await patchMe({ name, bio });
       await refreshMe();
-      showToast("Guardado");
+      showToast(t("profile_saved_toast"));
     } catch (err) {
       setNameOverride(null);
       setBioOverride(null);

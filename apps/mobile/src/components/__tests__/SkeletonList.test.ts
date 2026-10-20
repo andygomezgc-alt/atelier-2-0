@@ -96,4 +96,22 @@ describe("SkeletonList startup", () => {
     await act(async () => { answer(false); });
     expect(h.start).not.toHaveBeenCalled();
   });
+
+  it("pulses when the first read fails, as the setting is then unknown", async () => {
+    let fail!: (error: Error) => void;
+    h.firstRead = new Promise<boolean>((_resolve, reject) => { fail = reject; });
+    await render();
+    expect(h.start).not.toHaveBeenCalled();
+    await act(async () => { fail(new Error("unavailable")); });
+    expect(h.start).toHaveBeenCalledOnce();
+  });
+
+  it("a reduce-motion change during the first read wins over that read failing", async () => {
+    let fail!: (error: Error) => void;
+    h.firstRead = new Promise<boolean>((_resolve, reject) => { fail = reject; });
+    await render();
+    await act(async () => { h.listener?.(true); });
+    await act(async () => { fail(new Error("unavailable")); });
+    expect(h.start).not.toHaveBeenCalled();
+  });
 });

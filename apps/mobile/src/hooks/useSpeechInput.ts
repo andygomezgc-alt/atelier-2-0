@@ -1,22 +1,10 @@
 import { useCallback, useRef, useState } from "react";
+import { speech, type SpeechModule } from "./speech-module";
 
 // Dictado por voz en el dispositivo (gratis, sin API). El reconocimiento corre
 // nativo; acá envolvemos start/stop, el estado `listening` y los errores en una
 // API simple. `onText` recibe el texto acumulado (base escrita + lo dictado)
 // para que la pantalla lo vuelque en el input en vivo.
-//
-// El módulo es NATIVO: existe en el APK/standalone pero NO dentro de Expo Go.
-// Import estático = crash al cargar el bundle en Expo Go ("Cannot find native
-// module 'ExpoSpeechRecognition'"). Por eso require guardado: si no está,
-// `speechAvailable` queda false y la pantalla esconde el micrófono.
-type SpeechModule = typeof import("expo-speech-recognition");
-let speech: SpeechModule | null = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  speech = require("expo-speech-recognition") as SpeechModule;
-} catch {
-  speech = null;
-}
 
 export const speechAvailable = speech !== null;
 
@@ -27,6 +15,11 @@ const useSpeechEvent: SpeechModule["useSpeechRecognitionEvent"] = speech
   : () => {};
 
 export type SpeechErrorCode = "permission" | "unavailable" | "generic";
+
+// The device runs one dictation at a time, so the last screen to start the
+// microphone takes it over: the screen that was listening stops listening and
+// writing. This releases whichever hook owns the current dictation.
+let releaseOwner: (() => void) | null = null;
 
 // What was typed before tapping the microphone stays first; the dictation goes after it.
 export function mergeDictation(base: string, transcript: string): string {
@@ -45,14 +38,26 @@ export function useSpeechInput({ lang, onText, onError }: Params) {
   // Texto que ya había en el input cuando se tocó el micrófono: lo dictado se
   // agrega después de esto, sin pisarlo.
   const baseRef = useRef("");
+  // Every mounted hook hears the same native events (Inicio and the assistant stay
+  // mounted in their tabs), so each one only acts on the dictation it started.
+  const ownsRef = useRef(false);
 
   useSpeechEvent("result", (e) => {
+    if (!ownsRef.current) return;
     onText(mergeDictation(baseRef.current, e.results[0]?.transcript ?? ""));
   });
 
-  useSpeechEvent("end", () => setListening(false));
+  // Native sends "end" after every session, an error included.
+  useSpeechEvent("end", () => {
+    if (!ownsRef.current) return;
+    ownsRef.current = false;
+    setListening(false);
+  });
 
+  // iOS sends no "end" after an error from its native start, so let go here too.
   useSpeechEvent("error", (e) => {
+    if (!ownsRef.current) return;
+    ownsRef.current = false;
     setListening(false);
     const code = e.error;
     // Benignos: el usuario no habló o canceló — no es un error para mostrar.
@@ -82,6 +87,12 @@ export function useSpeechInput({ lang, onText, onError }: Params) {
           return;
         }
         baseRef.current = base.trim();
+        releaseOwner?.();
+        releaseOwner = () => {
+          ownsRef.current = false;
+          setListening(false);
+        };
+        ownsRef.current = true;
         setListening(true);
         speech.ExpoSpeechRecognitionModule.start({
           lang,
@@ -89,6 +100,7 @@ export function useSpeechInput({ lang, onText, onError }: Params) {
           continuous: false,
         });
       } catch {
+        ownsRef.current = false;
         setListening(false);
         onError?.("generic");
       }

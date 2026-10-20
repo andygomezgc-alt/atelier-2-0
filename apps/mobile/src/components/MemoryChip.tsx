@@ -13,6 +13,7 @@ export function MemoryChip({ enabled, onPress }: Props) {
     <Pressable
       style={({ pressed }) => [styles.pill, { borderColor: enabled ? colors.green : colors.edge }, pressed && styles.pressed]}
       onPress={onPress}
+      hitSlop={7}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={t("chat_memory_hint")}
@@ -27,17 +28,17 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 5,
     borderWidth: 0.5,
     borderRadius: radii.pill,
-    minHeight: 48,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    minHeight: 34,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   pressed: { opacity: 0.5 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
+  dot: { width: 7, height: 7, borderRadius: 3.5 },
   label: {
     fontFamily: fonts.serifItalic,
-    fontSize: fontSizes.serifBodySm,
+    fontSize: fontSizes.body,
   },
 });

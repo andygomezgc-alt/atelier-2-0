@@ -102,10 +102,7 @@ export default function RecetasScreen() {
     }
   }, [filter, q, t]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
+  // Also runs again when reload changes (filter or search) while the screen is open.
   useFocusEffect(
     useCallback(() => {
       void reload();
@@ -327,7 +324,8 @@ type RecipeCardTFn = (
     | "cost_partial"
     | "recetas_card_pvp_label"
     | "recetas_card_food_cost"
-    | "cost_card_food_cost",
+    | "cost_card_food_cost"
+    | "recetas_card_priority",
   vars?: Record<string, string | number>,
 ) => string;
 
@@ -364,9 +362,8 @@ const RecipeCard = memo(function RecipeCard({
         <View style={styles.metaRow}>
           <StateChip state={item.state} t={t} />
           {item.priority ? (
-            <View style={styles.priorityChip}>
+            <View style={styles.priorityChip} accessible accessibilityLabel={t("recetas_card_priority")}>
               <Ionicons name="star" size={10} color={colors.terracota} />
-              <Text style={styles.priorityLabel}>★</Text>
             </View>
           ) : null}
           <Text style={styles.author}>{item.authorName}</Text>
@@ -536,7 +533,6 @@ const styles = StyleSheet.create({
   },
   chipLabel: { fontFamily: fonts.sans, fontSize: 10.5, fontWeight: "600", letterSpacing: 0.6 },
   priorityChip: { flexDirection: "row", alignItems: "center", gap: 2 },
-  priorityLabel: { color: colors.terracota, fontFamily: fonts.sans, fontSize: 10 },
   author: { fontFamily: fonts.sans, fontSize: fontSizes.caption, color: colors.mute },
   // C-06a — línea de coste/PVP debajo de chips. Coste mute (info derivada),
   // PVP destacado en ink + bold (es la decisión del chef).

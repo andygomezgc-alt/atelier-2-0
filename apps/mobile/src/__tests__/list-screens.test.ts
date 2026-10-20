@@ -1,4 +1,4 @@
-// Recipes and Menus list screens.
+// Recipes, Menus and Products list screens.
 // Proposal 5: they load with ghost cards, and an empty list offers to create the first one
 // through the same lazy restaurant creation as the header buttons.
 // Proposal 1: the recipe card shows its food cost chip and the in-service menu card its cost line.
@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   ensureRestaurant: vi.fn(),
   listRecipes: vi.fn(),
   listMenus: vi.fn(),
+  listProducts: vi.fn(),
   role: "admin" as string,
 }));
 
@@ -23,7 +24,11 @@ vi.mock("react-native", () => ({
 vi.mock("@expo/vector-icons", () => ({ Ionicons: "Ionicons" }));
 vi.mock("expo-router", async () => {
   const { useEffect } = await import("react");
-  return { useRouter: () => ({ push: h.push, back: vi.fn() }), useFocusEffect: (fn: () => void) => useEffect(fn, [fn]) };
+  return {
+    useRouter: () => ({ push: h.push, back: vi.fn() }),
+    useLocalSearchParams: () => ({}),
+    useFocusEffect: (fn: () => void) => useEffect(fn, [fn]),
+  };
 });
 vi.mock("@/src/theme", () => ({
   // Each colour resolves to its token name, so the food cost tone can be asserted.
@@ -56,10 +61,17 @@ vi.mock("@/src/components/LazyRestaurantHost", () => ({ ensureRestaurant: h.ensu
 vi.mock("@/src/lib/api-error", () => ({ apiErrorMessage: () => "error" }));
 vi.mock("@/src/lib/export-file", () => ({ downloadAndShare: vi.fn(), sanitizeFilename: (s: string) => s }));
 vi.mock("@/src/api/recipes", () => ({ listRecipes: h.listRecipes, deleteRecipe: vi.fn() }));
+vi.mock("@/src/api/products", () => ({ listProducts: h.listProducts, patchProduct: vi.fn() }));
+vi.mock("@/src/components/BottomSheet", () => ({ BottomSheet: "BottomSheet" }));
+vi.mock("@/src/components/CategoryIcon", () => ({ CategoryIcon: "CategoryIcon" }));
+vi.mock("@/src/components/EditableCell", () => ({ EditableCell: "EditableCell" }));
+vi.mock("@/src/components/PriceChangeBadge", () => ({ PriceChangeBadge: "PriceChangeBadge" }));
+vi.mock("@/src/lib/keyboard", () => ({ useKeyboardHeight: () => 0 }));
 vi.mock("@/src/api/menus", () => ({ listMenus: h.listMenus, createMenu: vi.fn(), deleteMenu: vi.fn(), getMenu: vi.fn() }));
 
 import RecetasScreen from "../../app/(tabs)/recetas";
 import MenusScreen from "../../app/(tabs)/menus";
+import ProductosScreen from "../../app/productos/index";
 
 let screen: ReactTestRenderer;
 async function render(component: () => ReactElement | null) {
@@ -76,6 +88,7 @@ beforeEach(() => {
   h.ensureRestaurant.mockResolvedValue(undefined);
   h.listRecipes.mockResolvedValue([]);
   h.listMenus.mockResolvedValue([]);
+  h.listProducts.mockResolvedValue([]);
 });
 afterEach(async () => { if (screen) await act(async () => { screen.unmount(); }); });
 
@@ -147,16 +160,16 @@ describe("Menus list", () => {
 });
 
 describe("Recipe card food cost", () => {
-  const recipe = (foodCostPct: number | null) => ({
-    id: "r1", title: "Tarta de queso", state: "approved", priority: false, version: 1, authorName: "Chef",
+  const recipe = (foodCostPct: number | null, priority = false) => ({
+    id: "r1", title: "Tarta de queso", state: "approved", priority, version: 1, authorName: "Chef",
     updatedAt: "2026-10-19T10:00:00Z", perPortionCents: 250, costStatus: "complete", foodCostPct,
     salePrice: 900, portions: 8, allergens: [], unlinkedIngredients: 0,
   });
   let card: ReactTestRenderer | null = null;
-  async function renderCard(foodCostPct: number | null) {
+  async function renderCard(foodCostPct: number | null, priority = false) {
     await render(RecetasScreen);
     const renderItem = screen.root.findByType("FlatList" as never).props.renderItem as (row: { item: unknown }) => ReactElement;
-    await act(async () => { card = create(renderItem({ item: recipe(foodCostPct) })); });
+    await act(async () => { card = create(renderItem({ item: recipe(foodCostPct, priority) })); });
     return card!;
   }
   const chip = (c: ReactTestRenderer) =>
@@ -178,6 +191,13 @@ describe("Recipe card food cost", () => {
     await act(async () => { card!.unmount(); screen.unmount(); });
     card = null;
     expect(borderOf(await renderCard(41))).toBe("danger");
+  });
+
+  it("marks a priority recipe with a single star and a spoken label", async () => {
+    const c = await renderCard(33, true);
+    expect(c.root.findAll((n) => n.type === ("Ionicons" as never) && n.props.name === "star")).toHaveLength(1);
+    expect(cardTexts(c).some((t) => t.includes("★"))).toBe(false);
+    expect(c.root.findAllByProps({ accessibilityLabel: "recetas_card_priority" }).length).toBeGreaterThan(0);
   });
 
   it("shows no chip when the food cost is unknown", async () => {
@@ -222,5 +242,23 @@ describe("In-service menu cost line", () => {
       expect(texts().some((t) => t.startsWith("menu_cost_line"))).toBe(false);
       await act(async () => { screen.unmount(); });
     }
+  });
+});
+
+describe("Loading when a list opens", () => {
+  const pressFilter = (label: string) => screen.root.findAllByProps({ children: label })[0].parent!.props.onPress();
+
+  it("the recipe book asks for its list once, and again when the filter changes", async () => {
+    await render(RecetasScreen);
+    expect(h.listRecipes).toHaveBeenCalledTimes(1);
+    await act(async () => { pressFilter("recetas_filter_approved"); });
+    expect(h.listRecipes).toHaveBeenCalledTimes(2);
+  });
+
+  it("the product bank asks for its list once, and again when the filter changes", async () => {
+    await render(ProductosScreen);
+    expect(h.listProducts).toHaveBeenCalledTimes(1);
+    await act(async () => { pressFilter("category_pescado"); });
+    expect(h.listProducts).toHaveBeenCalledTimes(2);
   });
 });

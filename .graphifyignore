@@ -24,3 +24,8 @@ tmp/
 
 # Test fixtures: truncated recipe text for parser tests, no architectural meaning.
 __fixtures__/
+
+# Local tool scratch dirs that carry their own ".gitignore" with "*". graphify 0.9.15
+# matches a nested unanchored pattern against the root-relative path too, so one such
+# file empties the whole scan corpus. Pruning the parent keeps graphify out of them.
+.claude/hillclimb/

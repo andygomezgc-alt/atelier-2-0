@@ -38,6 +38,7 @@ vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: "SafeAreaView",
 vi.mock("react-native-reanimated", () => ({ default: { View: "AnimatedView" }, Easing: {}, withSpring: vi.fn(), withTiming: vi.fn() }));
 vi.mock("@/src/hooks/useAuth", () => ({ useAuth: () => ({ state: { status: "signed-in", user: { name: "Chef", restaurantId: h.restaurantId, role: h.role, defaultModel: "creative", languagePref: "es" } } }) }));
 vi.mock("@/src/hooks/useI18n", () => ({ useI18n: () => ({ t: h.t }), dateLocale: () => "es-ES" }));
+vi.mock("@/src/components/ListeningPulse", () => ({ ListeningPulse: "ListeningPulse" }));
 vi.mock("@/src/hooks/useSpeechInput", () => ({ speechAvailable: true, useSpeechInput: () => ({ listening: h.listening, start: vi.fn(), stop: vi.fn() }) }));
 vi.mock("@/src/api/conversations", () => ({ createConversation: h.createConversation, streamMessage: h.streamMessage, listMessages: h.listMessages, getConversationByIdea: h.getConversationByIdea, bulkAddMessages: vi.fn(), stopMessage: h.stopMessage }));
 vi.mock("@/src/api/recipes", () => ({ extractRecipeFromAssistant: h.extract }));
@@ -83,8 +84,10 @@ import { es, t as translate, type TranslationKey } from "@atelier/i18n";
 let screen: ReactTestRenderer;
 const saved = [
   { id: "m1", role: "user", content: "Un plato de berenjena", createdAt: "2026-09-09T10:00:00Z" },
-  { id: "m2", role: "assistant", content: "Berenjena asada con yogur", createdAt: "2026-09-09T10:00:01Z" },
+  { id: "m2", role: "assistant", content: "Berenjena asada con yogur\n## Ingredientes\n- 2 berenjenas\n- 125 g yogur\n## Preparación\nAsar y servir.", createdAt: "2026-09-09T10:00:01Z" },
 ];
+// An assistant answer with a recipe written with quantities: only this offers "save as recipe".
+const RECIPE_ANSWER = "## Ingredientes\n- 200 g arroz\n## Preparación\nCocer el arroz.";
 const button = (label: string) => screen.root.findByProps({ accessibilityLabel: label });
 const input = () => screen.root.findByType("TextInput" as never);
 const messages = () => screen.root.findAllByType("FlatList" as never)[0]?.props.data ?? [];
@@ -477,6 +480,7 @@ describe("promoting a preview chat once the restaurant exists (A10)", () => {
   });
 
   it("uploads the history again before the next send when the save-time upload failed", async () => {
+    h.streamMessage.mockResolvedValueOnce(RECIPE_ANSWER);
     await previewThenSignedIn();
     bulk.mockRejectedValueOnce(new Error("raw-network-detail"));
     await act(async () => { await saveAction()[0]!.props.onPress(); });
@@ -488,6 +492,7 @@ describe("promoting a preview chat once the restaurant exists (A10)", () => {
   });
 
   it("continues to recipe extraction after the save-time upload fails", async () => {
+    h.streamMessage.mockResolvedValueOnce(RECIPE_ANSWER);
     await previewThenSignedIn();
     bulk.mockRejectedValueOnce(new Error("raw-network-detail"));
     await act(async () => { await saveAction()[0]!.props.onPress(); });
@@ -497,6 +502,7 @@ describe("promoting a preview chat once the restaurant exists (A10)", () => {
   });
 
   it("shows a translated error and re-enables saving when the conversation cannot be created", async () => {
+    h.streamMessage.mockResolvedValueOnce(RECIPE_ANSWER);
     await previewThenSignedIn();
     h.createConversation.mockRejectedValueOnce(new Error("raw-db-detail"));
     await act(async () => { await saveAction()[0]!.props.onPress(); });
@@ -506,6 +512,16 @@ describe("promoting a preview chat once the restaurant exists (A10)", () => {
     expect(JSON.stringify(h.toast.mock.calls)).not.toContain("raw-db-detail");
     expect(saveAction()[0]!.props.disabled).toBe(false);
     expect(h.extract).not.toHaveBeenCalled();
+  });
+
+  it("offers saving as a recipe only once the assistant has written one with quantities", async () => {
+    h.restaurantId = null;
+    await render();
+    await send("Una idea");
+    expect(saveAction()).toHaveLength(0);
+    h.streamMessage.mockResolvedValueOnce(RECIPE_ANSWER);
+    await send("Escríbela con cantidades");
+    expect(saveAction()).toHaveLength(1);
   });
 
   it("keeps saving available after extraction fails, with the translated draft option and no raw text", async () => {

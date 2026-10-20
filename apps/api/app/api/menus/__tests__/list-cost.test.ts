@@ -79,6 +79,22 @@ describe("GET /api/menus — cost summary", () => {
     expect(body[0]).not.toHaveProperty("costSummary");
   });
 
+  it("keeps the dishes of two in-service menus apart, in one query", async () => {
+    const winter = { ...menus[0], id: "m-winter", name: "Carta de invierno", _count: { items: 2 } };
+    db.menuFolder.findMany.mockResolvedValue([menus[0], winter]);
+    db.menuItem.findMany.mockResolvedValue([
+      { menuFolderId: "m-live", price: 100, priceUnit: "portion", recipe: { portions: 2, recipeIngredients: [oil] } },
+      // 22c of oil for 1 portion, sold at 3 €; the dish sold by weight counts as a dish but not in the numbers.
+      { menuFolderId: "m-winter", price: 300, priceUnit: "portion", recipe: { portions: 1, recipeIngredients: [oil] } },
+      { menuFolderId: "m-winter", price: 300, priceUnit: "kg", recipe: { portions: 1, recipeIngredients: [oil] } },
+    ]);
+    const [autumn, winterMenu] = await (await list()).json();
+    expect(autumn.costSummary).toEqual({ avgDishCostCents: 11, marginPct: 89, pricedDishes: 1, totalDishes: 1 });
+    expect(winterMenu.costSummary).toEqual({ avgDishCostCents: 22, marginPct: 93, pricedDishes: 1, totalDishes: 2 });
+    expect(db.menuItem.findMany).toHaveBeenCalledOnce();
+    expect(db.menuItem.findMany.mock.calls[0]![0].where.menuFolderId).toEqual({ in: ["m-live", "m-winter"] });
+  });
+
   it("no menu in service means no extra query", async () => {
     db.menuFolder.findMany.mockResolvedValue([menus[1]]);
     await list();

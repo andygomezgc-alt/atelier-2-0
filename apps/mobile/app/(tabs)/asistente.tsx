@@ -18,6 +18,7 @@ import type { ChatMessage } from "@/src/api/conversations";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
 import { tapLight } from "@/src/lib/haptics";
 import { stripRecipePayload } from "@/src/lib/recipe-payload";
+import { hasWrittenRecipe } from "@/src/lib/recipe-conversation";
 import { canRememberNote } from "@/src/lib/chef-notes";
 import type { ChatErrorAction } from "@/src/lib/chat-error";
 import { colors, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
@@ -149,8 +150,7 @@ export default function AsistenteScreen() {
   const recovering = turn.phase === "interrupted" || turn.phase === "resuming";
   const composerBusy = busy || save.structuring || conversation.loading || conversation.loadError;
   const navigationBusy = busy || save.structuring || composer.listening;
-  const showSaveButton =
-    turn.phase === "idle" && conversation.messages.some((m) => m.role === "assistant");
+  const showSaveButton = turn.phase === "idle" && hasWrittenRecipe(conversation.messages);
 
   // A-03 — FlatList invertida: data en orden inverso así el último mensaje
   // queda visualmente abajo. inverted + ListHeaderComponent garantiza que
@@ -278,15 +278,16 @@ export default function AsistenteScreen() {
           <Text style={[styles.historyLabel, styles.newChatLabel]}>{t("chat_new")}</Text>
         </Pressable>
         <Pressable
-          style={({ pressed }) => [styles.historyPill, (pressed || navigationBusy) && styles.actionDimmed]}
+          style={({ pressed }) => [styles.historyPill, styles.compactPill, (pressed || navigationBusy) && styles.actionDimmed]}
           onPress={() => setHistoryOpen(true)}
           disabled={navigationBusy}
+          hitSlop={7}
           accessibilityRole="button"
           accessibilityLabel={t("chat_history")}
           accessibilityState={{ disabled: navigationBusy }}
         >
-          <Ionicons name="time-outline" size={18} color={colors.ink} />
-          <Text style={styles.historyLabel}>{t("chat_history")}</Text>
+          <Ionicons name="time-outline" size={15} color={colors.ink} />
+          <Text style={[styles.historyLabel, styles.compactLabel]}>{t("chat_history")}</Text>
         </Pressable>
         {restaurantId && memory.enabled !== null ? (
           <MemoryChip

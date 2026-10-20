@@ -18,6 +18,7 @@ import { NetworkError } from "@/src/components/NetworkError";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { SectionExplainer } from "@/src/components/SectionExplainer";
 import { SkeletonList } from "@/src/components/SkeletonList";
+import { ListeningPulse } from "@/src/components/ListeningPulse";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth, getCurrentIdentity } from "@/src/hooks/useAuth";
@@ -26,6 +27,7 @@ import { useRefresh } from "@/src/hooks/useRefresh";
 import { speechAvailable, useSpeechInput } from "@/src/hooks/useSpeechInput";
 import { SPEECH_LANG } from "@/src/features/assistant/chat-helpers";
 import { tapLight } from "@/src/lib/haptics";
+import { relativeAge } from "@/src/lib/relative-age";
 import { listIdeas, patchIdea, deleteIdea, type Idea } from "@/src/api/ideas";
 import { showToast } from "@/src/components/Toast";
 import { useKeyboardHeight } from "@/src/lib/keyboard";
@@ -65,6 +67,8 @@ export default function InicioScreen() {
   const [editText, setEditText] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Idea dates are worked out at render time; the list renders again on every focus reload.
+  const now = Date.now();
   const userName =
     state.status === "signed-in" || state.status === "needs-restaurant"
       ? state.user.name.split(" ")[0]
@@ -228,28 +232,31 @@ export default function InicioScreen() {
                 ref={inputRef}
                 value={text}
                 onChangeText={setText}
-                editable={!saving}
+                // Locked while listening: the next result replaces the text from where dictation started.
+                editable={!saving && !listening}
                 multiline
-                placeholder={t("inicio_placeholder")}
+                placeholder={listening ? t("mic_listening") : t("inicio_placeholder")}
                 placeholderTextColor={colors.mute}
                 style={styles.ideaInput}
               />
               <View style={styles.ideaActions}>
                 {speechAvailable ? (
-                  <Pressable
-                    onPress={toggleMic}
-                    disabled={saving}
-                    hitSlop={6}
-                    style={[styles.micBtn, listening && styles.micBtnActive]}
-                    accessibilityRole="button"
-                    accessibilityLabel={listening ? t("chat_mic_stop") : t("chat_mic_label")}
-                  >
-                    <Ionicons
-                      name={listening ? "stop" : "mic-outline"}
-                      size={18}
-                      color={listening ? colors.paper : colors.terracotaDeep}
-                    />
-                  </Pressable>
+                  <ListeningPulse active={listening} size={36} color={colors.terracotaDeep}>
+                    <Pressable
+                      onPress={toggleMic}
+                      disabled={saving}
+                      hitSlop={6}
+                      style={[styles.micBtn, listening && styles.micBtnActive]}
+                      accessibilityRole="button"
+                      accessibilityLabel={listening ? t("chat_mic_stop") : t("chat_mic_label")}
+                    >
+                      <Ionicons
+                        name={listening ? "stop" : "mic-outline"}
+                        size={18}
+                        color={listening ? colors.paper : colors.terracotaDeep}
+                      />
+                    </Pressable>
+                  </ListeningPulse>
                 ) : null}
                 <Pressable
                   onPress={handleSave}
@@ -294,11 +301,15 @@ export default function InicioScreen() {
                         onPress={showAssistant ? () => takeToAssistant(idea) : undefined}
                       >
                         <Text style={styles.ideaText}>{idea.text}</Text>
-                        {showAssistant && (
-                          <Text style={[styles.ideaMeta, inChat && styles.ideaMetaInChat]}>
-                            {t(inChat ? "inicio_idea_in_chat" : "inicio_idea_action")}
-                          </Text>
-                        )}
+                        <Text style={styles.ideaMeta}>
+                          <Text style={styles.ideaAge}>{relativeAge(idea.createdAt, now, t)}</Text>
+                          {showAssistant ? (
+                            <Text style={inChat ? styles.ideaMetaInChat : styles.ideaMetaAction}>
+                              {" · "}
+                              {t(inChat ? "inicio_idea_in_chat" : "inicio_idea_action")}
+                            </Text>
+                          ) : null}
+                        </Text>
                       </Pressable>
                       <Pressable
                         hitSlop={10}
@@ -405,10 +416,11 @@ const styles = StyleSheet.create({
   sectionHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm - 1 },
   sectionBar: { width: 14, height: 2, borderRadius: 1, backgroundColor: colors.terracota },
   sectionLabel: { color: colors.teal, fontSize: fontSizes.caption },
+  // Same paper and hairline edge as the recipe cards.
   ideaBox: {
-    backgroundColor: colors.terracotaWash,
-    borderWidth: 1,
-    borderColor: colors.terracotaEdge,
+    backgroundColor: colors.paperSoft,
+    borderWidth: 0.5,
+    borderColor: colors.edge,
     borderRadius: radii.md,
     padding: spacing.md,
     marginTop: spacing.sm,
@@ -427,7 +439,7 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: colors.terracotaEdge,
+    borderColor: colors.edge,
     backgroundColor: colors.paper,
     alignItems: "center",
     justifyContent: "center",
@@ -519,10 +531,10 @@ const styles = StyleSheet.create({
   ideaMeta: {
     fontFamily: fonts.sans,
     fontSize: fontSizes.caption,
-    color: colors.terracotaDeep,
-    fontWeight: "600",
     marginTop: spacing.xs,
     letterSpacing: 0.5,
   },
-  ideaMetaInChat: { color: colors.teal },
+  ideaAge: { color: colors.mute },
+  ideaMetaAction: { color: colors.terracotaDeep, fontWeight: "600" },
+  ideaMetaInChat: { color: colors.teal, fontWeight: "600" },
 });
