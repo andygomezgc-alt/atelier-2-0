@@ -5,7 +5,8 @@
 #   - se hornea desde el CLON standalone, nunca desde el worktree anidado
 #   - valida el bundle con `expo export` ANTES de encolar (cola gratis pero lenta)
 #   - iOS usa credenciales LOCALES (dist.p12 + perfil) que viven fuera del repo
-#   - iOS se auto-envía a TestFlight tras compilar (--auto-submit)
+#   - iOS se auto-envía a TestFlight tras compilar (--auto-submit, grupo interno) y después
+#     scripts/testflight-release.mjs la publica en el grupo Chefs (nota, grupo, revisión beta)
 #   - Android produce un APK de distribución interna (link para los chefs Android)
 #
 # Requisitos (ya cumplidos en esta máquina):
@@ -24,16 +25,16 @@ BAKE="/c/Users/Utente/atelier-bake"
 SECRETS="/c/Users/Utente/Desktop/atelier-secretos"
 TARGET="${1:-both}"
 
-echo "==> 1/4  Sincronizando el clon de horneado con origin/main"
+echo "==> 1/5  Sincronizando el clon de horneado con origin/main"
 git -C "$BAKE" fetch origin --quiet
 git -C "$BAKE" checkout main --quiet
 git -C "$BAKE" merge --ff-only origin/main --quiet
 echo "    $BAKE @ $(git -C "$BAKE" log --oneline -1)"
 
-echo "==> 2/4  Instalando dependencias"
+echo "==> 2/5  Instalando dependencias"
 pnpm -C "$BAKE" install --frozen-lockfile >/dev/null
 
-echo "==> 3/4  Reponiendo credenciales locales iOS (gitignoreadas, se copian desde $SECRETS)"
+echo "==> 3/5  Reponiendo credenciales locales iOS (gitignoreadas, se copian desde $SECRETS)"
 mkdir -p "$BAKE/apps/mobile/certs"
 cp "$SECRETS/dist.p12" "$SECRETS/atelier.mobileprovision" "$BAKE/apps/mobile/certs/"
 # credentials.json apunta a certs/ con ruta relativa; se recrea por si el clon se limpió
@@ -49,15 +50,24 @@ JSON
 cd "$BAKE/apps/mobile"
 
 if [ "$TARGET" = "ios" ] || [ "$TARGET" = "both" ]; then
-  echo "==> 4/4  iOS — validando bundle antes de encolar"
+  echo "==> 4/5  iOS — validando bundle antes de encolar"
   npx expo export --platform ios >/dev/null
-  echo "         iOS — build + auto-submit a TestFlight (grupo Chefs / link público)"
+  echo "         iOS — build + auto-submit a TestFlight (grupo interno Equipo)"
+  IOS_STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   npx eas-cli build --platform ios --profile testflight --non-interactive --auto-submit --no-wait
 fi
 
 if [ "$TARGET" = "android" ] || [ "$TARGET" = "both" ]; then
-  echo "==> 4/4  Android — build APK (distribución interna, link para chefs Android)"
+  echo "==> 4/5  Android — build APK (distribución interna, link para chefs Android)"
   npx eas-cli build --platform android --profile pilot --non-interactive --no-wait
+fi
+
+if [ -n "${IOS_STARTED:-}" ]; then
+  # --auto-submit solo llega al grupo interno. Para los chefs (grupo externo, link público)
+  # hay que esperar a que Apple procese la build, sumarla al grupo y mandarla a revisión beta.
+  echo "==> 5/5  iOS — esperando a Apple para publicarla en el grupo Chefs (~30-40 min; Ctrl+C es seguro)"
+  echo "         Si se corta: node $BAKE/scripts/testflight-release.mjs <número de build>"
+  node "$BAKE/scripts/testflight-release.mjs" --after "$IOS_STARTED"
 fi
 
 echo ""
