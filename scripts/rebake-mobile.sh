@@ -5,7 +5,8 @@
 #   - se hornea desde el CLON standalone, nunca desde el worktree anidado
 #   - valida el bundle con `expo export` ANTES de encolar (cola gratis pero lenta)
 #   - iOS usa credenciales LOCALES (dist.p12 + perfil) que viven fuera del repo
-#   - iOS se auto-envía a TestFlight tras compilar (--auto-submit)
+#   - iOS se auto-envía a TestFlight tras compilar (--auto-submit, grupo interno) y después
+#     scripts/testflight-release.mjs la publica en el grupo Chefs (nota, grupo, revisión beta)
 #   - Android produce un APK de distribución interna (link para los chefs Android)
 #
 # Requisitos (ya cumplidos en esta máquina):
@@ -51,13 +52,22 @@ cd "$BAKE/apps/mobile"
 if [ "$TARGET" = "ios" ] || [ "$TARGET" = "both" ]; then
   echo "==> 4/4  iOS — validando bundle antes de encolar"
   npx expo export --platform ios >/dev/null
-  echo "         iOS — build + auto-submit a TestFlight (grupo Chefs / link público)"
+  echo "         iOS — build + auto-submit a TestFlight (grupo interno Equipo)"
+  IOS_STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   npx eas-cli build --platform ios --profile testflight --non-interactive --auto-submit --no-wait
 fi
 
 if [ "$TARGET" = "android" ] || [ "$TARGET" = "both" ]; then
   echo "==> 4/4  Android — build APK (distribución interna, link para chefs Android)"
   npx eas-cli build --platform android --profile pilot --non-interactive --no-wait
+fi
+
+if [ -n "${IOS_STARTED:-}" ]; then
+  # --auto-submit solo llega al grupo interno. Para los chefs (grupo externo, link público)
+  # hay que esperar a que Apple procese la build, sumarla al grupo y mandarla a revisión beta.
+  echo "==> 5/5  iOS — esperando a Apple para publicarla en el grupo Chefs (~30-40 min; Ctrl+C es seguro)"
+  echo "         Si se corta: node scripts/testflight-release.mjs <número de build>"
+  node "$BAKE/scripts/testflight-release.mjs" --after "$IOS_STARTED"
 fi
 
 echo ""
