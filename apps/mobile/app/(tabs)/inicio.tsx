@@ -18,6 +18,7 @@ import { NetworkError } from "@/src/components/NetworkError";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { SectionExplainer } from "@/src/components/SectionExplainer";
 import { SkeletonList } from "@/src/components/SkeletonList";
+import { ListeningPulse } from "@/src/components/ListeningPulse";
 import { ensureRestaurant } from "@/src/components/LazyRestaurantHost";
 import { useI18n } from "@/src/hooks/useI18n";
 import { useAuth, getCurrentIdentity } from "@/src/hooks/useAuth";
@@ -234,26 +235,28 @@ export default function InicioScreen() {
                 // Locked while listening: the next result replaces the text from where dictation started.
                 editable={!saving && !listening}
                 multiline
-                placeholder={t("inicio_placeholder")}
+                placeholder={listening ? t("mic_listening") : t("inicio_placeholder")}
                 placeholderTextColor={colors.mute}
                 style={styles.ideaInput}
               />
               <View style={styles.ideaActions}>
                 {speechAvailable ? (
-                  <Pressable
-                    onPress={toggleMic}
-                    disabled={saving}
-                    hitSlop={6}
-                    style={[styles.micBtn, listening && styles.micBtnActive]}
-                    accessibilityRole="button"
-                    accessibilityLabel={listening ? t("chat_mic_stop") : t("chat_mic_label")}
-                  >
-                    <Ionicons
-                      name={listening ? "stop" : "mic-outline"}
-                      size={18}
-                      color={listening ? colors.paper : colors.terracotaDeep}
-                    />
-                  </Pressable>
+                  <ListeningPulse active={listening} size={36} color={colors.terracotaDeep}>
+                    <Pressable
+                      onPress={toggleMic}
+                      disabled={saving}
+                      hitSlop={6}
+                      style={[styles.micBtn, listening && styles.micBtnActive]}
+                      accessibilityRole="button"
+                      accessibilityLabel={listening ? t("chat_mic_stop") : t("chat_mic_label")}
+                    >
+                      <Ionicons
+                        name={listening ? "stop" : "mic-outline"}
+                        size={18}
+                        color={listening ? colors.paper : colors.terracotaDeep}
+                      />
+                    </Pressable>
+                  </ListeningPulse>
                 ) : null}
                 <Pressable
                   onPress={handleSave}

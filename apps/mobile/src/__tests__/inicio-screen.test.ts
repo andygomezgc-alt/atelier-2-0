@@ -47,6 +47,7 @@ vi.mock("@/src/components/Screen", () => ({ Screen: "Screen" }));
 vi.mock("@/src/components/Eyebrow", () => ({ Eyebrow: "Eyebrow" }));
 vi.mock("@/src/components/Empty", () => ({ Empty: "Empty" }));
 vi.mock("@/src/components/SkeletonList", () => ({ SkeletonList: "SkeletonList" }));
+vi.mock("@/src/components/ListeningPulse", () => ({ ListeningPulse: "ListeningPulse" }));
 vi.mock("@/src/components/NetworkError", () => ({ NetworkError: "NetworkError" }));
 vi.mock("@/src/components/ConfirmSheet", () => ({ ConfirmSheet: "ConfirmSheet" }));
 vi.mock("@/src/components/SectionExplainer", () => ({ SectionExplainer: "SectionExplainer" }));
@@ -198,6 +199,19 @@ describe("idea dictation", () => {
     await act(async () => { screen.root.findByProps({ accessibilityLabel: "chat_mic_stop" }).props.onPress(); });
     expect(h.stop).toHaveBeenCalledOnce();
     expect(h.start).not.toHaveBeenCalled();
+  });
+
+  it("shows that it is listening: the microphone pulses and the box says so", async () => {
+    h.listening = true;
+    await render();
+    expect(screen.root.findByType("ListeningPulse" as never).props.active).toBe(true);
+    expect(ideaInput().props.placeholder).toBe("mic_listening");
+  });
+
+  it("keeps the idea placeholder and a still microphone while not listening", async () => {
+    await render();
+    expect(screen.root.findByType("ListeningPulse" as never).props.active).toBe(false);
+    expect(ideaInput().props.placeholder).toBe("inicio_placeholder");
   });
 
   it("locks the idea box while listening, so typing cannot be lost to the next result", async () => {

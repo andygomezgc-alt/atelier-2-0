@@ -1,4 +1,5 @@
-// Proposal 3: an empty chat offers brigade starters; a tap fills the composer and never sends.
+// Proposal 3: an empty chat offers creative starters (create and improve recipes); a tap fills
+// the composer and never sends. Scaling and allergens live in Recetas, so they are not starters.
 import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
@@ -27,8 +28,8 @@ import { CHAT_STARTER_KEYS, starterDraft } from "../chat-starters";
 import { StarterChips } from "../components/StarterChips";
 
 describe("chat starters", () => {
-  it("offers four brigade tasks, written in each dictionary (not a Spanish fallback)", () => {
-    expect(CHAT_STARTER_KEYS).toHaveLength(4);
+  it("offers only creative tasks, written in each dictionary (not a Spanish fallback)", () => {
+    expect(CHAT_STARTER_KEYS).toEqual(["chat_starter_create", "chat_starter_substitute", "chat_starter_optimize"]);
     const dicts: Record<string, Record<string, string>> = { es, it: itDict, en };
     for (const key of [...CHAT_STARTER_KEYS, "chat_starters_label"]) {
       for (const [lang, dict] of Object.entries(dicts)) {
@@ -40,8 +41,8 @@ describe("chat starters", () => {
   });
 
   it("turns a starter into a draft ready to complete", () => {
-    expect(starterDraft("Escala esta receta a 40 cubiertos:")).toBe("Escala esta receta a 40 cubiertos: ");
-    expect(starterDraft("¿Qué alérgenos lleva este plato?  ")).toBe("¿Qué alérgenos lleva este plato? ");
+    expect(starterDraft("Crea una receta con:")).toBe("Crea una receta con: ");
+    expect(starterDraft("Optimiza químicamente esta receta:  ")).toBe("Optimiza químicamente esta receta: ");
   });
 
   it("fills the composer with the tapped starter and sends nothing", () => {
@@ -49,7 +50,7 @@ describe("chat starters", () => {
     let tree!: ReturnType<typeof create>;
     act(() => { tree = create(createElement(StarterChips, { onPick, disabled: false })); });
     const chips = tree.root.findAllByType("Pressable" as never);
-    expect(chips).toHaveLength(4);
+    expect(chips).toHaveLength(3);
     act(() => { chips[1]!.props.onPress(); });
     expect(onPick).toHaveBeenCalledTimes(1);
     expect(onPick).toHaveBeenCalledWith(starterDraft(CHAT_STARTER_KEYS[1]!));
