@@ -37,25 +37,7 @@ import {
 import { can } from "@atelier/shared";
 import { colors, fonts, fontSizes, radii, spacing } from "@/src/theme";
 import { apiErrorMessage } from "@/src/lib/api-error";
-
-// "hace X" formatter — i18n-aware, usa keys relative_*_ago. Mantengo
-// granularidad simple: minutos / horas / días / semanas / meses. Más
-// detalle no aporta para el caso de "último recalc".
-function formatRelative(
-  iso: string,
-  t: ReturnType<typeof useI18n>["t"],
-): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 60) return t("relative_minutes_ago");
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t("relative_hours_ago", { n: hours });
-  const days = Math.floor(hours / 24);
-  if (days < 7) return t("relative_days_ago", { n: days });
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return t("relative_weeks_ago", { n: weeks });
-  return t("relative_months_ago");
-}
+import { relativeAge } from "@/src/lib/relative-age";
 
 export default function AjustesBancoScreen() {
   const { t } = useI18n();
@@ -183,7 +165,7 @@ export default function AjustesBancoScreen() {
           ) : recalcStatus && recalcStatus.lastRunAt ? (
             <Text style={styles.muted}>
               {t("ajustes_criticidad_last_run", {
-                relative: formatRelative(recalcStatus.lastRunAt, t),
+                relative: relativeAge(recalcStatus.lastRunAt, Date.now(), t),
               })}
             </Text>
           ) : (

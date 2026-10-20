@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Fragment, type CSSProperties } from "react";
-import { Crimson_Pro } from "next/font/google";
+import localFont from "next/font/local";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { legalPaths } from "@/components/legal/legal-paths";
 import type { LandingLocale } from "@/lib/landing-locale";
@@ -8,8 +8,19 @@ import { landingCopy } from "./landing-copy";
 import { LandingStory } from "./landing-story";
 import styles from "./pilot-landing.module.css";
 
-// The app's serif, used by the phone in the scroll story.
-const crimson = Crimson_Pro({ subsets: ["latin"], weight: ["400", "500"], style: ["normal", "italic"], variable: "--font-crimson" });
+// The app's serif, used by the phone in the scroll story. Self-hosted copy of
+// the Google Fonts v28 latin files (variable, so one file covers 400 and 500)
+// so the build never fetches from Google.
+const crimson = localFont({
+  src: [
+    { path: "./fonts/crimson-pro/crimson-pro-latin-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/crimson-pro/crimson-pro-latin-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/crimson-pro/crimson-pro-latin-italic.woff2", weight: "400", style: "italic" },
+    { path: "./fonts/crimson-pro/crimson-pro-latin-italic.woff2", weight: "500", style: "italic" },
+  ],
+  variable: "--font-crimson",
+  adjustFontFallback: "Times New Roman",
+});
 
 function Arrow() {
   return (

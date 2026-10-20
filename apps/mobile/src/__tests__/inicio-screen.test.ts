@@ -128,6 +128,27 @@ describe("idea card status label", () => {
   });
 });
 
+describe("idea card date", () => {
+  // Only Date is faked, so the screen's promises and effects run as usual.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-10-06T12:00:00Z")); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("tells how long ago the idea was written, before its status", async () => {
+    h.role = "sous_chef";
+    h.listIdeas.mockResolvedValue([{ ...idea, status: "in_chat" }]);
+    await render();
+    const meta = visibleText();
+    expect(meta).toContain("relative_hours_ago");
+    expect(meta.indexOf("relative_hours_ago")).toBeLessThan(meta.indexOf("inicio_idea_in_chat"));
+  });
+
+  it("also dates the idea for a viewer, who gets no assistant action", async () => {
+    await render();
+    expect(visibleText()).toContain("relative_hours_ago");
+    expect(visibleText()).not.toContain("inicio_idea_action");
+  });
+});
+
 describe("idea card chat permission", () => {
   it("does not show the assistant action to a restaurant viewer", async () => {
     await render();
@@ -191,6 +212,15 @@ describe("idea dictation", () => {
     await render();
     expect(screen.root.findByType("ListeningPulse" as never).props.active).toBe(false);
     expect(ideaInput().props.placeholder).toBe("inicio_placeholder");
+  });
+
+  it("locks the idea box while listening, so typing cannot be lost to the next result", async () => {
+    await render();
+    expect(ideaInput().props.editable).toBe(true);
+    await act(async () => { screen.unmount(); });
+    h.listening = true;
+    await mount();
+    expect(ideaInput().props.editable).toBe(false);
   });
 
   it("explains a missing permission or an unavailable recogniser", async () => {

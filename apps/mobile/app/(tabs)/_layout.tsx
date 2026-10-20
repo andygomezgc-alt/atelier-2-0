@@ -10,12 +10,15 @@ import { canShowAssistantTab } from "@/src/lib/assistant-tab";
 import { can } from "@atelier/shared";
 import { colors, fontSizes, fonts, TAB_BAR_BASE_HEIGHT } from "@/src/theme";
 
-const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
-  inicio: "create-outline",
-  asistente: "chatbubble-outline",
-  recetas: "book-outline",
-  menus: "list-outline",
-  casa: "home-outline",
+type IconName = keyof typeof Ionicons.glyphMap;
+
+// [active, inactive]: the active tab shows the filled glyph.
+const ICONS: Record<string, [IconName, IconName]> = {
+  inicio: ["create", "create-outline"],
+  asistente: ["chatbubble", "chatbubble-outline"],
+  recetas: ["book", "book-outline"],
+  menus: ["list", "list-outline"],
+  casa: ["home", "home-outline"],
 };
 
 export default function TabsLayout() {
@@ -28,7 +31,7 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={({ route }) => {
-        const iconName = ICONS[route.name] ?? "ellipse-outline";
+        const [activeIcon, idleIcon] = ICONS[route.name] ?? ["ellipse", "ellipse-outline"];
         return {
           headerShown: false,
           // Bloque 4 · C-01 — fade conservador entre tabs (~200ms default).
@@ -50,8 +53,8 @@ export default function TabsLayout() {
             fontWeight: "500",
             marginTop: 0,
           },
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name={iconName} size={size ?? 22} color={color} />
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? activeIcon : idleIcon} size={size ?? 22} color={color} />
           ),
         };
       }}
