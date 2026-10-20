@@ -160,6 +160,32 @@ describe("invoice list", () => {
     expect(texts()).toContain("Marr");
   });
 
+  it("keeps the list when an older call fails after a newer one answered", async () => {
+    let firstFailure!: (reason: Error) => void;
+    h.list
+      .mockReturnValueOnce(new Promise<InvoiceListResponse>((_resolve, reject) => { firstFailure = reject; }))
+      .mockResolvedValueOnce(response({ suppliers: [{ supplier: { id: "s2", name: "Marr" }, invoices: [summary({ id: "i3" })] }] }));
+    await render();
+    await act(async () => { await screen.root.findByType("ScrollView" as never).props.refreshControl.props.onRefresh(); });
+    await act(async () => { firstFailure(new Error("offline")); });
+    expect(texts()).toContain("Marr");
+    expect(screen.root.findAllByType("NetworkError" as never)).toHaveLength(0);
+  });
+
+  it("an older answer that lands after a newer failure clears the offline state", async () => {
+    // A failure writes nothing, so it does not hide a slower answer from an earlier call.
+    let firstAnswer!: (value: InvoiceListResponse) => void;
+    h.list
+      .mockReturnValueOnce(new Promise<InvoiceListResponse>((resolve) => { firstAnswer = resolve; }))
+      .mockRejectedValueOnce(new Error("offline"));
+    await render();
+    await act(async () => { await screen.root.findByType("ScrollView" as never).props.refreshControl.props.onRefresh(); });
+    expect(screen.root.findAllByType("NetworkError" as never)).toHaveLength(1);
+    await act(async () => { firstAnswer(response()); });
+    expect(screen.root.findAllByType("NetworkError" as never)).toHaveLength(0);
+    expect(texts()).toContain("Recchioni");
+  });
+
   it("offers scanning when empty, and retry when offline", async () => {
     h.list.mockResolvedValue(response({ toReview: 0, suppliers: [] }));
     await render();
