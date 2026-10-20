@@ -124,20 +124,29 @@ Detalles para el futuro:
 **Un solo comando** reconstruye y re-publica ambas plataformas:
 
 ```bash
-bash scripts/rebake-mobile.sh          # iOS (auto-submit a TestFlight) + APK Android
+bash scripts/rebake-mobile.sh          # iOS (TestFlight, grupos Equipo y Chefs) + APK Android
 bash scripts/rebake-mobile.sh ios      # solo iOS
 bash scripts/rebake-mobile.sh android  # solo APK Android
 ```
 
-Hace: sincroniza el clon de horneado con `origin/main` → `pnpm install` → repone las credenciales locales iOS desde `atelier-secretos` → valida el bundle con `expo export` → `eas build` con `--auto-submit` en iOS (sube solo a TestFlight al terminar) y APK en Android.
+Hace: sincroniza el clon de horneado con `origin/main` → `pnpm install` → repone las credenciales locales iOS desde `atelier-secretos` → valida el bundle con `expo export` → `eas build` con `--auto-submit` en iOS (sube solo a TestFlight al terminar) y APK en Android → en iOS, espera a que Apple procese la build y la publica para los chefs con `scripts/testflight-release.mjs` (~30-40 min más).
+
+`--auto-submit` solo deja la build en el grupo interno "Equipo". `scripts/testflight-release.mjs` hace el resto para el grupo externo "Chefs": pone el número de build en la nota de revisión ("This is build N of…"), suma la build al grupo y la manda a revisión beta. Cada paso comprueba antes, así que repetirlo no duplica nada. Si el rebake se corta mientras espera:
+
+```bash
+node scripts/testflight-release.mjs 22             # una build concreta
+node scripts/testflight-release.mjs 22 --group Chefs
+```
+
+Usa la API key de App Store Connect del perfil `submit.testflight` de `eas.json` y llama con curl (el `fetch` de Node no conecta con Apple en esta máquina). Tests: `pnpm test:testflight-release`.
 
 **Por qué NO es totalmente desatendido (cloud):** las claves de firma iOS (`dist.p12`, `dist.key`) viven SOLO en el disco local a propósito — nunca en el repo ni en los servidores de EAS. Un agente en la nube no las tiene, así que el rebuild se dispara a mano con el script (que ya tiene todo a un comando). Cada vez que aterrice código móvil en `main`, corre el script y en ~20 min tienes TestFlight + APK al día.
 
 ## Testers (configurado 20-jul)
 
-- **Link público (chefs iPhone):** https://testflight.apple.com/join/kY83jmnk — grupo externo "Chefs". ⚠️ Los externos solo pueden instalar DESPUÉS de que Apple apruebe la primera build en la **revisión beta** (falta el teléfono de contacto para poder enviarla).
+- **Link público (chefs iPhone):** https://testflight.apple.com/join/kY83jmnk — grupo externo "Chefs". Los externos instalan la última build del grupo que Apple aprobó en la **revisión beta** (las siguientes a la primera suelen aprobarse en minutos u horas; la 21 tardó ~40 min el 20-oct-2026).
 - **Grupo interno "Equipo" (Andy):** disponible YA sin revisión — instala con TestFlight usando el Apple ID de la cuenta.
-- Info beta en italiano y contacto de la revisión: cargados vía API (email andygomezgc@gmail.com; `demoAccountRequired:false`). Antes del próximo envío, actualizar la nota para explicar el acceso actual con Apple/Google; ya no debe decir “login por código”.
+- Info beta en italiano y contacto de la revisión: cargados vía API (email andygomezgc@gmail.com; `demoAccountRequired:false`). La nota de revisión ya explica el acceso con Apple o Google; `scripts/testflight-release.mjs` le actualiza el número de build en cada envío.
 
 ## App Store real (después del pilot)
 

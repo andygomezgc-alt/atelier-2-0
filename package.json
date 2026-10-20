@@ -27,6 +27,7 @@
     "backup:unpack": "node scripts/backup-unpack.mjs",
     "test:backup-encryption": "node --test scripts/check-backup-encryption.test.mjs",
     "test:backup-sync": "node --test scripts/check-backup-sync.test.mjs",
+    "test:testflight-release": "node --test scripts/check-testflight-release.test.mjs",
     "backup:daily": "node scripts/backup-daily.mjs"
   },
   "devDependencies": {
