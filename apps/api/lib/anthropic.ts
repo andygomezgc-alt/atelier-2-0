@@ -96,9 +96,11 @@ export function buildSystemBlocks(
     blocks.push({ type: "text", text: culinaryMemory, cache_control: { type: "ephemeral" } });
   }
 
-  // Keep the recent-recipe list stable: it should change only when a recipe is
+  // Keep the recipe lists stable: they should change only when a recipe is
   // created, deleted, or renamed, so the cached prefix survives edits and state
   // changes. The titles remain useful live context even when memory exists.
+  // Recipes arrive newest first: the eight newest show where the kitchen is
+  // heading, the rest complete the menu so nothing on it reads as missing.
   // The pinned idea remains after the stable memory and is intentionally live.
   // Who writes and the current month change per person and per month, so they
   // stay in this live block after the last system breakpoint, as data.
@@ -111,6 +113,9 @@ export function buildSystemBlocks(
     const liveData = {
       ...(recentRecipes.length > 0
         ? { recentRecipeTitles: recentRecipes.slice(0, 8).map(recipe => normalizeWhitespace(recipe.title)) }
+        : {}),
+      ...(recentRecipes.length > 8
+        ? { otherRecipeTitles: recentRecipes.slice(8).map(recipe => normalizeWhitespace(recipe.title)) }
         : {}),
       ...(pinnedIdea ? { pinnedIdea: normalizeWhitespace(pinnedIdea) } : {}),
       ...(speakerName ? { speakerName } : {}),
