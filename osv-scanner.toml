@@ -1,6 +1,6 @@
 # Avisos de seguridad ACEPTADOS por el job dependency-scan de CI.
 #
-# Revisados el 15-09-2026 y el 10-10-2026 con los avisos de OSV y GitHub:
+# Revisados el 15-09-2026, el 10-10-2026 y el 22-10-2026 con los avisos de OSV y GitHub:
 # ninguno está en código que atienda peticiones en producción y ninguno tiene
 # arreglo sin saltar de versión mayor. Cada excepción caduca sola: al pasar
 # ignoreUntil el aviso vuelve a poner CI en rojo y obliga a revisarlo. Un aviso
@@ -16,6 +16,11 @@ reason = "vitest 2.1.9, solo pruebas: afecta al servidor de Vitest UI, que el pr
 id = "GHSA-fx2h-pf6j-xcff"
 ignoreUntil = 2026-12-15
 reason = "vite 5.4.21, solo lo trae vitest 2: afecta al servidor de desarrollo de Vite en Windows, que no se expone. Arreglo en vite 6.4.3 (versión mayor)."
+
+[[IgnoredVulns]]
+id = "GHSA-587h-7wmj-h5pm"
+ignoreUntil = 2026-12-15
+reason = "vite 5.4.21, solo lo trae vitest 2: la comprobación de launch-editor del servidor de desarrollo de Vite en Windows, que no se expone. Arreglo en vite 6.4.4 (versión mayor)."
 
 [[IgnoredVulns]]
 id = "GHSA-ggr8-5vv4-36mx"

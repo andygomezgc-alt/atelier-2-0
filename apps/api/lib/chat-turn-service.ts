@@ -14,6 +14,10 @@ import type { AuthedContext } from "@/lib/permissions-guard";
 import { canAccessConversation } from "@/lib/conversation-access";
 import { CHAT_HEARTBEAT_MS, claimChatTurn, saveChatTurn, finishChatTurn, releaseChatTurn, ownsChatTurn, type ChatTurn, type ClaimedChatTurn } from "@/lib/chat-turn";
 
+// The assistant sees the whole menu by title, so it never mistakes a dish it cannot see for a gap.
+// The cap bounds the uncached live block for very large recipe books.
+const RECIPE_TITLE_LIMIT = 100;
+
 interface PrepareChatTurnInput {
   conversationId: string;
   user: AuthedContext;
@@ -134,7 +138,7 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
         prisma.message.count({ where: { conversationId } }),
         prisma.recipe.findMany({
           where: { restaurantId: user.restaurantId, deletedAt: null },
-          orderBy: { createdAt: "desc" }, take: 8, select: { title: true },
+          orderBy: { createdAt: "desc" }, take: RECIPE_TITLE_LIMIT, select: { title: true },
         }),
         prisma.chefNote.findMany({
           where: { restaurantId: user.restaurantId },

@@ -977,7 +977,7 @@ describe("POST chat — selección de proveedor", () => {
     expect(db.recipe.findMany).toHaveBeenCalledWith({
       where: { restaurantId: "r1", deletedAt: null },
       orderBy: { createdAt: "desc" },
-      take: 8,
+      take: 100,
       select: { title: true },
     });
     expect(buildSystem).toHaveBeenCalledWith(

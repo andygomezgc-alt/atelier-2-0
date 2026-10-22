@@ -157,18 +157,19 @@ describe("A8 — datos del restaurante delimitados y estables", () => {
     expect(blocks[3]!.text.split("\n")[0]).toBe(DATA_HEADER);
   });
 
-  it("mantiene el orden de las claves, de las notas y de los ocho títulos recientes", () => {
+  it("mantiene el orden de las claves, de las notas y de los títulos, con los ocho recientes aparte del resto de la carta", () => {
     const notes = ["Segunda", "Primera", "Segunda"];
-    const titles = ["Zeta", "Alfa", "Zeta", "Cuatro", "Cinco", "Seis", "Siete", "Ocho", "Nueve"];
+    const titles = ["Zeta", "Alfa", "Zeta", "Cuatro", "Cinco", "Seis", "Siete", "Ocho", "Nueve", "Diez"];
     const blocks = buildSystemBlocks(
       { chefNotes: notes, identityLine: "Vegetal", name: "Casa" },
       titles.map(title => ({ title })),
       "Idea actual",
     );
 
+    const live = { recentRecipeTitles: titles.slice(0, 8), otherRecipeTitles: ["Nueve", "Diez"], pinnedIdea: "Idea actual" };
     expect(blocks[1]!.text).toBe(dataBlock({ name: "Casa", identityLine: "Vegetal", chefNotes: notes }, true));
-    expect(blocks[2]!.text).toBe(dataBlock({ recentRecipeTitles: titles.slice(0, 8), pinnedIdea: "Idea actual" }));
-    expect(readData(blocks[2]!.text)).toEqual({ recentRecipeTitles: titles.slice(0, 8), pinnedIdea: "Idea actual" });
+    expect(blocks[2]!.text).toBe(dataBlock(live));
+    expect(readData(blocks[2]!.text)).toEqual(live);
   });
 
   it("produce bloques idénticos byte a byte con los mismos valores aunque cambie el orden de las propiedades de entrada", () => {
