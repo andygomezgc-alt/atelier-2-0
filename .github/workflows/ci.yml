@@ -71,6 +71,13 @@ jobs:
         env:
           CULINARY_MEMORY_IT: "1"
 
+      # Cierres del presupuesto de IA contra el Postgres de servicio: las
+      # restricciones CHECK de la tabla, que las pruebas con mocks no ven.
+      - name: AI budget integration (PostgreSQL)
+        run: pnpm --filter api exec vitest run lib/ai/budget.integration.test.ts
+        env:
+          AI_BUDGET_IT: "1"
+
   # P1-3 (auditoría jul 2026): sustituye a `pnpm audit`, roto localmente porque
   # el endpoint que usaba fue retirado. osv-scanner lee pnpm-lock.yaml directo
   # contra la base de datos de OSV/GHSA — no depende de ese endpoint.

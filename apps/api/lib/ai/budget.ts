@@ -98,10 +98,10 @@ async function closeGeneration(budgetId: string, id: string, reservedMicros: num
 async function closeReservation(reservation: Reservation, close: (generation: GenerationRow) => Closing): Promise<void> {
   try {
     await closeGeneration(reservation.budgetId, reservation.id, reservation.micros, close);
-  } catch {
+  } catch (error) {
     // Preserve the hold on any uncertainty; never refund a paid generation
     // because telemetry failed, nor discard a valid recipe because of logging.
-    logger.error("ai_budget_settlement_failed", { generationId: reservation.id });
+    logger.error("ai_budget_settlement_failed", { generationId: reservation.id, error, message: error instanceof Error ? error.message : String(error) });
   }
 }
 

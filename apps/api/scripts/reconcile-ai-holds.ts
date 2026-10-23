@@ -3,6 +3,8 @@
 // With --apply, expires each one in its own row-locked transaction, charging the
 // highest settled cost of the same model in the last 30 days (capped by the hold),
 // or the whole hold without history. No provider calls.
+// Needs migration 20261023120000_ai_generation_close_statuses: before it, every
+// expiry failed on the "AiGeneration_valid" CHECK and the hold stayed.
 // From apps/api: ../../packages/db/node_modules/.bin/tsx scripts/reconcile-ai-holds.ts [--apply] [--older-than-minutes=30]
 import { prisma } from "@atelier/db";
 import { expireGeneration } from "../lib/ai/budget";
