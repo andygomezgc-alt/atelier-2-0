@@ -44,6 +44,8 @@ type RecentRecipe = {
   title: string;
 };
 
+export type ReferencedRecipe = { title: string; ingredients: string[]; method: string[] };
+
 export type Msg = { role: "user" | "assistant"; content: string };
 
 // Fixed Spanish month names: no Intl, so the text never varies between runtimes.
@@ -57,7 +59,7 @@ export function buildSystemBlocks(
   recentRecipes: RecentRecipe[],
   pinnedIdea: string | null,
   culinaryMemory?: string | null,
-  conversation?: { speakerName?: string | null; now?: Date; summary?: string | null },
+  conversation?: { speakerName?: string | null; now?: Date; summary?: string | null; referencedRecipes?: ReferencedRecipe[] },
 ) {
   const principles = loadSystemPrompt();
 
@@ -108,6 +110,8 @@ export function buildSystemBlocks(
   // The summary of the messages that left the history window changes only when
   // the window start moves, which already changes the thread prefix.
   const summary = conversation?.summary?.trim() ?? "";
+  // The sheets of the recipes the chef names change only when another dish is named.
+  const referenced = conversation?.referencedRecipes ?? [];
   const now = conversation?.now ?? new Date();
   if (recentRecipes.length > 0 || pinnedIdea || conversation) {
     const liveData = {
@@ -116,6 +120,13 @@ export function buildSystemBlocks(
         : {}),
       ...(recentRecipes.length > 8
         ? { otherRecipeTitles: recentRecipes.slice(8).map(recipe => normalizeWhitespace(recipe.title)) }
+        : {}),
+      ...(referenced.length > 0
+        ? { referencedRecipes: referenced.map(recipe => ({
+            title: normalizeWhitespace(recipe.title),
+            ingredients: recipe.ingredients.map(normalizeWhitespace),
+            method: recipe.method.map(normalizeWhitespace),
+          })) }
         : {}),
       ...(pinnedIdea ? { pinnedIdea: normalizeWhitespace(pinnedIdea) } : {}),
       ...(speakerName ? { speakerName } : {}),

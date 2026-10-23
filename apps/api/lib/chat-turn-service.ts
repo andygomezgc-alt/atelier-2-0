@@ -1,7 +1,7 @@
 import { prisma } from "@atelier/db";
 import { can, type ApiErrorCode, type ChatModelSelection, type PostMessageRequest } from "@atelier/shared";
 import { t, type Language, type TranslationKey } from "@atelier/i18n";
-import { buildSystemBlocks, type Msg } from "@/lib/anthropic";
+import { buildSystemBlocks, type Msg, type ReferencedRecipe } from "@/lib/anthropic";
 import { ChatError, stableHistoryWindow, streamChat } from "@/lib/ai/chat";
 import { chatConfig, providerConfigured } from "@/lib/ai/config";
 import { releaseGeneration, reserveGeneration, type Reservation } from "@/lib/ai/budget";
@@ -9,6 +9,7 @@ import { budgetErrorResponse, textInputCeiling } from "@/lib/ai/budget-policy";
 import { recordAiTokens } from "@/lib/ai-quota";
 import { chatMemory } from "@/lib/culinary-memory/service";
 import { loadChatSummary } from "@/lib/chat-summary";
+import { mentionedRecipeIds, recipeSheet } from "@/lib/recipe-mentions";
 import { logger } from "@/lib/logger";
 import type { AuthedContext } from "@/lib/permissions-guard";
 import { canAccessConversation } from "@/lib/conversation-access";
@@ -104,6 +105,7 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
     let restaurant: Parameters<typeof buildSystemBlocks>[0];
     let recentRecipes: { title: string }[] = [];
     let culinaryMemory: string | null = null;
+    let referencedRecipes: ReferencedRecipe[] = [];
     let messages: Msg[];
     let speakerName: string | null;
     let messageCount: number | undefined;
@@ -138,7 +140,7 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
         prisma.message.count({ where: { conversationId } }),
         prisma.recipe.findMany({
           where: { restaurantId: user.restaurantId, deletedAt: null },
-          orderBy: { createdAt: "desc" }, take: RECIPE_TITLE_LIMIT, select: { title: true },
+          orderBy: { createdAt: "desc" }, take: RECIPE_TITLE_LIMIT, select: { id: true, title: true },
         }),
         prisma.chefNote.findMany({
           where: { restaurantId: user.restaurantId },
@@ -161,12 +163,22 @@ export async function prepareChatTurn(input: PrepareChatTurnInput): Promise<Prep
       if (isNewMessage) historyWithCurrent.push({ role: "user", content: message.content });
       messageCount = total + (isNewMessage ? 1 : 0);
       messages = stableHistoryWindow(historyWithCurrent, messageCount);
+      // A recipe the chef names gets its sheet, so the assistant works on the dish
+      // instead of guessing it from the title. Optional context: a failed read never blocks the turn.
+      const mentioned = mentionedRecipeIds(recent, messages.filter(m => m.role === "user").map(m => m.content));
+      if (mentioned.length > 0) {
+        const sheets = await prisma.recipe.findMany({
+          where: { id: { in: mentioned }, restaurantId: user.restaurantId, deletedAt: null },
+          select: { id: true, title: true, contentJson: true, recipeIngredients: { orderBy: { position: "asc" }, select: { rawText: true } } },
+        }).catch(() => []);
+        referencedRecipes = mentioned.flatMap(id => sheets.filter(sheet => sheet.id === id).map(recipeSheet));
+      }
       // What already left the window, as data: the newest summary ending at its absolute start.
       summary = await loadChatSummary(conversationId, Math.max(messageCount, historyWithCurrent.length) - messages.length);
     }
 
     const system = buildSystemBlocks(restaurant, recentRecipes, pinnedIdeaText, culinaryMemory,
-      { speakerName, ...(summary ? { summary } : {}) });
+      { speakerName, ...(summary ? { summary } : {}), ...(referencedRecipes.length > 0 ? { referencedRecipes } : {}) });
     signal.throwIfAborted();
     checkDeadline();
     // Estimate the exact prepared payload, but never persist a refused turn.
