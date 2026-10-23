@@ -388,6 +388,25 @@ describe("buildSystemBlocks — resumen de los mensajes que salieron de la venta
     expect("cache_control" in live).toBe(false);
   });
 
+  it("pone las fichas de las recetas nombradas tras los títulos, normalizadas y sin marcador de caché", () => {
+    const sheet = { title: "Pochas  con verduras", ingredients: ["500 g de\npochas"], method: ["Cocer  lento"] };
+    const blocks = buildSystemBlocks(restaurant, [{ title: "Pochas con verduras" }], "Idea actual", "Memoria",
+      { speakerName: "Andy", now: octubre, referencedRecipes: [sheet] });
+    const live = blocks.at(-1)!;
+    expect(live.text).toBe(dataBlock({
+      recentRecipeTitles: ["Pochas con verduras"],
+      referencedRecipes: [{ title: "Pochas con verduras", ingredients: ["500 g de pochas"], method: ["Cocer lento"] }],
+      pinnedIdea: "Idea actual", speakerName: "Andy", currentMonth: "octubre de 2026",
+    }));
+    expect("cache_control" in live).toBe(false);
+  });
+
+  it("sin recetas nombradas el bloque vivo es idéntico byte a byte al de hoy", () => {
+    const today = buildSystemBlocks(restaurant, [], null, "Memoria", { speakerName: "Andy", now: octubre });
+    const blocks = buildSystemBlocks(restaurant, [], null, "Memoria", { speakerName: "Andy", now: octubre, referencedRecipes: [] });
+    expect(JSON.stringify(blocks)).toBe(JSON.stringify(today));
+  });
+
   it("sin resumen el bloque vivo es idéntico byte a byte al de hoy", () => {
     const today = buildSystemBlocks(restaurant, [], null, "Memoria", { speakerName: "Andy", now: octubre });
     for (const empty of [undefined, null, "", "  \n "]) {

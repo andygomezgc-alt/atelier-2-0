@@ -978,7 +978,7 @@ describe("POST chat — selección de proveedor", () => {
       where: { restaurantId: "r1", deletedAt: null },
       orderBy: { createdAt: "desc" },
       take: 100,
-      select: { title: true },
+      select: { id: true, title: true },
     });
     expect(buildSystem).toHaveBeenCalledWith(
       expect.anything(),
@@ -987,6 +987,43 @@ describe("POST chat — selección de proveedor", () => {
       "Técnicas de brasa",
       { speakerName: "Andy" },
     );
+  });
+
+  it("loads the sheet of a recipe the chef names and forwards it as live data", async () => {
+    db.recipe.findMany
+      .mockResolvedValueOnce([{ id: "rec-pochas", title: "Pochas con verduras" }, { id: "rec-torrija", title: "Torrija de brioche" }])
+      .mockResolvedValueOnce([{
+        id: "rec-pochas", title: "Pochas con verduras",
+        contentJson: { ingredients: [], method: ["Cocer las pochas"] }, recipeIngredients: [{ rawText: "500 g de pochas" }],
+      }]);
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    await (await post({ content: "Mejora las pochas" })).text();
+    expect(db.recipe.findMany).toHaveBeenLastCalledWith({
+      where: { id: { in: ["rec-pochas"] }, restaurantId: "r1", deletedAt: null },
+      select: { id: true, title: true, contentJson: true, recipeIngredients: { orderBy: { position: "asc" }, select: { rawText: true } } },
+    });
+    expect(buildSystem).toHaveBeenCalledWith(expect.anything(), expect.anything(), null, null, {
+      speakerName: "Andy",
+      referencedRecipes: [{ title: "Pochas con verduras", ingredients: ["500 g de pochas"], method: ["Cocer las pochas"] }],
+    });
+  });
+
+  it("answers without the sheet when loading it fails", async () => {
+    db.recipe.findMany
+      .mockResolvedValueOnce([{ id: "rec-pochas", title: "Pochas con verduras" }])
+      .mockRejectedValueOnce(new Error("database unavailable"));
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    const response = await post({ content: "Mejora las pochas" });
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(buildSystem).toHaveBeenCalledWith(expect.anything(), expect.anything(), null, null, { speakerName: "Andy" });
+  });
+
+  it("does not load any sheet when no recipe is named", async () => {
+    db.recipe.findMany.mockResolvedValue([{ id: "rec-pochas", title: "Pochas con verduras" }]);
+    streamMock.mockReturnValue(providerStream(["Lista"], { in: 10, out: 20 }));
+    await (await post({ content: "Quiero un entrante con pochas" })).text();
+    expect(db.recipe.findMany).toHaveBeenCalledTimes(1);
   });
 
   it.each([
