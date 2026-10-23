@@ -13,8 +13,8 @@ vi.mock("@/lib/permissions-guard", () => ({
 vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 import { PATCH } from "../route";
 
-const request = () => new NextRequest("http://localhost/api/ideas/idea-1", {
-  method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "Nueva versión" }),
+const request = (body: unknown = { text: "Nueva versión" }) => new NextRequest("http://localhost/api/ideas/idea-1", {
+  method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
 });
 const params = () => ({ params: Promise.resolve({ id: "idea-1" }) });
 beforeEach(() => {
@@ -30,6 +30,16 @@ describe("PATCH /api/ideas/[id]", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ id: "idea-1", text: "Nueva versión", status: "open" });
     expect(h.update).toHaveBeenCalledWith({ where: { id: "idea-1" }, data: { text: "Nueva versión" } });
+  });
+
+  it("returns 400 with the flattened validation error and touches nothing", async () => {
+    const res = await PATCH(request({ text: "" }), params());
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: { formErrors: [], fieldErrors: { text: ["String must contain at least 1 character(s)"] } },
+    });
+    expect(h.findUnique).not.toHaveBeenCalled();
+    expect(h.update).not.toHaveBeenCalled();
   });
 
   it.each(["sous_chef", "admin"])("returns 404 for a teammate's idea without updating it (%s)", async (role) => {
