@@ -70,7 +70,7 @@ export function judgePrompt(input: JudgeInput): string {
   ].join("\n\n");
 }
 
-const Verdicts = z.record(z.object({ reason: z.string(), pass: z.boolean() }));
+const Verdicts = z.record(z.string(), z.object({ reason: z.string(), pass: z.boolean() }));
 
 function judgeUsage(usage: Anthropic.Usage): JudgeUsage {
   return {

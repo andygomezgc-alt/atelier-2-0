@@ -3,6 +3,8 @@ import type { ZodType } from "zod";
 import { requireAuth, isNextResponse, type AuthedContext } from "./permissions-guard";
 import { logger } from "./logger";
 import type { Permission } from "@atelier/shared";
+// Route-local body schemas answer with the same Zod 3 wording as shared ones.
+import "@atelier/shared/zod-messages";
 
 type Handler<T> = (
   ctx: AuthedContext,
@@ -12,7 +14,7 @@ type Handler<T> = (
 
 type Options<T> = {
   permission?: Permission;
-  body?: ZodType<T, any, any>;
+  body?: ZodType<T>;
   requireRestaurant?: boolean;
 };
 

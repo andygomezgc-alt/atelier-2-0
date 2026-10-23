@@ -100,7 +100,7 @@ const Case = z.object({
 });
 const CasesFile = z.object({
   currentMonth: z.string().datetime(), globalCriteria: z.array(z.string().min(1)),
-  restaurants: z.record(Restaurant), cases: z.array(Case),
+  restaurants: z.record(z.string(), Restaurant), cases: z.array(Case),
 }).superRefine((data, ctx) => {
   const ids = new Set<string>();
   for (const kase of data.cases) {
