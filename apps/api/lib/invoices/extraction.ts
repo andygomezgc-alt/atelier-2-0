@@ -49,9 +49,10 @@ export function parseLenientNumber(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-const num = z.unknown().transform(parseLenientNumber);
+// `.optional()` keeps a key the model left out valid: Zod 4 rejects it otherwise.
+const num = z.unknown().optional().transform(parseLenientNumber);
 const text = (max: number) =>
-  z.unknown().transform((v) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null));
+  z.unknown().optional().transform((v) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null));
 const cents = (n: number | null) => (n === null ? null : Math.round(n * 100));
 
 export const MAX_INVOICE_LINES = 200;
@@ -67,7 +68,7 @@ const LineSchema = z.object({
   unitPrice: num,
   taxRatePct: num,
   lineTotal: num,
-  kind: z.unknown().transform((v) => (v === "detail" || v === "header" || v === "charge" ? v : "item")),
+  kind: z.unknown().optional().transform((v) => (v === "detail" || v === "header" || v === "charge" ? v : "item")),
 });
 
 const PageSchema = z.object({
@@ -75,7 +76,7 @@ const PageSchema = z.object({
   supplierName: text(200),
   supplierTaxId: text(40),
   invoiceNumber: text(60),
-  invoiceDate: z.unknown().transform((v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null)),
+  invoiceDate: z.unknown().optional().transform((v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null)),
   netTotal: num,
   taxTotal: num,
   grossTotal: num,
