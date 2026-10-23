@@ -5,8 +5,8 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: false,
-    // Las pruebas contra PostgreSQL real solo corren a propósito (CULINARY_MEMORY_IT=1).
-    exclude: process.env.CULINARY_MEMORY_IT === "1" ? configDefaults.exclude : [...configDefaults.exclude, "**/*.integration.test.ts"],
+    // Las pruebas contra PostgreSQL real solo corren a propósito (CULINARY_MEMORY_IT=1 o AI_BUDGET_IT=1).
+    exclude: process.env.CULINARY_MEMORY_IT === "1" || process.env.AI_BUDGET_IT === "1" ? configDefaults.exclude : [...configDefaults.exclude, "**/*.integration.test.ts"],
   },
   resolve: {
     alias: [

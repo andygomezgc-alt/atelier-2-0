@@ -94,6 +94,14 @@ describe("closing a chat reservation (A4)", () => {
     expect(await expireGeneration("pilot", "gen-1", 1)).toBe(false);
   });
 
+  it("logs the real cause when a close fails, and keeps the hold", async () => {
+    const failure = new Error('new row for relation "AiGeneration" violates check constraint "AiGeneration_valid"');
+    h.updateGeneration.mockRejectedValueOnce(failure);
+    await releaseGeneration(reservation);
+    expect(h.updateBudget).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith("ai_budget_settlement_failed", { generationId: "gen-1", error: failure, message: failure.message });
+  });
+
   it("keeps the hold when the interrupted usage is invalid", async () => {
     await settleInterruptedGeneration(reservation, { inputTokens: 10, outputTokens: 0, cachedTokens: 20, reasoningTokens: 0 });
     expect(h.updateGeneration).not.toHaveBeenCalled();
