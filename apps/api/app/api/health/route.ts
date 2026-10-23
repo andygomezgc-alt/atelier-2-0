@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@atelier/db";
 import { logger } from "@/lib/logger";
-import { providerConfigured } from "@/lib/ai/config";
+import { PROVIDER_KEY_ENV, type AiProvider } from "@/lib/ai/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,45 +40,45 @@ async function checkDb(): Promise<CheckResult> {
   }
 }
 
-// Sin `deep`: solo valida el formato (barato, para pings de uptime frecuentes).
-// Con `deep`: pega a Anthropic para confirmar que ACEPTA la clave. Una key con
-// formato correcto pero revocada pasa el chequeo de formato y sin embargo
-// rompe el asistente + extracción con 401 — el deep lo detecta.
-async function checkAnthropic(deep: boolean): Promise<CheckResult> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return { ok: false, error: "provider not configured" };
-  if (!key.startsWith("sk-ant-")) {
-    logger.error("health_check_failed", {
-      check: "anthropic",
-      err: "invalid key format",
-    });
-    return { ok: false, error: "invalid key format" };
-  }
-  if (!deep) return { ok: true };
+// Each AI key is verified against its provider's free model listing, so a
+// revoked or wrong key reads as degraded even though its format looks right.
+// /health is public: each instance reuses a verification for VERIFY_TTL_MS, so
+// uptime pings and repeated hits cost one provider call per window. ?deep=1
+// verifies again right away.
+const VERIFY_TTL_MS = 5 * 60_000;
+const KEY_PROBES: Record<AiProvider, (key: string) => { url: string; headers: Record<string, string> }> = {
+  anthropic: key => ({ url: "https://api.anthropic.com/v1/models?limit=1", headers: { "x-api-key": key, "anthropic-version": "2023-06-01" } }),
+  gemini: key => ({ url: "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1", headers: { "x-goog-api-key": key } }),
+  zai: key => ({ url: "https://api.z.ai/api/paas/v4/models", headers: { Authorization: `Bearer ${key}` } }),
+};
+const verifications = new Map<AiProvider, { at: number; result: Promise<CheckResult> }>();
 
+async function verifyKey(provider: AiProvider): Promise<CheckResult> {
+  const key = process.env[PROVIDER_KEY_ENV[provider]]?.trim();
+  if (!key) return { ok: false, error: "provider not configured" };
+  const { url, headers } = KEY_PROBES[provider](key);
   const start = Date.now();
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch("https://api.anthropic.com/v1/models?limit=1", {
-      headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
-      signal: ctrl.signal,
-    });
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (!res.ok) {
-      logger.error("health_check_failed", {
-        check: "anthropic",
-        err: `status ${res.status}`,
-      });
-      return { ok: false, latencyMs: Date.now() - start, error: `anthropic ${res.status}` };
+      logger.error("health_check_failed", { check: provider, err: `status ${res.status}` });
+      return { ok: false, latencyMs: Date.now() - start, error: `${provider} ${res.status}` };
     }
     return { ok: true, latencyMs: Date.now() - start };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logger.error("health_check_failed", { check: "anthropic", err: msg });
+    logger.error("health_check_failed", { check: provider, err: msg });
     return { ok: false, latencyMs: Date.now() - start, error: msg };
-  } finally {
-    clearTimeout(timer);
   }
+}
+
+function checkProvider(provider: AiProvider, fresh: boolean): Promise<CheckResult> {
+  const recent = verifications.get(provider);
+  if (!fresh && recent && Date.now() - recent.at < VERIFY_TTL_MS) return recent.result;
+  // The pending promise is stored, so concurrent requests share one provider call.
+  const result = verifyKey(provider);
+  verifications.set(provider, { at: Date.now(), result });
+  return result;
 }
 
 function checkResend(): CheckResult {
@@ -96,17 +96,18 @@ function checkResend(): CheckResult {
 }
 
 export async function GET(req: NextRequest) {
-  // ?deep=1 valida la clave de IA contra Anthropic (más lento, para chequeos
-  // manuales o un cron ocasional). Sin él, chequeo barato de formato.
+  // ?deep=1 verifies the AI keys again instead of reusing a recent answer.
   const deep = new URL(req.url).searchParams.get("deep") === "1";
-  const [db, anthropic, resend] = await Promise.all([
+  const [db, anthropic, gemini, zai, resend] = await Promise.all([
     checkDb(),
-    checkAnthropic(deep),
+    checkProvider("anthropic", deep),
+    checkProvider("gemini", deep),
+    checkProvider("zai", deep),
     Promise.resolve(checkResend()),
   ]);
 
-  // Configuration checks only; no paid generation or scheduled model comparisons.
-  const checks: Record<string, CheckResult> = { db, anthropic, gemini: { ok: providerConfigured("gemini") }, zai: { ok: providerConfigured("zai") }, resend };
+  // Key verification only: model listings are free, never a paid generation.
+  const checks: Record<string, CheckResult> = { db, anthropic, gemini, zai, resend };
   const allOk = Object.values(checks).every((c) => c.skipped || c.ok);
   const status = allOk ? "ok" : "degraded";
 

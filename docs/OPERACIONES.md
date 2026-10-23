@@ -129,9 +129,11 @@ solas las migraciones de base pendientes. **No** actualiza la app del teléfono
 4. **Verificá que salió bien.** Abrí en el navegador:
 
    - https://atelier-2-0-mu.vercel.app/api/health → tiene que decir
-     `"status": "ok"`.
-   - Para un chequeo profundo (además prueba que la clave de IA funciona):
-     https://atelier-2-0-mu.vercel.app/api/health?deep=1 → también `"ok"`.
+     `"status": "ok"`. Además de la base, comprueba que Anthropic, Gemini y
+     Z.ai aceptan sus claves.
+   - Justo después de cambiar una clave, usá
+     https://atelier-2-0-mu.vercel.app/api/health?deep=1, que vuelve a
+     comprobarlas en el momento en vez de reutilizar la última respuesta.
 
    Si dice `"degraded"` o no responde, algo falló: mirá la sección
    [6. Recuperación](#6-recuperación-y-emergencias).
@@ -176,12 +178,15 @@ Vercel, sin tocar la terminal**:
   - `/api/cron/purge-trash`: todos los días 03:30. Vacía la papelera: borra para
     siempre lo que lleva más de 7 días en ella (ver
     [Restaurar una receta, menú o producto borrado](#restaurar-una-receta-menú-o-producto-borrado)).
-- `/api/health` sin `deep` valida solo el **formato** de las claves (barato);
-  con `?deep=1` pega a `GET https://api.anthropic.com/v1/models` para confirmar
-  que la clave de IA de verdad funciona (una key revocada pero con formato ok
-  pasa el chequeo barato y rompe el asistente con 401 — el deep lo caza).
-  Responde 200 si todo ok, 503 si algo está `degraded`; nunca filtra el error
-  interno (queda en los logs del server).
+- `/api/health` confirma que cada clave de IA funciona de verdad. Para eso pide
+  la lista de modelos, que es gratis, a Anthropic, Gemini y Z.ai. Una clave
+  revocada o equivocada da `degraded` aunque tenga buen formato. Como la ruta
+  es pública, cada instancia reutiliza la respuesta durante 5 minutos: los
+  pings de uptime cuestan una llamada por proveedor en cada ventana.
+  `?deep=1` vuelve a comprobar las claves en el momento. La clave de Resend
+  solo se valida por formato.
+  Responde 200 si todo ok y 503 si algo está `degraded`. Nunca filtra el error
+  interno, que queda en los logs del server.
 
 </details>
 
